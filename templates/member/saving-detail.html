@@ -1,0 +1,310 @@
+{% extends "base.html" %}
+
+{% block title %}Saving Details - OOU Cooperative{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h2><i class="fas fa-receipt"></i> Savings Transaction Details</h2>
+            <p class="text-muted">View complete information for this savings transaction</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="{{ url_for('my_savings') }}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> Back to Savings
+            </a>
+            <button class="btn btn-primary" onclick="window.print()">
+                <i class="fas fa-print"></i> Print
+            </button>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-8">
+            <!-- Main Receipt Card -->
+            <div class="card mb-4" id="receipt-card">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">SAVINGS RECEIPT</h5>
+                </div>
+                <div class="card-body">
+                    <!-- Header -->
+                    <div class="row mb-4">
+                        <div class="col-6">
+                            <img src="{{ url_for('static', filename='images/logo.png') }}" alt="Logo" height="60">
+                            <h5 class="mt-2">OOU Acctg 2005 Alumni CMS</h5>
+                            <p class="text-muted mb-0">Cooperative Multipurpose Society</p>
+                        </div>
+                        <div class="col-6 text-end">
+                            <h3 class="text-primary">RECEIPT</h3>
+                            <p class="mb-0"><strong>Receipt No:</strong> {{ saving.receipt_number }}</p>
+                            <p class="mb-0"><strong>Date:</strong> {{ saving.date.strftime('%d/%m/%Y %H:%M') }}</p>
+                        </div>
+                    </div>
+
+                    <!-- Member Info -->
+                    <div class="row mb-4">
+                        <div class="col-12">
+                            <div class="bg-light p-3 rounded">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <p class="mb-1"><strong>Member Name:</strong> {{ member.full_name }}</p>
+                                        <p class="mb-1"><strong>Member Number:</strong> {{ member.member_number }}</p>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <p class="mb-1"><strong>Phone:</strong> {{ member.phone }}</p>
+                                        <p class="mb-1"><strong>Email:</strong> {{ member.email }}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Transaction Details -->
+                    <div class="row mb-4">
+                        <div class="col-12">
+                            <table class="table table-bordered">
+                                <tr>
+                                    <th width="30%">Transaction Type</th>
+                                    <td>Monthly Savings Contribution</td>
+                                </tr>
+                                <tr>
+                                    <th>Month/Year</th>
+                                    <td>{{ saving.month }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Payment Date</th>
+                                    <td>{{ saving.date.strftime('%d %B, %Y') }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Payment Method</th>
+                                    <td>
+                                        <span class="badge bg-info">{{ saving.payment_method|upper }}</span>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <th>Reference Number</th>
+                                    <td>{{ saving.reference }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Recorded By</th>
+                                    <td>{{ saving.created_by }}</td>
+                                </tr>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Amount Breakdown -->
+                    <div class="row mb-4">
+                        <div class="col-12">
+                            <h5>Amount Breakdown</h5>
+                            <table class="table table-striped">
+                                <tr>
+                                    <th>Monthly Contribution:</th>
+                                    <td class="text-end">₦{{ "{:,.2f}".format(saving.amount - saving.late_fee) }}</td>
+                                </tr>
+                                {% if saving.late_fee > 0 %}
+                                <tr>
+                                    <th>Late Payment Fee (10%):</th>
+                                    <td class="text-end text-danger">₦{{ "{:,.2f}".format(saving.late_fee) }}</td>
+                                </tr>
+                                {% endif %}
+                                <tr class="table-primary">
+                                    <th><strong>TOTAL PAID:</strong></th>
+                                    <td class="text-end"><strong>₦{{ "{:,.2f}".format(saving.amount) }}</strong></td>
+                                </tr>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Amount in Words -->
+                    <div class="row mb-4">
+                        <div class="col-12">
+                            <p><strong>Amount in Words:</strong></p>
+                            <p class="border p-2 rounded bg-light">
+                                {{ amount_in_words }} Naira Only
+                            </p>
+                        </div>
+                    </div>
+
+                    <!-- Status -->
+                    <div class="row mb-4">
+                        <div class="col-12">
+                            <div class="alert alert-{{ 'warning' if saving.late_fee > 0 else 'success' }}">
+                                <i class="fas fa-{{ 'exclamation-triangle' if saving.late_fee > 0 else 'check-circle' }}"></i>
+                                <strong>Status:</strong> 
+                                {% if saving.late_fee > 0 %}
+                                This payment was made LATE and includes a 10% penalty fee.
+                                {% else %}
+                                This payment was made ON TIME. Thank you for your prompt payment!
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Verification -->
+                    <div class="row">
+                        <div class="col-6">
+                            <p class="mb-0"><strong>Received By:</strong></p>
+                            <p class="border-top pt-2 mt-2">{{ saving.received_by or 'System' }}</p>
+                        </div>
+                        <div class="col-6 text-end">
+                            <p class="mb-0"><strong>Member Signature:</strong></p>
+                            <p class="border-top pt-2 mt-2"></p>
+                        </div>
+                    </div>
+
+                    <!-- QR Code -->
+                    <div class="row mt-4">
+                        <div class="col-12 text-center">
+                            <div id="qr-code"></div>
+                            <p class="text-muted small mt-2">Scan to verify receipt</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="text-center mb-4">
+                <button class="btn btn-primary" onclick="downloadPDF()">
+                    <i class="fas fa-file-pdf"></i> Download PDF
+                </button>
+                <button class="btn btn-success" onclick="shareReceipt()">
+                    <i class="fas fa-share"></i> Share
+                </button>
+                <button class="btn btn-info" onclick="emailReceipt()">
+                    <i class="fas fa-envelope"></i> Email
+                </button>
+                <button class="btn btn-warning" onclick="verifyReceipt()">
+                    <i class="fas fa-shield-alt"></i> Verify
+                </button>
+            </div>
+        </div>
+
+        <!-- Sidebar -->
+        <div class="col-md-4">
+            <!-- Summary Card -->
+            <div class="card mb-4">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0">Transaction Summary</h5>
+                </div>
+                <div class="card-body">
+                    <div class="text-center mb-3">
+                        <span class="badge bg-{{ 'warning' if saving.late_fee > 0 else 'success' }} p-3">
+                            <i class="fas fa-{{ 'clock' if saving.late_fee > 0 else 'check' }} fa-2x"></i>
+                        </span>
+                    </div>
+                    <ul class="list-group list-group-flush">
+                        <li class="list-group-item d-flex justify-content-between">
+                            <span>Transaction ID:</span>
+                            <strong>#{{ saving.id }}</strong>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between">
+                            <span>Receipt Number:</span>
+                            <strong>{{ saving.receipt_number }}</strong>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between">
+                            <span>Date:</span>
+                            <strong>{{ saving.date.strftime('%d/%m/%Y') }}</strong>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between">
+                            <span>Time:</span>
+                            <strong>{{ saving.date.strftime('%H:%M:%S') }}</strong>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Running Balance -->
+            <div class="card mb-4">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0">Running Balance</h5>
+                </div>
+                <div class="card-body">
+                    <div class="text-center">
+                        <h6>Before this transaction</h6>
+                        <h4>₦{{ "{:,.2f}".format(before_balance) }}</h4>
+                        <i class="fas fa-arrow-down text-success my-2"></i>
+                        <h6>After this transaction</h6>
+                        <h3 class="text-primary">₦{{ "{:,.2f}".format(after_balance) }}</h3>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recent Transactions -->
+            <div class="card">
+                <div class="card-header bg-warning">
+                    <h5 class="mb-0">Recent Transactions</h5>
+                </div>
+                <div class="card-body">
+                    <div class="list-group">
+                        {% for trans in recent_transactions %}
+                        <a href="{{ url_for('saving_detail', saving_id=trans.id) }}" 
+                           class="list-group-item list-group-item-action">
+                            <div class="d-flex justify-content-between">
+                                <div>
+                                    <small>{{ trans.date.strftime('%d/%m/%Y') }}</small>
+                                    <p class="mb-0">{{ trans.month }}</p>
+                                </div>
+                                <div class="text-end">
+                                    <strong>₦{{ "{:,.2f}".format(trans.amount) }}</strong>
+                                    <br>
+                                    <small class="text-{{ 'warning' if trans.late_fee > 0 else 'success' }}">
+                                        {{ 'Late' if trans.late_fee > 0 else 'On Time' }}
+                                    </small>
+                                </div>
+                            </div>
+                        </a>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<script>
+// Generate QR Code
+new QRCode(document.getElementById("qr-code"), {
+    text: "{{ url_for('verify_receipt', receipt_number=saving.receipt_number, _external=True) }}",
+    width: 128,
+    height: 128
+});
+
+// Download PDF
+function downloadPDF() {
+    window.location.href = '/api/savings/receipt/pdf/{{ saving.id }}';
+}
+
+// Share Receipt
+function shareReceipt() {
+    if (navigator.share) {
+        navigator.share({
+            title: 'Savings Receipt',
+            text: 'Receipt #{{ saving.receipt_number }} for ₦{{ "{:,.2f}".format(saving.amount) }}',
+            url: window.location.href
+        });
+    } else {
+        alert('Share feature not supported on this browser');
+    }
+}
+
+// Email Receipt
+function emailReceipt() {
+    window.location.href = 'mailto:?subject=Savings Receipt&body=Receipt #{{ saving.receipt_number }} - ₦{{ "{:,.2f}".format(saving.amount) }}%0A%0AView online: {{ url_for('saving_detail', saving_id=saving.id, _external=True) }}';
+}
+
+// Verify Receipt
+function verifyReceipt() {
+    fetch('/api/verify-receipt/{{ saving.receipt_number }}')
+        .then(response => response.json())
+        .then(data => {
+            if(data.valid) {
+                alert('✅ Receipt is VALID');
+            } else {
+                alert('❌ Receipt is INVALID');
+            }
+        });
+}
+</script>
+{% endblock %}

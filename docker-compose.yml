@@ -1,0 +1,284 @@
+version: '3.8'
+
+name: oou-cooperative-system
+
+services:
+  # Main Web Application
+  web:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: oou-coop-web
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      - FLASK_ENV=production
+      - FLASK_APP=app.py
+      - DATABASE_URL=postgresql://coopuser:cooppass@db:5432/coopdb
+      - REDIS_URL=redis://redis:6379
+      - ELASTICSEARCH_URL=http://elasticsearch:9200
+      - SECRET_KEY=${SECRET_KEY}
+      - MAIL_SERVER=${MAIL_SERVER}
+      - MAIL_PORT=${MAIL_PORT}
+      - MAIL_USERNAME=${MAIL_USERNAME}
+      - MAIL_PASSWORD=${MAIL_PASSWORD}
+      - PAYSTACK_SECRET=${PAYSTACK_SECRET}
+      - PAYSTACK_PUBLIC=${PAYSTACK_PUBLIC}
+    volumes:
+      - ./static:/app/static
+      - ./cards:/app/cards
+      - ./logs:/app/logs
+      - ./uploads:/app/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - coop-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # PostgreSQL Database
+  db:
+    image: postgres:15-alpine
+    container_name: oou-coop-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=coopdb
+      - POSTGRES_USER=coopuser
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./backups:/backups
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - coop-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U coopuser -d coopdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # Redis for Caching and Sessions
+  redis:
+    image: redis:7-alpine
+    container_name: oou-coop-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+      - ./redis.conf:/usr/local/etc/redis/redis.conf
+    command: redis-server /usr/local/etc/redis/redis.conf
+    networks:
+      - coop-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Elasticsearch for Logging and Search
+  elasticsearch:
+    image: elasticsearch:8.11.0
+    container_name: oou-coop-elastic
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+      - xpack.security.enabled=false
+      - cluster.name=coop-cluster
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    volumes:
+      - elasticsearch_data:/usr/share/elasticsearch/data
+    networks:
+      - coop-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9200"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Kibana for Visualization
+  kibana:
+    image: kibana:8.11.0
+    container_name: oou-coop-kibana
+    restart: unless-stopped
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    ports:
+      - "5601:5601"
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - coop-network
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: oou-coop-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./static:/usr/share/nginx/html/static:ro
+      - ./cards:/usr/share/nginx/html/cards:ro
+      - ./ssl:/etc/nginx/ssl:ro
+      - ./logs/nginx:/var/log/nginx
+    depends_on:
+      - web
+    networks:
+      - coop-network
+
+  # Celery Worker for Background Tasks
+  worker:
+    build: 
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: oou-coop-worker
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=postgresql://coopuser:cooppass@db:5432/coopdb
+      - REDIS_URL=redis://redis:6379
+    volumes:
+      - ./cards:/app/cards
+      - ./logs:/app/logs
+    depends_on:
+      - redis
+      - db
+    networks:
+      - coop-network
+
+  # Celery Beat for Scheduled Tasks
+  beat:
+    build: 
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: oou-coop-beat
+    restart: unless-stopped
+    command: celery -A tasks beat --loglevel=info
+    environment:
+      - DATABASE_URL=postgresql://coopuser:cooppass@db:5432/coopdb
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - redis
+      - db
+    networks:
+      - coop-network
+
+  # Flower for Monitoring Celery
+  flower:
+    image: mher/flower:2.0
+    container_name: oou-coop-flower
+    restart: unless-stopped
+    environment:
+      - CELERY_BROKER_URL=redis://redis:6379
+      - FLOWER_PORT=5555
+    ports:
+      - "5555:5555"
+    depends_on:
+      - redis
+      - worker
+    networks:
+      - coop-network
+
+  # Backup Service
+  backup:
+    image: postgres:15-alpine
+    container_name: oou-coop-backup
+    restart: unless-stopped
+    volumes:
+      - ./backups:/backups
+      - ./backup-script.sh:/backup-script.sh
+    entrypoint: |
+      sh -c "
+      chmod +x /backup-script.sh
+      crontab /backup-script.sh
+      crond -f
+      "
+    depends_on:
+      - db
+    networks:
+      - coop-network
+
+  # Prometheus for Monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: oou-coop-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - coop-network
+
+  # Grafana for Dashboards
+  grafana:
+    image: grafana/grafana:latest
+    container_name: oou-coop-grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+      - GF_INSTALL_PLUGINS=grafana-piechart-panel
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana-dashboards:/etc/grafana/provisioning/dashboards
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    networks:
+      - coop-network
+
+  # Portainer for Docker Management
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: oou-coop-portainer
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+    networks:
+      - coop-network
+
+# Networks
+networks:
+  coop-network:
+    driver: bridge
+    name: oou-coop-network
+
+# Volumes
+volumes:
+  postgres_data:
+    name: oou-coop-postgres-data
+  redis_data:
+    name: oou-coop-redis-data
+  elasticsearch_data:
+    name: oou-coop-elastic-data
+  prometheus_data:
+    name: oou-coop-prometheus-data
+  grafana_data:
+    name: oou-coop-grafana-data
+  portainer_data:
+    name: oou-coop-portainer-data

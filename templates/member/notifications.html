@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+
+{% block title %}Notifications - OOU Cooperative{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h2><i class="fas fa-bell"></i> Notifications</h2>
+            <p class="text-muted">Stay updated with the latest information</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <button class="btn btn-secondary" onclick="markAllRead()">
+                <i class="fas fa-check-double"></i> Mark All as Read
+            </button>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-8 mx-auto">
+            <!-- Notification Filters -->
+            <div class="card mb-3">
+                <div class="card-body">
+                    <ul class="nav nav-pills">
+                        <li class="nav-item">
+                            <a class="nav-link {{ 'active' if filter == 'all' }}" href="{{ url_for('notifications', filter='all') }}">All</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {{ 'active' if filter == 'unread' }}" href="{{ url_for('notifications', filter='unread') }}">Unread</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link {{ 'active' if filter == 'important' }}" href="{{ url_for('notifications', filter='important') }}">Important</a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Notifications List -->
+            <div class="card">
+                <div class="list-group list-group-flush">
+                    {% for notification in notifications %}
+                    <div class="list-group-item list-group-item-action {{ 'fw-bold' if not notification.is_read }}" 
+                         onclick="viewNotification({{ notification.id }})" style="cursor: pointer;">
+                        <div class="d-flex w-100 justify-content-between">
+                            <h6 class="mb-1">
+                                {% if not notification.is_read %}<span class="badge bg-primary me-2">New</span>{% endif %}
+                                {% if notification.important %}<span class="badge bg-danger me-2">Important</span>{% endif %}
+                                {{ notification.title }}
+                            </h6>
+                            <small class="text-muted">{{ notification.created_at.strftime('%d/%m/%Y %H:%M') }}</small>
+                        </div>
+                        <p class="mb-1">{{ notification.message|truncate(100) }}</p>
+                        <small>
+                            {% if notification.action_url %}
+                            <a href="{{ notification.action_url }}" class="text-primary">Take Action</a> |
+                            {% endif %}
+                            <a href="#" onclick="markRead({{ notification.id }}); event.stopPropagation();">Mark as read</a>
+                        </small>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-5">
+                        <i class="fas fa-bell-slash fa-4x text-muted mb-3"></i>
+                        <h5>No notifications</h5>
+                        <p>You're all caught up!</p>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Pagination -->
+            {% if pages > 1 %}
+            <nav aria-label="Page navigation" class="mt-3">
+                <ul class="pagination justify-content-center">
+                    <li class="page-item {{ 'disabled' if page == 1 }}">
+                        <a class="page-link" href="{{ url_for('notifications', page=page-1, filter=filter) }}">Previous</a>
+                    </li>
+                    {% for p in range(1, pages+1) %}
+                        {% if p == page %}
+                        <li class="page-item active"><span class="page-link">{{ p }}</span></li>
+                        {% elif p >= page-2 and p <= page+2 %}
+                        <li class="page-item"><a class="page-link" href="{{ url_for('notifications', page=p, filter=filter) }}">{{ p }}</a></li>
+                        {% endif %}
+                    {% endfor %}
+                    <li class="page-item {{ 'disabled' if page == pages }}">
+                        <a class="page-link" href="{{ url_for('notifications', page=page+1, filter=filter) }}">Next</a>
+                    </li>
+                </ul>
+            </nav>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script>
+function markRead(id) {
+    fetch('/api/notification/read/' + id, { method: 'POST' })
+        .then(() => location.reload());
+}
+
+function markAllRead() {
+    fetch('/api/notifications/read-all', { method: 'POST' })
+        .then(() => location.reload());
+}
+
+function viewNotification(id) {
+    window.location.href = '/notification/' + id;
+}
+</script>
+{% endblock %}

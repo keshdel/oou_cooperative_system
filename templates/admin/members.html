@@ -1,0 +1,434 @@
+{% extends "base.html" %}
+
+{% block title %}Member Management - OOU Cooperative{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Header with Add Member Button -->
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h2><i class="fas fa-users"></i> Member Management</h2>
+            <p class="text-muted">View and manage all cooperative members</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="{{ url_for('add_member') }}" class="btn btn-primary">
+                <i class="fas fa-user-plus"></i> Add New Member
+            </a>
+        </div>
+    </div>
+    
+    <!-- Member Stats Cards -->
+    <div class="row g-4 mb-4">
+        <div class="col-md-3">
+            <div class="card stat-card">
+                <div class="card-body">
+                    <h6 class="text-white-50">Total Members</h6>
+                    <h2 class="text-white mb-0">{{ members|length }}</h2>
+                    <small class="text-white-50">Registered</small>
+                    <i class="fas fa-users"></i>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card stat-card" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%);">
+                <div class="card-body">
+                    <h6 class="text-white-50">Active Members</h6>
+                    <h2 class="text-white mb-0">{{ members|selectattr('status', 'equalto', 'active')|list|length }}</h2>
+                    <small class="text-white-50">Currently active</small>
+                    <i class="fas fa-user-check"></i>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card stat-card" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);">
+                <div class="card-body">
+                    <h6 class="text-white-50">With Loans</h6>
+                    <h2 class="text-white mb-0">{{ members_with_loans|default(0) }}</h2>
+                    <small class="text-white-50">Active loans</small>
+                    <i class="fas fa-hand-holding-usd"></i>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card stat-card" style="background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);">
+                <div class="card-body">
+                    <h6 class="text-white-50">Total Savings</h6>
+                    <h2 class="text-white mb-0">₦{{ "{:,.0f}".format(members|sum(attribute='total_savings')|default(0)) }}</h2>
+                    <small class="text-white-50">All time</small>
+                    <i class="fas fa-piggy-bank"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Search and Filter Bar -->
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <div class="input-group">
+                <span class="input-group-text bg-white border-end-0">
+                    <i class="fas fa-search text-muted"></i>
+                </span>
+                <input type="text" class="form-control border-start-0" id="searchMember" 
+                       placeholder="Search by name, email, phone, or member number...">
+                <button class="btn btn-outline-secondary dropdown-toggle" type="button" 
+                        data-bs-toggle="dropdown">Filter</button>
+                <ul class="dropdown-menu">
+                    <li><a class="dropdown-item filter-option" href="#" data-filter="all">All Members</a></li>
+                    <li><a class="dropdown-item filter-option" href="#" data-filter="active">Active Only</a></li>
+                    <li><a class="dropdown-item filter-option" href="#" data-filter="inactive">Inactive Only</a></li>
+                    <li><a class="dropdown-item filter-option" href="#" data-filter="with-loans">With Loans</a></li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li><a class="dropdown-item filter-option" href="#" data-filter="recent">Joined Last 30 Days</a></li>
+                </ul>
+            </div>
+        </div>
+        <div class="col-md-4 text-end">
+            <button class="btn btn-success" onclick="exportMembers()">
+                <i class="fas fa-file-excel"></i> Export
+            </button>
+            <a href="{{ url_for('bulk_upload_members') }}" class="btn btn-info">
+                <i class="fas fa-upload"></i> Bulk Upload
+            </a>
+        </div>
+    </div>
+    
+    <!-- Members Table -->
+    <div class="card">
+        <div class="card-header bg-light">
+            <ul class="nav nav-tabs card-header-tabs" id="memberTabs" role="tablist">
+                <li class="nav-item">
+                    <a class="nav-link active" id="all-tab" data-bs-toggle="tab" href="#all" role="tab">
+                        <i class="fas fa-list"></i> All Members
+                        <span class="badge bg-primary ms-1">{{ members|length }}</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" id="active-tab" data-bs-toggle="tab" href="#active" role="tab">
+                        <i class="fas fa-check-circle"></i> Active
+                        <span class="badge bg-success ms-1">{{ members|selectattr('status', 'equalto', 'active')|list|length }}</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" id="inactive-tab" data-bs-toggle="tab" href="#inactive" role="tab">
+                        <i class="fas fa-times-circle"></i> Inactive
+                        <span class="badge bg-secondary ms-1">{{ members|selectattr('status', 'equalto', 'inactive')|list|length }}</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" id="pending-tab" data-bs-toggle="tab" href="#pending" role="tab">
+                        <i class="fas fa-clock"></i> Pending
+                        <span class="badge bg-warning ms-1">{{ members|selectattr('status', 'equalto', 'pending')|list|length }}</span>
+                    </a>
+                </li>
+            </ul>
+        </div>
+        
+        <div class="card-body">
+            <div class="tab-content" id="memberTabsContent">
+                <!-- All Members Tab -->
+                <div class="tab-pane fade show active" id="all" role="tabpanel">
+                    {% include 'admin/_member_table.html' with context %}
+                </div>
+                
+                <!-- Active Members Tab -->
+                <div class="tab-pane fade" id="active" role="tabpanel">
+                    {% with filtered_members = members|selectattr('status', 'equalto', 'active')|list %}
+                        {% include 'admin/_member_table.html' with context %}
+                    {% endwith %}
+                </div>
+                
+                <!-- Inactive Members Tab -->
+                <div class="tab-pane fade" id="inactive" role="tabpanel">
+                    {% with filtered_members = members|selectattr('status', 'equalto', 'inactive')|list %}
+                        {% include 'admin/_member_table.html' with context %}
+                    {% endwith %}
+                </div>
+                
+                <!-- Pending Members Tab -->
+                <div class="tab-pane fade" id="pending" role="tabpanel">
+                    {% with filtered_members = members|selectattr('status', 'equalto', 'pending')|list %}
+                        {% include 'admin/_member_table.html' with context %}
+                    {% endwith %}
+                </div>
+            </div>
+        </div>
+        
+        <!-- Table Footer with Pagination -->
+        <div class="card-footer bg-white">
+            <div class="row align-items-center">
+                <div class="col-md-6">
+                    <p class="text-muted mb-0">Showing {{ members|length }} members</p>
+                </div>
+                <div class="col-md-6">
+                    <nav aria-label="Member pagination">
+                        <ul class="pagination justify-content-end mb-0">
+                            <li class="page-item disabled">
+                                <a class="page-link" href="#">Previous</a>
+                            </li>
+                            <li class="page-item active"><a class="page-link" href="#">1</a></li>
+                            <li class="page-item"><a class="page-link" href="#">2</a></li>
+                            <li class="page-item"><a class="page-link" href="#">3</a></li>
+                            <li class="page-item">
+                                <a class="page-link" href="#">Next</a>
+                            </li>
+                        </ul>
+                    </nav>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Savings Modal -->
+<div class="modal fade" id="savingsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title"><i class="fas fa-piggy-bank"></i> Record Monthly Savings</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form action="{{ url_for('add_saving') }}" method="POST" id="savingsForm">
+                <div class="modal-body">
+                    <input type="hidden" name="member_id" id="savings_member_id" value="">
+                    
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Member</label>
+                        <div class="form-control bg-light" id="member_name_display">-</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Amount (₦)</label>
+                        <div class="input-group">
+                            <span class="input-group-text">₦</span>
+                            <input type="number" class="form-control" name="amount" id="savings_amount"
+                                   min="5000" step="100" value="5000" required>
+                        </div>
+                        <small class="text-muted">Minimum: ₦5,000 (Bye-laws 8.2.2)</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Month/Year</label>
+                        <input type="month" class="form-control" name="month" id="savings_month"
+                               value="{{ now().strftime('%Y-%m') }}" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Payment Method</label>
+                        <select class="form-select" name="payment_method">
+                            <option value="cash">Cash</option>
+                            <option value="transfer">Bank Transfer</option>
+                            <option value="card">Card Payment</option>
+                            <option value="deduction">Salary Deduction</option>
+                        </select>
+                    </div>
+                    
+                    <div class="alert alert-info" id="lateFeeAlert">
+                        <i class="fas fa-info-circle"></i>
+                        <strong>Note:</strong> A 10% late fee (<span id="lateFeeAmount">₦0</span>) will be applied if payment is after the 10th.
+                    </div>
+                    
+                    <div class="alert alert-success d-none" id="receiptAlert">
+                        <i class="fas fa-check-circle"></i>
+                        <strong>Receipt will be generated automatically.</strong>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="fas fa-times"></i> Cancel
+                    </button>
+                    <button type="submit" class="btn btn-success" id="submitSavings">
+                        <i class="fas fa-save"></i> Record Savings
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title"><i class="fas fa-exclamation-triangle"></i> Confirm Delete</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete this member? This action cannot be undone.</p>
+                <p class="fw-bold" id="deleteMemberName"></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form id="deleteForm" method="POST" style="display: inline;">
+                    <button type="submit" class="btn btn-danger">
+                        <i class="fas fa-trash"></i> Delete Member
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick View Modal -->
+<div class="modal fade" id="quickViewModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title"><i class="fas fa-eye"></i> Member Quick View</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="quickViewContent">
+                <!-- Content loaded via AJAX -->
+                <div class="text-center py-4">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <a href="#" class="btn btn-primary" id="quickViewFullLink">View Full Profile</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Show savings modal
+function showSavingsModal(memberId, memberName) {
+    document.getElementById('savings_member_id').value = memberId;
+    document.getElementById('member_name_display').textContent = memberName;
+    
+    // Calculate late fee preview
+    const amountInput = document.getElementById('savings_amount');
+    const lateFeeSpan = document.getElementById('lateFeeAmount');
+    
+    amountInput.addEventListener('input', function() {
+        const amount = parseFloat(this.value) || 0;
+        const lateFee = amount * 0.10;
+        lateFeeSpan.textContent = '₦' + lateFee.toLocaleString(undefined, {minimumFractionDigits: 2});
+    });
+    
+    // Trigger initial calculation
+    amountInput.dispatchEvent(new Event('input'));
+    
+    var modal = new bootstrap.Modal(document.getElementById('savingsModal'));
+    modal.show();
+}
+
+// Show delete confirmation
+function confirmDelete(memberId, memberName) {
+    document.getElementById('deleteMemberName').textContent = memberName;
+    document.getElementById('deleteForm').action = '/members/delete/' + memberId;
+    
+    var modal = new bootstrap.Modal(document.getElementById('deleteModal'));
+    modal.show();
+}
+
+// Quick view member
+function quickViewMember(memberId) {
+    const modal = new bootstrap.Modal(document.getElementById('quickViewModal'));
+    const content = document.getElementById('quickViewContent');
+    const fullLink = document.getElementById('quickViewFullLink');
+    
+    // Show loading
+    content.innerHTML = `
+        <div class="text-center py-4">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2">Loading member details...</p>
+        </div>
+    `;
+    
+    modal.show();
+    
+    // Fetch member data
+    fetch('/api/member/' + memberId)
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                content.innerHTML = `<div class="alert alert-danger">${data.error}</div>`;
+            } else {
+                content.innerHTML = `
+                    <div class="row">
+                        <div class="col-md-4 text-center">
+                            <div class="bg-light rounded-circle d-inline-flex align-items-center justify-content-center mb-3" 
+                                 style="width: 100px; height: 100px;">
+                                <i class="fas fa-user fa-4x text-primary"></i>
+                            </div>
+                            <h5>${data.first_name} ${data.last_name}</h5>
+                        </div>
+                        <div class="col-md-8">
+                            <table class="table table-sm">
+                                <tr>
+                                    <th>Member #:</th>
+                                    <td>${data.member_number || 'N/A'}</td>
+                                </tr>
+                                <tr>
+                                    <th>Total Savings:</th>
+                                    <td>₦${data.total_savings?.toLocaleString() || '0'}</td>
+                                </tr>
+                                <tr>
+                                    <th>Max Loan:</th>
+                                    <td>₦${data.max_loan?.toLocaleString() || '0'}</td>
+                                </tr>
+                            </table>
+                        </div>
+                    </div>
+                `;
+                fullLink.href = '/members/' + memberId;
+            }
+        })
+        .catch(error => {
+            content.innerHTML = `<div class="alert alert-danger">Error loading member: ${error}</div>`;
+        });
+}
+
+// Search functionality
+document.getElementById('searchMember')?.addEventListener('keyup', function() {
+    const searchText = this.value.toLowerCase();
+    const tables = document.querySelectorAll('.tab-pane.active table tbody');
+    
+    tables.forEach(table => {
+        if (!table) return;
+        const rows = table.getElementsByTagName('tr');
+        
+        for (let row of rows) {
+            const text = row.textContent.toLowerCase();
+            row.style.display = text.includes(searchText) ? '' : 'none';
+        }
+    });
+});
+
+// Filter options
+document.querySelectorAll('.filter-option').forEach(option => {
+    option.addEventListener('click', function(e) {
+        e.preventDefault();
+        const filter = this.dataset.filter;
+        
+        // Trigger tab click based on filter
+        if (filter === 'all') document.getElementById('all-tab').click();
+        else if (filter === 'active') document.getElementById('active-tab').click();
+        else if (filter === 'inactive') document.getElementById('inactive-tab').click();
+        else if (filter === 'pending') document.getElementById('pending-tab').click();
+    });
+});
+
+// Export members
+function exportMembers() {
+    window.location.href = '/api/members/export';
+}
+
+// Validate savings form
+document.getElementById('savingsForm')?.addEventListener('submit', function(e) {
+    const amount = document.getElementById('savings_amount').value;
+    if (amount < 5000) {
+        e.preventDefault();
+        alert('Minimum savings amount is ₦5,000');
+    }
+});
+</script>
+{% endblock %}

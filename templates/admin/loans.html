@@ -1,0 +1,226 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h2><i class="fas fa-hand-holding-usd"></i> Loan Management</h2>
+            <p class="text-muted">Process and track all loan applications</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="{{ url_for('apply_loan') }}" class="btn btn-primary">
+                <i class="fas fa-plus-circle"></i> New Loan Application
+            </a>
+        </div>
+    </div>
+    
+    <!-- Loan Summary -->
+    <div class="row g-4 mb-4">
+        <div class="col-md-3">
+            <div class="card bg-primary text-white">
+                <div class="card-body">
+                    <h6>Active Loans</h6>
+                    <h3>₦{{ "{:,.2f}".format(active_loans) }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-warning text-white">
+                <div class="card-body">
+                    <h6>Pending Applications</h6>
+                    <h3>{{ loans|selectattr('status', 'equalto', 'pending')|list|length }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-success text-white">
+                <div class="card-body">
+                    <h6>Completed</h6>
+                    <h3>{{ loans|selectattr('status', 'equalto', 'completed')|list|length }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-info text-white">
+                <div class="card-body">
+                    <h6>Total Interest</h6>
+                    <h3>₦{{ "{:,.2f}".format(loans|sum(attribute='total_repayment') - loans|sum(attribute='amount')) }}</h3>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Loan Tabs -->
+    <div class="card">
+        <div class="card-header">
+            <ul class="nav nav-tabs card-header-tabs">
+                <li class="nav-item">
+                    <a class="nav-link active" href="#all" data-bs-toggle="tab">All Loans</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="#active" data-bs-toggle="tab">Active</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="#pending" data-bs-toggle="tab">Pending Approval</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="#completed" data-bs-toggle="tab">Completed</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="#overdue" data-bs-toggle="tab">Overdue</a>
+                </li>
+            </ul>
+        </div>
+        <div class="card-body">
+            <div class="tab-content">
+                <div class="tab-pane active" id="all">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Member</th>
+                                    <th>Amount</th>
+                                    <th>Purpose</th>
+                                    <th>Tenure</th>
+                                    <th>Interest Rate</th>
+                                    <th>Total Repayment</th>
+                                    <th>Balance</th>
+                                    <th>Status</th>
+                                    <th>Date Applied</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for loan in loans %}
+                                <tr>
+                                    <td>{{ loan.id }}</td>
+                                    <td>
+                                        <a href="{{ url_for('member_details', member_id=loan.member_id) }}">
+                                            {{ loan.member_name }}
+                                        </a>
+                                    </td>
+                                    <td>₦{{ "{:,.2f}".format(loan.amount) }}</td>
+                                    <td>{{ loan.purpose[:30] }}...</td>
+                                    <td>{{ loan.tenure }} months</td>
+                                    <td>{{ loan.interest_rate }}%</td>
+                                    <td>₦{{ "{:,.2f}".format(loan.total_repayment) }}</td>
+                                    <td>
+                                        {% if loan.status == 'active' %}
+                                        <strong>₦{{ "{:,.2f}".format(loan.balance) }}</strong>
+                                        {% else %}
+                                        -
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if loan.status == 'active' %}
+                                        <span class="badge bg-success">Active</span>
+                                        {% elif loan.status == 'pending' %}
+                                        <span class="badge bg-warning">Pending</span>
+                                        {% elif loan.status == 'completed' %}
+                                        <span class="badge bg-info">Completed</span>
+                                        {% elif loan.status == 'rejected' %}
+                                        <span class="badge bg-danger">Rejected</span>
+                                        {% else %}
+                                        <span class="badge bg-secondary">{{ loan.status }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ loan.date_applied[:10] }}</td>
+                                    <td>
+                                        <div class="btn-group btn-group-sm">
+                                            <button class="btn btn-info" title="View Details">
+                                                <i class="fas fa-eye"></i>
+                                            </button>
+                                            
+                                            {% if loan.status == 'pending' and current_user.role in ['admin', 'treasurer'] %}
+                                            <form action="{{ url_for('approve_loan', loan_id=loan.id) }}" method="POST" class="d-inline">
+                                                <button type="submit" class="btn btn-success" title="Approve">
+                                                    <i class="fas fa-check"></i>
+                                                </button>
+                                            </form>
+                                            <form action="{{ url_for('reject_loan', loan_id=loan.id) }}" method="POST" class="d-inline">
+                                                <button type="submit" class="btn btn-danger" title="Reject">
+                                                    <i class="fas fa-times"></i>
+                                                </button>
+                                            </form>
+                                            {% endif %}
+                                            
+                                            {% if loan.status == 'active' %}
+                                            <button class="btn btn-warning" title="Record Repayment"
+                                                    onclick="showRepaymentModal({{ loan.id }}, {{ loan.balance }})">
+                                                <i class="fas fa-money-bill"></i>
+                                            </button>
+                                            {% endif %}
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <!-- Other tabs would be similar but filtered -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Repayment Modal -->
+<div class="modal fade" id="repaymentModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-warning">
+                <h5 class="modal-title"><i class="fas fa-money-bill"></i> Record Loan Repayment</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form action="" method="POST" id="repaymentForm">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Remaining Balance</label>
+                        <h4 id="remainingBalance">₦0.00</h4>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Payment Amount (₦)</label>
+                        <input type="number" class="form-control" name="amount" 
+                               min="0" step="100" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Payment Method</label>
+                        <select class="form-select" name="method" required>
+                            <option value="cash">Cash</option>
+                            <option value="transfer">Bank Transfer</option>
+                            <option value="cheque">Cheque</option>
+                            <option value="deduction">Salary Deduction</option>
+                        </select>
+                    </div>
+                    
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle"></i>
+                        <strong>Note:</strong> Payments are applied first to penalty, then interest, then principal.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-warning">Record Payment</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function showRepaymentModal(loanId, balance) {
+    document.getElementById('remainingBalance').textContent = '₦' + balance.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+    document.getElementById('repaymentForm').action = '/loans/repay/' + loanId;
+    
+    var modal = new bootstrap.Modal(document.getElementById('repaymentModal'));
+    modal.show();
+}
+</script>
+{% endblock %}

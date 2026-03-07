@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Executive Dashboard -->
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <h2>Enterprise Command Center</h2>
+        </div>
+    </div>
+    
+    <!-- KPIs -->
+    <div class="row g-4 mb-4">
+        <div class="col-md-2">
+            <div class="card bg-primary text-white">
+                <div class="card-body">
+                    <h6>Total Assets</h6>
+                    <h4>₦{{ "{:,.0f}".format(total_assets) }}</h4>
+                    <small>↑ 12% from last year</small>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-2">
+            <div class="card bg-success text-white">
+                <div class="card-body">
+                    <h6>Loan Portfolio</h6>
+                    <h4>₦{{ "{:,.0f}".format(loan_portfolio) }}</h4>
+                    <small>{{ loan_count }} active loans</small>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-2">
+            <div class="card bg-info text-white">
+                <div class="card-body">
+                    <h6>Member Equity</h6>
+                    <h4>₦{{ "{:,.0f}".format(member_equity) }}</h4>
+                    <small>{{ member_count }} members</small>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-2">
+            <div class="card bg-warning text-white">
+                <div class="card-body">
+                    <h6>Default Rate</h6>
+                    <h4>{{ default_rate }}%</h4>
+                    <small>Industry avg: 3.2%</small>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-2">
+            <div class="card bg-danger text-white">
+                <div class="card-body">
+                    <h6>Risk Score</h6>
+                    <h4>{{ risk_score }}/100</h4>
+                    <small>Low risk</small>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-2">
+            <div class="card bg-purple text-white">
+                <div class="card-body">
+                    <h6>ROI</h6>
+                    <h4>{{ roi }}%</h4>
+                    <small>↑ 2.5% from Q1</small>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Real-time Charts -->
+    <div class="row g-4 mb-4">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5>Real-time Financial Dashboard</h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="liveChart" height="300"></canvas>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5>Live Alerts</h5>
+                </div>
+                <div class="card-body" style="max-height: 300px; overflow-y: auto;">
+                    <div class="list-group">
+                        {% for alert in live_alerts %}
+                        <div class="list-group-item list-group-item-{{ alert.type }}">
+                            <small>{{ alert.time }}</small>
+                            <p class="mb-0">{{ alert.message }}</p>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Member Map (if you have location data) -->
+    <div class="row g-4 mb-4">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5>Member Distribution</h5>
+                </div>
+                <div class="card-body">
+                    <div id="memberMap" style="height: 400px;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://maps.googleapis.com/maps/api/js?key=YOUR_API_KEY"></script>
+<script>
+// Initialize real-time updates via WebSocket
+const ws = new WebSocket('ws://localhost:5000/live-updates');
+
+ws.onmessage = function(event) {
+    const data = JSON.parse(event.data);
+    updateDashboard(data);
+};
+
+function updateDashboard(data) {
+    // Update charts
+    // Show notifications
+    // Refresh data
+}
+
+// Initialize map
+function initMap() {
+    const map = new google.maps.Map(document.getElementById('memberMap'), {
+        zoom: 10,
+        center: {lat: 6.5244, lng: 3.3792} // Lagos coordinates
+    });
+    
+    // Add member markers
+    {% for member in members_with_location %}
+    new google.maps.Marker({
+        position: {lat: {{ member.lat }}, lng: {{ member.lng }}},
+        map: map,
+        title: '{{ member.name }}'
+    });
+    {% endfor %}
+}
+</script>
+{% endblock %}

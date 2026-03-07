@@ -1,0 +1,235 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h2><i class="fas fa-tachometer-alt"></i> Dashboard</h2>
+            <p class="text-muted">Welcome back, {{ current_user.username }}! Here's what's happening with the cooperative.</p>
+        </div>
+    </div>
+    
+    <!-- Statistics Cards -->
+    <div class="row g-4 mb-4">
+        <div class="col-md-3">
+            <div class="card stat-card">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="text-white-50">Total Members</h6>
+                            <h2 class="text-white mb-0">{{ members_count }}</h2>
+                            <small class="text-white-50">Active members</small>
+                        </div>
+                        <i class="fas fa-users"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-3">
+            <div class="card stat-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="text-white-50">Total Savings</h6>
+                            <h2 class="text-white mb-0">₦{{ "{:,.2f}".format(total_savings) }}</h2>
+                            <small class="text-white-50">All time</small>
+                        </div>
+                        <i class="fas fa-piggy-bank"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-3">
+            <div class="card stat-card" style="background: linear-gradient(135deg, #5f2c82 0%, #49a09d 100%);">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="text-white-50">Active Loans</h6>
+                            <h2 class="text-white mb-0">₦{{ "{:,.2f}".format(total_loans) }}</h2>
+                            <small class="text-white-50">Outstanding</small>
+                        </div>
+                        <i class="fas fa-hand-holding-usd"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-3">
+            <div class="card stat-card" style="background: linear-gradient(135deg, #f2994a 0%, #f2c94c 100%);">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h6 class="text-white-50">Investments</h6>
+                            <h2 class="text-white mb-0">₦{{ "{:,.2f}".format(total_investments) }}</h2>
+                            <small class="text-white-50">Total portfolio</small>
+                        </div>
+                        <i class="fas fa-chart-line"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Charts Row -->
+    <div class="row g-4 mb-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-chart-pie"></i> Financial Overview</h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="financialChart" height="300"></canvas>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-chart-line"></i> Monthly Trends</h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="trendsChart" height="300"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Recent Transactions -->
+    <div class="row g-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="fas fa-piggy-bank"></i> Recent Savings</h5>
+                    <a href="{{ url_for('savings') }}" class="btn btn-sm btn-primary">View All</a>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Member</th>
+                                    <th>Amount</th>
+                                    <th>Month</th>
+                                    <th>Date</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for saving in recent_savings %}
+                                <tr>
+                                    <td>{{ saving.member_name }}</td>
+                                    <td>₦{{ "{:,.2f}".format(saving.amount) }}</td>
+                                    <td>{{ saving.month }}</td>
+                                    <td>{{ saving.date[:10] }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="fas fa-hand-holding-usd"></i> Recent Loans</h5>
+                    <a href="{{ url_for('loans') }}" class="btn btn-sm btn-primary">View All</a>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Member</th>
+                                    <th>Amount</th>
+                                    <th>Status</th>
+                                    <th>Date</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for loan in recent_loans %}
+                                <tr>
+                                    <td>{{ loan.member_name }}</td>
+                                    <td>₦{{ "{:,.2f}".format(loan.amount) }}</td>
+                                    <td>
+                                        {% if loan.status == 'active' %}
+                                        <span class="badge bg-success">Active</span>
+                                        {% elif loan.status == 'pending' %}
+                                        <span class="badge bg-warning">Pending</span>
+                                        {% elif loan.status == 'completed' %}
+                                        <span class="badge bg-info">Completed</span>
+                                        {% else %}
+                                        <span class="badge bg-danger">{{ loan.status }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ loan.date_approved[:10] if loan.date_approved else loan.date_applied[:10] }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Financial Overview Chart
+const ctx1 = document.getElementById('financialChart').getContext('2d');
+new Chart(ctx1, {
+    type: 'doughnut',
+    data: {
+        labels: ['Savings', 'Loans', 'Investments'],
+        datasets: [{
+            data: [{{ total_savings }}, {{ total_loans }}, {{ total_investments }}],
+            backgroundColor: ['#667eea', '#f093fb', '#f2994a'],
+            borderWidth: 0
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: {
+                position: 'bottom'
+            }
+        }
+    }
+});
+
+// Trends Chart (sample data - would be replaced with real data)
+const ctx2 = document.getElementById('trendsChart').getContext('2d');
+new Chart(ctx2, {
+    type: 'line',
+    data: {
+        labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
+        datasets: [{
+            label: 'Savings',
+            data: [120000, 135000, 148000, 152000, 168000, 175000],
+            borderColor: '#667eea',
+            tension: 0.4
+        }, {
+            label: 'Loans',
+            data: [80000, 95000, 102000, 110000, 115000, 122000],
+            borderColor: '#f093fb',
+            tension: 0.4
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: {
+                position: 'bottom'
+            }
+        }
+    }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Profile - OOU Cooperative{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h2><i class="fas fa-user-edit"></i> Edit Profile</h2>
+            <p class="text-muted">Update your personal information</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="{{ url_for('profile') }}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> Back to Profile
+            </a>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-8 mx-auto">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">Edit Your Information</h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="{{ url_for('edit_profile') }}" enctype="multipart/form-data">
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">First Name</label>
+                                <input type="text" class="form-control" name="first_name" value="{{ member.first_name }}" required>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Last Name</label>
+                                <input type="text" class="form-control" name="last_name" value="{{ member.last_name }}" required>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Email</label>
+                                <input type="email" class="form-control" name="email" value="{{ member.email }}" required>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Phone</label>
+                                <input type="tel" class="form-control" name="phone" value="{{ member.phone }}" required>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Address</label>
+                            <textarea class="form-control" name="address" rows="2">{{ member.address }}</textarea>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Occupation</label>
+                                <input type="text" class="form-control" name="occupation" value="{{ member.occupation }}">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Date of Birth</label>
+                                <input type="date" class="form-control" name="date_of_birth" 
+                                       value="{{ member.date_of_birth.strftime('%Y-%m-%d') if member.date_of_birth }}">
+                            </div>
+                        </div>
+
+                        <hr>
+                        <h5 class="mb-3">Bank Details</h5>
+
+                        <div class="row">
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">Bank Name</label>
+                                <input type="text" class="form-control" name="bank_name" value="{{ member.bank_name }}">
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">Account Name</label>
+                                <input type="text" class="form-control" name="account_name" value="{{ member.account_name }}">
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label class="form-label">Account Number</label>
+                                <input type="text" class="form-control" name="account_number" value="{{ member.account_number }}">
+                            </div>
+                        </div>
+
+                        <hr>
+                        <h5 class="mb-3">Emergency Contact</h5>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Contact Name</label>
+                                <input type="text" class="form-control" name="emergency_contact_name" value="{{ member.emergency_contact_name }}">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Contact Phone</label>
+                                <input type="tel" class="form-control" name="emergency_contact_phone" value="{{ member.emergency_contact_phone }}">
+                            </div>
+                        </div>
+
+                        <hr>
+                        <h5 class="mb-3">Profile Photo</h5>
+
+                        <div class="mb-3">
+                            <label class="form-label">Upload New Photo</label>
+                            <input type="file" class="form-control" name="photo" accept="image/*">
+                            <small class="text-muted">Leave empty to keep current photo</small>
+                        </div>
+
+                        <hr>
+                        <h5 class="mb-3">Identification (Optional)</h5>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">BVN</label>
+                                <input type="text" class="form-control" name="bvn" value="{{ member.bvn }}" maxlength="11">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">NIN</label>
+                                <input type="text" class="form-control" name="nin" value="{{ member.nin }}" maxlength="11">
+                            </div>
+                        </div>
+
+                        <div class="text-center mt-4">
+                            <button type="submit" class="btn btn-primary btn-lg">
+                                <i class="fas fa-save"></i> Save Changes
+                            </button>
+                            <a href="{{ url_for('profile') }}" class="btn btn-secondary btn-lg">Cancel</a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

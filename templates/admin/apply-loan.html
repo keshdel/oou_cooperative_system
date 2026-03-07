@@ -1,0 +1,292 @@
+{% extends "base.html" %}
+
+{% block title %}Apply for Loan - OOU Cooperative{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h2><i class="fas fa-hand-holding-usd"></i> New Loan Application</h2>
+            <p class="text-muted">Process a new loan application for a member</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="{{ url_for('loans') }}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> Back to Loans
+            </a>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header bg-primary text-white">
+            <h5 class="mb-0"><i class="fas fa-file-invoice"></i> Loan Application Form</h5>
+        </div>
+        <div class="card-body">
+            <form method="POST" id="loanForm">
+                <div class="row">
+                    <div class="col-md-12">
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle"></i>
+                            <strong>Loan Terms (Bye-laws Section 9):</strong>
+                            <ul class="mb-0 mt-2">
+                                <li>Maximum loan amount: 2x total savings</li>
+                                <li>Minimum membership: 6 months</li>
+                                <li>Minimum savings required: ₦50,000</li>
+                                <li>Interest rate: 11% per annum (fixed)</li>
+                                <li>Maximum tenure: 18 months</li>
+                                <li>Two guarantors required (must be members)</li>
+                                <li>1% insurance premium deducted at disbursement</li>
+                                <li>1% application fee</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Select Member *</label>
+                            <select class="form-select" name="member_id" id="memberSelect" required>
+                                <option value="">-- Choose member --</option>
+                                {% for member in members %}
+                                <option value="{{ member.id }}" 
+                                        {% if request.args.get('member_id')|int == member.id %}selected{% endif %}>
+                                    {{ member.first_name }} {{ member.last_name }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Loan Amount (₦) *</label>
+                            <input type="number" class="form-control" name="amount" id="amount" 
+                                   min="1000" step="1000" value="100000" required>
+                            <small class="text-muted" id="maxLoanHint"></small>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Loan Purpose *</label>
+                            <select class="form-select" name="purpose" required>
+                                <option value="">-- Select purpose --</option>
+                                <option value="Personal">Personal</option>
+                                <option value="Business">Business</option>
+                                <option value="Education">Education</option>
+                                <option value="Housing">Housing</option>
+                                <option value="Emergency">Emergency</option>
+                                <option value="Asset Purchase">Asset Purchase</option>
+                                <option value="Agriculture">Agriculture</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Loan Tenure (months) *</label>
+                            <select class="form-select" name="tenure" id="tenure" required>
+                                <option value="">-- Select tenure --</option>
+                                <option value="3">3 months</option>
+                                <option value="6">6 months</option>
+                                <option value="9">9 months</option>
+                                <option value="12" selected>12 months</option>
+                                <option value="15">15 months</option>
+                                <option value="18">18 months (max)</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Description (optional)</label>
+                            <textarea class="form-control" name="description" rows="3" 
+                                      placeholder="Provide additional details..."></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Loan Calculator Preview -->
+                <div class="row mt-4">
+                    <div class="col-md-12">
+                        <div class="card bg-light">
+                            <div class="card-header bg-secondary text-white">
+                                <h6 class="mb-0"><i class="fas fa-calculator"></i> Loan Repayment Calculator</h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="row text-center">
+                                    <div class="col-md-3">
+                                        <label>Principal</label>
+                                        <h5 id="calcPrincipal">₦0</h5>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label>Interest (11% p.a.)</label>
+                                        <h5 id="calcInterest">₦0</h5>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label>Total Repayment</label>
+                                        <h5 id="calcTotal">₦0</h5>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label>Monthly Payment</label>
+                                        <h5 id="calcMonthly">₦0</h5>
+                                    </div>
+                                </div>
+                                <div class="row mt-2">
+                                    <div class="col-md-12">
+                                        <small class="text-muted">
+                                            * Insurance (1%): ₦<span id="calcInsurance">0</span> | 
+                                            Application Fee (1%): ₦<span id="calcFee">0</span> | 
+                                            Net Disbursement: ₦<span id="calcNet">0</span>
+                                        </small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Guarantors Section -->
+                <div class="row mt-4">
+                    <div class="col-md-12">
+                        <h5 class="mb-3">Guarantors (Minimum 2 Required)</h5>
+                        <p class="text-muted">Guarantors must be active members of the cooperative.</p>
+                    </div>
+
+                    <div class="col-md-6">
+                        <div class="card mb-3">
+                            <div class="card-header bg-light">
+                                <h6 class="mb-0">Guarantor 1</h6>
+                            </div>
+                            <div class="card-body">
+                                <select class="form-select" name="guarantor1" required>
+                                    <option value="">-- Select guarantor --</option>
+                                    {% for member in members %}
+                                    <option value="{{ member.id }}">
+                                        {{ member.first_name }} {{ member.last_name }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-md-6">
+                        <div class="card mb-3">
+                            <div class="card-header bg-light">
+                                <h6 class="mb-0">Guarantor 2</h6>
+                            </div>
+                            <div class="card-body">
+                                <select class="form-select" name="guarantor2" required>
+                                    <option value="">-- Select guarantor --</option>
+                                    {% for member in members %}
+                                    <option value="{{ member.id }}">
+                                        {{ member.first_name }} {{ member.last_name }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Terms and Submit -->
+                <hr>
+                <div class="form-check mb-3">
+                    <input class="form-check-input" type="checkbox" id="termsAgree" required>
+                    <label class="form-check-label" for="termsAgree">
+                        I confirm that all information provided is true and correct. I have read and agree to the loan terms and conditions.
+                    </label>
+                </div>
+
+                <div class="text-end">
+                    <button type="reset" class="btn btn-secondary">
+                        <i class="fas fa-undo"></i> Reset
+                    </button>
+                    <button type="submit" class="btn btn-primary" id="submitBtn" disabled>
+                        <i class="fas fa-paper-plane"></i> Submit Application
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const memberSelect = document.getElementById('memberSelect');
+    const amountInput = document.getElementById('amount');
+    const tenureSelect = document.getElementById('tenure');
+    const termsCheck = document.getElementById('termsAgree');
+    const submitBtn = document.getElementById('submitBtn');
+    
+    // Enable submit only when terms agreed
+    termsCheck.addEventListener('change', function() {
+        submitBtn.disabled = !this.checked;
+    });
+    
+    // Loan calculator function
+    function calculateLoan() {
+        const amount = parseFloat(amountInput.value) || 0;
+        const tenure = parseInt(tenureSelect.value) || 0;
+        const rate = 11; // fixed interest rate
+        
+        if (amount > 0 && tenure > 0) {
+            const monthlyRate = (rate / 100) / 12;
+            const monthlyPayment = amount * monthlyRate * Math.pow(1 + monthlyRate, tenure) / (Math.pow(1 + monthlyRate, tenure) - 1);
+            const totalRepayment = monthlyPayment * tenure;
+            const totalInterest = totalRepayment - amount;
+            const insurance = amount * 0.01;
+            const fee = amount * 0.01;
+            const netDisbursement = amount - insurance - fee;
+            
+            document.getElementById('calcPrincipal').textContent = '₦' + amount.toLocaleString(undefined, {minimumFractionDigits: 2});
+            document.getElementById('calcInterest').textContent = '₦' + totalInterest.toLocaleString(undefined, {minimumFractionDigits: 2});
+            document.getElementById('calcTotal').textContent = '₦' + totalRepayment.toLocaleString(undefined, {minimumFractionDigits: 2});
+            document.getElementById('calcMonthly').textContent = '₦' + monthlyPayment.toLocaleString(undefined, {minimumFractionDigits: 2});
+            document.getElementById('calcInsurance').textContent = insurance.toLocaleString(undefined, {minimumFractionDigits: 2});
+            document.getElementById('calcFee').textContent = fee.toLocaleString(undefined, {minimumFractionDigits: 2});
+            document.getElementById('calcNet').textContent = netDisbursement.toLocaleString(undefined, {minimumFractionDigits: 2});
+        } else {
+            document.getElementById('calcPrincipal').textContent = '₦0';
+            document.getElementById('calcInterest').textContent = '₦0';
+            document.getElementById('calcTotal').textContent = '₦0';
+            document.getElementById('calcMonthly').textContent = '₦0';
+        }
+    }
+    
+    amountInput.addEventListener('input', calculateLoan);
+    tenureSelect.addEventListener('change', calculateLoan);
+    
+    // Initial calculation
+    calculateLoan();
+    
+    // When member is selected, fetch their savings to show max loan
+    memberSelect.addEventListener('change', function() {
+        const memberId = this.value;
+        if (memberId) {
+            fetch('/api/member/' + memberId)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        console.error(data.error);
+                    } else {
+                        const maxLoan = data.total_savings * 2;
+                        document.getElementById('maxLoanHint').textContent = 
+                            `Max eligible: ₦${maxLoan.toLocaleString()} (2x savings of ₦${data.total_savings.toLocaleString()})`;
+                        amountInput.max = maxLoan;
+                        // Optionally set amount to max if current exceeds
+                        if (parseFloat(amountInput.value) > maxLoan) {
+                            amountInput.value = maxLoan;
+                            calculateLoan();
+                        }
+                    }
+                })
+                .catch(err => console.error(err));
+        } else {
+            document.getElementById('maxLoanHint').textContent = '';
+        }
+    });
+    
+    // If member_id is pre-selected (via query param), trigger change to load data
+    if (memberSelect.value) {
+        memberSelect.dispatchEvent(new Event('change'));
+    }
+});
+</script>
+{% endblock %}

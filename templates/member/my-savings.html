@@ -1,0 +1,406 @@
+{% extends "base.html" %}
+
+{% block title %}My Savings - OOU Cooperative{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h2><i class="fas fa-piggy-bank"></i> My Savings</h2>
+            <p class="text-muted">Track your savings contributions and history</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <button class="btn btn-success" onclick="exportToExcel()">
+                <i class="fas fa-file-excel"></i> Export to Excel
+            </button>
+            <button class="btn btn-primary" onclick="window.print()">
+                <i class="fas fa-print"></i> Print
+            </button>
+        </div>
+    </div>
+
+    <!-- Savings Summary Cards -->
+    <div class="row g-4 mb-4">
+        <div class="col-md-3">
+            <div class="card bg-primary text-white">
+                <div class="card-body">
+                    <h6>Total Savings</h6>
+                    <h3>₦{{ "{:,.2f}".format(total_savings) }}</h3>
+                    <small>Lifetime contributions</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-success text-white">
+                <div class="card-body">
+                    <h6>This Year</h6>
+                    <h3>₦{{ "{:,.2f}".format(year_savings) }}</h3>
+                    <small>{{ year_percentage }}% of total</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-info text-white">
+                <div class="card-body">
+                    <h6>This Month</h6>
+                    <h3>₦{{ "{:,.2f}".format(month_savings) }}</h3>
+                    <small>{{ month_percentage }}% of target</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-warning text-white">
+                <div class="card-body">
+                    <h6>Dividend Earned</h6>
+                    <h3>₦{{ "{:,.2f}".format(dividend_earned) }}</h3>
+                    <small>Based on current savings</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Savings Chart -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Savings Growth Chart</h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="savingsChart" height="100"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <form method="GET" class="row g-3">
+                        <div class="col-md-3">
+                            <label class="form-label">Year</label>
+                            <select class="form-select" name="year">
+                                <option value="">All Years</option>
+                                {% for year in available_years %}
+                                <option value="{{ year }}" {% if selected_year == year %}selected{% endif %}>
+                                    {{ year }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Month</label>
+                            <select class="form-select" name="month">
+                                <option value="">All Months</option>
+                                {% for month in range(1, 13) %}
+                                <option value="{{ month }}" {% if selected_month == month %}selected{% endif %}>
+                                    {{ datetime(2000, month, 1).strftime('%B') }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Status</label>
+                            <select class="form-select" name="status">
+                                <option value="">All</option>
+                                <option value="ontime" {% if status == 'ontime' %}selected{% endif %}>On Time</option>
+                                <option value="late" {% if status == 'late' %}selected{% endif %}>Late</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2 d-flex align-items-end">
+                            <button type="submit" class="btn btn-primary w-100">
+                                <i class="fas fa-filter"></i> Apply Filters
+                            </button>
+                        </div>
+                        <div class="col-md-2 d-flex align-items-end">
+                            <a href="{{ url_for('my_savings') }}" class="btn btn-secondary w-100">
+                                <i class="fas fa-undo"></i> Reset
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Savings Table -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Savings History</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover" id="savingsTable">
+                            <thead>
+                                <tr>
+                                    <th>S/N</th>
+                                    <th>Date</th>
+                                    <th>Month/Year</th>
+                                    <th>Amount (₦)</th>
+                                    <th>Late Fee (₦)</th>
+                                    <th>Total (₦)</th>
+                                    <th>Payment Method</th>
+                                    <th>Receipt No.</th>
+                                    <th>Status</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for saving in savings %}
+                                <tr>
+                                    <td>{{ loop.index + (page-1)*20 }}</td>
+                                    <td>{{ saving.date.strftime('%d/%m/%Y') }}</td>
+                                    <td>{{ saving.month }}</td>
+                                    <td>₦{{ "{:,.2f}".format(saving.amount - saving.late_fee) }}</td>
+                                    <td>
+                                        {% if saving.late_fee > 0 %}
+                                        ₦{{ "{:,.2f}".format(saving.late_fee) }}
+                                        {% else %}
+                                        -
+                                        {% endif %}
+                                    </td>
+                                    <td><strong>₦{{ "{:,.2f}".format(saving.amount) }}</strong></td>
+                                    <td>
+                                        <span class="badge bg-info">{{ saving.payment_method|title }}</span>
+                                    </td>
+                                    <td>
+                                        <a href="#" onclick="viewReceipt('{{ saving.receipt_number }}')">
+                                            {{ saving.receipt_number }}
+                                        </a>
+                                    </td>
+                                    <td>
+                                        {% if saving.late_fee > 0 %}
+                                        <span class="badge bg-warning">Late Payment</span>
+                                        {% else %}
+                                        <span class="badge bg-success">On Time</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <button class="btn btn-sm btn-info" onclick="viewReceipt('{{ saving.receipt_number }}')">
+                                            <i class="fas fa-receipt"></i>
+                                        </button>
+                                        <button class="btn btn-sm btn-primary" onclick="downloadReceipt('{{ saving.receipt_number }}')">
+                                            <i class="fas fa-download"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                                {% else %}
+                                <tr>
+                                    <td colspan="10" class="text-center py-4">
+                                        <i class="fas fa-piggy-bank fa-3x text-muted mb-3"></i>
+                                        <p class="text-muted">No savings records found</p>
+                                        <p>Start building your savings today!</p>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                            <tfoot class="table-primary">
+                                <tr>
+                                    <th colspan="3">Totals</th>
+                                    <th>₦{{ "{:,.2f}".format(total_principal) }}</th>
+                                    <th>₦{{ "{:,.2f}".format(total_late_fees) }}</th>
+                                    <th>₦{{ "{:,.2f}".format(total_amount) }}</th>
+                                    <th colspan="4"></th>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+
+                    <!-- Pagination -->
+                    {% if total_pages > 1 %}
+                    <nav aria-label="Page navigation" class="mt-4">
+                        <ul class="pagination justify-content-center">
+                            <li class="page-item {{ 'disabled' if page == 1 }}">
+                                <a class="page-link" href="{{ url_for('my_savings', page=page-1, year=selected_year, month=selected_month, status=status) }}">
+                                    Previous
+                                </a>
+                            </li>
+                            
+                            {% for p in range(1, total_pages + 1) %}
+                                {% if p == page %}
+                                <li class="page-item active"><span class="page-link">{{ p }}</span></li>
+                                {% elif p >= page-2 and p <= page+2 %}
+                                <li class="page-item">
+                                    <a class="page-link" href="{{ url_for('my_savings', page=p, year=selected_year, month=selected_month, status=status) }}">
+                                        {{ p }}
+                                    </a>
+                                </li>
+                                {% endif %}
+                            {% endfor %}
+                            
+                            <li class="page-item {{ 'disabled' if page == total_pages }}">
+                                <a class="page-link" href="{{ url_for('my_savings', page=page+1, year=selected_year, month=selected_month, status=status) }}">
+                                    Next
+                                </a>
+                            </li>
+                        </ul>
+                    </nav>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Savings Summary by Year -->
+    <div class="row mt-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Yearly Summary</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Year</th>
+                                    <th>Total Savings</th>
+                                    <th>Late Fees</th>
+                                    <th>Net Savings</th>
+                                    <th>Transactions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for year_summary in yearly_summaries %}
+                                <tr>
+                                    <td><strong>{{ year_summary.year }}</strong></td>
+                                    <td>₦{{ "{:,.2f}".format(year_summary.total) }}</td>
+                                    <td>₦{{ "{:,.2f}".format(year_summary.late_fees) }}</td>
+                                    <td>₦{{ "{:,.2f}".format(year_summary.net) }}</td>
+                                    <td>{{ year_summary.count }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Savings Tips</h5>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info">
+                        <i class="fas fa-lightbulb"></i>
+                        <strong>Did you know?</strong>
+                        <p class="mb-0 mt-2">Your savings determine your loan eligibility. You can borrow up to 2x your total savings!</p>
+                    </div>
+                    
+                    <div class="alert alert-success">
+                        <i class="fas fa-chart-line"></i>
+                        <strong>Next Milestone:</strong>
+                        {% if next_milestone %}
+                        <p class="mb-0 mt-2">You need ₦{{ "{:,.2f}".format(next_milestone.needed) }} more to reach ₦{{ "{:,.2f}".format(next_milestone.target) }}</p>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="alert alert-warning">
+                        <i class="fas fa-calendar"></i>
+                        <strong>Save on time:</strong>
+                        <p class="mb-0 mt-2">Save before the 10th of each month to avoid 10% late fees!</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Receipt Modal -->
+<div class="modal fade" id="receiptModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><i class="fas fa-receipt"></i> Payment Receipt</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="receiptContent">
+                <!-- Receipt content will be loaded here -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" onclick="printReceipt()">
+                    <i class="fas fa-print"></i> Print
+                </button>
+                <button type="button" class="btn btn-success" onclick="downloadReceipt()">
+                    <i class="fas fa-download"></i> Download
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+// Savings Chart
+const ctx = document.getElementById('savingsChart').getContext('2d');
+new Chart(ctx, {
+    type: 'line',
+    data: {
+        labels: {{ chart_labels|tojson }},
+        datasets: [{
+            label: 'Monthly Savings',
+            data: {{ chart_data|tojson }},
+            borderColor: '#28a745',
+            backgroundColor: 'rgba(40, 167, 69, 0.1)',
+            tension: 0.4,
+            fill: true
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: {
+                display: false
+            }
+        },
+        scales: {
+            y: {
+                beginAtZero: true,
+                ticks: {
+                    callback: function(value) {
+                        return '₦' + value.toLocaleString();
+                    }
+                }
+            }
+        }
+    }
+});
+
+// View Receipt
+function viewReceipt(receiptNumber) {
+    fetch('/api/receipt/' + receiptNumber)
+        .then(response => response.text())
+        .then(html => {
+            document.getElementById('receiptContent').innerHTML = html;
+            new bootstrap.Modal(document.getElementById('receiptModal')).show();
+        });
+}
+
+// Download Receipt
+function downloadReceipt(receiptNumber) {
+    window.location.href = '/api/receipt/download/' + receiptNumber;
+}
+
+// Export to Excel
+function exportToExcel() {
+    window.location.href = '/api/savings/export?year={{ selected_year }}&month={{ selected_month }}&status={{ status }}';
+}
+
+// Print Receipt
+function printReceipt() {
+    window.print();
+}
+</script>
+{% endblock %}

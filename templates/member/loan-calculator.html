@@ -1,0 +1,246 @@
+{% extends "base.html" %}
+
+{% block title %}Loan Calculator - OOU Cooperative{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h2><i class="fas fa-calculator"></i> Loan Calculator</h2>
+            <p class="text-muted">Calculate your loan repayments before applying</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="{{ url_for('apply_loan_member') }}" class="btn btn-success">
+                <i class="fas fa-plus-circle"></i> Apply Now
+            </a>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-5">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">Loan Parameters</h5>
+                </div>
+                <div class="card-body">
+                    <form id="calculatorForm">
+                        <div class="mb-3">
+                            <label class="form-label">Loan Amount (₦)</label>
+                            <input type="number" class="form-control" id="amount" 
+                                   value="{{ request.args.amount or 100000 }}" min="1000" step="1000">
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Interest Rate (% per annum)</label>
+                            <input type="number" class="form-control" id="rate" 
+                                   value="{{ settings.loan_interest_rate or 11 }}" min="1" max="30" step="0.1" readonly>
+                            <small class="text-muted">Fixed rate as per Bye-laws</small>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Tenure (months)</label>
+                            <select class="form-select" id="tenure">
+                                <option value="3">3 months</option>
+                                <option value="6">6 months</option>
+                                <option value="9">9 months</option>
+                                <option value="12" selected>12 months</option>
+                                <option value="15">15 months</option>
+                                <option value="18">18 months (max)</option>
+                            </select>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Your Total Savings</label>
+                            <input type="number" class="form-control" id="savings" 
+                                   value="{{ member.total_savings }}" readonly>
+                            <small class="text-muted">Maximum loan = 2x savings (₦{{ "{:,.2f}".format(member.total_savings * 2) }})</small>
+                        </div>
+                        
+                        <button type="button" class="btn btn-primary w-100" onclick="calculate()">
+                            Calculate
+                        </button>
+                    </form>
+                </div>
+            </div>
+            
+            <div class="card mt-4">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0">Loan Rules</h5>
+                </div>
+                <div class="card-body">
+                    <ul class="list-unstyled">
+                        <li><i class="fas fa-check text-success"></i> Maximum loan: 2x your savings</li>
+                        <li><i class="fas fa-check text-success"></i> Minimum savings required: ₦50,000</li>
+                        <li><i class="fas fa-check text-success"></i> Membership: at least 6 months</li>
+                        <li><i class="fas fa-check text-success"></i> Interest rate: max 11% per annum</li>
+                        <li><i class="fas fa-check text-success"></i> Insurance: 1% deducted upfront</li>
+                        <li><i class="fas fa-check text-success"></i> Two guarantors required</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-7">
+            <div class="card">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0">Repayment Summary</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row text-center mb-4">
+                        <div class="col-md-4">
+                            <div class="p-3 border rounded">
+                                <h6>Principal</h6>
+                                <h3 id="principal">₦0</h3>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="p-3 border rounded">
+                                <h6>Total Interest</h6>
+                                <h3 id="totalInterest">₦0</h3>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="p-3 border rounded bg-light">
+                                <h6>Total Repayment</h6>
+                                <h3 id="totalRepayment" class="text-primary">₦0</h3>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row text-center mb-4">
+                        <div class="col-md-6">
+                            <div class="p-3 border rounded">
+                                <h6>Monthly Payment</h6>
+                                <h3 id="monthlyPayment">₦0</h3>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="p-3 border rounded">
+                                <h6>Effective Rate</h6>
+                                <h3 id="effectiveRate">0%</h3>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <hr>
+                    
+                    <div class="row">
+                        <div class="col-12">
+                            <h6>Loan Insurance & Fees</h6>
+                            <table class="table table-sm">
+                                <tr>
+                                    <td>Loan Amount:</td>
+                                    <td class="text-end" id="feeAmount">₦0</td>
+                                </tr>
+                                <tr>
+                                    <td>Insurance Premium (1%):</td>
+                                    <td class="text-end" id="insurance">₦0</td>
+                                </tr>
+                                <tr>
+                                    <td>Application Fee (1%):</td>
+                                    <td class="text-end" id="appFee">₦0</td>
+                                </tr>
+                                <tr class="table-warning">
+                                    <th>Amount Received:</th>
+                                    <th class="text-end" id="received">₦0</th>
+                                </tr>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <hr>
+                    
+                    <h6>Amortization Schedule</h6>
+                    <div class="table-responsive" style="max-height: 300px; overflow-y: auto;">
+                        <table class="table table-sm table-striped" id="scheduleTable">
+                            <thead>
+                                <tr>
+                                    <th>Month</th>
+                                    <th>Payment</th>
+                                    <th>Principal</th>
+                                    <th>Interest</th>
+                                    <th>Balance</th>
+                                </tr>
+                            </thead>
+                            <tbody id="scheduleBody">
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <div class="text-center mt-3">
+                        <a href="{{ url_for('apply_loan_member') }}" class="btn btn-success btn-lg">
+                            Proceed to Apply <i class="fas fa-arrow-right"></i>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function calculate() {
+    const amount = parseFloat(document.getElementById('amount').value) || 0;
+    const rate = parseFloat(document.getElementById('rate').value) / 100;
+    const tenure = parseInt(document.getElementById('tenure').value);
+    const savings = parseFloat(document.getElementById('savings').value);
+    
+    // Check if amount exceeds maximum
+    const maxLoan = savings * 2;
+    if (amount > maxLoan) {
+        Swal.fire({
+            icon: 'warning',
+            title: 'Loan Amount Exceeds Limit',
+            text: `Maximum loan amount is ₦${maxLoan.toLocaleString()} (2x your savings)`
+        });
+        return;
+    }
+    
+    // Calculate monthly interest rate
+    const monthlyRate = rate / 12;
+    
+    // Calculate monthly payment using loan amortization formula
+    const monthlyPayment = amount * monthlyRate * Math.pow(1 + monthlyRate, tenure) / (Math.pow(1 + monthlyRate, tenure) - 1);
+    const totalRepayment = monthlyPayment * tenure;
+    const totalInterest = totalRepayment - amount;
+    
+    // Update summary
+    document.getElementById('principal').innerHTML = '₦' + amount.toLocaleString(undefined, {minimumFractionDigits: 2});
+    document.getElementById('totalInterest').innerHTML = '₦' + totalInterest.toLocaleString(undefined, {minimumFractionDigits: 2});
+    document.getElementById('totalRepayment').innerHTML = '₦' + totalRepayment.toLocaleString(undefined, {minimumFractionDigits: 2});
+    document.getElementById('monthlyPayment').innerHTML = '₦' + monthlyPayment.toLocaleString(undefined, {minimumFractionDigits: 2});
+    document.getElementById('effectiveRate').innerHTML = ((totalInterest / amount) * 100).toFixed(2) + '%';
+    
+    // Fees
+    const insurance = amount * 0.01;
+    const appFee = amount * 0.01;
+    const received = amount - insurance - appFee;
+    
+    document.getElementById('feeAmount').innerHTML = '₦' + amount.toLocaleString(undefined, {minimumFractionDigits: 2});
+    document.getElementById('insurance').innerHTML = '₦' + insurance.toLocaleString(undefined, {minimumFractionDigits: 2});
+    document.getElementById('appFee').innerHTML = '₦' + appFee.toLocaleString(undefined, {minimumFractionDigits: 2});
+    document.getElementById('received').innerHTML = '₦' + received.toLocaleString(undefined, {minimumFractionDigits: 2});
+    
+    // Generate amortization schedule
+    let balance = amount;
+    let scheduleBody = '';
+    for (let i = 1; i <= tenure; i++) {
+        const interest = balance * monthlyRate;
+        const principal = monthlyPayment - interest;
+        balance -= principal;
+        
+        scheduleBody += `<tr>
+            <td>${i}</td>
+            <td>₦${monthlyPayment.toFixed(2)}</td>
+            <td>₦${principal.toFixed(2)}</td>
+            <td>₦${interest.toFixed(2)}</td>
+            <td>₦${Math.max(0, balance).toFixed(2)}</td>
+        </tr>`;
+    }
+    document.getElementById('scheduleBody').innerHTML = scheduleBody;
+}
+
+// Initialize on page load
+calculate();
+</script>
+{% endblock %}

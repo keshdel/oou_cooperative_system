@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+
+{% block title %}My Transactions - OOU Cooperative{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h2><i class="fas fa-history"></i> Transaction History</h2>
+            <p class="text-muted">View all your financial transactions</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <button class="btn btn-success" onclick="exportTransactions()">
+                <i class="fas fa-file-excel"></i> Export to Excel
+            </button>
+            <a href="{{ url_for('statements') }}" class="btn btn-primary">
+                <i class="fas fa-file-pdf"></i> Statements
+            </a>
+        </div>
+    </div>
+
+    <!-- Filter Card -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="GET" class="row g-3">
+                <div class="col-md-3">
+                    <label class="form-label">From Date</label>
+                    <input type="date" class="form-control" name="from_date" value="{{ from_date }}">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">To Date</label>
+                    <input type="date" class="form-control" name="to_date" value="{{ to_date }}">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Transaction Type</label>
+                    <select class="form-select" name="type">
+                        <option value="">All</option>
+                        <option value="savings" {% if type == 'savings' %}selected{% endif %}>Savings</option>
+                        <option value="loan" {% if type == 'loan' %}selected{% endif %}>Loan</option>
+                        <option value="dividend" {% if type == 'dividend' %}selected{% endif %}>Dividend</option>
+                        <option value="fee" {% if type == 'fee' %}selected{% endif %}>Fee</option>
+                    </select>
+                </div>
+                <div class="col-md-3 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="fas fa-filter"></i> Apply Filters
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Transactions Table -->
+    <div class="card">
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Transaction ID</th>
+                            <th>Description</th>
+                            <th>Type</th>
+                            <th>Debit (₦)</th>
+                            <th>Credit (₦)</th>
+                            <th>Balance (₦)</th>
+                            <th>Status</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for tx in transactions %}
+                        <tr>
+                            <td>{{ tx.date.strftime('%d/%m/%Y %H:%M') }}</td>
+                            <td>{{ tx.transaction_number }}</td>
+                            <td>{{ tx.description }}</td>
+                            <td>
+                                <span class="badge bg-{{ tx.type_color }}">{{ tx.transaction_type|title }}</span>
+                            </td>
+                            <td class="text-danger">
+                                {% if tx.type == 'debit' %}₦{{ "{:,.2f}".format(tx.amount) }}{% endif %}
+                            </td>
+                            <td class="text-success">
+                                {% if tx.type == 'credit' %}₦{{ "{:,.2f}".format(tx.amount) }}{% endif %}
+                            </td>
+                            <td><strong>₦{{ "{:,.2f}".format(tx.running_balance) }}</strong></td>
+                            <td>
+                                {% if tx.status == 'completed' %}
+                                <span class="badge bg-success">Completed</span>
+                                {% elif tx.status == 'pending' %}
+                                <span class="badge bg-warning">Pending</span>
+                                {% elif tx.status == 'failed' %}
+                                <span class="badge bg-danger">Failed</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <button class="btn btn-sm btn-info" onclick="viewTransaction({{ tx.id }})">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                                <button class="btn btn-sm btn-primary" onclick="downloadReceipt('{{ tx.receipt_number }}')">
+                                    <i class="fas fa-download"></i>
+                                </button>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="9" class="text-center py-4">
+                                <i class="fas fa-exchange-alt fa-3x text-muted mb-3"></i>
+                                <p>No transactions found</p>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            {% if pages > 1 %}
+            <nav aria-label="Page navigation" class="mt-4">
+                <ul class="pagination justify-content-center">
+                    <li class="page-item {{ 'disabled' if page == 1 }}">
+                        <a class="page-link" href="{{ url_for('transactions', page=page-1, from_date=from_date, to_date=to_date, type=type) }}">Previous</a>
+                    </li>
+                    {% for p in range(1, pages+1) %}
+                        {% if p == page %}
+                        <li class="page-item active"><span class="page-link">{{ p }}</span></li>
+                        {% elif p >= page-2 and p <= page+2 %}
+                        <li class="page-item"><a class="page-link" href="{{ url_for('transactions', page=p, from_date=from_date, to_date=to_date, type=type) }}">{{ p }}</a></li>
+                        {% endif %}
+                    {% endfor %}
+                    <li class="page-item {{ 'disabled' if page == pages }}">
+                        <a class="page-link" href="{{ url_for('transactions', page=page+1, from_date=from_date, to_date=to_date, type=type) }}">Next</a>
+                    </li>
+                </ul>
+            </nav>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script>
+function viewTransaction(id) {
+    window.location.href = '/transaction/' + id;
+}
+
+function downloadReceipt(receiptNumber) {
+    window.location.href = '/api/receipt/download/' + receiptNumber;
+}
+
+function exportTransactions() {
+    window.location.href = '/api/transactions/export?' + window.location.search.substring(1);
+}
+</script>
+{% endblock %}

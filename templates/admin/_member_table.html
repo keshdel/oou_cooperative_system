@@ -1,0 +1,122 @@
+{% if filtered_members is defined %}
+    {% set members_list = filtered_members %}
+{% else %}
+    {% set members_list = members %}
+{% endif %}
+
+<div class="table-responsive">
+    <table class="table table-hover align-middle" id="memberTable">
+        <thead class="table-light">
+            <tr>
+                <th>#</th>
+                <th>Member #</th>
+                <th>Name</th>
+                <th>Contact</th>
+                <th>Savings</th>
+                <th>Monthly</th>
+                <th>Status</th>
+                <th>Joined</th>
+                <th class="text-end">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for member in members_list %}
+            <tr>
+                <td>{{ loop.index }}</td>
+                <td>
+                    <code>{{ member.member_number or 'N/A' }}</code>
+                </td>
+                <td>
+                    <div class="d-flex align-items-center">
+                        <div class="avatar-circle bg-primary text-white me-2">
+                            {{ member.first_name[:1] }}{{ member.last_name[:1] }}
+                        </div>
+                        <div>
+                            <strong>{{ member.first_name }} {{ member.last_name }}</strong>
+                            {% if member.occupation %}
+                            <br><small class="text-muted">{{ member.occupation }}</small>
+                            {% endif %}
+                        </div>
+                    </div>
+                </td>
+                <td>
+                    <div>
+                        {% if member.email %}
+                        <i class="fas fa-envelope fa-fw text-muted"></i> {{ member.email }}<br>
+                        {% endif %}
+                        <i class="fas fa-phone fa-fw text-muted"></i> {{ member.phone }}
+                    </div>
+                </td>
+                <td>
+                    <span class="fw-bold text-success">₦{{ "{:,.2f}".format(member.total_savings|default(0)) }}</span>
+                </td>
+                <td>
+                    ₦{{ "{:,.0f}".format(member.monthly_savings|default(5000)) }}
+                </td>
+                <td>
+                    {% if member.status == 'active' %}
+                    <span class="badge bg-success">Active</span>
+                    {% elif member.status == 'inactive' %}
+                    <span class="badge bg-secondary">Inactive</span>
+                    {% elif member.status == 'pending' %}
+                    <span class="badge bg-warning">Pending</span>
+                    {% else %}
+                    <span class="badge bg-danger">{{ member.status }}</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <small>{{ member.date_joined[:10] }}</small>
+                </td>
+                <td class="text-end">
+                    <div class="btn-group btn-group-sm">
+                        <button class="btn btn-outline-info" title="Quick View" 
+                                onclick="quickViewMember({{ member.id }})">
+                            <i class="fas fa-eye"></i>
+                        </button>
+                        <a href="{{ url_for('member_details', member_id=member.id) }}" 
+                           class="btn btn-outline-primary" title="Full Details">
+                            <i class="fas fa-address-card"></i>
+                        </a>
+                        <a href="{{ url_for('edit_member', member_id=member.id) }}" 
+                           class="btn btn-outline-warning" title="Edit">
+                            <i class="fas fa-edit"></i>
+                        </a>
+                        <button class="btn btn-outline-success" title="Record Savings" 
+                                onclick="showSavingsModal({{ member.id }}, '{{ member.first_name }} {{ member.last_name }}')">
+                            <i class="fas fa-piggy-bank"></i>
+                        </button>
+                        <button class="btn btn-outline-danger" title="Delete" 
+                                onclick="confirmDelete({{ member.id }}, '{{ member.first_name }} {{ member.last_name }}')">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="9" class="text-center py-5">
+                    <i class="fas fa-users fa-4x text-muted mb-3"></i>
+                    <h5>No Members Found</h5>
+                    <p class="text-muted">Get started by adding your first member.</p>
+                    <a href="{{ url_for('add_member') }}" class="btn btn-primary">
+                        <i class="fas fa-user-plus"></i> Add First Member
+                    </a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<style>
+.avatar-circle {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 16px;
+}
+</style>

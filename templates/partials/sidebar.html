@@ -1,0 +1,73 @@
+<!-- Sidebar Navigation -->
+<div class="sidebar">
+    <div class="sidebar-header">
+        <h3>OOU Coop</h3>
+        <p>v1.0 Enterprise</p>
+    </div>
+    
+    <div class="sidebar-menu">
+        <!-- Common for all users -->
+        <a href="{{ url_for('dashboard') }}" class="{% if request.endpoint == 'dashboard' %}active{% endif %}">
+            <i class="fas fa-tachometer-alt"></i> Dashboard
+        </a>
+        
+        <!-- ADMIN & SECRETARY only -->
+        {% if current_user.role in ['admin', 'secretary'] %}
+        <a href="{{ url_for('members') }}" class="{% if request.endpoint == 'members' %}active{% endif %}">
+            <i class="fas fa-users"></i> Members
+        </a>
+        {% endif %}
+        
+        <!-- All users can see savings and loans -->
+        <a href="{{ url_for('savings') }}" class="{% if request.endpoint == 'savings' %}active{% endif %}">
+            <i class="fas fa-piggy-bank"></i> Savings
+        </a>
+        
+        <a href="{{ url_for('loans') }}" class="{% if request.endpoint == 'loans' %}active{% endif %}">
+            <i class="fas fa-hand-holding-usd"></i> Loans
+        </a>
+        
+        <!-- ADMIN & TREASURER only -->
+        {% if current_user.role in ['admin', 'treasurer'] %}
+        <a href="{{ url_for('investments') }}" class="{% if request.endpoint == 'investments' %}active{% endif %}">
+            <i class="fas fa-chart-line"></i> Investments
+        </a>
+        {% endif %}
+        
+        <!-- Reports for admin/treasurer/secretary -->
+        {% if current_user.role in ['admin', 'treasurer', 'secretary'] %}
+        <a href="{{ url_for('reports') }}" class="{% if request.endpoint == 'reports' %}active{% endif %}">
+            <i class="fas fa-file-alt"></i> Reports
+        </a>
+        {% endif %}
+        
+        <!-- ADMIN only -->
+        {% if current_user.role == 'admin' %}
+        <a href="{{ url_for('settings') }}" class="{% if request.endpoint == 'settings' %}active{% endif %}">
+            <i class="fas fa-cog"></i> Settings
+        </a>
+        {% endif %}
+        
+        <!-- MEMBER only links -->
+        {% if current_user.role == 'member' %}
+        <a href="{{ url_for('my_savings') }}" class="{% if request.endpoint == 'my_savings' %}active{% endif %}">
+            <i class="fas fa-piggy-bank"></i> My Savings
+        </a>
+        <a href="{{ url_for('my_loans') }}" class="{% if request.endpoint == 'my_loans' %}active{% endif %}">
+            <i class="fas fa-hand-holding-usd"></i> My Loans
+        </a>
+        <a href="{{ url_for('my_cards') }}" class="{% if request.endpoint == 'my_cards' %}active{% endif %}">
+            <i class="fas fa-id-card"></i> My Cards
+        </a>
+        <a href="{{ url_for('profile') }}" class="{% if request.endpoint == 'profile' %}active{% endif %}">
+            <i class="fas fa-user"></i> Profile
+        </a>
+        {% endif %}
+        
+        <!-- User dropdown section (usually in navbar) -->
+    </div>
+    
+    <div class="sidebar-footer">
+        <small>&copy; 2024 OOU Acctg 2005</small>
+    </div>
+</div>

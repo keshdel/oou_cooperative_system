@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h2><i class="fas fa-chart-line"></i> Add New Investment</h2>
+            <p class="text-muted">Record a new investment</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="{{ url_for('investments') }}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> Back to Investments
+            </a>
+        </div>
+    </div>
+    
+    <div class="card">
+        <div class="card-header bg-primary text-white">
+            <h5 class="mb-0">Investment Form</h5>
+        </div>
+        <div class="card-body">
+            <form method="POST" action="{{ url_for('add_investment') }}">
+                <div class="row">
+                    <div class="col-md-12">
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle"></i>
+                            <strong>Investment Rules (Bye-laws 8.8):</strong>
+                            <ul class="mb-0 mt-2">
+                                <li>Minor investments: At discretion of Management Committee</li>
+                                <li>Major investments (Shares & Real Estate > ₦100,000): Require Executive Committee approval</li>
+                                <li>All investments must be presented at general meetings</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label class="form-label">Investment Name *</label>
+                            <input type="text" class="form-control" name="name" required 
+                                   placeholder="e.g., Fixed Deposit with UBA, Lagos Property">
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Investment Type *</label>
+                            <select class="form-select" name="type" required id="investmentType">
+                                <option value="">Select type...</option>
+                                <option value="fixed_deposit">Fixed/Term Deposit</option>
+                                <option value="certificate">Investment Certificate</option>
+                                <option value="government">Government Securities</option>
+                                <option value="shares">Shares in Public Liability Company</option>
+                                <option value="real_estate">Real Estate</option>
+                                <option value="other">Other</option>
+                            </select>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Investment Amount (₦) *</label>
+                            <input type="number" class="form-control" name="amount" 
+                                   min="1000" step="1000" required id="investmentAmount">
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label class="form-label">Investment Date</label>
+                            <input type="date" class="form-control" name="date" 
+                                   value="{{ now().strftime('%Y-%m-%d') }}">
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Expected Return Rate (%)</label>
+                            <input type="number" class="form-control" name="return_rate" 
+                                   step="0.1" min="0" placeholder="e.g., 10.5">
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label class="form-label">Maturity Date (if applicable)</label>
+                            <input type="date" class="form-control" name="maturity_date">
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-12">
+                        <div class="mb-3">
+                            <label class="form-label">Description/Details</label>
+                            <textarea class="form-control" name="description" rows="3" 
+                                      placeholder="Provide details about the investment..."></textarea>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Approval Status (auto-calculated) -->
+                <div class="row mt-3">
+                    <div class="col-md-12">
+                        <div class="alert" id="approvalAlert">
+                            <strong>Approval Status:</strong> <span id="approvalStatus">Calculating...</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <hr>
+                
+                <div class="text-end">
+                    <button type="reset" class="btn btn-secondary">
+                        <i class="fas fa-undo"></i> Reset
+                    </button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save"></i> Add Investment
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const typeSelect = document.getElementById('investmentType');
+    const amountInput = document.getElementById('investmentAmount');
+    const approvalAlert = document.getElementById('approvalAlert');
+    const approvalStatus = document.getElementById('approvalStatus');
+    
+    function checkApprovalRequirement() {
+        const type = typeSelect.value;
+        const amount = parseFloat(amountInput.value) || 0;
+        const isMajor = (type === 'shares' || type === 'real_estate') && amount > 100000;
+        
+        if(isMajor) {
+            approvalAlert.className = 'alert alert-warning';
+            approvalStatus.innerHTML = '<strong>MAJOR INVESTMENT</strong> - Requires Executive Committee approval (Bye-laws 8.8.6)';
+        } else if(amount > 0) {
+            approvalAlert.className = 'alert alert-success';
+            approvalStatus.innerHTML = '<strong>MINOR INVESTMENT</strong> - At discretion of Management Committee (Bye-laws 8.8.5)';
+        } else {
+            approvalAlert.className = 'alert alert-info';
+            approvalStatus.innerHTML = 'Enter investment details to determine approval requirement';
+        }
+    }
+    
+    typeSelect.addEventListener('change', checkApprovalRequirement);
+    amountInput.addEventListener('input', checkApprovalRequirement);
+});
+</script>
+{% endblock %}

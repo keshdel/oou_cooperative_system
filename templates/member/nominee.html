@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+
+{% block title %}Nominee Details - OOU Cooperative{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h2><i class="fas fa-users"></i> Nominee Information</h2>
+            <p class="text-muted">Manage your nominee details (Bye-laws 4.6)</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="{{ url_for('profile') }}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> Back to Profile
+            </a>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-8 mx-auto">
+            <div class="card">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0">Nominee Designation</h5>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-warning">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <strong>Important:</strong> Your nominee will inherit your shares and savings in case of death. Update this information regularly.
+                    </div>
+
+                    <form method="POST" action="{{ url_for('update_nominee') }}">
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Nominee Full Name</label>
+                                <input type="text" class="form-control" name="nominee_name" 
+                                       value="{{ member.nominee_name }}" required>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Relationship to You</label>
+                                <input type="text" class="form-control" name="nominee_relationship" 
+                                       value="{{ member.nominee_relationship }}" required>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Nominee Phone</label>
+                                <input type="tel" class="form-control" name="nominee_phone" 
+                                       value="{{ member.nominee_phone }}">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Nominee Email</label>
+                                <input type="email" class="form-control" name="nominee_email" 
+                                       value="{{ member.nominee_email }}">
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Nominee Address</label>
+                            <textarea class="form-control" name="nominee_address" rows="2">{{ member.nominee_address }}</textarea>
+                        </div>
+
+                        <hr>
+
+                        <h5 class="mb-3">Alternative Nominee (Optional)</h5>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Alternative Nominee Name</label>
+                                <input type="text" class="form-control" name="alt_nominee_name" 
+                                       value="{{ member.alt_nominee_name }}">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Relationship</label>
+                                <input type="text" class="form-control" name="alt_nominee_relationship" 
+                                       value="{{ member.alt_nominee_relationship }}">
+                            </div>
+                        </div>
+
+                        <div class="text-center">
+                            <button type="submit" class="btn btn-primary btn-lg">
+                                <i class="fas fa-save"></i> Update Nominee
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <div class="card mt-3">
+                <div class="card-header bg-secondary text-white">
+                    <h5 class="mb-0">Important Information</h5>
+                </div>
+                <div class="card-body">
+                    <ul class="list-unstyled">
+                        <li><i class="fas fa-check text-success"></i> Your nominee will receive your savings and shares upon your death.</li>
+                        <li><i class="fas fa-check text-success"></i> You can change your nominee at any time.</li>
+                        <li><i class="fas fa-check text-success"></i> If no nominee is designated, your next of kin will be contacted.</li>
+                        <li><i class="fas fa-check text-success"></i> Keep your nominee's contact details up to date.</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

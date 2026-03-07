@@ -1,0 +1,982 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h2><i class="fas fa-file-alt"></i> Financial Reports</h2>
+            <p class="text-muted">Generate and view comprehensive financial reports</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <button class="btn btn-success" onclick="exportAllReports()">
+                <i class="fas fa-file-excel"></i> Export All Reports
+            </button>
+            <button class="btn btn-primary" onclick="window.print()">
+                <i class="fas fa-print"></i> Print
+            </button>
+        </div>
+    </div>
+    
+    <!-- Report Tabs -->
+    <div class="card">
+        <div class="card-header">
+            <ul class="nav nav-tabs card-header-tabs" id="reportTabs" role="tablist">
+                <li class="nav-item">
+                    <a class="nav-link active" id="financial-tab" data-bs-toggle="tab" href="#financial" role="tab">
+                        <i class="fas fa-chart-pie"></i> Financial Statement
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" id="savings-tab" data-bs-toggle="tab" href="#savings" role="tab">
+                        <i class="fas fa-piggy-bank"></i> Savings Report
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" id="loans-tab" data-bs-toggle="tab" href="#loans" role="tab">
+                        <i class="fas fa-hand-holding-usd"></i> Loans Report
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" id="members-tab" data-bs-toggle="tab" href="#members" role="tab">
+                        <i class="fas fa-users"></i> Members Report
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" id="investments-tab" data-bs-toggle="tab" href="#investments" role="tab">
+                        <i class="fas fa-chart-line"></i> Investments Report
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" id="surplus-tab" data-bs-toggle="tab" href="#surplus" role="tab">
+                        <i class="fas fa-calculator"></i> Surplus Appropriation
+                    </a>
+                </li>
+            </ul>
+        </div>
+        
+        <div class="card-body">
+            <div class="tab-content" id="reportTabsContent">
+                
+                <!-- 1. FINANCIAL STATEMENT TAB -->
+                <div class="tab-pane fade show active" id="financial" role="tabpanel">
+                    <div class="row mb-4">
+                        <div class="col-md-12">
+                            <form class="row g-3" method="GET" action="{{ url_for('financial_report') }}">
+                                <div class="col-md-4">
+                                    <label class="form-label">Start Date</label>
+                                    <input type="date" class="form-control" name="start_date" 
+                                           value="{{ request.args.get('start_date', now().strftime('%Y-%m-01')) }}">
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label">End Date</label>
+                                    <input type="date" class="form-control" name="end_date" 
+                                           value="{{ request.args.get('end_date', now().strftime('%Y-%m-%d')) }}">
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label">&nbsp;</label>
+                                    <button type="submit" class="btn btn-primary d-block">
+                                        <i class="fas fa-filter"></i> Generate Report
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="card mb-4">
+                                <div class="card-header bg-success text-white">
+                                    <h5 class="mb-0"><i class="fas fa-arrow-down"></i> Income</h5>
+                                </div>
+                                <div class="card-body">
+                                    <table class="table table-sm">
+                                        <tr>
+                                            <th>Member Savings:</th>
+                                            <td class="text-end">₦{{ "{:,.2f}".format(total_savings|default(0)) }}</td>
+                                        </tr>
+                                        <tr>
+                                            <th>Loan Interest:</th>
+                                            <td class="text-end">₦{{ "{:,.2f}".format(loan_interest|default(0)) }}</td>
+                                        </tr>
+                                        <tr>
+                                            <th>Late Fees:</th>
+                                            <td class="text-end">₦{{ "{:,.2f}".format(late_fees|default(0)) }}</td>
+                                        </tr>
+                                        <tr class="table-primary">
+                                            <th><strong>Total Income:</strong></th>
+                                            <td class="text-end"><strong>₦{{ "{:,.2f}".format(total_income|default(0)) }}</strong></td>
+                                        </tr>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <div class="card mb-4">
+                                <div class="card-header bg-danger text-white">
+                                    <h5 class="mb-0"><i class="fas fa-arrow-up"></i> Expenses</h5>
+                                </div>
+                                <div class="card-body">
+                                    <table class="table table-sm">
+                                        <tr>
+                                            <th>Investments:</th>
+                                            <td class="text-end">₦{{ "{:,.2f}".format(investments|default(0)) }}</td>
+                                        </tr>
+                                        <tr>
+                                            <th>Honorarium:</th>
+                                            <td class="text-end">₦{{ "{:,.2f}".format(honorarium|default(0)) }}</td>
+                                        </tr>
+                                        <tr>
+                                            <th>Operating Expenses:</th>
+                                            <td class="text-end">₦{{ "{:,.2f}".format(operating_expenses|default(0)) }}</td>
+                                        </tr>
+                                        <tr class="table-primary">
+                                            <th><strong>Total Expenses:</strong></th>
+                                            <td class="text-end"><strong>₦{{ "{:,.2f}".format(total_expenses|default(0)) }}</strong></td>
+                                        </tr>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <div class="card-header bg-info text-white">
+                            <h5 class="mb-0"><i class="fas fa-chart-line"></i> Net Surplus</h5>
+                        </div>
+                        <div class="card-body">
+                            <h3 class="text-center">₦{{ "{:,.2f}".format(net_surplus|default(0)) }}</h3>
+                        </div>
+                    </div>
+                    
+                    <div class="row mt-4">
+                        <div class="col-md-6">
+                            <canvas id="incomeChart" height="300"></canvas>
+                        </div>
+                        <div class="col-md-6">
+                            <canvas id="expenseChart" height="300"></canvas>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 2. SAVINGS REPORT TAB -->
+                <div class="tab-pane fade" id="savings" role="tabpanel">
+                    <div class="row mb-4">
+                        <div class="col-md-12">
+                            <h4>Savings Summary</h4>
+                        </div>
+                    </div>
+                    
+                    <div class="row g-4 mb-4">
+                        <div class="col-md-3">
+                            <div class="card bg-primary text-white">
+                                <div class="card-body">
+                                    <h6>Total Savings</h6>
+                                    <h3>₦{{ "{:,.2f}".format(total_savings_all|default(0)) }}</h3>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card bg-success text-white">
+                                <div class="card-body">
+                                    <h6>This Month</h6>
+                                    <h3>₦{{ "{:,.2f}".format(this_month_savings|default(0)) }}</h3>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card bg-warning text-white">
+                                <div class="card-body">
+                                    <h6>Late Fees</h6>
+                                    <h3>₦{{ "{:,.2f}".format(total_late_fees|default(0)) }}</h3>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card bg-info text-white">
+                                <div class="card-body">
+                                    <h6>Average per Member</h6>
+                                    <h3>₦{{ "{:,.2f}".format(avg_savings_per_member|default(0)) }}</h3>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <div class="card-header">
+                            <h5>Monthly Savings Trend</h5>
+                        </div>
+                        <div class="card-body">
+                            <canvas id="savingsTrendChart" height="300"></canvas>
+                        </div>
+                    </div>
+                    
+                    <div class="card mt-4">
+                        <div class="card-header">
+                            <h5>Top 10 Savers</h5>
+                        </div>
+                        <div class="card-body">
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>Rank</th>
+                                        <th>Member</th>
+                                        <th>Total Savings</th>
+                                        <th>Monthly Average</th>
+                                        <th>Join Date</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for member in top_savers|default([]) %}
+                                    <tr>
+                                        <td>{{ loop.index }}</td>
+                                        <td>{{ member.name }}</td>
+                                        <td>₦{{ "{:,.2f}".format(member.total_savings) }}</td>
+                                        <td>₦{{ "{:,.2f}".format(member.monthly_avg) }}</td>
+                                        <td>{{ member.join_date }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 3. LOANS REPORT TAB -->
+                <div class="tab-pane fade" id="loans" role="tabpanel">
+                    <div class="row g-4 mb-4">
+                        <div class="col-md-3">
+                            <div class="card bg-primary text-white">
+                                <div class="card-body">
+                                    <h6>Active Loans</h6>
+                                    <h3>₦{{ "{:,.2f}".format(active_loans_total|default(0)) }}</h3>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card bg-success text-white">
+                                <div class="card-body">
+                                    <h6>Total Disbursed</h6>
+                                    <h3>₦{{ "{:,.2f}".format(total_disbursed|default(0)) }}</h3>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card bg-warning text-white">
+                                <div class="card-body">
+                                    <h6>Total Repaid</h6>
+                                    <h3>₦{{ "{:,.2f}".format(total_repaid|default(0)) }}</h3>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card bg-info text-white">
+                                <div class="card-body">
+                                    <h6>Interest Earned</h6>
+                                    <h3>₦{{ "{:,.2f}".format(total_interest|default(0)) }}</h3>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h5>Loan Portfolio by Status</h5>
+                                </div>
+                                <div class="card-body">
+                                    <canvas id="loanPortfolioChart" height="250"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h5>Loan Performance</h5>
+                                </div>
+                                <div class="card-body">
+                                    <canvas id="loanPerformanceChart" height="250"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="card mt-4">
+                        <div class="card-header">
+                            <h5>Delinquent Loans (Over 30 Days Late)</h5>
+                        </div>
+                        <div class="card-body">
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>Member</th>
+                                        <th>Loan Amount</th>
+                                        <th>Balance</th>
+                                        <th>Days Overdue</th>
+                                        <th>Monthly Payment</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for loan in delinquent_loans|default([]) %}
+                                    <tr>
+                                        <td>{{ loan.member_name }}</td>
+                                        <td>₦{{ "{:,.2f}".format(loan.amount) }}</td>
+                                        <td>₦{{ "{:,.2f}".format(loan.balance) }}</td>
+                                        <td><span class="badge bg-danger">{{ loan.days_overdue }} days</span></td>
+                                        <td>₦{{ "{:,.2f}".format(loan.monthly_payment) }}</td>
+                                        <td><span class="badge bg-warning">Overdue</span></td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 4. MEMBERS REPORT TAB -->
+                <div class="tab-pane fade" id="members" role="tabpanel">
+                    <div class="row g-4 mb-4">
+                        <div class="col-md-3">
+                            <div class="card bg-primary text-white">
+                                <div class="card-body">
+                                    <h6>Total Members</h6>
+                                    <h3>{{ total_members|default(0) }}</h3>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card bg-success text-white">
+                                <div class="card-body">
+                                    <h6>Active</h6>
+                                    <h3>{{ active_members|default(0) }}</h3>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card bg-warning text-white">
+                                <div class="card-body">
+                                    <h6>With Loans</h6>
+                                    <h3>{{ members_with_loans|default(0) }}</h3>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="card bg-info text-white">
+                                <div class="card-body">
+                                    <h6>New This Month</h6>
+                                    <h3>{{ new_members_month|default(0) }}</h3>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h5>Members by Join Date</h5>
+                                </div>
+                                <div class="card-body">
+                                    <canvas id="membersTimelineChart" height="250"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h5>Members by Status</h5>
+                                </div>
+                                <div class="card-body">
+                                    <canvas id="membersStatusChart" height="250"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="card mt-4">
+                        <div class="card-header">
+                            <h5>Member Demographics</h5>
+                        </div>
+                        <div class="card-body">
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>Category</th>
+                                        <th>Count</th>
+                                        <th>Percentage</th>
+                                        <th>Total Savings</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>Active Members</td>
+                                        <td>{{ active_members|default(0) }}</td>
+                                        <td>{{ (active_members/total_members*100)|default(0)|round(1) }}%</td>
+                                        <td>₦{{ "{:,.2f}".format(active_savings|default(0)) }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td>Inactive Members</td>
+                                        <td>{{ inactive_members|default(0) }}</td>
+                                        <td>{{ (inactive_members/total_members*100)|default(0)|round(1) }}%</td>
+                                        <td>₦{{ "{:,.2f}".format(inactive_savings|default(0)) }}</td>
+                                    </tr>
+                                    <tr>
+                                        <td>With Active Loans</td>
+                                        <td>{{ members_with_loans|default(0) }}</td>
+                                        <td>{{ (members_with_loans/total_members*100)|default(0)|round(1) }}%</td>
+                                        <td>₦{{ "{:,.2f}".format(loan_member_savings|default(0)) }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 5. INVESTMENTS REPORT TAB -->
+                <div class="tab-pane fade" id="investments" role="tabpanel">
+                    <div class="row g-4 mb-4">
+                        <div class="col-md-4">
+                            <div class="card bg-primary text-white">
+                                <div class="card-body">
+                                    <h6>Total Investments</h6>
+                                    <h3>₦{{ "{:,.2f}".format(total_investments_value|default(0)) }}</h3>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card bg-success text-white">
+                                <div class="card-body">
+                                    <h6>Total Returns</h6>
+                                    <h3>₦{{ "{:,.2f}".format(total_returns|default(0)) }}</h3>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card bg-warning text-white">
+                                <div class="card-body">
+                                    <h6>ROI</h6>
+                                    <h3>{{ roi|default(0)|round(2) }}%</h3>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h5>Investment Portfolio</h5>
+                                </div>
+                                <div class="card-body">
+                                    <canvas id="investmentsPortfolioChart" height="250"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h5>Investment Types</h5>
+                                </div>
+                                <div class="card-body">
+                                    <table class="table">
+                                        <thead>
+                                            <tr>
+                                                <th>Type</th>
+                                                <th>Amount</th>
+                                                <th>% of Portfolio</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for type in investment_types|default([]) %}
+                                            <tr>
+                                                <td>{{ type.name }}</td>
+                                                <td>₦{{ "{:,.2f}".format(type.amount) }}</td>
+                                                <td>{{ (type.amount/total_investments_value*100)|default(0)|round(1) }}%</td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="card mt-4">
+                        <div class="card-header">
+                            <h5>Investment Details</h5>
+                        </div>
+                        <div class="card-body">
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>Investment Name</th>
+                                        <th>Type</th>
+                                        <th>Amount</th>
+                                        <th>Date</th>
+                                        <th>Current Value</th>
+                                        <th>Return</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for investment in investments_list|default([]) %}
+                                    <tr>
+                                        <td>{{ investment.name }}</td>
+                                        <td>{{ investment.type }}</td>
+                                        <td>₦{{ "{:,.2f}".format(investment.amount) }}</td>
+                                        <td>{{ investment.date }}</td>
+                                        <td>₦{{ "{:,.2f}".format(investment.current_value) }}</td>
+                                        <td class="{% if investment.return > 0 %}text-success{% else %}text-danger{% endif %}">
+                                            {{ investment.return }}%
+                                        </td>
+                                        <td>
+                                            <span class="badge bg-{{ 'success' if investment.status == 'active' else 'warning' }}">
+                                                {{ investment.status }}
+                                            </span>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 6. SURPLUS APPROPRIATION TAB (Bye-laws Section 10) -->
+                <div class="tab-pane fade" id="surplus" role="tabpanel">
+                    <div class="row mb-4">
+                        <div class="col-md-12">
+                            <div class="alert alert-info">
+                                <i class="fas fa-info-circle"></i>
+                                <strong>Bye-laws Section 10 Compliance:</strong> Surplus is appropriated as:
+                                <ul class="mb-0 mt-2">
+                                    <li>50% minimum to Dividend on members' savings</li>
+                                    <li>30% to General Reserve Fund</li>
+                                    <li>10% maximum to Honorarium</li>
+                                    <li>Remaining to other appropriations</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-header bg-primary text-white">
+                                    <h5 class="mb-0">Surplus Calculation</h5>
+                                </div>
+                                <div class="card-body">
+                                    <table class="table">
+                                        <tr>
+                                            <th>Total Income:</th>
+                                            <td class="text-end">₦{{ "{:,.2f}".format(total_income_year|default(0)) }}</td>
+                                        </tr>
+                                        <tr>
+                                            <th>Total Expenses:</th>
+                                            <td class="text-end">₦{{ "{:,.2f}".format(total_expenses_year|default(0)) }}</td>
+                                        </tr>
+                                        <tr class="table-primary">
+                                            <th><strong>Net Surplus:</strong></th>
+                                            <td class="text-end"><strong>₦{{ "{:,.2f}".format(net_surplus_year|default(0)) }}</strong></td>
+                                        </tr>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-header bg-success text-white">
+                                    <h5 class="mb-0">Appropriation (Bye-laws 10.1)</h5>
+                                </div>
+                                <div class="card-body">
+                                    <table class="table">
+                                        <tr>
+                                            <th>Dividend (50% min):</th>
+                                            <td class="text-end">₦{{ "{:,.2f}".format(dividend_amount|default(0)) }}</td>
+                                        </tr>
+                                        <tr>
+                                            <th>Reserve Fund (30%):</th>
+                                            <td class="text-end">₦{{ "{:,.2f}".format(reserve_amount|default(0)) }}</td>
+                                        </tr>
+                                        <tr>
+                                            <th>Honorarium (10% max):</th>
+                                            <td class="text-end">₦{{ "{:,.2f}".format(honorarium_amount|default(0)) }}</td>
+                                        </tr>
+                                        <tr>
+                                            <th>Other Appropriations:</th>
+                                            <td class="text-end">₦{{ "{:,.2f}".format(other_appropriations|default(0)) }}</td>
+                                        </tr>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row mt-4">
+                        <div class="col-md-8 mx-auto">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h5>Surplus Distribution Chart</h5>
+                                </div>
+                                <div class="card-body">
+                                    <canvas id="surplusChart" height="300"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row mt-4">
+                        <div class="col-md-12">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h5>Dividend per Member</h5>
+                                </div>
+                                <div class="card-body">
+                                    <table class="table">
+                                        <thead>
+                                            <tr>
+                                                <th>Member</th>
+                                                <th>Total Savings</th>
+                                                <th>Share of Surplus</th>
+                                                <th>Dividend Amount</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for member in member_dividends|default([]) %}
+                                            <tr>
+                                                <td>{{ member.name }}</td>
+                                                <td>₦{{ "{:,.2f}".format(member.savings) }}</td>
+                                                <td>{{ (member.savings/total_savings_all*100)|default(0)|round(2) }}%</td>
+                                                <td>₦{{ "{:,.2f}".format(member.dividend) }}</td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Initialize all charts when tab is shown
+document.querySelectorAll('a[data-bs-toggle="tab"]').forEach(tab => {
+    tab.addEventListener('shown.bs.tab', function (e) {
+        if (e.target.id === 'financial-tab') {
+            initFinancialCharts();
+        } else if (e.target.id === 'savings-tab') {
+            initSavingsCharts();
+        } else if (e.target.id === 'loans-tab') {
+            initLoansCharts();
+        } else if (e.target.id === 'members-tab') {
+            initMembersCharts();
+        } else if (e.target.id === 'investments-tab') {
+            initInvestmentsCharts();
+        } else if (e.target.id === 'surplus-tab') {
+            initSurplusChart();
+        }
+    });
+});
+
+// Financial Charts
+function initFinancialCharts() {
+    // Income Chart
+    const ctx1 = document.getElementById('incomeChart')?.getContext('2d');
+    if (ctx1) {
+        new Chart(ctx1, {
+            type: 'pie',
+            data: {
+                labels: ['Savings', 'Loan Interest', 'Late Fees'],
+                datasets: [{
+                    data: [
+                        {{ total_savings|default(0) }},
+                        {{ loan_interest|default(0) }},
+                        {{ late_fees|default(0) }}
+                    ],
+                    backgroundColor: ['#28a745', '#17a2b8', '#ffc107']
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Income Breakdown'
+                    }
+                }
+            }
+        });
+    }
+    
+    // Expense Chart
+    const ctx2 = document.getElementById('expenseChart')?.getContext('2d');
+    if (ctx2) {
+        new Chart(ctx2, {
+            type: 'pie',
+            data: {
+                labels: ['Investments', 'Honorarium', 'Operating Expenses'],
+                datasets: [{
+                    data: [
+                        {{ investments|default(0) }},
+                        {{ honorarium|default(0) }},
+                        {{ operating_expenses|default(0) }}
+                    ],
+                    backgroundColor: ['#dc3545', '#fd7e14', '#6c757d']
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Expense Breakdown'
+                    }
+                }
+            }
+        });
+    }
+}
+
+// Savings Trend Chart
+function initSavingsCharts() {
+    const ctx = document.getElementById('savingsTrendChart')?.getContext('2d');
+    if (ctx) {
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: {{ savings_months|default([])|tojson }},
+                datasets: [{
+                    label: 'Monthly Savings',
+                    data: {{ monthly_savings_data|default([])|tojson }},
+                    borderColor: '#28a745',
+                    backgroundColor: 'rgba(40, 167, 69, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Savings Trend (Last 12 Months)'
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return '₦' + value.toLocaleString();
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+}
+
+// Loan Portfolio Chart
+function initLoansCharts() {
+    const ctx1 = document.getElementById('loanPortfolioChart')?.getContext('2d');
+    if (ctx1) {
+        new Chart(ctx1, {
+            type: 'doughnut',
+            data: {
+                labels: ['Active', 'Completed', 'Pending', 'Rejected'],
+                datasets: [{
+                    data: [
+                        {{ active_loans_count|default(0) }},
+                        {{ completed_loans_count|default(0) }},
+                        {{ pending_loans_count|default(0) }},
+                        {{ rejected_loans_count|default(0) }}
+                    ],
+                    backgroundColor: ['#28a745', '#17a2b8', '#ffc107', '#dc3545']
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Loan Portfolio by Status'
+                    }
+                }
+            }
+        });
+    }
+    
+    const ctx2 = document.getElementById('loanPerformanceChart')?.getContext('2d');
+    if (ctx2) {
+        new Chart(ctx2, {
+            type: 'bar',
+            data: {
+                labels: ['Current', '30 Days', '60 Days', '90+ Days'],
+                datasets: [{
+                    label: 'Number of Loans',
+                    data: [
+                        {{ current_loans|default(0) }},
+                        {{ days_30_loans|default(0) }},
+                        {{ days_60_loans|default(0) }},
+                        {{ days_90_loans|default(0) }}
+                    ],
+                    backgroundColor: ['#28a745', '#ffc107', '#fd7e14', '#dc3545']
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Loan Performance (Days Overdue)'
+                    }
+                }
+            }
+        });
+    }
+}
+
+// Members Charts
+function initMembersCharts() {
+    const ctx1 = document.getElementById('membersTimelineChart')?.getContext('2d');
+    if (ctx1) {
+        new Chart(ctx1, {
+            type: 'line',
+            data: {
+                labels: {{ join_months|default([])|tojson }},
+                datasets: [{
+                    label: 'New Members',
+                    data: {{ new_members_data|default([])|tojson }},
+                    borderColor: '#007bff',
+                    backgroundColor: 'rgba(0, 123, 255, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Member Growth'
+                    }
+                }
+            }
+        });
+    }
+    
+    const ctx2 = document.getElementById('membersStatusChart')?.getContext('2d');
+    if (ctx2) {
+        new Chart(ctx2, {
+            type: 'pie',
+            data: {
+                labels: ['Active', 'Inactive', 'Suspended'],
+                datasets: [{
+                    data: [
+                        {{ active_members|default(0) }},
+                        {{ inactive_members|default(0) }},
+                        {{ suspended_members|default(0) }}
+                    ],
+                    backgroundColor: ['#28a745', '#6c757d', '#dc3545']
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Members by Status'
+                    }
+                }
+            }
+        });
+    }
+}
+
+// Investments Chart
+function initInvestmentsCharts() {
+    const ctx = document.getElementById('investmentsPortfolioChart')?.getContext('2d');
+    if (ctx) {
+        new Chart(ctx, {
+            type: 'pie',
+            data: {
+                labels: {{ investment_type_labels|default([])|tojson }},
+                datasets: [{
+                    data: {{ investment_type_data|default([])|tojson }},
+                    backgroundColor: [
+                        '#007bff', '#28a745', '#17a2b8', 
+                        '#ffc107', '#dc3545', '#6c757d'
+                    ]
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Investment Portfolio by Type'
+                    }
+                }
+            }
+        });
+    }
+}
+
+// Surplus Chart
+function initSurplusChart() {
+    const ctx = document.getElementById('surplusChart')?.getContext('2d');
+    if (ctx) {
+        new Chart(ctx, {
+            type: 'pie',
+            data: {
+                labels: ['Dividend (50%)', 'Reserve Fund (30%)', 'Honorarium (10%)', 'Other (10%)'],
+                datasets: [{
+                    data: [
+                        {{ dividend_amount|default(0) }},
+                        {{ reserve_amount|default(0) }},
+                        {{ honorarium_amount|default(0) }},
+                        {{ other_appropriations|default(0) }}
+                    ],
+                    backgroundColor: ['#28a745', '#007bff', '#ffc107', '#6c757d']
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Surplus Appropriation (Bye-laws Section 10)'
+                    }
+                }
+            }
+        });
+    }
+}
+
+// Export all reports
+function exportAllReports() {
+    // This would compile all reports into a single export
+    alert('Export functionality will generate Excel/PDF reports');
+}
+
+// Initialize charts on page load
+document.addEventListener('DOMContentLoaded', function() {
+    // Small delay to ensure DOM is ready
+    setTimeout(() => {
+        if (document.getElementById('incomeChart')) {
+            initFinancialCharts();
+        }
+    }, 500);
+});
+</script>
+{% endblock %}

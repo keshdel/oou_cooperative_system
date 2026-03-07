@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+
+{% block title %}Account Statements - OOU Cooperative{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h2><i class="fas fa-file-invoice"></i> Account Statements</h2>
+            <p class="text-muted">Download your account statements</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="{{ url_for('transactions') }}" class="btn btn-secondary">
+                <i class="fas fa-exchange-alt"></i> View Transactions
+            </a>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-8 mx-auto">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">Generate Statement</h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="{{ url_for('generate_statement') }}" target="_blank">
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Statement Type</label>
+                                <select class="form-select" name="type" required>
+                                    <option value="savings">Savings Statement</option>
+                                    <option value="loan">Loan Statement</option>
+                                    <option value="all">Full Account Statement</option>
+                                    <option value="dividend">Dividend Statement</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Period</label>
+                                <select class="form-select" name="period" required>
+                                    <option value="current">Current Month</option>
+                                    <option value="last3">Last 3 Months</option>
+                                    <option value="last6">Last 6 Months</option>
+                                    <option value="last12">Last 12 Months</option>
+                                    <option value="custom">Custom Range</option>
+                                    <option value="all">All Time</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div id="customRange" style="display: none;">
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">From Date</label>
+                                    <input type="date" class="form-control" name="from_date">
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">To Date</label>
+                                    <input type="date" class="form-control" name="to_date">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Format</label>
+                                <select class="form-select" name="format" required>
+                                    <option value="pdf">PDF</option>
+                                    <option value="excel">Excel</option>
+                                    <option value="csv">CSV</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Include</label>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="include_interest" id="include_interest" checked>
+                                    <label class="form-check-label" for="include_interest">Include Interest Calculation</label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="include_transactions" id="include_transactions" checked>
+                                    <label class="form-check-label" for="include_transactions">List All Transactions</label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <hr>
+
+                        <h5 class="mb-3">Available Statements</h5>
+                        <div class="list-group mb-3">
+                            {% for statement in available_statements %}
+                            <a href="{{ url_for('download_statement', filename=statement.file) }}" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+                                <div>
+                                    <i class="fas fa-file-{{ 'pdf' if statement.type == 'pdf' else 'excel' }} me-2"></i>
+                                    {{ statement.name }}
+                                    <small class="text-muted d-block">{{ statement.date.strftime('%d %B %Y') }}</small>
+                                </div>
+                                <span class="badge bg-primary rounded-pill">{{ statement.size }}</span>
+                            </a>
+                            {% else %}
+                            <p class="text-muted">No statements generated yet.</p>
+                            {% endfor %}
+                        </div>
+
+                        <div class="text-center">
+                            <button type="submit" class="btn btn-primary btn-lg">
+                                <i class="fas fa-file-pdf"></i> Generate Statement
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <div class="card mt-4">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0">Statement Archive</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Date Generated</th>
+                                    <th>Statement Type</th>
+                                    <th>Period</th>
+                                    <th>Format</th>
+                                    <th>Size</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for stmt in statement_archive %}
+                                <tr>
+                                    <td>{{ stmt.generated_at.strftime('%d/%m/%Y') }}</td>
+                                    <td>{{ stmt.type|title }}</td>
+                                    <td>{{ stmt.period }}</td>
+                                    <td>{{ stmt.format|upper }}</td>
+                                    <td>{{ stmt.size }}</td>
+                                    <td>
+                                        <a href="{{ url_for('download_statement', filename=stmt.file) }}" class="btn btn-sm btn-success">
+                                            <i class="fas fa-download"></i> Download
+                                        </a>
+                                        <button class="btn btn-sm btn-danger" onclick="deleteStatement('{{ stmt.file }}')">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Show/hide custom date range based on period selection
+document.querySelector('select[name="period"]').addEventListener('change', function() {
+    document.getElementById('customRange').style.display = this.value === 'custom' ? 'block' : 'none';
+});
+
+function deleteStatement(filename) {
+    if(confirm('Delete this statement?')) {
+        fetch('/api/statement/' + filename, { method: 'DELETE' })
+            .then(() => location.reload());
+    }
+}
+</script>
+{% endblock %}

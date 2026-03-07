@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+
+{% block title %}Download Statement - OOU Cooperative{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center">
+        <div class="col-md-6">
+            <div class="card text-center">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0">Statement Ready for Download</h5>
+                </div>
+                <div class="card-body">
+                    <i class="fas fa-file-pdf fa-5x text-danger mb-3"></i>
+                    <h4>{{ filename }}</h4>
+                    <p class="text-muted">Your statement has been generated successfully.</p>
+                    
+                    <div class="d-grid gap-2">
+                        <a href="{{ url_for('static', filename='statements/' + filename) }}" class="btn btn-primary btn-lg" download>
+                            <i class="fas fa-download"></i> Download Now
+                        </a>
+                        <a href="{{ url_for('statements') }}" class="btn btn-secondary">
+                            <i class="fas fa-arrow-left"></i> Back to Statements
+                        </a>
+                    </div>
+                    
+                    <hr>
+                    
+                    <p class="small text-muted">
+                        The download should start automatically. If not, click the button above.
+                        <br>Statements are available in your account for 30 days.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Auto-download
+window.onload = function() {
+    window.location.href = "{{ url_for('static', filename='statements/' + filename) }}";
+}
+</script>
+{% endblock %}

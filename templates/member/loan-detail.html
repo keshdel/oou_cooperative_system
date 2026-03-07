@@ -1,0 +1,301 @@
+{% extends "base.html" %}
+
+{% block title %}Loan Details - OOU Cooperative{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h2><i class="fas fa-file-invoice"></i> Loan Details</h2>
+            <p class="text-muted">View complete information for loan #{{ loan.loan_number }}</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="{{ url_for('my_loans') }}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> Back to Loans
+            </a>
+            <button class="btn btn-primary" onclick="window.print()">
+                <i class="fas fa-print"></i> Print
+            </button>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-8">
+            <!-- Loan Summary Card -->
+            <div class="card mb-4">
+                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Loan Summary</h5>
+                    <span class="badge bg-{{ 'success' if loan.status == 'active' else 'warning' }}">
+                        {{ loan.status|upper }}
+                    </span>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <table class="table table-borderless">
+                                <tr>
+                                    <th>Loan Number:</th>
+                                    <td><strong>{{ loan.loan_number }}</strong></td>
+                                </tr>
+                                <tr>
+                                    <th>Loan Purpose:</th>
+                                    <td>{{ loan.purpose }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Application Date:</th>
+                                    <td>{{ loan.date_applied.strftime('%d %B, %Y') }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Approval Date:</th>
+                                    <td>{{ loan.date_approved.strftime('%d %B, %Y') if loan.date_approved else 'Pending' }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Disbursement Date:</th>
+                                    <td>{{ loan.disbursement_date.strftime('%d %B, %Y') if loan.disbursement_date else 'Not disbursed' }}</td>
+                                </tr>
+                            </table>
+                        </div>
+                        <div class="col-md-6">
+                            <table class="table table-borderless">
+                                <tr>
+                                    <th>Principal Amount:</th>
+                                    <td>₦{{ "{:,.2f}".format(loan.amount) }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Interest Rate:</th>
+                                    <td>{{ loan.interest_rate }}% per annum</td>
+                                </tr>
+                                <tr>
+                                    <th>Tenure:</th>
+                                    <td>{{ loan.tenure }} months</td>
+                                </tr>
+                                <tr>
+                                    <th>Monthly Payment:</th>
+                                    <td><strong>₦{{ "{:,.2f}".format(loan.monthly_payment) }}</strong></td>
+                                </tr>
+                                <tr>
+                                    <th>Total Repayment:</th>
+                                    <td>₦{{ "{:,.2f}".format(loan.total_repayment) }}</td>
+                                </tr>
+                            </table>
+                        </div>
+                    </div>
+
+                    <hr>
+
+                    <div class="row">
+                        <div class="col-md-4 text-center">
+                            <h6>Outstanding Balance</h6>
+                            <h3 class="text-danger">₦{{ "{:,.2f}".format(loan.balance) }}</h3>
+                        </div>
+                        <div class="col-md-4 text-center">
+                            <h6>Total Paid</h6>
+                            <h3 class="text-success">₦{{ "{:,.2f}".format(loan.total_repayment - loan.balance) }}</h3>
+                        </div>
+                        <div class="col-md-4 text-center">
+                            <h6>Progress</h6>
+                            <h3>{{ loan.progress_percentage|round }}%</h3>
+                            <div class="progress">
+                                <div class="progress-bar bg-success" style="width: {{ loan.progress_percentage }}%"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Repayment Schedule -->
+            <div class="card mb-4">
+                <div class="card-header bg-info text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="fas fa-table"></i> Repayment Schedule</h5>
+                    <button class="btn btn-sm btn-light" onclick="exportSchedule()">
+                        <i class="fas fa-download"></i> Export
+                    </button>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Month</th>
+                                    <th>Due Date</th>
+                                    <th>Payment</th>
+                                    <th>Principal</th>
+                                    <th>Interest</th>
+                                    <th>Balance</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for installment in schedule %}
+                                <tr class="{{ 'table-success' if installment.paid }}">
+                                    <td>{{ installment.month }}</td>
+                                    <td>{{ installment.due_date.strftime('%d/%m/%Y') }}</td>
+                                    <td>₦{{ "{:,.2f}".format(installment.payment) }}</td>
+                                    <td>₦{{ "{:,.2f}".format(installment.principal) }}</td>
+                                    <td>₦{{ "{:,.2f}".format(installment.interest) }}</td>
+                                    <td>₦{{ "{:,.2f}".format(installment.balance) }}</td>
+                                    <td>
+                                        {% if installment.paid %}
+                                        <span class="badge bg-success">Paid</span>
+                                        {% elif installment.overdue %}
+                                        <span class="badge bg-danger">Overdue</span>
+                                        {% else %}
+                                        <span class="badge bg-warning">Pending</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Payment History -->
+            <div class="card">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0"><i class="fas fa-history"></i> Payment History</h5>
+                </div>
+                <div class="card-body">
+                    {% if payments %}
+                    <div class="table-responsive">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Amount</th>
+                                    <th>Principal</th>
+                                    <th>Interest</th>
+                                    <th>Method</th>
+                                    <th>Receipt</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for payment in payments %}
+                                <tr>
+                                    <td>{{ payment.date.strftime('%d/%m/%Y') }}</td>
+                                    <td>₦{{ "{:,.2f}".format(payment.amount) }}</td>
+                                    <td>₦{{ "{:,.2f}".format(payment.principal_paid) }}</td>
+                                    <td>₦{{ "{:,.2f}".format(payment.interest_paid) }}</td>
+                                    <td>{{ payment.payment_method|title }}</td>
+                                    <td>
+                                        <a href="#" onclick="viewReceipt('{{ payment.receipt_number }}')">
+                                            {{ payment.receipt_number }}
+                                        </a>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <p class="text-center text-muted py-3">No payments recorded yet.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Sidebar -->
+        <div class="col-md-4">
+            <!-- Action Card -->
+            <div class="card mb-4">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">Actions</h5>
+                </div>
+                <div class="card-body">
+                    {% if loan.status == 'active' %}
+                    <button class="btn btn-success w-100 mb-2" onclick="makePayment({{ loan.id }}, {{ loan.monthly_payment }})">
+                        <i class="fas fa-money-bill"></i> Make a Payment
+                    </button>
+                    <a href="{{ url_for('loan_calculator', amount=loan.amount, tenure=loan.tenure) }}" class="btn btn-info w-100 mb-2">
+                        <i class="fas fa-calculator"></i> Recalculate
+                    </a>
+                    {% endif %}
+                    <button class="btn btn-warning w-100 mb-2" onclick="requestStatement({{ loan.id }})">
+                        <i class="fas fa-file-pdf"></i> Download Statement
+                    </button>
+                    <button class="btn btn-secondary w-100" onclick="contactSupport()">
+                        <i class="fas fa-headset"></i> Contact Support
+                    </button>
+                </div>
+            </div>
+
+            <!-- Loan Info Card -->
+            <div class="card mb-4">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0">Loan Information</h5>
+                </div>
+                <div class="card-body">
+                    <ul class="list-group list-group-flush">
+                        <li class="list-group-item d-flex justify-content-between">
+                            <span>Disbursed Amount:</span>
+                            <strong>₦{{ "{:,.2f}".format(loan.disbursed_amount) }}</strong>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between">
+                            <span>Application Fee:</span>
+                            <strong>₦{{ "{:,.2f}".format(loan.application_fee) }}</strong>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between">
+                            <span>Insurance Premium:</span>
+                            <strong>₦{{ "{:,.2f}".format(loan.insurance_premium) }}</strong>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between">
+                            <span>Guarantors:</span>
+                            <strong>{{ loan.guarantors|length }}</strong>
+                        </li>
+                        <li class="list-group-item d-flex justify-content-between">
+                            <span>Next Due:</span>
+                            <strong class="{{ 'text-danger' if loan.is_overdue }}">
+                                {{ loan.next_payment_date.strftime('%d/%m/%Y') if loan.next_payment_date else 'N/A' }}
+                            </strong>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Guarantors Card -->
+            {% if loan.guarantors %}
+            <div class="card">
+                <div class="card-header bg-warning">
+                    <h5 class="mb-0">Guarantors</h5>
+                </div>
+                <div class="card-body">
+                    {% for guarantor in loan.guarantors %}
+                    <div class="d-flex align-items-center mb-2">
+                        <i class="fas fa-user-circle fa-2x me-2"></i>
+                        <div>
+                            <strong>{{ guarantor.full_name }}</strong><br>
+                            <small>{{ guarantor.member_number }}</small>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script>
+function makePayment(loanId, amount) {
+    // Reuse payment modal from my-loans.html
+    window.location.href = "{{ url_for('my_loans') }}?pay=" + loanId;
+}
+
+function viewReceipt(receiptNumber) {
+    window.open('/api/receipt/' + receiptNumber, '_blank');
+}
+
+function requestStatement(loanId) {
+    window.location.href = '/api/loan-statement/' + loanId;
+}
+
+function exportSchedule() {
+    window.location.href = '/api/loan-schedule/{{ loan.id }}/export';
+}
+
+function contactSupport() {
+    window.location.href = "{{ url_for('support') }}";
+}
+</script>
+{% endblock %}

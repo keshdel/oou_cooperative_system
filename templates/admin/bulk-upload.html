@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+
+{% block title %}Bulk Upload Members - OOU Cooperative{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h2><i class="fas fa-upload"></i> Bulk Upload Members</h2>
+            <p class="text-muted">Import multiple members from CSV or Excel file</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="{{ url_for('members') }}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> Back to Members
+            </a>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-8 mx-auto">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="fas fa-file-upload"></i> Upload Member File</h5>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info">
+                        <h6><i class="fas fa-info-circle"></i> File Requirements:</h6>
+                        <ul class="mb-0">
+                            <li>Format: CSV or Excel (.xlsx, .xls)</li>
+                            <li>Required columns: <strong>first_name, last_name, email, phone</strong></li>
+                            <li>Optional columns: address, occupation, monthly_savings, date_of_birth</li>
+                            <li>Maximum file size: 16MB</li>
+                        </ul>
+                    </div>
+
+                    <form method="POST" enctype="multipart/form-data" id="uploadForm">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Select File</label>
+                            <input type="file" class="form-control" name="file" 
+                                   accept=".csv,.xlsx,.xls" required id="fileInput">
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Preview</label>
+                            <div id="filePreview" class="border rounded p-3 bg-light" style="min-height: 100px;">
+                                <p class="text-muted text-center mb-0">Select a file to preview</p>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Sample Template</label>
+                            <div class="table-responsive">
+                                <table class="table table-bordered table-sm">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>first_name</th>
+                                            <th>last_name</th>
+                                            <th>email</th>
+                                            <th>phone</th>
+                                            <th>address</th>
+                                            <th>monthly_savings</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td>John</td>
+                                            <td>Doe</td>
+                                            <td>john@email.com</td>
+                                            <td>08012345678</td>
+                                            <td>Lagos</td>
+                                            <td>5000</td>
+                                        </tr>
+                                        <tr>
+                                            <td>Jane</td>
+                                            <td>Smith</td>
+                                            <td>jane@email.com</td>
+                                            <td>08087654321</td>
+                                            <td>Ibadan</td>
+                                            <td>10000</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="mt-2">
+                                <a href="{{ url_for('download_template') }}" class="btn btn-sm btn-info">
+                                    <i class="fas fa-download"></i> Download Template
+                                </a>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Import Options</label>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="skip_first_row" id="skipFirstRow" checked>
+                                <label class="form-check-label" for="skipFirstRow">
+                                    Skip first row (header)
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="update_existing" id="updateExisting">
+                                <label class="form-check-label" for="updateExisting">
+                                    Update existing members if email matches
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="send_welcome" id="sendWelcome">
+                                <label class="form-check-label" for="sendWelcome">
+                                    Send welcome emails to new members
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="progress mb-3 d-none" id="uploadProgress">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                                 role="progressbar" style="width: 0%">0%</div>
+                        </div>
+
+                        <div class="text-end">
+                            <button type="button" class="btn btn-secondary" onclick="history.back()">
+                                Cancel
+                            </button>
+                            <button type="submit" class="btn btn-primary" id="uploadBtn">
+                                <i class="fas fa-upload"></i> Upload & Process
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('fileInput').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    const preview = document.getElementById('filePreview');
+    
+    if (file) {
+        preview.innerHTML = `
+            <div class="d-flex align-items-center">
+                <i class="fas fa-file-excel fa-3x text-success me-3"></i>
+                <div>
+                    <strong>${file.name}</strong><br>
+                    Size: ${(file.size / 1024).toFixed(2)} KB
+                </div>
+            </div>
+        `;
+    }
+});
+
+document.getElementById('uploadForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    const progress = document.getElementById('uploadProgress');
+    const progressBar = progress.querySelector('.progress-bar');
+    const uploadBtn = document.getElementById('uploadBtn');
+    
+    progress.classList.remove('d-none');
+    uploadBtn.disabled = true;
+    uploadBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Uploading...';
+    
+    let width = 0;
+    const interval = setInterval(function() {
+        if (width >= 90) {
+            clearInterval(interval);
+        } else {
+            width += 10;
+            progressBar.style.width = width + '%';
+            progressBar.textContent = width + '%';
+        }
+    }, 300);
+    
+    const formData = new FormData(this);
+    
+    fetch('{{ url_for("bulk_upload_members") }}', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        clearInterval(interval);
+        progressBar.style.width = '100%';
+        progressBar.textContent = '100%';
+        
+        if (data.success) {
+            Swal.fire({
+                icon: 'success',
+                title: 'Upload Complete!',
+                html: `
+                    <p>${data.added} members added successfully.</p>
+                    ${data.errors ? '<p class="text-warning">' + data.errors + ' errors</p>' : ''}
+                `,
+                timer: 3000
+            }).then(() => {
+                window.location.href = '{{ url_for("members") }}';
+            });
+        } else {
+            Swal.fire({
+                icon: 'error',
+                title: 'Upload Failed',
+                text: data.error || 'An error occurred during upload'
+            });
+            progress.classList.add('d-none');
+            uploadBtn.disabled = false;
+            uploadBtn.innerHTML = '<i class="fas fa-upload"></i> Upload & Process';
+        }
+    })
+    .catch(error => {
+        clearInterval(interval);
+        Swal.fire({
+            icon: 'error',
+            title: 'Upload Failed',
+            text: 'Network error: ' + error
+        });
+        progress.classList.add('d-none');
+        uploadBtn.disabled = false;
+        uploadBtn.innerHTML = '<i class="fas fa-upload"></i> Upload & Process';
+    });
+});
+</script>
+{% endblock %}

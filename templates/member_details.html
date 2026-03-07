@@ -1,0 +1,242 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h2><i class="fas fa-user"></i> Member Details</h2>
+            <p class="text-muted">View and manage member information</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="{{ url_for('members') }}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> Back to Members
+            </a>
+            <button class="btn btn-warning" onclick="printMemberDetails()">
+                <i class="fas fa-print"></i> Print
+            </button>
+        </div>
+    </div>
+    
+    <!-- Member Summary Card -->
+    <div class="card mb-4">
+        <div class="card-header bg-primary text-white">
+            <h5 class="mb-0">Member Information</h5>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <table class="table table-borderless">
+                        <tr>
+                            <th width="150">Full Name:</th>
+                            <td><strong>{{ member.first_name }} {{ member.last_name }}</strong></td>
+                        </tr>
+                        <tr>
+                            <th>Member ID:</th>
+                            <td>#{{ member.id }}</td>
+                        </tr>
+                        <tr>
+                            <th>Email:</th>
+                            <td>{{ member.email|default('Not provided') }}</td>
+                        </tr>
+                        <tr>
+                            <th>Phone:</th>
+                            <td>{{ member.phone }}</td>
+                        </tr>
+                        <tr>
+                            <th>Occupation:</th>
+                            <td>{{ member.occupation|default('Not provided') }}</td>
+                        </tr>
+                    </table>
+                </div>
+                <div class="col-md-6">
+                    <table class="table table-borderless">
+                        <tr>
+                            <th width="150">Address:</th>
+                            <td>{{ member.address|default('Not provided') }}</td>
+                        </tr>
+                        <tr>
+                            <th>Date Joined:</th>
+                            <td>{{ member.date_joined[:10] }}</td>
+                        </tr>
+                        <tr>
+                            <th>Status:</th>
+                            <td>
+                                {% if member.status == 'active' %}
+                                <span class="badge bg-success">Active</span>
+                                {% else %}
+                                <span class="badge bg-danger">{{ member.status }}</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <th>Nominee:</th>
+                            <td>{{ member.nominee_name|default('Not designated') }}</td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Financial Summary Cards -->
+    <div class="row g-4 mb-4">
+        <div class="col-md-4">
+            <div class="card bg-success text-white">
+                <div class="card-body">
+                    <h6>Total Savings</h6>
+                    <h3>₦{{ "{:,.2f}".format(total_savings) }}</h3>
+                    <small>Monthly: ₦{{ "{:,.0f}".format(member.monthly_savings) }}</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card bg-warning text-white">
+                <div class="card-body">
+                    <h6>Active Loans</h6>
+                    <h3>₦{{ "{:,.2f}".format(total_loans) }}</h3>
+                    <small>Max eligible: ₦{{ "{:,.2f}".format(member.total_savings * 2) }}</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card bg-info text-white">
+                <div class="card-body">
+                    <h6>Loan Eligibility</h6>
+                    <h3>
+                        {% if member.total_savings >= 50000 %}
+                        <i class="fas fa-check-circle"></i> Qualified
+                        {% else %}
+                        <i class="fas fa-times-circle"></i> Not Qualified
+                        {% endif %}
+                    </h3>
+                    <small>Need ₦50,000 savings minimum</small>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Action Buttons -->
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <button class="btn btn-primary" onclick="showSavingsModal({{ member.id }}, '{{ member.first_name }} {{ member.last_name }}')">
+                <i class="fas fa-piggy-bank"></i> Record Savings
+            </button>
+            <a href="{{ url_for('apply_loan') }}?member_id={{ member.id }}" class="btn btn-success">
+                <i class="fas fa-hand-holding-usd"></i> Apply for Loan
+            </a>
+            <button class="btn btn-warning">
+                <i class="fas fa-edit"></i> Edit Member
+            </button>
+            <button class="btn btn-info">
+                <i class="fas fa-file-alt"></i> Statement of Account
+            </button>
+        </div>
+    </div>
+    
+    <!-- Savings History -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">Savings History</h5>
+        </div>
+        <div class="card-body">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Month</th>
+                        <th>Amount</th>
+                        <th>Late Fee</th>
+                        <th>Total</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for saving in savings %}
+                    <tr>
+                        <td>{{ saving.date[:10] }}</td>
+                        <td>{{ saving.month }}</td>
+                        <td>₦{{ "{:,.2f}".format(saving.amount - saving.late_fee) }}</td>
+                        <td>{% if saving.late_fee > 0 %}₦{{ "{:,.2f}".format(saving.late_fee) }}{% else %}-{% endif %}</td>
+                        <td><strong>₦{{ "{:,.2f}".format(saving.amount) }}</strong></td>
+                        <td>
+                            {% if saving.late_fee > 0 %}
+                            <span class="badge bg-warning">Late</span>
+                            {% else %}
+                            <span class="badge bg-success">On Time</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+    <!-- Loans History -->
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">Loans History</h5>
+        </div>
+        <div class="card-body">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Amount</th>
+                        <th>Purpose</th>
+                        <th>Tenure</th>
+                        <th>Interest</th>
+                        <th>Total Repayment</th>
+                        <th>Balance</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for loan in loans %}
+                    <tr>
+                        <td>{{ loan.date_applied[:10] }}</td>
+                        <td>₦{{ "{:,.2f}".format(loan.amount) }}</td>
+                        <td>{{ loan.purpose[:30] }}</td>
+                        <td>{{ loan.tenure }} months</td>
+                        <td>{{ loan.interest_rate }}%</td>
+                        <td>₦{{ "{:,.2f}".format(loan.total_repayment) }}</td>
+                        <td>
+                            {% if loan.status == 'active' %}
+                            <strong>₦{{ "{:,.2f}".format(loan.balance) }}</strong>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if loan.status == 'active' %}
+                            <span class="badge bg-success">Active</span>
+                            {% elif loan.status == 'completed' %}
+                            <span class="badge bg-info">Completed</span>
+                            {% elif loan.status == 'pending' %}
+                            <span class="badge bg-warning">Pending</span>
+                            {% else %}
+                            <span class="badge bg-danger">{{ loan.status }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Add Savings Modal (reuse from members.html) -->
+{% endblock %}
+
+{% block scripts %}
+<script>
+function printMemberDetails() {
+    window.print();
+}
+
+function showSavingsModal(memberId, memberName) {
+    // Reuse the savings modal from members page
+    // This would need the modal HTML included
+    alert('Record savings for ' + memberName);
+}
+</script>
+{% endblock %}

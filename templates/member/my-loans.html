@@ -1,0 +1,568 @@
+{% extends "base.html" %}
+
+{% block title %}My Loans - OOU Cooperative{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h2><i class="fas fa-hand-holding-usd"></i> My Loans</h2>
+            <p class="text-muted">View and manage all your loan applications</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="{{ url_for('apply_loan_member') }}" class="btn btn-success">
+                <i class="fas fa-plus-circle"></i> Apply for New Loan
+            </a>
+            <a href="{{ url_for('loan_calculator') }}" class="btn btn-info">
+                <i class="fas fa-calculator"></i> Calculator
+            </a>
+        </div>
+    </div>
+
+    <!-- Loan Summary -->
+    <div class="row g-4 mb-4">
+        <div class="col-md-3">
+            <div class="card bg-primary text-white">
+                <div class="card-body">
+                    <h6>Total Loans Taken</h6>
+                    <h3>₦{{ "{:,.2f}".format(total_loans_taken) }}</h3>
+                    <small>{{ total_loans_count }} loan(s)</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-success text-white">
+                <div class="card-body">
+                    <h6>Outstanding Balance</h6>
+                    <h3>₦{{ "{:,.2f}".format(outstanding_balance) }}</h3>
+                    <small>{{ active_loans_count }} active</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-info text-white">
+                <div class="card-body">
+                    <h6>Total Repaid</h6>
+                    <h3>₦{{ "{:,.2f}".format(total_repaid) }}</h3>
+                    <small>{{ repayment_percentage }}% of total</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-warning text-white">
+                <div class="card-body">
+                    <h6>Available Credit</h6>
+                    <h3>₦{{ "{:,.2f}".format(available_credit) }}</h3>
+                    <small>Based on 2x savings</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loan Tabs -->
+    <div class="card">
+        <div class="card-header">
+            <ul class="nav nav-tabs card-header-tabs" id="loanTabs" role="tablist">
+                <li class="nav-item">
+                    <a class="nav-link active" id="active-tab" data-bs-toggle="tab" href="#active" role="tab">
+                        Active Loans <span class="badge bg-primary">{{ active_loans_count }}</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" id="pending-tab" data-bs-toggle="tab" href="#pending" role="tab">
+                        Pending <span class="badge bg-warning">{{ pending_loans_count }}</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" id="completed-tab" data-bs-toggle="tab" href="#completed" role="tab">
+                        Completed <span class="badge bg-success">{{ completed_loans_count }}</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" id="all-tab" data-bs-toggle="tab" href="#all" role="tab">
+                        All Loans <span class="badge bg-secondary">{{ total_loans_count }}</span>
+                    </a>
+                </li>
+            </ul>
+        </div>
+        
+        <div class="card-body">
+            <div class="tab-content" id="loanTabsContent">
+                
+                <!-- Active Loans Tab -->
+                <div class="tab-pane fade show active" id="active" role="tabpanel">
+                    {% for loan in active_loans %}
+                    <div class="loan-card mb-4">
+                        <div class="card">
+                            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                                <h5 class="mb-0">Loan #{{ loan.loan_number }}</h5>
+                                <span class="badge bg-light text-dark">{{ loan.purpose }}</span>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-8">
+                                        <div class="row g-3">
+                                            <div class="col-md-3">
+                                                <small class="text-muted">Loan Amount</small>
+                                                <h6>₦{{ "{:,.2f}".format(loan.amount) }}</h6>
+                                            </div>
+                                            <div class="col-md-3">
+                                                <small class="text-muted">Balance</small>
+                                                <h6 class="text-danger">₦{{ "{:,.2f}".format(loan.balance) }}</h6>
+                                            </div>
+                                            <div class="col-md-3">
+                                                <small class="text-muted">Monthly Payment</small>
+                                                <h6>₦{{ "{:,.2f}".format(loan.monthly_payment) }}</h6>
+                                            </div>
+                                            <div class="col-md-3">
+                                                <small class="text-muted">Interest Rate</small>
+                                                <h6>{{ loan.interest_rate }}%</h6>
+                                            </div>
+                                            <div class="col-md-3">
+                                                <small class="text-muted">Disbursement Date</small>
+                                                <h6>{{ loan.disbursement_date.strftime('%d/%m/%Y') }}</h6>
+                                            </div>
+                                            <div class="col-md-3">
+                                                <small class="text-muted">Next Payment</small>
+                                                <h6 class="{% if loan.is_overdue %}text-danger{% endif %}">
+                                                    {{ loan.next_payment_date.strftime('%d/%m/%Y') }}
+                                                    {% if loan.is_overdue %}(Overdue){% endif %}
+                                                </h6>
+                                            </div>
+                                            <div class="col-md-3">
+                                                <small class="text-muted">Payments Made</small>
+                                                <h6>{{ loan.payments_made }}/{{ loan.tenure }}</h6>
+                                            </div>
+                                            <div class="col-md-3">
+                                                <small class="text-muted">Days Overdue</small>
+                                                <h6 class="text-danger">{{ loan.days_overdue }}</h6>
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- Progress Bar -->
+                                        <div class="mt-3">
+                                            <div class="d-flex justify-content-between mb-1">
+                                                <span>Repayment Progress</span>
+                                                <span>{{ loan.progress_percentage|round }}%</span>
+                                            </div>
+                                            <div class="progress" style="height: 10px;">
+                                                <div class="progress-bar bg-success" 
+                                                     style="width: {{ loan.progress_percentage }}%"></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="col-md-4 border-start">
+                                        <div class="text-center">
+                                            <h6 class="mb-3">Quick Actions</h6>
+                                            <div class="d-grid gap-2">
+                                                <a href="{{ url_for('loan_detail', loan_id=loan.id) }}" 
+                                                   class="btn btn-primary">
+                                                    <i class="fas fa-eye"></i> View Details
+                                                </a>
+                                                <button class="btn btn-success" 
+                                                        onclick="makePayment({{ loan.id }}, {{ loan.monthly_payment }})">
+                                                    <i class="fas fa-money-bill"></i> Make Payment
+                                                </button>
+                                                <button class="btn btn-info" 
+                                                        onclick="viewSchedule({{ loan.id }})">
+                                                    <i class="fas fa-table"></i> View Schedule
+                                                </button>
+                                                <button class="btn btn-warning" 
+                                                        onclick="requestStatement({{ loan.id }})">
+                                                    <i class="fas fa-file-pdf"></i> Statement
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            {% if loan.is_overdue %}
+                            <div class="card-footer bg-danger text-white">
+                                <i class="fas fa-exclamation-triangle"></i>
+                                This loan is OVERDUE by {{ loan.days_overdue }} days. Please make payment immediately to avoid penalties.
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="text-center py-5">
+                        <i class="fas fa-check-circle fa-4x text-success mb-3"></i>
+                        <h5>No Active Loans</h5>
+                        <p>You don't have any active loans at the moment.</p>
+                        <a href="{{ url_for('apply_loan_member') }}" class="btn btn-primary">
+                            Apply for a Loan
+                        </a>
+                    </div>
+                    {% endfor %}
+                </div>
+                
+                <!-- Pending Loans Tab -->
+                <div class="tab-pane fade" id="pending" role="tabpanel">
+                    {% for loan in pending_loans %}
+                    <div class="card mb-3">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h6>Loan #{{ loan.loan_number }}</h6>
+                                    <p class="mb-0">Amount: ₦{{ "{:,.2f}".format(loan.amount) }} | Purpose: {{ loan.purpose }}</p>
+                                    <small class="text-muted">Applied: {{ loan.date_applied.strftime('%d/%m/%Y') }}</small>
+                                </div>
+                                <div>
+                                    <span class="badge bg-warning p-2">Pending Approval</span>
+                                    <button class="btn btn-sm btn-info" onclick="viewApplication({{ loan.id }})">
+                                        View
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% else %}
+                    <p class="text-center py-4">No pending loan applications</p>
+                    {% endfor %}
+                </div>
+                
+                <!-- Completed Loans Tab -->
+                <div class="tab-pane fade" id="completed" role="tabpanel">
+                    <div class="table-responsive">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Loan #</th>
+                                    <th>Amount</th>
+                                    <th>Purpose</th>
+                                    <th>Approved Date</th>
+                                    <th>Completed Date</th>
+                                    <th>Total Paid</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for loan in completed_loans %}
+                                <tr>
+                                    <td>{{ loan.loan_number }}</td>
+                                    <td>₦{{ "{:,.2f}".format(loan.amount) }}</td>
+                                    <td>{{ loan.purpose }}</td>
+                                    <td>{{ loan.date_approved.strftime('%d/%m/%Y') }}</td>
+                                    <td>{{ loan.completed_at.strftime('%d/%m/%Y') }}</td>
+                                    <td>₦{{ "{:,.2f}".format(loan.total_repayment) }}</td>
+                                    <td>
+                                        <a href="{{ url_for('loan_detail', loan_id=loan.id) }}" 
+                                           class="btn btn-sm btn-info">View</a>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                
+                <!-- All Loans Tab -->
+                <div class="tab-pane fade" id="all" role="tabpanel">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Loan #</th>
+                                    <th>Amount</th>
+                                    <th>Purpose</th>
+                                    <th>Applied Date</th>
+                                    <th>Status</th>
+                                    <th>Balance</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for loan in all_loans %}
+                                <tr>
+                                    <td>{{ loan.loan_number }}</td>
+                                    <td>₦{{ "{:,.2f}".format(loan.amount) }}</td>
+                                    <td>{{ loan.purpose }}</td>
+                                    <td>{{ loan.date_applied.strftime('%d/%m/%Y') }}</td>
+                                    <td>
+                                        {% if loan.status == 'active' %}
+                                        <span class="badge bg-success">Active</span>
+                                        {% elif loan.status == 'pending' %}
+                                        <span class="badge bg-warning">Pending</span>
+                                        {% elif loan.status == 'completed' %}
+                                        <span class="badge bg-info">Completed</span>
+                                        {% elif loan.status == 'rejected' %}
+                                        <span class="badge bg-danger">Rejected</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>₦{{ "{:,.2f}".format(loan.balance) }}</td>
+                                    <td>
+                                        <a href="{{ url_for('loan_detail', loan_id=loan.id) }}" 
+                                           class="btn btn-sm btn-primary">View</a>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Payment Modal -->
+<div class="modal fade" id="paymentModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title"><i class="fas fa-money-bill"></i> Make Loan Payment</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="paymentForm">
+                    <input type="hidden" id="paymentLoanId">
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Monthly Payment Due</label>
+                        <h4 id="monthlyPayment" class="text-primary">₦0.00</h4>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Payment Amount (₦)</label>
+                        <input type="number" class="form-control" id="paymentAmount" 
+                               min="100" step="100" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Payment Method</label>
+                        <select class="form-select" id="paymentMethod" required>
+                            <option value="bank_transfer">Bank Transfer</option>
+                            <option value="card">Card Payment</option>
+                            <option value="ussd">USSD</option>
+                            <option value="cash">Cash (Branch)</option>
+                            <option value="deduction">Salary Deduction</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Payment Reference (Optional)</label>
+                        <input type="text" class="form-control" id="paymentReference" 
+                               placeholder="Enter transaction reference if any">
+                    </div>
+                    
+                    <div id="paymentInstructions" class="alert alert-info d-none">
+                        <h6>Payment Instructions:</h6>
+                        <p id="instructionText"></p>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-success" onclick="processPayment()">
+                    Proceed to Payment
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Schedule Modal -->
+<div class="modal fade" id="scheduleModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title"><i class="fas fa-table"></i> Repayment Schedule</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="scheduleContent">
+                <!-- Schedule will be loaded here -->
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentLoanId = null;
+
+function makePayment(loanId, monthlyAmount) {
+    currentLoanId = loanId;
+    document.getElementById('paymentLoanId').value = loanId;
+    document.getElementById('monthlyPayment').textContent = '₦' + monthlyAmount.toLocaleString(undefined, {minimumFractionDigits: 2});
+    document.getElementById('paymentAmount').value = monthlyAmount;
+    
+    new bootstrap.Modal(document.getElementById('paymentModal')).show();
+}
+
+function processPayment() {
+    const data = {
+        loan_id: document.getElementById('paymentLoanId').value,
+        amount: document.getElementById('paymentAmount').value,
+        method: document.getElementById('paymentMethod').value,
+        reference: document.getElementById('paymentReference').value
+    };
+    
+    // Show processing
+    Swal.fire({
+        title: 'Processing Payment...',
+        html: 'Please wait while we process your payment',
+        allowOutsideClick: false,
+        didOpen: () => {
+            Swal.showLoading();
+        }
+    });
+    
+    fetch('/api/make-payment', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if(data.success) {
+            Swal.fire({
+                icon: 'success',
+                title: 'Payment Successful!',
+                text: 'Your payment has been recorded',
+                timer: 2000
+            }).then(() => {
+                location.reload();
+            });
+        } else {
+            Swal.fire({
+                icon: 'error',
+                title: 'Payment Failed',
+                text: data.error
+            });
+        }
+    })
+    .catch(error => {
+        Swal.fire({
+            icon: 'error',
+            title: 'Error',
+            text: 'An error occurred. Please try again.'
+        });
+    });
+}
+
+function viewSchedule(loanId) {
+    fetch('/api/loan-schedule/' + loanId)
+        .then(response => response.text())
+        .then(html => {
+            document.getElementById('scheduleContent').innerHTML = html;
+            new bootstrap.Modal(document.getElementById('scheduleModal')).show();
+        });
+}
+
+function viewApplication(loanId) {
+    window.location.href = '/loan-detail/' + loanId;
+}
+
+function requestStatement(loanId) {
+    window.location.href = '/api/loan-statement/' + loanId;
+}
+
+// Payment method change handler
+document.getElementById('paymentMethod').addEventListener('change', function() {
+    const instructions = document.getElementById('paymentInstructions');
+    const instructionText = document.getElementById('instructionText');
+    
+    switch(this.value) {
+        case 'bank_transfer':
+            instructionText.innerHTML = `
+                <strong>Bank:<!-- ... (previous code) ... -->
+
+                            break;
+                        case 'ussd':
+                            instructionText.innerHTML = `
+                                <strong>USSD Code:</strong> *894*Amount*123456#<br>
+                                <small>Dial the code on your phone and follow the prompts</small>
+                            `;
+                            break;
+                        case 'cash':
+                            instructionText.innerHTML = `
+                                <strong>Visit our branch:</strong><br>
+                                OOU Cooperative Office, Main Campus<br>
+                                Bring this code: LOAN-${currentLoanId}
+                            `;
+                            break;
+                        case 'deduction':
+                            instructionText.innerHTML = `
+                                <strong>Salary Deduction:</strong><br>
+                                This will be deducted from your salary at the end of the month.
+                            `;
+                            break;
+                    }
+                    instructions.classList.remove('d-none');
+                } else {
+                    instructions.classList.add('d-none');
+                }
+            });
+
+            function processPayment() {
+                const data = {
+                    loan_id: document.getElementById('paymentLoanId').value,
+                    amount: document.getElementById('paymentAmount').value,
+                    method: document.getElementById('paymentMethod').value,
+                    reference: document.getElementById('paymentReference').value
+                };
+                
+                Swal.fire({
+                    title: 'Processing Payment...',
+                    html: 'Please wait while we process your payment',
+                    allowOutsideClick: false,
+                    didOpen: () => {
+                        Swal.showLoading();
+                    }
+                });
+                
+                fetch('/api/make-payment', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if(data.success) {
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Payment Successful!',
+                            text: 'Your payment has been recorded',
+                            timer: 2000
+                        }).then(() => location.reload());
+                    } else {
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'Payment Failed',
+                            text: data.error
+                        });
+                    }
+                })
+                .catch(error => {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Error',
+                        text: 'An error occurred. Please try again.'
+                    });
+                });
+            }
+
+            function viewSchedule(loanId) {
+                fetch('/api/loan-schedule/' + loanId)
+                    .then(response => response.text())
+                    .then(html => {
+                        document.getElementById('scheduleContent').innerHTML = html;
+                        new bootstrap.Modal(document.getElementById('scheduleModal')).show();
+                    });
+            }
+
+            function viewApplication(loanId) {
+                window.location.href = '/loan-detail/' + loanId;
+            }
+
+            function requestStatement(loanId) {
+                window.location.href = '/api/loan-statement/' + loanId;
+            }
+</script>
+{% endblock %}

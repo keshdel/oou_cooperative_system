@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h2><i class="fas fa-piggy-bank"></i> Savings Management</h2>
+            <p class="text-muted">Track all member savings and contributions</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <button class="btn btn-success" onclick="exportToCSV()">
+                <i class="fas fa-file-excel"></i> Export to CSV
+            </button>
+        </div>
+    </div>
+    
+    <!-- Savings Summary -->
+    <div class="row g-4 mb-4">
+        <div class="col-md-4">
+            <div class="card bg-primary text-white">
+                <div class="card-body">
+                    <h6>Total Savings</h6>
+                    <h3>₦{{ "{:,.2f}".format(total_savings) }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card bg-warning text-white">
+                <div class="card-body">
+                    <h6>This Month</h6>
+                    <h3>₦{{ "{:,.2f}".format(savings|selectattr('month', 'equalto', now().strftime('%Y-%m'))|sum(attribute='amount')) }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card bg-danger text-white">
+                <div class="card-body">
+                    <h6>Late Fees Collected</h6>
+                    <h3>₦{{ "{:,.2f}".format(savings|sum(attribute='late_fee')) }}</h3>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Savings Table -->
+    <div class="card">
+        <div class="card-header">
+            <div class="row">
+                <div class="col-md-6">
+                    <h5 class="mb-0">Savings Records</h5>
+                </div>
+                <div class="col-md-6">
+                    <input type="text" class="form-control" id="searchTable" 
+                           placeholder="Search by member name or month...">
+                </div>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover" id="savingsTable">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Member</th>
+                            <th>Amount</th>
+                            <th>Month</th>
+                            <th>Late Fee</th>
+                            <th>Total Paid</th>
+                            <th>Date</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for saving in savings %}
+                        <tr>
+                            <td>{{ saving.id }}</td>
+                            <td>
+                                <a href="{{ url_for('member_details', member_id=saving.member_id) }}">
+                                    {{ saving.member_name }}
+                                </a>
+                            </td>
+                            <td>₦{{ "{:,.2f}".format(saving.amount - saving.late_fee) }}</td>
+                            <td>{{ saving.month }}</td>
+                            <td>
+                                {% if saving.late_fee > 0 %}
+                                <span class="text-danger">₦{{ "{:,.2f}".format(saving.late_fee) }}</span>
+                                {% else %}
+                                -
+                                {% endif %}
+                            </td>
+                            <td><strong>₦{{ "{:,.2f}".format(saving.amount) }}</strong></td>
+                            <td>{{ saving.date[:10] }}</td>
+                            <td>
+                                {% if saving.late_fee > 0 %}
+                                <span class="badge bg-warning">Late</span>
+                                {% else %}
+                                <span class="badge bg-success">On Time</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr class="table-primary">
+                            <th colspan="2">Totals</th>
+                            <th>₦{{ "{:,.2f}".format(savings|sum(attribute='amount') - savings|sum(attribute='late_fee')) }}</th>
+                            <th></th>
+                            <th>₦{{ "{:,.2f}".format(savings|sum(attribute='late_fee')) }}</th>
+                            <th>₦{{ "{:,.2f}".format(savings|sum(attribute='amount')) }}</th>
+                            <th colspan="2"></th>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Savings by Member Chart -->
+    <div class="card mt-4">
+        <div class="card-header">
+            <h5>Top Savers</h5>
+        </div>
+        <div class="card-body">
+            <canvas id="savingsChart" height="300"></canvas>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Search functionality
+document.getElementById('searchTable').addEventListener('keyup', function() {
+    var input = this.value.toLowerCase();
+    var rows = document.querySelectorAll('#savingsTable tbody tr');
+    
+    rows.forEach(function(row) {
+        var text = row.textContent.toLowerCase();
+        row.style.display = text.includes(input) ? '' : 'none';
+    });
+});
+
+// Export to CSV
+function exportToCSV() {
+    var rows = [];
+    var headers = [];
+    
+    // Get headers
+    document.querySelectorAll('#savingsTable thead th').forEach(function(th) {
+        headers.push(th.textContent);
+    });
+    rows.push(headers);
+    
+    // Get data
+    document.querySelectorAll('#savingsTable tbody tr').forEach(function(tr) {
+        var row = [];
+        tr.querySelectorAll('td').forEach(function(td) {
+            row.push(td.textContent.trim());
+        });
+        rows.push(row);
+    });
+    
+    // Convert to CSV
+    const csv = rows.map(row => row.join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'savings_report.csv';
+    a.click();
+}
+
+// Savings Chart
+const ctx = document.getElementById('savingsChart').getContext('2d');
+new Chart(ctx, {
+    type: 'bar',
+    data: {
+        labels: [{% for saving in savings[:10] %}'{{ saving.member_name }}',{% endfor %}],
+        datasets: [{
+            label: 'Savings Amount',
+            data: [{% for saving in savings[:10] %}{{ saving.amount }},{% endfor %}],
+            backgroundColor: '#667eea'
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+            y: {
+                beginAtZero: true,
+                ticks: {
+                    callback: function(value) {
+                        return '₦' + value.toLocaleString();
+                    }
+                }
+            }
+        }
+    }
+});
+</script>
+{% endblock %}

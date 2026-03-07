@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center align-items-center min-vh-100">
+        <div class="col-md-8 text-center">
+            <div class="card p-5">
+                <i class="fas fa-hand-holding-usd fa-5x text-primary mb-4"></i>
+                
+                <h1 class="display-4 mb-3">OOU Acctg 2005 Alumni CMS</h1>
+                
+                <h2 class="h4 text-muted mb-4">Cooperative Accounting & Management System</h2>
+                
+                <p class="lead mb-4">
+                    A complete, production-ready accounting software designed specifically for 
+                    the OOU Accounting 2005 Alumni Cooperative Multipurpose Society, 
+                    compliant with all Bye-laws and cooperative accounting standards.
+                </p>
+                
+                <div class="row g-4 mb-5">
+                    <div class="col-md-4">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <i class="fas fa-users fa-3x text-primary mb-3"></i>
+                                <h5>Member Management</h5>
+                                <p class="small">Manage member records, nominations, and status</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-4">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <i class="fas fa-piggy-bank fa-3x text-success mb-3"></i>
+                                <h5>Savings & Deposits</h5>
+                                <p class="small">Track monthly savings with automatic late fee calculation</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-4">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <i class="fas fa-hand-holding-usd fa-3x text-warning mb-3"></i>
+                                <h5>Loan Administration</h5>
+                                <p class="small">Process loans with interest, insurance, and repayment tracking</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-4">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <i class="fas fa-chart-line fa-3x text-info mb-3"></i>
+                                <h5>Investment Tracking</h5>
+                                <p class="small">Monitor all investments with approval workflow</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-4">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <i class="fas fa-file-alt fa-3x text-danger mb-3"></i>
+                                <h5>Financial Reports</h5>
+                                <p class="small">Generate comprehensive reports and surplus appropriation</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-4">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <i class="fas fa-shield-alt fa-3x text-secondary mb-3"></i>
+                                <h5>Role-Based Access</h5>
+                                <p class="small">Secure authentication with different user roles</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="d-grid gap-3 d-sm-flex justify-content-sm-center">
+                    <a href="{{ url_for('login') }}" class="btn btn-primary btn-lg px-4 gap-3">
+                        <i class="fas fa-sign-in-alt"></i> Login to System
+                    </a>
+                    
+                    <a href="/setup" class="btn btn-outline-secondary btn-lg px-4">
+                        <i class="fas fa-tools"></i> Initial Setup
+                    </a>
+                </div>
+                
+                <hr class="my-5">
+                
+                <div class="row text-start">
+                    <div class="col-md-6">
+                        <h5><i class="fas fa-check-circle text-success"></i> Key Features</h5>
+                        <ul class="list-unstyled">
+                            <li><i class="fas fa-check text-success"></i> Member registration & management</li>
+                            <li><i class="fas fa-check text-success"></i> Monthly savings with late fees (10%)</li>
+                            <li><i class="fas fa-check text-success"></i> Loan processing (max 2x savings)</li>
+                            <li><i class="fas fa-check text-success"></i> Interest calculation (max 11%)</li>
+                            <li><i class="fas fa-check text-success"></i> Insurance premium deduction (1%)</li>
+                        </ul>
+                    </div>
+                    <div class="col-md-6">
+                        <h5><i class="fas fa-gavel text-warning"></i> Bye-Laws Compliance</h5>
+                        <ul class="list-unstyled">
+                            <li><i class="fas fa-check text-warning"></i> Section 4: Membership & Liability</li>
+                            <li><i class="fas fa-check text-warning"></i> Section 8: Creation of Funds</li>
+                            <li><i class="fas fa-check text-warning"></i> Section 9: Loan Administration</li>
+                            <li><i class="fas fa-check text-warning"></i> Section 10: Disposal of Surplus</li>
+                            <li><i class="fas fa-check text-warning"></i> Section 11: Books of Accounts</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="mt-4 text-muted">
+                <small>
+                    <i class="fas fa-shield-alt"></i> Production Ready | 
+                    <i class="fas fa-database"></i> SQLite Database | 
+                    <i class="fas fa-lock"></i> Secure Authentication
+                </small>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Member - OOU Cooperative{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h2><i class="fas fa-user-edit"></i> Edit Member</h2>
+            <p class="text-muted">Update member information</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="{{ url_for('member_details', member_id=member.id) }}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> Back to Details
+            </a>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header bg-primary text-white">
+            <h5 class="mb-0">Edit Member: {{ member.first_name }} {{ member.last_name }}</h5>
+        </div>
+        <div class="card-body">
+            <form method="POST">
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">First Name *</label>
+                        <input type="text" class="form-control" name="first_name" 
+                               value="{{ member.first_name }}" required>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Last Name *</label>
+                        <input type="text" class="form-control" name="last_name" 
+                               value="{{ member.last_name }}" required>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Email</label>
+                        <input type="email" class="form-control" name="email" 
+                               value="{{ member.email }}">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Phone *</label>
+                        <input type="tel" class="form-control" name="phone" 
+                               value="{{ member.phone }}" required>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">Address</label>
+                    <textarea class="form-control" name="address" rows="2">{{ member.address or '' }}</textarea>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Occupation</label>
+                        <input type="text" class="form-control" name="occupation" 
+                               value="{{ member.occupation or '' }}">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Date of Birth</label>
+                        <input type="date" class="form-control" name="date_of_birth" 
+                               value="{{ member.date_of_birth or '' }}">
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Monthly Savings (₦)</label>
+                        <input type="number" class="form-control" name="monthly_savings" 
+                               value="{{ member.monthly_savings or 5000 }}" min="5000" step="500">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Status</label>
+                        <select class="form-select" name="status">
+                            <option value="active" {% if member.status == 'active' %}selected{% endif %}>Active</option>
+                            <option value="inactive" {% if member.status == 'inactive' %}selected{% endif %}>Inactive</option>
+                            <option value="suspended" {% if member.status == 'suspended' %}selected{% endif %}>Suspended</option>
+                        </select>
+                    </div>
+                </div>
+
+                <hr>
+                <h5 class="mb-3">Nominee Information</h5>
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Nominee Name</label>
+                        <input type="text" class="form-control" name="nominee_name" 
+                               value="{{ member.nominee_name or '' }}">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label">Relationship</label>
+                        <input type="text" class="form-control" name="nominee_relationship" 
+                               value="{{ member.nominee_relationship or '' }}">
+                    </div>
+                </div>
+
+                <hr>
+
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle"></i>
+                    <strong>Member Number:</strong> {{ member.member_number or 'Not assigned' }}<br>
+                    <strong>Total Savings:</strong> ₦{{ "{:,.2f}".format(member.total_savings or 0) }}<br>
+                    <strong>Date Joined:</strong> {{ member.date_joined[:10] if member.date_joined else 'N/A' }}
+                </div>
+
+                <div class="text-end">
+                    <a href="{{ url_for('member_details', member_id=member.id) }}" class="btn btn-secondary">
+                        Cancel
+                    </a>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save"></i> Update Member
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
