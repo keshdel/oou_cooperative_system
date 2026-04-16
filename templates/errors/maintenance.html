@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+
+{% block title %}Maintenance Mode - OOU Cooperative{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center min-vh-100 align-items-center">
+        <div class="col-md-8 text-center">
+            <div class="maintenance-page py-5">
+                <h1 class="display-1 text-warning"><i class="fas fa-tools"></i></h1>
+                <h2 class="mb-4">Scheduled Maintenance</h2>
+                <p class="lead mb-4">We're currently performing scheduled maintenance to improve your experience. We'll be back shortly.</p>
+                <div class="mb-4">
+                    <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+                <div class="progress mb-4" style="height: 20px;">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                         style="width: 75%;">75% complete</div>
+                </div>
+                <p class="text-muted">
+                    <i class="fas fa-clock"></i> Estimated time remaining: <strong>~15 minutes</strong>
+                </p>
+                <p class="text-muted mt-3">
+                    <i class="fas fa-envelope"></i> For updates, follow us on <a href="#">Twitter</a> or check our <a href="#">status page</a>.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

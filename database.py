@@ -1,7 +1,3 @@
-"""
-Database initialization and connection handling
-"""
-
 import sqlite3
 import os
 from datetime import datetime
@@ -10,24 +6,22 @@ from werkzeug.security import generate_password_hash
 DATABASE = 'cooperative.db'
 
 def get_db():
-    """Get database connection"""
     db = sqlite3.connect(DATABASE)
     db.row_factory = sqlite3.Row
     return db
 
 def init_db():
-    """Initialize database with all tables"""
     db = get_db()
     
-    # Create users table
+    # Users table
     db.execute('''
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
             role TEXT NOT NULL,
-            email TEXT,
             full_name TEXT,
+            email TEXT,
             phone TEXT,
             is_active INTEGER DEFAULT 1,
             two_factor_secret TEXT,
@@ -36,7 +30,7 @@ def init_db():
         )
     ''')
     
-    # Create members table
+    # Members table
     db.execute('''
         CREATE TABLE IF NOT EXISTS members (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -77,7 +71,7 @@ def init_db():
         )
     ''')
     
-    # Create savings table
+    # Savings table
     db.execute('''
         CREATE TABLE IF NOT EXISTS savings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -93,13 +87,11 @@ def init_db():
             date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             verified_by INTEGER,
             verified_at TIMESTAMP,
-            FOREIGN KEY (member_id) REFERENCES members (id),
-            FOREIGN KEY (created_by) REFERENCES users (id),
-            FOREIGN KEY (verified_by) REFERENCES users (id)
+            FOREIGN KEY (member_id) REFERENCES members (id)
         )
     ''')
     
-    # Create loans table
+    # Loans table
     db.execute('''
         CREATE TABLE IF NOT EXISTS loans (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -126,12 +118,11 @@ def init_db():
             defaulted INTEGER DEFAULT 0,
             notes TEXT,
             date_applied TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (member_id) REFERENCES members (id),
-            FOREIGN KEY (approved_by) REFERENCES users (id)
+            FOREIGN KEY (member_id) REFERENCES members (id)
         )
     ''')
     
-    # Create repayments table
+    # Repayments table
     db.execute('''
         CREATE TABLE IF NOT EXISTS repayments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -150,13 +141,11 @@ def init_db():
             verified_by INTEGER,
             verified_at TIMESTAMP,
             date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (loan_id) REFERENCES loans (id),
-            FOREIGN KEY (received_by) REFERENCES users (id),
-            FOREIGN KEY (verified_by) REFERENCES users (id)
+            FOREIGN KEY (loan_id) REFERENCES loans (id)
         )
     ''')
     
-    # Create investments table
+    # Investments table
     db.execute('''
         CREATE TABLE IF NOT EXISTS investments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -187,7 +176,7 @@ def init_db():
         )
     ''')
     
-    # Create honorarium table
+    # Honorarium table
     db.execute('''
         CREATE TABLE IF NOT EXISTS honorarium (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -203,7 +192,7 @@ def init_db():
         )
     ''')
     
-    # Create expenses table
+    # Expenses table
     db.execute('''
         CREATE TABLE IF NOT EXISTS expenses (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -224,7 +213,7 @@ def init_db():
         )
     ''')
     
-    # Create revenue table
+    # Revenue table
     db.execute('''
         CREATE TABLE IF NOT EXISTS revenue (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -240,7 +229,7 @@ def init_db():
         )
     ''')
     
-    # Create settings table
+    # Settings table
     db.execute('''
         CREATE TABLE IF NOT EXISTS settings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -250,7 +239,7 @@ def init_db():
         )
     ''')
     
-    # Create notifications table
+    # Notifications table
     db.execute('''
         CREATE TABLE IF NOT EXISTS notifications (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -266,7 +255,7 @@ def init_db():
         )
     ''')
     
-    # Create audit_log table
+    # Audit log table
     db.execute('''
         CREATE TABLE IF NOT EXISTS audit_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -283,7 +272,7 @@ def init_db():
         )
     ''')
     
-    # Insert default settings
+    # Insert default settings (using INSERT OR IGNORE)
     default_settings = [
         ('coop_name', 'OOU Acctg 2005 Alumni CMS', 'Cooperative name'),
         ('reg_number', 'CMS/2005/001', 'Registration number'),
@@ -331,17 +320,17 @@ def init_db():
     
     # Create default users if they don't exist
     users = [
-        ('admin', generate_password_hash('admin123'), 'admin', 'Administrator', 'admin@coop.com', '0800000000'),
-        ('treasurer', generate_password_hash('treasurer123'), 'treasurer', 'Treasurer', 'treasurer@coop.com', '0800000001'),
-        ('secretary', generate_password_hash('secretary123'), 'secretary', 'Secretary', 'secretary@coop.com', '0800000002')
+        ('admin', generate_password_hash('admin123'), 'admin'),
+        ('treasurer', generate_password_hash('treasurer123'), 'treasurer'),
+        ('secretary', generate_password_hash('secretary123'), 'secretary')
     ]
     
-    for username, pwd_hash, role, full_name, email, phone in users:
+    for username, pwd_hash, role in users:
         try:
             db.execute('''
-                INSERT OR IGNORE INTO users (username, password_hash, role, full_name, email, phone, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', (username, pwd_hash, role, full_name, email, phone, datetime.now()))
+                INSERT OR IGNORE INTO users (username, password_hash, role, created_at)
+                VALUES (?, ?, ?, ?)
+            ''', (username, pwd_hash, role, datetime.now()))
         except Exception as e:
             print(f"Error creating user {username}: {e}")
     
@@ -349,6 +338,5 @@ def init_db():
     db.close()
     print("Database initialized successfully with all tables!")
 
-# Run init_db when script is executed directly
 if __name__ == '__main__':
     init_db()

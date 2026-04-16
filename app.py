@@ -2,7 +2,7 @@
 OOU Acctg 2005 Alumni CMS - Cooperative Accounting Software
 COMPLETE FIXED VERSION - All issues resolved
 """
-
+from extensions import mail
 from flask import Flask, render_template, redirect, url_for, request, flash, jsonify
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -15,16 +15,22 @@ from database import init_db, get_db
 import pandas as pd  # Add this at the top with other imports
 from io import StringIO
 from werkzeug.utils import secure_filename
+from card_generator import MemberCardGenerator
+import qrcode
+import json
+import uuid
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key-change-this-in-production'
 app.config['DATABASE'] = 'cooperative.db'
 
+
 # Initialize login manager
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
-
+mail.init_app(app)
 # Initialize database
 init_db()
 
@@ -176,19 +182,14 @@ def add_member():
     if request.method == 'POST':
         db = get_db()
         try:
-            # Generate member number
-            year = datetime.now().year
-            random_num = random.randint(1000, 9999)
-            member_number = f"OOU/{year}/{random_num}"
-            
+            # Insert member
             db.execute('''
                 INSERT INTO members (
-                    member_number, first_name, last_name, email, phone, address, 
+                    first_name, last_name, email, phone, address, 
                     occupation, date_of_birth, nominee_name, 
-                    nominee_relationship, monthly_savings, status, date_joined
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    nominee_relationship, monthly_savings, status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
-                member_number,
                 request.form['first_name'],
                 request.form['last_name'],
                 request.form.get('email', ''),
@@ -199,27 +200,46 @@ def add_member():
                 request.form.get('nominee_name', ''),
                 request.form.get('nominee_relationship', ''),
                 float(request.form.get('monthly_savings', 5000)),
-                'active',
-                datetime.now()
+                'active'
             ))
             db.commit()
+
+            # Get the newly created member's ID
+            member_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
+
+            # Handle photo upload
+            if 'photo' in request.files:
+                photo = request.files['photo']
+                if photo and photo.filename:
+                    from werkzeug.utils import secure_filename
+                    import os
+                    filename = secure_filename(photo.filename)
+                    ext = filename.rsplit('.', 1)[1].lower()
+                    unique_name = f"member_{member_id}_{int(datetime.now().timestamp())}.{ext}"
+                    photo_path = os.path.join('static/uploads/member-photos', unique_name)
+                    os.makedirs('static/uploads/member-photos', exist_ok=True)
+                    photo.save(photo_path)
+                    db.execute('UPDATE members SET photo_path = ? WHERE id = ?', (photo_path, member_id))
+                    db.commit()
+
             flash('Member added successfully!', 'success')
-        except Exception as e:
+        except Exception as e:   # <--- FIXED: added 'as e' and colon
             db.rollback()
             flash(f'Error adding member: {str(e)}', 'danger')
         return redirect(url_for('members'))
     
+    # GET request – show form
     return render_template('admin/add-member.html')
 
 @app.route('/members/edit/<int:member_id>', methods=['GET', 'POST'])
 @login_required
 @role_required('admin', 'secretary')
 def edit_member(member_id):
-    """Edit member details"""
     db = get_db()
     
     if request.method == 'POST':
         try:
+            # Update member details
             db.execute('''
                 UPDATE members SET
                     first_name = ?, last_name = ?, email = ?, phone = ?,
@@ -242,13 +262,29 @@ def edit_member(member_id):
                 member_id
             ))
             db.commit()
+
+            # Handle photo upload
+            if 'photo' in request.files:
+                photo = request.files['photo']
+                if photo and photo.filename:
+                    from werkzeug.utils import secure_filename
+                    import os
+                    filename = secure_filename(photo.filename)
+                    ext = filename.rsplit('.', 1)[1].lower()
+                    unique_name = f"member_{member_id}_{int(datetime.now().timestamp())}.{ext}"
+                    photo_path = os.path.join('static/uploads/member-photos', unique_name)
+                    os.makedirs('static/uploads/member-photos', exist_ok=True)
+                    photo.save(photo_path)
+                    db.execute('UPDATE members SET photo_path = ? WHERE id = ?', (photo_path, member_id))
+                    db.commit()
+
             flash('Member updated successfully!', 'success')
-        except Exception as e:
+        except Exception as e:   # <--- Proper except clause
             db.rollback()
             flash(f'Error updating member: {str(e)}', 'danger')
         return redirect(url_for('member_details', member_id=member_id))
     
-    # GET request - show edit form
+    # GET request – show edit form
     member = db.execute('SELECT * FROM members WHERE id = ?', (member_id,)).fetchone()
     if not member:
         flash('Member not found', 'danger')
@@ -256,6 +292,37 @@ def edit_member(member_id):
     
     return render_template('admin/edit-member.html', member=member)
 
+@app.route('/members/delete/<int:member_id>', methods=['POST'])
+@login_required
+@role_required('admin')  # Only admins can delete members
+def delete_member(member_id):
+    """Delete a member (only if they have no transactions)"""
+    db = get_db()
+    
+    # Check if member exists
+    member = db.execute('SELECT * FROM members WHERE id = ?', (member_id,)).fetchone()
+    if not member:
+        flash('Member not found.', 'danger')
+        return redirect(url_for('members'))
+    
+    # Check for related records
+    savings_count = db.execute('SELECT COUNT(*) FROM savings WHERE member_id = ?', (member_id,)).fetchone()[0]
+    loans_count = db.execute('SELECT COUNT(*) FROM loans WHERE member_id = ?', (member_id,)).fetchone()[0]
+    
+    if savings_count > 0 or loans_count > 0:
+        flash('Cannot delete member with existing savings or loans. Consider marking them as inactive instead.', 'danger')
+        return redirect(url_for('member_details', member_id=member_id))
+    
+    # If no related records, proceed with deletion
+    try:
+        db.execute('DELETE FROM members WHERE id = ?', (member_id,))
+        db.commit()
+        flash(f'Member {member["first_name"]} {member["last_name"]} has been deleted.', 'success')
+    except Exception as e:
+        db.rollback()
+        flash(f'Error deleting member: {str(e)}', 'danger')
+    
+    return redirect(url_for('members'))
 
 
 @app.route('/members/bulk-upload', methods=['GET', 'POST'])
@@ -465,70 +532,120 @@ def loans():
 @app.route('/loans/apply', methods=['GET', 'POST'])
 @login_required
 def apply_loan():
+    db = get_db()
+    
+    # --- FETCH SETTINGS (used for both GET and POST) ---
+    # Get max tenure
+    max_tenure_row = db.execute("SELECT value FROM settings WHERE key = 'max_tenure_months'").fetchone()
+    max_tenure = int(max_tenure_row['value']) if max_tenure_row else 18
+    
+    # Get interest rates for different loan purposes
+    interest_rows = db.execute("SELECT key, value FROM settings WHERE key LIKE 'interest_%'").fetchall()
+    interest_rates = {row['key']: float(row['value']) for row in interest_rows}
+    # Provide defaults if any are missing
+    interest_rates = {
+        'interest_regular': interest_rates.get('interest_regular', 11),
+        'interest_housing': interest_rates.get('interest_housing', 9),
+        'interest_emergency': interest_rates.get('interest_emergency', 10),
+        'interest_asset': interest_rates.get('interest_asset', 10)
+    }
+    
+    # --- POST: Process loan application ---
     if request.method == 'POST':
-        member_id = request.form['member_id']
-        amount = float(request.form['amount'])
-        purpose = request.form['purpose']
-        tenure = int(request.form['tenure'])
+        member_id = request.form.get('member_id')
+        amount = float(request.form.get('amount', 0))
+        purpose = request.form.get('purpose')
+        tenure = int(request.form.get('tenure', 0))
         
-        db = get_db()
+        # Basic validation
+        if not member_id or amount <= 0 or not purpose or tenure <= 0:
+            flash('All fields are required and must be valid.', 'danger')
+            return redirect(url_for('apply_loan'))
         
         try:
             member = db.execute('SELECT * FROM members WHERE id = ?', (member_id,)).fetchone()
+            if not member:
+                flash('Member not found.', 'danger')
+                return redirect(url_for('apply_loan'))
             
-            # Check membership duration
-            date_joined = datetime.strptime(member['date_joined'], '%Y-%m-%d %H:%M:%S.%f')
-            months_as_member = (datetime.now() - date_joined).days / 30
-            if months_as_member < 6:
-                flash('Member must be registered for at least 6 months', 'danger')
+            # --- Check membership duration (robust date parsing) ---
+            if member['date_joined']:
+                try:
+                    date_joined = datetime.fromisoformat(member['date_joined'].replace('Z', '+00:00'))
+                except ValueError:
+                    # Fallback for format without microseconds
+                    date_joined = datetime.strptime(member['date_joined'], '%Y-%m-%d %H:%M:%S')
+                months_as_member = (datetime.now() - date_joined).days / 30
+                if months_as_member < 6:
+                    flash('Member must be registered for at least 6 months.', 'danger')
+                    return redirect(url_for('member_details', member_id=member_id))
+            else:
+                flash('Member join date is missing. Please contact admin.', 'danger')
                 return redirect(url_for('member_details', member_id=member_id))
             
-            # Check minimum savings
+            # --- Minimum savings check ---
             if member['total_savings'] < 50000:
-                flash(f'Minimum savings of ₦50,000 required', 'danger')
+                flash(f'Minimum savings of ₦50,000 required (current: ₦{member["total_savings"]:,.2f}).', 'danger')
                 return redirect(url_for('member_details', member_id=member_id))
             
-            # Check existing loans
+            # --- Existing active loan check ---
             outstanding = db.execute('SELECT id FROM loans WHERE member_id = ? AND status = "active"', (member_id,)).fetchone()
             if outstanding:
-                flash('Member has an active loan', 'danger')
+                flash('Member already has an active loan. Please complete it before applying for a new one.', 'danger')
                 return redirect(url_for('member_details', member_id=member_id))
             
-            # Check maximum loan amount
+            # --- Maximum loan amount (2x savings) ---
             max_loan = member['total_savings'] * 2
             if amount > max_loan:
-                flash(f'Maximum loan amount is ₦{max_loan:,.2f}', 'danger')
+                flash(f'Maximum loan amount is ₦{max_loan:,.2f} (2x savings).', 'danger')
                 return redirect(url_for('member_details', member_id=member_id))
             
-            # Calculate loan
-            interest_rate = 11
-            monthly_interest = (interest_rate / 100) / 12
-            total_interest = amount * monthly_interest * tenure
-            total_repayment = amount + total_interest
+            # --- Determine interest rate based on purpose ---
+            purpose_to_key = {
+                'Housing': 'interest_housing',
+                'Emergency': 'interest_emergency',
+                'Asset Purchase': 'interest_asset'
+            }
+            rate_key = purpose_to_key.get(purpose, 'interest_regular')
+            interest_rate = interest_rates.get(rate_key, 11)
             
-            # Generate loan number
+            # --- Calculate loan repayment ---
+            monthly_interest = (interest_rate / 100) / 12
+            # Monthly payment formula for amortizing loan
+            if monthly_interest > 0:
+                monthly_payment = amount * monthly_interest * (1 + monthly_interest)**tenure / ((1 + monthly_interest)**tenure - 1)
+            else:
+                monthly_payment = amount / tenure
+            total_repayment = monthly_payment * tenure
+            total_interest = total_repayment - amount
+            
+            # --- Generate loan number ---
             loan_number = f"LOAN/{datetime.now().strftime('%Y%m%d')}/{random.randint(1000, 9999)}"
             
+            # --- Insert loan application ---
             db.execute('''
                 INSERT INTO loans (
                     loan_number, member_id, amount, purpose, tenure, interest_rate,
                     total_repayment, balance, status, date_applied
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (loan_number, member_id, amount, purpose, tenure, interest_rate, 
+            ''', (loan_number, member_id, amount, purpose, tenure, interest_rate,
                   total_repayment, total_repayment, 'pending', datetime.now()))
             
             db.commit()
-            flash('Loan application submitted successfully!', 'success')
+            flash('Loan application submitted successfully! Pending approval.', 'success')
+            return redirect(url_for('member_details', member_id=member_id))
             
         except Exception as e:
             db.rollback()
             flash(f'Error applying for loan: {str(e)}', 'danger')
-        
-        return redirect(url_for('member_details', member_id=member_id))
+            return redirect(url_for('apply_loan'))
     
-    db = get_db()
+    # --- GET: Show the application form ---
     members = db.execute('SELECT id, first_name, last_name FROM members WHERE status = "active"').fetchall()
-    return render_template('admin/apply-loan.html', members=members)
+    return render_template('admin/apply-loan.html',
+                         members=members,
+                         max_tenure=max_tenure,
+                         interest_rates=interest_rates)
 
 @app.route('/loans/approve/<int:loan_id>', methods=['POST'])
 @login_required
@@ -606,36 +723,74 @@ def investments():
 @login_required
 @role_required('admin', 'treasurer')
 def add_investment():
+    """Add a new investment"""
     if request.method == 'POST':
         db = get_db()
-        
         try:
-            investment_number = f"INV/{datetime.now().strftime('%Y%m%d')}/{random.randint(1000, 9999)}"
+            # Generate a unique investment number
+            year = datetime.now().year
+            month = datetime.now().month
+            random_num = random.randint(1000, 9999)
+            investment_number = f"INV/{year}/{month:02d}/{random_num}"
             
+            # Get form data with defaults
+            name = request.form.get('name', '').strip()
+            if not name:
+                flash('Investment name is required.', 'danger')
+                return redirect(url_for('add_investment'))
+            
+            amount = float(request.form.get('amount', 0))
+            if amount <= 0:
+                flash('Amount must be greater than zero.', 'danger')
+                return redirect(url_for('add_investment'))
+            
+            investment_type = request.form.get('type', '')
+            institution = request.form.get('institution', '')
+            interest_rate = request.form.get('interest_rate')
+            if interest_rate:
+                interest_rate = float(interest_rate)
+            else:
+                interest_rate = None
+            
+            start_date = request.form.get('start_date')
+            maturity_date = request.form.get('maturity_date')
+            risk_level = request.form.get('risk_level', 'medium')
+            description = request.form.get('description', '')
+            
+            # Insert into database
             db.execute('''
                 INSERT INTO investments (
-                    investment_number, name, amount, type, description, 
-                    approval_status, date, created_by
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    investment_number, name, amount, type, institution,
+                    interest_rate, start_date, maturity_date, risk_level,
+                    description, approval_status, created_by, date
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 investment_number,
-                request.form['name'],
-                float(request.form['amount']),
-                request.form['type'],
-                request.form.get('description', ''),
-                'approved',
-                datetime.now(),
-                current_user.id
+                name,
+                amount,
+                investment_type,
+                institution,
+                interest_rate,
+                start_date,
+                maturity_date,
+                risk_level,
+                description,
+                'approved',  # Default approval status
+                current_user.id,
+                datetime.now()
             ))
-            
             db.commit()
-            flash('Investment added successfully!', 'success')
+            flash(f'Investment "{name}" added successfully! Reference: {investment_number}', 'success')
+            return redirect(url_for('investments'))
+            
         except Exception as e:
             db.rollback()
             flash(f'Error adding investment: {str(e)}', 'danger')
-        
-        return redirect(url_for('investments'))
+            # Log the error for debugging
+            print(f"Investment add error: {str(e)}")
+            return redirect(url_for('add_investment'))
     
+    # GET request – show form
     return render_template('admin/add-investment.html')
 
 @app.route('/reports')
@@ -1095,25 +1250,115 @@ def loan_detail(loan_id):
 @app.route('/apply-loan-member', methods=['GET', 'POST'])
 @login_required
 def apply_loan_member():
-    """Member loan application"""
-    member_id = request.args.get('member_id')
-    
-    if request.method == 'POST':
-        member_id = request.form.get('member_id')
-        amount = float(request.form.get('amount'))
-        purpose = request.form.get('purpose')
-        tenure = int(request.form.get('tenure'))
-        
-        flash('Loan application submitted successfully!', 'success')
-        return redirect(url_for('member_details', member_id=member_id))
-    
+    """Member portal: apply for a loan (self‑service)"""
     db = get_db()
-    member = None
-    if member_id:
-        member = db.execute('SELECT * FROM members WHERE id = ?', (member_id,)).fetchone()
     
-    return render_template('member/apply-loan.html', member=member)
-
+    # --- Fetch settings (shared for both GET and POST) ---
+    max_tenure_row = db.execute("SELECT value FROM settings WHERE key = 'max_tenure_months'").fetchone()
+    max_tenure = int(max_tenure_row['value']) if max_tenure_row else 18
+    
+    interest_rows = db.execute("SELECT key, value FROM settings WHERE key LIKE 'interest_%'").fetchall()
+    interest_rates = {row['key']: float(row['value']) for row in interest_rows}
+    interest_rates = {
+        'interest_regular': interest_rates.get('interest_regular', 11),
+        'interest_housing': interest_rates.get('interest_housing', 9),
+        'interest_emergency': interest_rates.get('interest_emergency', 10),
+        'interest_asset': interest_rates.get('interest_asset', 10)
+    }
+    
+    # Get the logged‑in member by matching email
+    member = db.execute('SELECT * FROM members WHERE email = ?', (current_user.email,)).fetchone()
+    
+    if not member:
+        flash('Member profile not found. Please ensure your email is registered with the cooperative.', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    # --- POST: Process loan application ---
+    if request.method == 'POST':
+        amount = float(request.form.get('amount', 0))
+        purpose = request.form.get('purpose')
+        tenure = int(request.form.get('tenure', 0))
+        
+        if amount <= 0 or not purpose or tenure <= 0:
+            flash('All fields are required and must be valid.', 'danger')
+            return redirect(url_for('apply_loan_member'))
+        
+        try:
+            # --- Check membership duration ---
+            if member['date_joined']:
+                try:
+                    date_joined = datetime.fromisoformat(member['date_joined'].replace('Z', '+00:00'))
+                except ValueError:
+                    date_joined = datetime.strptime(member['date_joined'], '%Y-%m-%d %H:%M:%S')
+                months_as_member = (datetime.now() - date_joined).days / 30
+                if months_as_member < 6:
+                    flash('You must be a member for at least 6 months to apply for a loan.', 'danger')
+                    return redirect(url_for('apply_loan_member'))
+            else:
+                flash('Your join date is missing. Please contact admin.', 'danger')
+                return redirect(url_for('apply_loan_member'))
+            
+            # --- Minimum savings check ---
+            if member['total_savings'] < 50000:
+                flash(f'Minimum savings of ₦50,000 required (current: ₦{member["total_savings"]:,.2f}).', 'danger')
+                return redirect(url_for('apply_loan_member'))
+            
+            # --- Existing active loan check ---
+            outstanding = db.execute('SELECT id FROM loans WHERE member_id = ? AND status = "active"', (member['id'],)).fetchone()
+            if outstanding:
+                flash('You already have an active loan. Please complete it before applying for a new one.', 'danger')
+                return redirect(url_for('apply_loan_member'))
+            
+            # --- Maximum loan amount (2x savings) ---
+            max_loan = member['total_savings'] * 2
+            if amount > max_loan:
+                flash(f'Maximum loan amount is ₦{max_loan:,.2f} (2x your savings).', 'danger')
+                return redirect(url_for('apply_loan_member'))
+            
+            # --- Determine interest rate based on purpose ---
+            purpose_to_key = {
+                'Housing': 'interest_housing',
+                'Emergency': 'interest_emergency',
+                'Asset Purchase': 'interest_asset'
+            }
+            rate_key = purpose_to_key.get(purpose, 'interest_regular')
+            interest_rate = interest_rates.get(rate_key, 11)
+            
+            # --- Calculate loan repayment ---
+            monthly_interest = (interest_rate / 100) / 12
+            if monthly_interest > 0:
+                monthly_payment = amount * monthly_interest * (1 + monthly_interest)**tenure / ((1 + monthly_interest)**tenure - 1)
+            else:
+                monthly_payment = amount / tenure
+            total_repayment = monthly_payment * tenure
+            total_interest = total_repayment - amount
+            
+            # --- Generate loan number ---
+            loan_number = f"LOAN/{datetime.now().strftime('%Y%m%d')}/{random.randint(1000, 9999)}"
+            
+            # --- Insert loan application ---
+            db.execute('''
+                INSERT INTO loans (
+                    loan_number, member_id, amount, purpose, tenure, interest_rate,
+                    total_repayment, balance, status, date_applied
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (loan_number, member['id'], amount, purpose, tenure, interest_rate,
+                  total_repayment, total_repayment, 'pending', datetime.now()))
+            
+            db.commit()
+            flash('Loan application submitted successfully! Pending approval.', 'success')
+            return redirect(url_for('my_loans'))
+            
+        except Exception as e:
+            db.rollback()
+            flash(f'Error applying for loan: {str(e)}', 'danger')
+            return redirect(url_for('apply_loan_member'))
+    
+    # --- GET: Show the application form ---
+    return render_template('member/apply-loan.html',
+                         member=member,
+                         max_tenure=max_tenure,
+                         interest_rates=interest_rates)
 @app.route('/loan-calculator')
 @login_required
 def loan_calculator():
@@ -1124,10 +1369,7 @@ def loan_calculator():
 def my_cards():
     return render_template('member/my-cards.html')
 
-@app.route('/view-card/<int:card_id>')
-@login_required
-def view_card(card_id):
-    return render_template('member/view-card.html')
+
 
 @app.route('/profile')
 @login_required
@@ -1385,8 +1627,128 @@ def test_db():
         return jsonify({'success': True, 'message': '✅ Database connection successful'})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
+              
+# Error handlers
+@app.errorhandler(404)
+def not_found_error(error):
+    return render_template('errors/404.html'), 404
+
+@app.errorhandler(403)
+def forbidden_error(error):
+    return render_template('errors/403.html'), 403
+
+@app.errorhandler(500)
+def internal_error(error):
+    db = get_db()
+    db.rollback()  # Rollback any failed transactions
+    return render_template('errors/500.html'), 500
+
+# Optional maintenance mode handler – you'd activate this via a config flag
+@app.before_request
+def check_maintenance():
+    # Example: read from settings table
+    if current_user.is_authenticated and current_user.role == 'admin':
+        return  # Admins can bypass
+    # If maintenance mode is on, show maintenance page
+    # This is just a placeholder logic
+    maintenance = False  # You'd fetch from settings
+    if maintenance and request.endpoint not in ['login', 'static']:
+        return render_template('errors/maintenance.html'), 503
+        
+        
+# Initialize card generator
+card_gen = MemberCardGenerator()
+
+@app.route('/member/generate-card/<int:member_id>')
+@login_required
+@role_required('admin', 'secretary')
+def generate_member_card(member_id):
+    db = get_db()
+    member = db.execute('SELECT * FROM members WHERE id = ?', (member_id,)).fetchone()
+    if not member:
+        flash('Member not found', 'danger')
+        return redirect(url_for('members'))
+
+    import uuid
+    token = str(uuid.uuid4())
+    db.execute('UPDATE members SET card_token = ? WHERE id = ?', (token, member_id))
+    db.commit()
+    verification_url = url_for('verify_card', token=token, _external=True)
+
+    from card_generator import MemberCardGenerator
+    card_gen = MemberCardGenerator()
+    
+    # Convert row to dict for safe .get()
+    member_dict = dict(member)
+    
+    member_data = {
+        'member_number': member_dict.get('member_number', f"OOU/{member_id:04d}"),
+        'full_name': f"{member_dict['first_name']} {member_dict['last_name']}",
+        'join_date': member_dict.get('date_joined', '')[:10] if member_dict.get('date_joined') else '',
+        'membership_type': 'Full Member',
+        'photo_path': member_dict.get('photo_path'),
+        'qr_data': verification_url
+    }
+    
+    card_path = card_gen.generate_member_card(member_data)
+    card_filename = os.path.basename(card_path)   # e.g., member_card_OOU_0002.png
+    db.execute('UPDATE members SET card_path = ? WHERE id = ?', (card_filename, member_id))
+    db.commit()
+
+    flash('Member card generated successfully!', 'success')
+    return redirect(url_for('member_details', member_id=member_id))
+
+@app.route('/member/view-card/<int:member_id>')
+@login_required
+def view_member_card(member_id):
+    db = get_db()
+    member = db.execute('SELECT * FROM members WHERE id = ?', (member_id,)).fetchone()
+    if not member:
+        flash('Member not found', 'danger')
+        return redirect(url_for('members'))
+
+    # Get stored filename (should be only filename, not full path)
+    card_filename = member['card_path']
+    if card_filename:
+        full_card_path = os.path.join('static/cards', card_filename)
+    else:
+        full_card_path = None
+
+    if not card_filename or not os.path.exists(full_card_path):
+        # No card or file missing – generate one
+        return redirect(url_for('generate_member_card', member_id=member_id))
+
+    return render_template('member/view-card.html', member=member)
+
+@app.route('/member/download-card/<int:member_id>')
+@login_required
+def download_member_card(member_id):
+    db = get_db()
+    member = db.execute('SELECT * FROM members WHERE id = ?', (member_id,)).fetchone()
+    if not member or not member['card_path']:
+        flash('Card not found', 'danger')
+        return redirect(url_for('member_details', member_id=member_id))
+
+    full_path = os.path.join('static/cards', member['card_path'])
+    if not os.path.exists(full_path):
+        flash('Card file missing. Please regenerate.', 'danger')
+        return redirect(url_for('generate_member_card', member_id=member_id))
+
+    from flask import send_file
+    return send_file(full_path, as_attachment=True, download_name=member['card_path'])
+
+@app.route('/verify-card/<token>')
+def verify_card(token):
+    db = get_db()
+    member = db.execute('SELECT * FROM members WHERE card_token = ?', (token,)).fetchone()
+    if not member:
+        return render_template('errors/404.html'), 404
+    return render_template('public/verify-card.html', member=member)
 
 # ==================== RUN APPLICATION ====================
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
+
+
+

@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block title %}Server Error - OOU Cooperative{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center min-vh-100 align-items-center">
+        <div class="col-md-8 text-center">
+            <div class="error-page py-5">
+                <h1 class="display-1 text-danger">500</h1>
+                <h2 class="mb-4"><i class="fas fa-exclamation-triangle text-danger"></i> Internal Server Error</h2>
+                <p class="lead mb-4">Something went wrong on our end. Our team has been notified and we're working to fix it.</p>
+                <div class="mb-4">
+                    <img src="{{ url_for('static', filename='images/500-illustration.svg') }}" alt="Server error" class="img-fluid" style="max-height: 200px;">
+                </div>
+                <div class="d-flex justify-content-center gap-3">
+                    <a href="{{ url_for('dashboard') }}" class="btn btn-primary btn-lg">
+                        <i class="fas fa-tachometer-alt"></i> Go to Dashboard
+                    </a>
+                    <button onclick="location.reload()" class="btn btn-outline-secondary btn-lg">
+                        <i class="fas fa-sync-alt"></i> Try Again
+                    </a>
+                </div>
+                <p class="text-muted mt-4">
+                    <i class="fas fa-envelope"></i> If the problem persists, please <a href="mailto:support@ooucoop.org">contact support</a>.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block title %}Page Not Found - OOU Cooperative{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="row justify-content-center min-vh-100 align-items-center">
+        <div class="col-md-8 text-center">
+            <div class="error-page py-5">
+                <h1 class="display-1 text-primary">404</h1>
+                <h2 class="mb-4"><i class="fas fa-map-signs text-warning"></i> Page Not Found</h2>
+                <p class="lead mb-4">Sorry, the page you are looking for does not exist or has been moved.</p>
+                <div class="mb-4">
+                    <img src="{{ url_for('static', filename='images/404-illustration.svg') }}" alt="Not found" class="img-fluid" style="max-height: 200px;">
+                </div>
+                <div class="d-flex justify-content-center gap-3">
+                    <a href="{{ url_for('dashboard') }}" class="btn btn-primary btn-lg">
+                        <i class="fas fa-tachometer-alt"></i> Go to Dashboard
+                    </a>
+                    <button onclick="history.back()" class="btn btn-outline-secondary btn-lg">
+                        <i class="fas fa-arrow-left"></i> Go Back
+                    </a>
+                </div>
+                <p class="text-muted mt-4">
+                    <i class="fas fa-search"></i> If you believe this is an error, contact support.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

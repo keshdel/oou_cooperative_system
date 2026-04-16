@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block title %}Add Investment - OOU Cooperative{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h2><i class="fas fa-chart-line"></i> Add New Investment</h2>
+            <p class="text-muted">Record a new investment made by the cooperative</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="{{ url_for('investments') }}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> Back to Investments
+            </a>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header bg-primary text-white">
+            <h5 class="mb-0">Investment Details</h5>
+        </div>
+        <div class="card-body">
+            <form method="POST">
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-bold">Investment Name *</label>
+                        <input type="text" class="form-control" name="name" placeholder="e.g., Fixed Deposit with UBA" required>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-bold">Investment Type *</label>
+                        <select class="form-select" name="type" required>
+                            <option value="">-- Select Type --</option>
+                            <option value="fixed_deposit">Fixed/Term Deposit</option>
+                            <option value="shares">Shares</option>
+                            <option value="real_estate">Real Estate</option>
+                            <option value="government">Government Securities</option>
+                            <option value="bonds">Bonds</option>
+                            <option value="mutual_funds">Mutual Funds</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-bold">Amount (₦) *</label>
+                        <input type="number" class="form-control" name="amount" min="0" step="1000" required>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-bold">Institution/Bank</label>
+                        <input type="text" class="form-control" name="institution" placeholder="e.g., UBA, Access Bank">
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-bold">Interest Rate (%)</label>
+                        <input type="number" class="form-control" name="interest_rate" step="0.1" min="0" placeholder="e.g., 10.5">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-bold">Start Date</label>
+                        <input type="date" class="form-control" name="start_date" value="{{ now().strftime('%Y-%m-%d') }}">
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-bold">Maturity Date (if applicable)</label>
+                        <input type="date" class="form-control" name="maturity_date">
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-bold">Risk Level</label>
+                        <select class="form-select" name="risk_level">
+                            <option value="low">Low</option>
+                            <option value="medium" selected>Medium</option>
+                            <option value="high">High</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Description</label>
+                    <textarea class="form-control" name="description" rows="3" placeholder="Additional details..."></textarea>
+                </div>
+
+                <hr>
+
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle"></i>
+                    <strong>Note:</strong> Major investments (Shares & Real Estate > ₦100,000) require executive committee approval.
+                </div>
+
+                <div class="text-end">
+                    <a href="{{ url_for('investments') }}" class="btn btn-secondary">Cancel</a>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save"></i> Add Investment
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

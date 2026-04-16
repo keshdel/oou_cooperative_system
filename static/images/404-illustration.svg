@@ -1,0 +1,56 @@
+<svg width="800" height="400" viewBox="0 0 800 400" xmlns="http://www.w3.org/2000/svg">
+
+<style>
+.text { font-family: Arial, Helvetica, sans-serif; fill:#2c3e50;}
+.light { fill:#e8eef7;}
+.dark { fill:#4a6cf7;}
+.mid { fill:#6b7cff;}
+.line { stroke:#2c3e50; stroke-width:3; stroke-linecap:round;}
+</style>
+
+<!-- Background -->
+<rect width="800" height="400" fill="#f5f7fb"/>
+
+<!-- Clouds -->
+<circle cx="150" cy="90" r="20" class="light"/>
+<circle cx="175" cy="90" r="25" class="light"/>
+<circle cx="200" cy="90" r="20" class="light"/>
+
+<circle cx="600" cy="70" r="18" class="light"/>
+<circle cx="620" cy="70" r="22" class="light"/>
+<circle cx="640" cy="70" r="18" class="light"/>
+
+<!-- 404 Text -->
+<text x="210" y="210" font-size="120" font-weight="700" class="dark">404</text>
+
+<!-- Broken gear inside 0 -->
+<circle cx="400" cy="170" r="35" fill="none" stroke="#2c3e50" stroke-width="4"/>
+<line x1="380" y1="150" x2="420" y2="190" class="line"/>
+<line x1="420" y1="150" x2="380" y2="190" class="line"/>
+
+<!-- Robot -->
+<rect x="580" y="210" width="90" height="100" rx="15" fill="#ffffff" stroke="#2c3e50" stroke-width="3"/>
+<rect x="595" y="190" width="60" height="40" rx="8" fill="#ffffff" stroke="#2c3e50" stroke-width="3"/>
+<circle cx="615" cy="210" r="6" class="dark"/>
+<circle cx="635" cy="210" r="6" class="dark"/>
+
+<!-- Antenna -->
+<line x1="625" y1="190" x2="625" y2="170" class="line"/>
+<circle cx="625" cy="165" r="6" class="mid"/>
+
+<!-- Arms -->
+<line x1="580" y1="240" x2="550" y2="260" class="line"/>
+<line x1="670" y1="240" x2="700" y2="260" class="line"/>
+
+<!-- Magnifying glass -->
+<circle cx="545" cy="265" r="15" fill="none" stroke="#2c3e50" stroke-width="3"/>
+<line x1="555" y1="275" x2="565" y2="285" class="line"/>
+
+<!-- Ground -->
+<rect x="0" y="320" width="800" height="80" fill="#e8eef7"/>
+
+<!-- Message -->
+<text x="300" y="300" font-size="24" class="text">Page Not Found</text>
+<text x="250" y="330" font-size="16" class="text">Oops! The page you are looking for doesn't exist.</text>
+
+</svg>

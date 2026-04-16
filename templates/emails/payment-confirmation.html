@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Payment Confirmation - OOU Cooperative</title>
+    <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; background-color: #f4f6f9; margin: 0; padding: 0; }
+        .container { max-width: 600px; margin: 20px auto; background-color: #ffffff; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); overflow: hidden; }
+        .header { background: linear-gradient(135deg, #10b981 0%, #059669 100%); padding: 30px; text-align: center; }
+        .header h1 { color: #ffffff; margin: 0; font-size: 28px; }
+        .content { padding: 40px 30px; }
+        .content p { font-size: 16px; line-height: 1.6; color: #333; margin-bottom: 20px; }
+        .receipt { background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; }
+        .receipt table { width: 100%; border-collapse: collapse; }
+        .receipt td { padding: 8px; border-bottom: 1px solid #ddd; }
+        .receipt td:first-child { font-weight: bold; width: 40%; }
+        .button { display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: #ffffff; text-decoration: none; padding: 12px 30px; border-radius: 5px; font-weight: bold; margin-top: 20px; }
+        .footer { background-color: #f8f9fa; padding: 20px; text-align: center; font-size: 14px; color: #666; }
+        .footer a { color: #667eea; text-decoration: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Payment Received</h1>
+        </div>
+        <div class="content">
+            <p>Dear {{ member.full_name }},</p>
+            <p>Thank you for your payment. We have successfully received your contribution.</p>
+            <div class="receipt">
+                <h3 style="margin-top:0;">Payment Receipt</h3>
+                <table>
+                    <tr><td>Receipt Number:</td><td>{{ transaction.receipt_number }}</td></tr>
+                    <tr><td>Date:</td><td>{{ transaction.date.strftime('%d %B, %Y') }}</td></tr>
+                    <tr><td>Amount:</td><td>₦{{ "{:,.2f}".format(transaction.amount) }}</td></tr>
+                    <tr><td>Payment Method:</td><td>{{ transaction.payment_method|title }}</td></tr>
+                    <tr><td>Month/Year:</td><td>{{ transaction.month }}</td></tr>
+                    {% if transaction.late_fee > 0 %}
+                    <tr><td>Late Fee:</td><td>₦{{ "{:,.2f}".format(transaction.late_fee) }}</td></tr>
+                    {% endif %}
+                </table>
+            </div>
+            <p>Your updated total savings: <strong>₦{{ "{:,.2f}".format(member.total_savings) }}</strong></p>
+            <p style="text-align: center;">
+                <a href="{{ transaction_url }}" class="button">View Receipt Online</a>
+            </p>
+            <p>Thank you for being a valued member!</p>
+            <p>Best regards,<br>The OOU Cooperative Team</p>
+        </div>
+        <div class="footer">
+            <p>&copy; 2026 OOU Acctg 2005 Alumni CMS. All rights reserved.</p>
+            <p><a href="#">Unsubscribe</a> | <a href="#">Privacy Policy</a></p>
+        </div>
+    </div>
+</body>
+</html>

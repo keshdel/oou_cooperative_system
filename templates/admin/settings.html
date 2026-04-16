@@ -799,31 +799,13 @@ function exportAuditLog() {
     window.location.href = '/api/export_audit_log';
 }
 
-// Save settings
+// Forms submit normally – no AJAX interference
 document.querySelectorAll('form').forEach(form => {
-    form.addEventListener('submit', function(e) {
-        e.preventDefault();
-        
-        const formData = new FormData(this);
-        
-        fetch(this.action, {
-            method: 'POST',
-            body: formData
-        })
-        .then(response => response.json())
-        .then(data => {
-            if(data.success) {
-                alert('Settings saved successfully!');
-            } else {
-                alert('Error saving settings: ' + data.error);
-            }
-        })
-        .catch(error => {
-            alert('Error: ' + error);
-        });
+    form.addEventListener('submit', function() {
+        // Let the browser handle submission naturally
+        return true;
     });
 });
-
 // Test database connection
 function testConnection() {
     fetch('/api/test_db')
