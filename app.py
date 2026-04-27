@@ -2,7 +2,6 @@
 OOU Acctg 2005 Alumni CMS - Cooperative Accounting Software
 COMPLETE FIXED VERSION - All issues resolved
 """
-from extensions import mail
 from flask import Flask, render_template, redirect, url_for, request, flash, jsonify
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -10,34 +9,37 @@ from datetime import datetime, timedelta
 from functools import wraps
 import os
 import sqlite3
-import random  # IMPORT ADDED - was missing!
-from database import init_db, get_db
-import pandas as pd  # Add this at the top with other imports
+import random
+import uuid
+import re
+import json
 from io import StringIO
 from werkzeug.utils import secure_filename
+
+from database import init_db, get_db
 from card_generator import MemberCardGenerator
-import qrcode
-import json
-import uuid
-from werkzeug.utils import secure_filename
 
+# Create the Flask app instance FIRST
+app = Flask(__name__)
 
-import os
+# Now configure the app
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-change-this-in-production')
+app.config['DATABASE'] = 'cooperative.db'
 
-# Override database URL if in production
+# Override database URL if in production (PostgreSQL)
 if os.environ.get('DATABASE_URL'):
-    # Render provides a PostgreSQL URL
-    import re
     db_url = os.environ['DATABASE_URL']
-    # Fix for SQLAlchemy 1.4+ (Render uses postgres://, but SQLAlchemy needs postgresql://)
+    # Fix for SQLAlchemy 1.4+ (some platforms use postgres://)
     db_url = re.sub(r'^postgres://', 'postgresql://', db_url)
     app.config['DATABASE_URL'] = db_url
 else:
     app.config['DATABASE_URL'] = 'sqlite:///cooperative.db'
 
-app = Flask(__name__)
-app.config['SECRET_KEY'] = 'your-secret-key-change-this-in-production'
-app.config['DATABASE'] = 'cooperative.db'
+# If you have a mail extension (optional), initialize it after app
+from extensions import mail
+mail.init_app(app)
+
+# The rest of your app (LoginManager, routes, etc.) continues below...
 
 
 # Initialize login manager
