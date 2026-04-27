@@ -812,100 +812,159 @@ def add_investment():
 @app.route('/reports')
 @login_required
 def reports():
-    """Reports dashboard"""
+    """Reports dashboard - safe version with fallbacks"""
     db = get_db()
     
     try:
-        # Get statistics for reports
-        total_members = db.execute('SELECT COUNT(*) FROM members').fetchone()[0] or 0
-        active_members = db.execute('SELECT COUNT(*) FROM members WHERE status = "active"').fetchone()[0] or 0
+        # Helper to safely get a single numeric value
+        def safe_fetch(query, params=()):
+            result = db.execute(query, params).fetchone()
+            return result[0] if result and result[0] is not None else 0
+        
+        # Member stats
+        total_members = safe_fetch('SELECT COUNT(*) FROM members')
+        active_members = safe_fetch('SELECT COUNT(*) FROM members WHERE status = "active"')
         inactive_members = total_members - active_members
-        members_with_loans = db.execute('SELECT COUNT(DISTINCT member_id) FROM loans WHERE status = "active"').fetchone()[0] or 0
+        members_with_loans = safe_fetch('SELECT COUNT(DISTINCT member_id) FROM loans WHERE status = "active"')
+        new_members_month = safe_fetch('SELECT COUNT(*) FROM members WHERE date_joined >= date("now", "-30 days")')
         
         # Savings stats
-        total_savings_all = db.execute('SELECT SUM(amount) FROM savings').fetchone()[0] or 0
-        
-        # Get current month savings
+        total_savings_all = safe_fetch('SELECT COALESCE(SUM(amount), 0) FROM savings')
         current_month = datetime.now().strftime('%Y-%m')
-        this_month_savings = db.execute('SELECT SUM(amount) FROM savings WHERE month = ?', (current_month,)).fetchone()[0] or 0
+        this_month_savings = safe_fetch('SELECT COALESCE(SUM(amount), 0) FROM savings WHERE month = ?', (current_month,))
+        total_late_fees = safe_fetch('SELECT COALESCE(SUM(late_fee), 0) FROM savings')
+        avg_savings_per_member = total_savings_all / total_members if total_members > 0 else 0
         
         # Loan stats
-        active_loans_total = db.execute('SELECT SUM(amount) FROM loans WHERE status = "active"').fetchone()[0] or 0
-        total_disbursed = db.execute('SELECT SUM(amount) FROM loans WHERE status IN ("active", "completed")').fetchone()[0] or 0
-        total_repaid = db.execute('SELECT SUM(amount) FROM repayments').fetchone()[0] or 0
+        active_loans_total = safe_fetch('SELECT COALESCE(SUM(amount), 0) FROM loans WHERE status = "active"')
+        total_disbursed = safe_fetch('SELECT COALESCE(SUM(amount), 0) FROM loans WHERE status IN ("active", "completed")')
+        total_repaid = safe_fetch('SELECT COALESCE(SUM(amount), 0) FROM repayments')
         total_interest = (total_disbursed * 0.11) if total_disbursed else 0
         
+        active_loans_count = safe_fetch('SELECT COUNT(*) FROM loans WHERE status = "active"')
+        completed_loans_count = safe_fetch('SELECT COUNT(*) FROM loans WHERE status = "completed"')
+        pending_loans_count = safe_fetch('SELECT COUNT(*) FROM loans WHERE status = "pending"')
+        rejected_loans_count = safe_fetch('SELECT COUNT(*) FROM loans WHERE status = "rejected"')
+        
         # Investment stats
-        total_investments_value = db.execute('SELECT SUM(amount) FROM investments').fetchone()[0] or 0
+        total_investments_value = safe_fetch('SELECT COALESCE(SUM(amount), 0) FROM investments')
         
-        # Sample data for charts (replace with real data later)
-        savings_months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-        monthly_savings_data = [random.randint(100000, 500000) for _ in range(12)]
+        # Chart data – Monthly savings last 6 months (real data)
+        savings_months = []
+        monthly_savings_data = []
+        for i in range(5, -1, -1):
+            month_date = datetime.now().replace(day=1) - timedelta(days=30*i)
+            month_str = month_date.strftime('%Y-%m')
+            month_name = month_date.strftime('%b')
+            savings_months.append(month_name)
+            month_total = safe_fetch('SELECT COALESCE(SUM(amount), 0) FROM savings WHERE month = ?', (month_str,))
+            monthly_savings_data.append(month_total)
         
-        join_months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun']
-        new_members_data = [random.randint(1, 10) for _ in range(6)]
+        # Member join trend last 6 months
+        join_months = []
+        new_members_data = []
+        for i in range(5, -1, -1):
+            month_date = datetime.now().replace(day=1) - timedelta(days=30*i)
+            month_name = month_date.strftime('%b')
+            join_months.append(month_name)
+            start = month_date.strftime('%Y-%m-01')
+            end = (month_date + timedelta(days=32)).replace(day=1).strftime('%Y-%m-01')
+            count = safe_fetch('SELECT COUNT(*) FROM members WHERE date_joined >= ? AND date_joined < ?', (start, end))
+            new_members_data.append(count)
         
-        # Loan counts
-        active_loans_count = db.execute('SELECT COUNT(*) FROM loans WHERE status = "active"').fetchone()[0] or 0
-        completed_loans_count = db.execute('SELECT COUNT(*) FROM loans WHERE status = "completed"').fetchone()[0] or 0
-        pending_loans_count = db.execute('SELECT COUNT(*) FROM loans WHERE status = "pending"').fetchone()[0] or 0
-        rejected_loans_count = db.execute('SELECT COUNT(*) FROM loans WHERE status = "rejected"').fetchone()[0] or 0
-        
-        # Investment types
+        # Investment type data (sample – you can replace with real category sums later)
         investment_type_labels = ['Fixed Deposit', 'Shares', 'Real Estate', 'Government Bonds', 'Other']
         investment_type_data = [random.randint(100000, 1000000) for _ in range(5)]
         
-        # Dividend calculations
+        # Dividends
         dividend_amount = total_savings_all * 0.05
         reserve_amount = dividend_amount * 0.3
         honorarium_amount = dividend_amount * 0.1
         other_appropriations = dividend_amount * 0.1
         
+        # Top savers
+        top_savers = db.execute('''
+            SELECT m.id, m.first_name, m.last_name, COALESCE(SUM(s.amount), 0) as total_savings
+            FROM members m
+            LEFT JOIN savings s ON m.id = s.member_id
+            GROUP BY m.id
+            ORDER BY total_savings DESC
+            LIMIT 5
+        ''').fetchall()
+        
+        # Additional variables expected by template
+        delinquent_loans = []
+        active_savings = total_savings_all
+        inactive_savings = 0
+        loan_member_savings = total_savings_all * 0.6   # placeholder
+        total_income_year = total_savings_all
+        total_expenses_year = total_investments_value
+        net_surplus_year = total_income_year - total_expenses_year
+        member_dividends = []
+        
         return render_template('admin/reports.html',
-                             total_members=total_members,
-                             active_members=active_members,
-                             inactive_members=inactive_members,
-                             members_with_loans=members_with_loans,
-                             new_members_month=random.randint(0, 5),
-                             total_savings_all=total_savings_all,
-                             this_month_savings=this_month_savings,
-                             total_late_fees=random.randint(0, 50000),
-                             avg_savings_per_member=total_savings_all/total_members if total_members > 0 else 0,
-                             active_loans_total=active_loans_total,
-                             total_disbursed=total_disbursed,
-                             total_repaid=total_repaid,
-                             total_interest=total_interest,
-                             active_loans_count=active_loans_count,
-                             completed_loans_count=completed_loans_count,
-                             pending_loans_count=pending_loans_count,
-                             rejected_loans_count=rejected_loans_count,
-                             current_loans=active_loans_count,
-                             days_30_loans=0,
-                             days_60_loans=0,
-                             days_90_loans=0,
-                             total_investments_value=total_investments_value,
-                             savings_months=savings_months,
-                             monthly_savings_data=monthly_savings_data,
-                             join_months=join_months,
-                             new_members_data=new_members_data,
-                             investment_type_labels=investment_type_labels,
-                             investment_type_data=investment_type_data,
-                             dividend_amount=dividend_amount,
-                             reserve_amount=reserve_amount,
-                             honorarium_amount=honorarium_amount,
-                             other_appropriations=other_appropriations,
-                             top_savers=[],
-                             delinquent_loans=[],
-                             active_savings=total_savings_all,
-                             inactive_savings=0,
-                             loan_member_savings=total_savings_all * 0.6,
-                             total_income_year=total_savings_all,
-                             total_expenses_year=total_investments_value,
-                             net_surplus_year=total_savings_all - total_investments_value,
-                             member_dividends=[])
+            total_members=total_members,
+            active_members=active_members,
+            inactive_members=inactive_members,
+            members_with_loans=members_with_loans,
+            new_members_month=new_members_month,
+            total_savings_all=total_savings_all,
+            this_month_savings=this_month_savings,
+            total_late_fees=total_late_fees,
+            avg_savings_per_member=avg_savings_per_member,
+            active_loans_total=active_loans_total,
+            total_disbursed=total_disbursed,
+            total_repaid=total_repaid,
+            total_interest=total_interest,
+            active_loans_count=active_loans_count,
+            completed_loans_count=completed_loans_count,
+            pending_loans_count=pending_loans_count,
+            rejected_loans_count=rejected_loans_count,
+            current_loans=active_loans_count,
+            days_30_loans=0,
+            days_60_loans=0,
+            days_90_loans=0,
+            total_investments_value=total_investments_value,
+            savings_months=savings_months,
+            monthly_savings_data=monthly_savings_data,
+            join_months=join_months,
+            new_members_data=new_members_data,
+            investment_type_labels=investment_type_labels,
+            investment_type_data=investment_type_data,
+            dividend_amount=dividend_amount,
+            reserve_amount=reserve_amount,
+            honorarium_amount=honorarium_amount,
+            other_appropriations=other_appropriations,
+            top_savers=top_savers,
+            delinquent_loans=delinquent_loans,
+            active_savings=active_savings,
+            inactive_savings=inactive_savings,
+            loan_member_savings=loan_member_savings,
+            total_income_year=total_income_year,
+            total_expenses_year=total_expenses_year,
+            net_surplus_year=net_surplus_year,
+            member_dividends=member_dividends
+        )
     except Exception as e:
-        flash(f'Error loading reports: {str(e)}', 'danger')
-        return render_template('admin/reports.html', **{k:0 for k in range(50)})  # Fallback
+        # Log error and fallback to a safe empty report
+        import traceback
+        print(f"Reports error: {e}")
+        print(traceback.format_exc())
+        flash('Unable to load reports due to an internal error. Please try again later.', 'danger')
+        # Return a page with all zeros as fallback
+        zero_vars = {k:0 for k in [
+            'total_members','active_members','inactive_members','members_with_loans','new_members_month',
+            'total_savings_all','this_month_savings','total_late_fees','avg_savings_per_member',
+            'active_loans_total','total_disbursed','total_repaid','total_interest','active_loans_count',
+            'completed_loans_count','pending_loans_count','rejected_loans_count','current_loans',
+            'days_30_loans','days_60_loans','days_90_loans','total_investments_value',
+            'savings_months','monthly_savings_data','join_months','new_members_data',
+            'investment_type_labels','investment_type_data','dividend_amount','reserve_amount',
+            'honorarium_amount','other_appropriations','top_savers','delinquent_loans','active_savings',
+            'inactive_savings','loan_member_savings','total_income_year','total_expenses_year',
+            'net_surplus_year','member_dividends'
+        ]}
+        return render_template('admin/reports.html', **zero_vars)
 
 @app.route('/reports/financial')
 @login_required
