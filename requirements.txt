@@ -19,9 +19,6 @@ Flask-WTF==1.2.1
 # Email
 Flask-Mail==0.9.1
 
-# File processing (bulk upload)
-pandas==2.1.4
-openpyxl==3.1.2            # Excel support for pandas
 
 # PDF generation
 reportlab==4.2.0
