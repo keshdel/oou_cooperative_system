@@ -272,7 +272,7 @@ def init_db():
         )
     ''')
     
-    # Insert default settings (using INSERT OR IGNORE)
+    # Insert default settings (PostgreSQL‑compatible: ON CONFLICT)
     default_settings = [
         ('coop_name', 'OOU Acctg 2005 Alumni CMS', 'Cooperative name'),
         ('reg_number', 'CMS/2005/001', 'Registration number'),
@@ -311,14 +311,16 @@ def init_db():
     
     for key, value, desc in default_settings:
         try:
+            # Works on both SQLite (3.24+) and PostgreSQL
             db.execute('''
-                INSERT OR IGNORE INTO settings (key, value, description)
+                INSERT INTO settings (key, value, description)
                 VALUES (?, ?, ?)
+                ON CONFLICT(key) DO NOTHING
             ''', (key, value, desc))
         except Exception as e:
             print(f"Error inserting setting {key}: {e}")
     
-    # Create default users if they don't exist
+    # Create default users using ON CONFLICT
     users = [
         ('admin', generate_password_hash('admin123'), 'admin'),
         ('treasurer', generate_password_hash('treasurer123'), 'treasurer'),
@@ -328,8 +330,9 @@ def init_db():
     for username, pwd_hash, role in users:
         try:
             db.execute('''
-                INSERT OR IGNORE INTO users (username, password_hash, role, created_at)
+                INSERT INTO users (username, password_hash, role, created_at)
                 VALUES (?, ?, ?, ?)
+                ON CONFLICT(username) DO NOTHING
             ''', (username, pwd_hash, role, datetime.now()))
         except Exception as e:
             print(f"Error creating user {username}: {e}")

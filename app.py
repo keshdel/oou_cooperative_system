@@ -21,6 +21,20 @@ import json
 import uuid
 from werkzeug.utils import secure_filename
 
+
+import os
+
+# Override database URL if in production
+if os.environ.get('DATABASE_URL'):
+    # Render provides a PostgreSQL URL
+    import re
+    db_url = os.environ['DATABASE_URL']
+    # Fix for SQLAlchemy 1.4+ (Render uses postgres://, but SQLAlchemy needs postgresql://)
+    db_url = re.sub(r'^postgres://', 'postgresql://', db_url)
+    app.config['DATABASE_URL'] = db_url
+else:
+    app.config['DATABASE_URL'] = 'sqlite:///cooperative.db'
+
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'your-secret-key-change-this-in-production'
 app.config['DATABASE'] = 'cooperative.db'

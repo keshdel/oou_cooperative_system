@@ -1,0 +1,3 @@
+postgresql://coopuser:4fdVhqezEoSZQhOWOfPj0sfIanYZjWKx@dpg-d7nmnft7vvec7397udm0-a/coopdb_8vex
+
+Internal Database URL:
