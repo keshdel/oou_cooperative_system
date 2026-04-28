@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 
+{% block title %}Reports - OOU Cooperative{% endblock %}
+
 {% block content %}
 <div class="container-fluid">
     <div class="row mb-4">
@@ -413,19 +415,32 @@
                                     <tr>
                                         <td>Active Members</td>
                                         <td>{{ active_members|default(0) }}</td>
-                                        <td>{{ (active_members/total_members*100)| if total_members > 0 else 0|round(1) }}%</td>
+                                        <td>
+                                            {% set total = total_members|default(0) %}
+                                            {% if total > 0 %}
+                                                {{ ((active_members / total) * 100) | round(1) }}%
+                                            {% else %}0%{% endif %}
+                                        </td>
                                         <td>₦{{ "{:,.2f}".format(active_savings|default(0)) }}</td>
                                     </tr>
                                     <tr>
                                         <td>Inactive Members</td>
                                         <td>{{ inactive_members|default(0) }}</td>
-                                        <td>{{ (inactive_members/total_members*100)|default(0)|round(1) }}%</td>
+                                        <td>
+                                            {% if total_members|default(0) > 0 %}
+                                                {{ ((inactive_members / total_members) * 100) | round(1) }}%
+                                            {% else %}0%{% endif %}
+                                        </td>
                                         <td>₦{{ "{:,.2f}".format(inactive_savings|default(0)) }}</td>
                                     </tr>
                                     <tr>
                                         <td>With Active Loans</td>
                                         <td>{{ members_with_loans|default(0) }}</td>
-                                        <td>{{ (members_with_loans/total_members*100)|default(0)|round(1) }}%</td>
+                                        <td>
+                                            {% if total_members|default(0) > 0 %}
+                                                {{ ((members_with_loans / total_members) * 100) | round(1) }}%
+                                            {% else %}0%{% endif %}
+                                        </td>
                                         <td>₦{{ "{:,.2f}".format(loan_member_savings|default(0)) }}</td>
                                     </tr>
                                 </tbody>
@@ -493,7 +508,12 @@
                                             <tr>
                                                 <td>{{ type.name }}</td>
                                                 <td>₦{{ "{:,.2f}".format(type.amount) }}</td>
-                                                <td>{{ (type.amount/total_investments_value*100)|default(0)|round(1) }}%</td>
+                                                <td>
+                                                    {% set total = total_investments_value|default(0) %}
+                                                    {% if total > 0 %}
+                                                        {{ ((type.amount / total) * 100) | round(1) }}%
+                                                    {% else %}0%{% endif %}
+                                                </td>
                                             </tr>
                                             {% endfor %}
                                         </tbody>
@@ -649,7 +669,12 @@
                                             <tr>
                                                 <td>{{ member.name }}</td>
                                                 <td>₦{{ "{:,.2f}".format(member.savings) }}</td>
-                                                <td>{{ (member.savings/total_savings_all*100)|default(0)|round(2) }}%</td>
+                                                <td>
+                                                    {% set total = total_savings_all|default(0) %}
+                                                    {% if total > 0 %}
+                                                        {{ ((member.savings / total) * 100) | round(2) }}%
+                                                    {% else %}0%{% endif %}
+                                                </td>
                                                 <td>₦{{ "{:,.2f}".format(member.dividend) }}</td>
                                             </tr>
                                             {% endfor %}
@@ -667,6 +692,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 // Initialize all charts when tab is shown
 document.querySelectorAll('a[data-bs-toggle="tab"]').forEach(tab => {
@@ -707,16 +733,10 @@ function initFinancialCharts() {
             },
             options: {
                 responsive: true,
-                plugins: {
-                    title: {
-                        display: true,
-                        text: 'Income Breakdown'
-                    }
-                }
+                plugins: { title: { display: true, text: 'Income Breakdown' } }
             }
         });
     }
-    
     // Expense Chart
     const ctx2 = document.getElementById('expenseChart')?.getContext('2d');
     if (ctx2) {
@@ -735,12 +755,7 @@ function initFinancialCharts() {
             },
             options: {
                 responsive: true,
-                plugins: {
-                    title: {
-                        display: true,
-                        text: 'Expense Breakdown'
-                    }
-                }
+                plugins: { title: { display: true, text: 'Expense Breakdown' } }
             }
         });
     }
@@ -758,29 +773,14 @@ function initSavingsCharts() {
                     label: 'Monthly Savings',
                     data: {{ monthly_savings_data|default([])|tojson }},
                     borderColor: '#28a745',
-                    backgroundColor: 'rgba(40, 167, 69, 0.1)',
-                    tension: 0.4,
-                    fill: true
+                    backgroundColor: 'rgba(40,167,69,0.1)',
+                    fill: true,
+                    tension: 0.4
                 }]
             },
             options: {
                 responsive: true,
-                plugins: {
-                    title: {
-                        display: true,
-                        text: 'Savings Trend (Last 12 Months)'
-                    }
-                },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        ticks: {
-                            callback: function(value) {
-                                return '₦' + value.toLocaleString();
-                            }
-                        }
-                    }
-                }
+                scales: { y: { ticks: { callback: v => '₦' + v.toLocaleString() } } }
             }
         });
     }
@@ -804,18 +804,9 @@ function initLoansCharts() {
                     backgroundColor: ['#28a745', '#17a2b8', '#ffc107', '#dc3545']
                 }]
             },
-            options: {
-                responsive: true,
-                plugins: {
-                    title: {
-                        display: true,
-                        text: 'Loan Portfolio by Status'
-                    }
-                }
-            }
+            options: { responsive: true }
         });
     }
-    
     const ctx2 = document.getElementById('loanPerformanceChart')?.getContext('2d');
     if (ctx2) {
         new Chart(ctx2, {
@@ -833,15 +824,7 @@ function initLoansCharts() {
                     backgroundColor: ['#28a745', '#ffc107', '#fd7e14', '#dc3545']
                 }]
             },
-            options: {
-                responsive: true,
-                plugins: {
-                    title: {
-                        display: true,
-                        text: 'Loan Performance (Days Overdue)'
-                    }
-                }
-            }
+            options: { responsive: true }
         });
     }
 }
@@ -858,23 +841,14 @@ function initMembersCharts() {
                     label: 'New Members',
                     data: {{ new_members_data|default([])|tojson }},
                     borderColor: '#007bff',
-                    backgroundColor: 'rgba(0, 123, 255, 0.1)',
-                    tension: 0.4,
-                    fill: true
+                    fill: true,
+                    backgroundColor: 'rgba(0,123,255,0.1)',
+                    tension: 0.4
                 }]
             },
-            options: {
-                responsive: true,
-                plugins: {
-                    title: {
-                        display: true,
-                        text: 'Member Growth'
-                    }
-                }
-            }
+            options: { responsive: true }
         });
     }
-    
     const ctx2 = document.getElementById('membersStatusChart')?.getContext('2d');
     if (ctx2) {
         new Chart(ctx2, {
@@ -890,15 +864,7 @@ function initMembersCharts() {
                     backgroundColor: ['#28a745', '#6c757d', '#dc3545']
                 }]
             },
-            options: {
-                responsive: true,
-                plugins: {
-                    title: {
-                        display: true,
-                        text: 'Members by Status'
-                    }
-                }
-            }
+            options: { responsive: true }
         });
     }
 }
@@ -913,21 +879,10 @@ function initInvestmentsCharts() {
                 labels: {{ investment_type_labels|default([])|tojson }},
                 datasets: [{
                     data: {{ investment_type_data|default([])|tojson }},
-                    backgroundColor: [
-                        '#007bff', '#28a745', '#17a2b8', 
-                        '#ffc107', '#dc3545', '#6c757d'
-                    ]
+                    backgroundColor: ['#007bff', '#28a745', '#17a2b8', '#ffc107', '#dc3545', '#6c757d']
                 }]
             },
-            options: {
-                responsive: true,
-                plugins: {
-                    title: {
-                        display: true,
-                        text: 'Investment Portfolio by Type'
-                    }
-                }
-            }
+            options: { responsive: true }
         });
     }
 }
@@ -950,32 +905,18 @@ function initSurplusChart() {
                     backgroundColor: ['#28a745', '#007bff', '#ffc107', '#6c757d']
                 }]
             },
-            options: {
-                responsive: true,
-                plugins: {
-                    title: {
-                        display: true,
-                        text: 'Surplus Appropriation (Bye-laws Section 10)'
-                    }
-                }
-            }
+            options: { responsive: true }
         });
     }
 }
 
-// Export all reports
 function exportAllReports() {
-    // This would compile all reports into a single export
     alert('Export functionality will generate Excel/PDF reports');
 }
 
-// Initialize charts on page load
 document.addEventListener('DOMContentLoaded', function() {
-    // Small delay to ensure DOM is ready
     setTimeout(() => {
-        if (document.getElementById('incomeChart')) {
-            initFinancialCharts();
-        }
+        if (document.getElementById('incomeChart')) initFinancialCharts();
     }, 500);
 });
 </script>
