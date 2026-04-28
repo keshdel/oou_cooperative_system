@@ -952,18 +952,49 @@ def reports():
         print(traceback.format_exc())
         flash('Unable to load reports due to an internal error. Please try again later.', 'danger')
         # Return a page with all zeros as fallback
-        zero_vars = {k:0 for k in [
-            'total_members','active_members','inactive_members','members_with_loans','new_members_month',
-            'total_savings_all','this_month_savings','total_late_fees','avg_savings_per_member',
-            'active_loans_total','total_disbursed','total_repaid','total_interest','active_loans_count',
-            'completed_loans_count','pending_loans_count','rejected_loans_count','current_loans',
-            'days_30_loans','days_60_loans','days_90_loans','total_investments_value',
-            'savings_months','monthly_savings_data','join_months','new_members_data',
-            'investment_type_labels','investment_type_data','dividend_amount','reserve_amount',
-            'honorarium_amount','other_appropriations','top_savers','delinquent_loans','active_savings',
-            'inactive_savings','loan_member_savings','total_income_year','total_expenses_year',
-            'net_surplus_year','member_dividends'
-        ]}
+        zero_vars = {
+            'total_members': 0,
+            'active_members': 0,
+            'inactive_members': 0,
+            'members_with_loans': 0,
+            'new_members_month': 0,
+            'total_savings_all': 0,
+            'this_month_savings': 0,
+            'total_late_fees': 0,
+            'avg_savings_per_member': 0,
+            'active_loans_total': 0,
+            'total_disbursed': 0,
+            'total_repaid': 0,
+            'total_interest': 0,
+            'active_loans_count': 0,
+            'completed_loans_count': 0,
+            'pending_loans_count': 0,
+            'rejected_loans_count': 0,
+            'current_loans': 0,
+            'days_30_loans': 0,
+            'days_60_loans': 0,
+            'days_90_loans': 0,
+            'total_investments_value': 0,
+            'savings_months': [],
+            'monthly_savings_data': [],
+            'join_months': [],
+            'new_members_data': [],
+            'investment_type_labels': [],
+            'investment_type_data': [],
+            'dividend_amount': 0,
+            'reserve_amount': 0,
+            'honorarium_amount': 0,
+            'other_appropriations': 0,
+            'top_savers': [],
+            'delinquent_loans': [],
+            'active_savings': 0,
+            'inactive_savings': 0,
+            'loan_member_savings': 0,
+            'total_income_year': 0,
+            'total_expenses_year': 0,
+            'net_surplus_year': 0,
+            'member_dividends': []
+        }
         return render_template('admin/reports.html', **zero_vars)
 
 @app.route('/reports/financial')

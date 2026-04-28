@@ -413,7 +413,7 @@
                                     <tr>
                                         <td>Active Members</td>
                                         <td>{{ active_members|default(0) }}</td>
-                                        <td>{{ (active_members/total_members*100)|default(0)|round(1) }}%</td>
+                                        <td>{{ (active_members/total_members*100)| if total_members > 0 else 0|round(1) }}%</td>
                                         <td>₦{{ "{:,.2f}".format(active_savings|default(0)) }}</td>
                                     </tr>
                                     <tr>
