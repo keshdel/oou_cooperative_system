@@ -13,8 +13,10 @@ import random
 import uuid
 import re
 import json
-from io import StringIO
+import csv
+from io import StringIO, TextIOWrapper
 from werkzeug.utils import secure_filename
+
 
 from database import init_db, get_db
 from card_generator import MemberCardGenerator
@@ -345,7 +347,7 @@ def delete_member(member_id):
 @login_required
 @role_required('admin', 'secretary')
 def bulk_upload_members():
-    """Bulk upload members from CSV/Excel"""
+    """Bulk upload members from CSV (no pandas required)."""
     if request.method == 'POST':
         if 'file' not in request.files:
             flash('No file selected', 'danger')
@@ -356,22 +358,19 @@ def bulk_upload_members():
             flash('No file selected', 'danger')
             return redirect(request.url)
         
-        # Validate file extension
-        if not (file.filename.endswith('.csv') or file.filename.endswith(('.xlsx', '.xls'))):
-            flash('Please upload a CSV or Excel file', 'danger')
+        if not file.filename.lower().endswith('.csv'):
+            flash('Please upload a CSV file', 'danger')
             return redirect(request.url)
         
         try:
-            # Read file based on extension
-            if file.filename.endswith('.csv'):
-                df = pd.read_csv(file)
-            else:
-                df = pd.read_excel(file)
+            from io import TextIOWrapper
+            import csv
+            stream = TextIOWrapper(file.stream, encoding='utf-8')
+            reader = csv.DictReader(stream)
             
-            # Check required columns
-            required = ['first_name', 'last_name', 'email', 'phone']
-            missing = [col for col in required if col not in df.columns]
-            if missing:
+            required = {'first_name', 'last_name', 'email', 'phone'}
+            if not required.issubset(reader.fieldnames or []):
+                missing = required - set(reader.fieldnames or [])
                 flash(f'Missing columns: {", ".join(missing)}', 'danger')
                 return redirect(request.url)
             
@@ -379,76 +378,69 @@ def bulk_upload_members():
             success = 0
             errors = []
             
-            for index, row in df.iterrows():
+            for row_num, row in enumerate(reader, start=2):
                 try:
-                    # Generate member number
-                    member_number = f"OOU/{datetime.now().year}/{str(index+1).zfill(4)}"
+                    first_name = row.get('first_name', '').strip()
+                    last_name = row.get('last_name', '').strip()
+                    email = row.get('email', '').strip()
+                    phone = row.get('phone', '').strip()
+                    if not first_name or not last_name or not email or not phone:
+                        errors.append(f"Row {row_num}: Missing required field")
+                        continue
                     
-                    # Check if email already exists
-                    existing = db.execute('SELECT id FROM members WHERE email = ?', 
-                                         (row.get('email', ''),)).fetchone()
-                    if existing and request.form.get('update_existing'):
-                        # Update existing member
-                        db.execute('''
-                            UPDATE members SET
-                                first_name = ?, last_name = ?, phone = ?,
-                                address = ?, occupation = ?, monthly_savings = ?
-                            WHERE email = ?
-                        ''', (
-                            row['first_name'],
-                            row['last_name'],
-                            row['phone'],
-                            row.get('address', ''),
-                            row.get('occupation', ''),
-                            float(row.get('monthly_savings', 5000)),
-                            row['email']
-                        ))
-                    else:
-                        # Insert new member
-                        db.execute('''
-                            INSERT INTO members (
-                                member_number, first_name, last_name, email, phone,
-                                address, occupation, monthly_savings, status, date_joined
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        ''', (
-                            member_number,
-                            row['first_name'],
-                            row['last_name'],
-                            row.get('email', ''),
-                            row['phone'],
-                            row.get('address', ''),
-                            row.get('occupation', ''),
-                            float(row.get('monthly_savings', 5000)),
-                            'active',
-                            datetime.now()
-                        ))
+                    address = row.get('address', '').strip()
+                    occupation = row.get('occupation', '').strip()
+                    monthly_savings = float(row.get('monthly_savings', 5000))
+                    
+                    member_number = f"OOU/{datetime.now().year}/{row_num:04d}"
+                    
+                    # Insert member
+                    db.execute('''
+                        INSERT INTO members (
+                            member_number, first_name, last_name, email, phone,
+                            address, occupation, monthly_savings, status, date_joined
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (member_number, first_name, last_name, email, phone,
+                          address, occupation, monthly_savings, 'active', datetime.now()))
+                    
+                    # Get the new member's ID
+                    member_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
+                    
+                    # Record initial savings for the current month
+                    current_month = datetime.now().strftime('%Y-%m')
+                    db.execute('''
+                        INSERT INTO savings (member_id, amount, month, late_fee, date)
+                        VALUES (?, ?, ?, ?, ?)
+                    ''', (member_id, monthly_savings, current_month, 0, datetime.now()))
+                    
+                    # Update member's total savings
+                    db.execute('UPDATE members SET total_savings = total_savings + ? WHERE id = ?', (monthly_savings, member_id))
+                    
                     success += 1
-                    
                 except Exception as e:
-                    errors.append(f"Row {index+2}: {str(e)}")
+                    errors.append(f"Row {row_num}: {str(e)}")
             
             db.commit()
             
             if errors:
-                flash(f'Uploaded {success} members with {len(errors)} errors', 'warning')
+                flash(f'Imported {success} members. {len(errors)} errors:', 'warning')
                 for err in errors[:5]:
                     flash(err, 'danger')
             else:
-                flash(f'Successfully uploaded {success} members!', 'success')
+                flash(f'Successfully imported {success} members!', 'success')
                 
-            return jsonify({'success': True, 'added': success, 'errors': len(errors)})
-            
         except Exception as e:
-            return jsonify({'success': False, 'error': str(e)}), 500
+            flash(f'Error processing file: {str(e)}', 'danger')
+        
+        return redirect(url_for('members'))
     
-    # GET request - show upload form
     return render_template('admin/bulk-upload.html')
 
 @app.route('/members/download-template')
 @login_required
 @role_required('admin', 'secretary')
 def download_template():
-    """Download CSV template for bulk upload"""
+    """Download CSV template for bulk upload."""
     import csv
     from io import StringIO
     from flask import make_response
@@ -456,13 +448,12 @@ def download_template():
     output = StringIO()
     writer = csv.writer(output)
     writer.writerow(['first_name', 'last_name', 'email', 'phone', 'address', 'occupation', 'monthly_savings'])
-    writer.writerow(['John', 'Doe', 'john@email.com', '08012345678', 'Lagos', 'Teacher', '5000'])
-    writer.writerow(['Jane', 'Smith', 'jane@email.com', '08087654321', 'Ibadan', 'Engineer', '10000'])
+    writer.writerow(['John', 'Doe', 'john@example.com', '08012345678', 'Lagos', 'Teacher', '5000'])
+    writer.writerow(['Jane', 'Smith', 'jane@example.com', '08087654321', 'Ibadan', 'Engineer', '10000'])
     
     response = make_response(output.getvalue())
     response.headers['Content-Type'] = 'text/csv'
     response.headers['Content-Disposition'] = 'attachment; filename=member_template.csv'
-    
     return response
 
 
