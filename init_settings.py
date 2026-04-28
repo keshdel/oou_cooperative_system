@@ -1,54 +1,68 @@
 import sqlite3
+from datetime import datetime
 
-print("Initializing settings...")
-
-conn = sqlite3.connect('cooperative.db')
-cursor = conn.cursor()
-
-# Default settings
-settings = [
-    ('coop_name', 'OOU Acctg 2005 Alumni CMS'),
-    ('reg_number', 'CMS/2005/001'),
-    ('address', ''),
-    ('phone', ''),
-    ('email', ''),
-    ('fy_start', '1'),
-    ('currency', 'NGN'),
-    ('date_format', 'Y-m-d'),
-    ('session_timeout', '30'),
-    ('maintenance_mode', '0'),
-    ('min_savings', '5000'),
-    ('savings_due_day', '10'),
-    ('late_fee_percent', '10'),
-    ('min_deposit_period', '90'),
-    ('member_deposit_rate', '9'),
-    ('nonmember_deposit_rate', '7'),
-    ('dividend_rate', '50'),
-    ('min_membership_months', '6'),
-    ('min_savings_for_loan', '50000'),
-    ('loan_multiplier', '2'),
-    ('max_tenure_months', '18'),
-    ('max_interest_rate', '11'),
-    ('insurance_rate', '1'),
-    ('guarantors_required', '2'),
-    ('default_penalty_rate', '20'),
-    ('interest_regular', '11'),
-    ('interest_housing', '9'),
-    ('interest_emergency', '10'),
-    ('interest_asset', '10'),
-    ('entrance_fee', '2000'),
-    ('reentry_fee', '5000'),
-    ('loan_application_fee', '1000'),
-    ('statement_fee', '500')
-]
-
-for key, value in settings:
+def init_settings():
+    conn = sqlite3.connect('cooperative.db')
+    cursor = conn.cursor()
+    
+    # Ensure settings table exists
     cursor.execute('''
-        INSERT OR REPLACE INTO settings (key, value, description)
-        VALUES (?, ?, ?)
-    ''', (key, value, f'Setting for {key}'))
+        CREATE TABLE IF NOT EXISTS settings (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            key TEXT UNIQUE NOT NULL,
+            value TEXT NOT NULL,
+            description TEXT
+        )
+    ''')
+    
+    # Default settings (including new branding keys)
+    default_settings = [
+        ('coop_name', 'OOU Acctg 2005 Alumni CMS', 'Cooperative full name'),
+        ('coop_short_name', 'OOU Coop', 'Short name for sidebar'),
+        ('coop_logo', '', 'Path to logo image'),
+        ('reg_number', 'CMS/2005/001', 'Registration number'),
+        ('address', '', 'Cooperative address'),
+        ('phone', '', 'Contact phone'),
+        ('email', '', 'Contact email'),
+        ('fy_start', '1', 'Financial year start month'),
+        ('currency', 'NGN', 'Currency'),
+        ('date_format', 'Y-m-d', 'Date format'),
+        ('session_timeout', '30', 'Session timeout in minutes'),
+        ('maintenance_mode', '0', 'Maintenance mode'),
+        ('min_savings', '5000', 'Minimum monthly savings'),
+        ('savings_due_day', '10', 'Savings due day of month'),
+        ('late_fee_percent', '10', 'Late fee percentage'),
+        ('min_deposit_period', '90', 'Minimum deposit period in days'),
+        ('member_deposit_rate', '9', 'Member deposit interest rate'),
+        ('nonmember_deposit_rate', '7', 'Non-member deposit interest rate'),
+        ('dividend_rate', '50', 'Dividend rate percentage'),
+        ('min_membership_months', '6', 'Minimum membership months for loan'),
+        ('min_savings_for_loan', '50000', 'Minimum savings for loan'),
+        ('loan_multiplier', '2', 'Loan multiplier of savings'),
+        ('max_tenure_months', '18', 'Maximum loan tenure'),
+        ('max_interest_rate', '11', 'Maximum loan interest rate'),
+        ('insurance_rate', '1', 'Loan insurance premium rate'),
+        ('guarantors_required', '2', 'Number of guarantors required'),
+        ('default_penalty_rate', '20', 'Default penalty rate'),
+        ('interest_regular', '11', 'Regular loan interest rate'),
+        ('interest_housing', '9', 'Housing loan interest rate'),
+        ('interest_emergency', '10', 'Emergency loan interest rate'),
+        ('interest_asset', '10', 'Asset loan interest rate'),
+        ('entrance_fee', '2000', 'Entrance fee'),
+        ('reentry_fee', '5000', 'Re-entry fee'),
+        ('loan_application_fee', '1000', 'Loan application fee'),
+        ('statement_fee', '500', 'Statement request fee')
+    ]
+    
+    for key, value, desc in default_settings:
+        cursor.execute('''
+            INSERT OR IGNORE INTO settings (key, value, description)
+            VALUES (?, ?, ?)
+        ''', (key, value, desc))
+    
+    conn.commit()
+    conn.close()
+    print("Settings initialized successfully (including branding keys).")
 
-conn.commit()
-conn.close()
-print("✅ Settings initialized successfully!")
-print("You can now run the application.")
+if __name__ == '__main__':
+    init_settings()

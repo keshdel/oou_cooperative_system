@@ -57,7 +57,19 @@ init_db()
 # Make datetime available in all templates
 @app.context_processor
 def utility_processor():
-    return {'datetime': datetime, 'now': datetime.now}
+    from datetime import datetime
+    # Load cooperative settings from DB
+    db = get_db()
+    coop_name = db.execute("SELECT value FROM settings WHERE key = 'coop_name'").fetchone()
+    coop_logo = db.execute("SELECT value FROM settings WHERE key = 'coop_logo'").fetchone()
+    coop_short = db.execute("SELECT value FROM settings WHERE key = 'coop_short_name'").fetchone()
+    return {
+        'now': datetime.now,
+        'coop_name': coop_name['value'] if coop_name else 'OOU Cooperative',
+        'coop_logo': coop_logo['value'] if coop_logo else '',
+        'coop_short_name': coop_short['value'] if coop_short else 'Coop'
+    }
+    
 
 # User loader for Flask-Login
 @login_manager.user_loader
