@@ -14,6 +14,8 @@ import uuid
 import re
 import json
 import csv
+from io import StringIO
+from flask import make_response
 from io import StringIO, TextIOWrapper
 from werkzeug.utils import secure_filename
 
@@ -441,9 +443,7 @@ def bulk_upload_members():
 @role_required('admin', 'secretary')
 def download_template():
     """Download CSV template for bulk upload."""
-    import csv
-    from io import StringIO
-    from flask import make_response
+  
     
     output = StringIO()
     writer = csv.writer(output)
@@ -456,6 +456,22 @@ def download_template():
     response.headers['Content-Disposition'] = 'attachment; filename=member_template.csv'
     return response
 
+@app.route('/loans/download-repayment-template')
+@login_required
+@role_required('admin', 'treasurer')
+def download_repayment_template():
+  
+    
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['loan_number', 'amount', 'payment_date', 'payment_method', 'receipt_number', 'notes'])
+    writer.writerow(['LOAN/20250428/0001', '25000', '2025-04-28', 'transfer', 'RCPT-001', 'First repayment'])
+    writer.writerow(['LOAN/20250428/0002', '50000', '2025-04-29', 'cash', '', 'Partial payment'])
+    
+    response = make_response(output.getvalue())
+    response.headers['Content-Type'] = 'text/csv'
+    response.headers['Content-Disposition'] = 'attachment; filename=loan_repayment_template.csv'
+    return response
 
 @app.route('/savings')
 @login_required
@@ -715,6 +731,144 @@ def reject_loan(loan_id):
         flash(f'Error rejecting loan: {str(e)}', 'danger')
     
     return redirect(url_for('loans'))
+    
+import csv
+from io import TextIOWrapper
+from datetime import datetime
+
+@app.route('/loans/bulk-repayments', methods=['GET', 'POST'])
+@login_required
+@role_required('admin', 'treasurer')
+def bulk_loan_repayments():
+    """Upload a CSV file with loan repayments."""
+    if request.method == 'POST':
+        if 'file' not in request.files:
+            flash('No file selected', 'danger')
+            return redirect(request.url)
+        
+        file = request.files['file']
+        if file.filename == '':
+            flash('No file selected', 'danger')
+            return redirect(request.url)
+        
+        if not file.filename.lower().endswith('.csv'):
+            flash('Please upload a CSV file', 'danger')
+            return redirect(request.url)
+        
+        try:
+            stream = TextIOWrapper(file.stream, encoding='utf-8')
+            reader = csv.DictReader(stream)
+            
+            required = {'loan_number', 'amount', 'payment_date'}
+            if not required.issubset(reader.fieldnames or []):
+                missing = required - set(reader.fieldnames or [])
+                flash(f'Missing columns: {", ".join(missing)}', 'danger')
+                return redirect(request.url)
+            
+            db = get_db()
+            success = 0
+            errors = []
+            
+            for row_num, row in enumerate(reader, start=2):
+                try:
+                    loan_number = row.get('loan_number', '').strip()
+                    amount = float(row.get('amount', 0))
+                    payment_date_str = row.get('payment_date', '').strip()
+                    payment_method = row.get('payment_method', 'cash').strip().lower()
+                    receipt_number = row.get('receipt_number', '').strip()
+                    notes = row.get('notes', '').strip()
+                    
+                    if not loan_number or amount <= 0:
+                        errors.append(f"Row {row_num}: Invalid loan number or amount")
+                        continue
+                    
+                    # Parse payment date
+                    try:
+                        payment_date = datetime.strptime(payment_date_str, '%Y-%m-%d')
+                    except ValueError:
+                        errors.append(f"Row {row_num}: Invalid date format (use YYYY-MM-DD)")
+                        continue
+                    
+                    # Find the loan
+                    loan = db.execute('SELECT id, member_id, balance, total_repayment FROM loans WHERE loan_number = ?', (loan_number,)).fetchone()
+                    if not loan:
+                        errors.append(f"Row {row_num}: Loan number {loan_number} not found")
+                        continue
+                    
+                    # Validate payment amount does not exceed balance
+                    if amount > loan['balance']:
+                        errors.append(f"Row {row_num}: Payment amount ₦{amount:,.2f} exceeds outstanding balance ₦{loan['balance']:,.2f}")
+                        continue
+                    
+                    # Insert repayment record
+                    repayment_number = f"REP/{datetime.now().strftime('%Y%m%d')}/{row_num:04d}"
+                    db.execute('''
+                        INSERT INTO repayments (
+                            repayment_number, loan_id, amount, payment_method, receipt_number, notes, date
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ''', (repayment_number, loan['id'], amount, payment_method, receipt_number, notes, payment_date))
+                    
+                    # Update loan balance
+                    new_balance = loan['balance'] - amount
+                    status = 'completed' if new_balance <= 0 else 'active'
+                    db.execute('UPDATE loans SET balance = ?, status = ? WHERE id = ?', (new_balance, status, loan['id']))
+                    
+                    # Optionally record a transaction entry (you may have a transactions table)
+                    # db.execute('INSERT INTO transactions ...')
+                    
+                    success += 1
+                except Exception as e:
+                    errors.append(f"Row {row_num}: {str(e)}")
+            
+            db.commit()
+            
+            if errors:
+                flash(f'Processed {success} repayments. {len(errors)} errors:', 'warning')
+                for err in errors[:5]:
+                    flash(err, 'danger')
+            else:
+                flash(f'Successfully recorded {success} loan repayments!', 'success')
+                
+        except Exception as e:
+            flash(f'Error processing file: {str(e)}', 'danger')
+        
+        return redirect(url_for('loans'))
+    
+    # GET request – show upload form
+    return render_template('admin/bulk-repayments.html')
+    
+@app.route('/loans/export')
+@login_required
+@role_required('admin', 'treasurer')
+def export_loans():
+    """Export all loans (active, pending, completed) to CSV."""
+    db = get_db()
+    loans = db.execute('''
+        SELECT l.loan_number, m.first_name || ' ' || m.last_name AS member_name,
+               l.amount, l.balance, l.status, l.date_applied
+        FROM loans l
+        JOIN members m ON l.member_id = m.id
+        ORDER BY l.date_applied DESC
+    ''').fetchall()
+    
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['Loan Number', 'Member Name', 'Original Amount', 'Outstanding Balance', 'Status', 'Date Applied'])
+    
+    for loan in loans:
+        writer.writerow([
+            loan['loan_number'],
+            loan['member_name'],
+            f"₦{loan['amount']:,.2f}",
+            f"₦{loan['balance']:,.2f}",
+            loan['status'],
+            loan['date_applied'][:10] if loan['date_applied'] else ''
+        ])
+    
+    response = make_response(output.getvalue())
+    response.headers['Content-Type'] = 'text/csv'
+    response.headers['Content-Disposition'] = 'attachment; filename=loans_export.csv'
+    return response  
 
 @app.route('/investments')
 @login_required
