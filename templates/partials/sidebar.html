@@ -1,9 +1,12 @@
 <!-- Sidebar Navigation -->
 <div class="sidebar">
     <div class="sidebar-header">
-        <h3>{{ coop_short_name }}</h3>
-        <p>v1.0 Enterprise</p>
-    </div>
+		{% if coop_logo %}
+			<img src="{{ url_for('static', filename=coop_logo) }}" alt="Logo" height="40" class="mb-2">
+		{% endif %}
+		<h3>{{ coop_short_name }}</h3>
+		<p class="small">{{ coop_name }}</p>
+	</div>
     
     <div class="sidebar-menu">
         <!-- Common for all users -->

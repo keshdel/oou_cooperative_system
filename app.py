@@ -1306,6 +1306,26 @@ def settings():
 def update_settings():
     db = get_db()
     
+    # --- Handle logo upload ---
+    if 'coop_logo' in request.files:
+        logo = request.files['coop_logo']
+        if logo and logo.filename:
+            from werkzeug.utils import secure_filename
+            import os
+            filename = secure_filename(logo.filename)
+            ext = filename.rsplit('.', 1)[1].lower()
+            unique_name = f"coop_logo_{int(datetime.now().timestamp())}.{ext}"
+            logo_path = os.path.join('static/uploads', unique_name)
+            os.makedirs('static/uploads', exist_ok=True)
+            logo.save(logo_path)
+            # Update or insert setting
+            existing = db.execute('SELECT id FROM settings WHERE key = "coop_logo"').fetchone()
+            if existing:
+                db.execute('UPDATE settings SET value = ? WHERE key = "coop_logo"', (logo_path,))
+            else:
+                db.execute('INSERT INTO settings (key, value, description) VALUES (?, ?, ?)',
+                           ('coop_logo', logo_path, 'Cooperative logo'))
+    
     try:
         for key, value in request.form.items():
             if value is None or value == '':

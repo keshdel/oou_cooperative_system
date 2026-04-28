@@ -62,10 +62,24 @@
                                 <h5 class="mb-3">Cooperative Information</h5>
                                 
                                 <div class="mb-3">
-                                    <label class="form-label">Cooperative Name</label>
+                                    <label class="form-label">Cooperative Full Name</label>
                                     <input type="text" class="form-control" name="coop_name" 
-                                           value="{{ settings.coop_name|default('OOU Acctg 2005 Alumni CMS') }}">
+                                           value="{{ settings.coop_name }}">
                                 </div>
+								<div class="mb-3">
+									<label class="form-label">Short Name (appears in sidebar)</label>
+									<input type="text" class="form-control" name="coop_short_name" value="{{ settings.coop_short_name }}">
+								</div>
+								<div class="mb-3">
+									<label class="form-label">Logo</label>
+									<input type="file" class="form-control" name="coop_logo" accept="image/*">
+									{% if settings.coop_logo %}
+										<div class="mt-2">
+											<img src="{{ url_for('static', filename=settings.coop_logo) }}" alt="Logo" height="50">
+											<br><small>Current logo</small>
+										</div>
+									{% endif %}
+								</div>
                                 
                                 <div class="mb-3">
                                     <label class="form-label">Registration Number</label>
