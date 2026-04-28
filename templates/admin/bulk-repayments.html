@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+
+{% block title %}Bulk Loan Repayments{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h2><i class="fas fa-hand-holding-usd"></i> Bulk Loan Repayments</h2>
+            <p class="text-muted">Upload a CSV file to record multiple loan repayments at once</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="{{ url_for('loans') }}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> Back to Loans
+            </a>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-8 mx-auto">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="fas fa-file-upload"></i> Upload CSV File</h5>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info">
+                        <h6><i class="fas fa-info-circle"></i> File Requirements:</h6>
+                        <ul class="mb-0">
+                            <li>Format: CSV (UTF‑8, comma‑separated)</li>
+                            <li><strong>Required columns:</strong> <code>loan_number, amount, payment_date</code></li>
+                            <li><strong>Optional columns:</strong> payment_method, receipt_number, notes</li>
+                            <li>Date format: <code>YYYY-MM-DD</code></li>
+                            <li>The loan must already exist in the system.</li>
+                            <li>Payment amount cannot exceed the loan's outstanding balance.</li>
+                        </ul>
+                    </div>
+
+                    <form method="POST" enctype="multipart/form-data">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Select CSV File</label>
+                            <input type="file" class="form-control" name="file" accept=".csv" required>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Sample Template</label>
+                            <div class="table-responsive">
+                                <table class="table table-bordered table-sm">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>loan_number</th>
+                                            <th>amount</th>
+                                            <th>payment_date</th>
+                                            <th>payment_method</th>
+                                            <th>receipt_number</th>
+                                            <th>notes</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td>LOAN/20250428/0001</td>
+                                            <td>25000</td>
+                                            <td>2025-04-28</td>
+                                            <td>transfer</td>
+                                            <td>RCPT-001</td>
+                                            <td>initial repayment</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            <a href="{{ url_for('download_repayment_template') }}" class="btn btn-sm btn-info">
+                                <i class="fas fa-download"></i> Download CSV Template
+                            </a>
+                        </div>
+
+                        <div class="text-end">
+                            <button type="reset" class="btn btn-secondary">Reset</button>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-upload"></i> Upload & Process
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
