@@ -23,9 +23,7 @@
             {% for member in members_list %}
             <tr>
                 <td>{{ loop.index }}</td>
-                <td>
-                    <code>{{ member.member_number or 'N/A' }}</code>
-                </td>
+                <td><code>{{ member.member_number or 'N/A' }}</code></td>
                 <td>
                     <div class="d-flex align-items-center">
                         <div class="avatar-circle bg-primary text-white me-2">
@@ -41,18 +39,12 @@
                 </td>
                 <td>
                     <div>
-                        {% if member.email %}
-                        <i class="fas fa-envelope fa-fw text-muted"></i> {{ member.email }}<br>
-                        {% endif %}
+                        {% if member.email %}<i class="fas fa-envelope fa-fw text-muted"></i> {{ member.email }}<br>{% endif %}
                         <i class="fas fa-phone fa-fw text-muted"></i> {{ member.phone }}
                     </div>
                 </td>
-                <td>
-                    <span class="fw-bold text-success">₦{{ "{:,.2f}".format(member.total_savings|default(0)) }}</span>
-                </td>
-                <td>
-                    ₦{{ "{:,.0f}".format(member.monthly_savings|default(5000)) }}
-                </td>
+                <td><span class="fw-bold text-success">₦{{ "{:,.2f}".format(member.total_savings|default(0)) }}</span></td>
+                <td>₦{{ "{:,.0f}".format(member.monthly_savings|default(5000)) }}</td>
                 <td>
                     {% if member.status == 'active' %}
                     <span class="badge bg-success">Active</span>
@@ -64,9 +56,7 @@
                     <span class="badge bg-danger">{{ member.status }}</span>
                     {% endif %}
                 </td>
-                <td>
-                    <small>{{ member.date_joined[:10] }}</small>
-                </td>
+                <td><small>{{ member.date_joined[:10] }}</small></td>
                 <td class="text-end">
                     <div class="btn-group btn-group-sm">
                         <button class="btn btn-outline-info" title="Quick View" 
@@ -85,10 +75,11 @@
                                 onclick="showSavingsModal({{ member.id }}, '{{ member.first_name }} {{ member.last_name }}')">
                             <i class="fas fa-piggy-bank"></i>
                         </button>
-                        <button class="btn btn-outline-danger" title="Delete" 
-                                onclick="confirmDelete({{ member.id }}, '{{ member.first_name }} {{ member.last_name }}')">
-                            <i class="fas fa-trash"></i>
-                        </button>
+                        <form action="{{ url_for('delete_member', member_id=member.id) }}" method="POST" style="display:inline-block;" onsubmit="return confirm('Are you sure you want to delete this member? This action cannot be undone.');">
+							<button type="submit" class="btn btn-outline-danger" title="Delete">
+								<i class="fas fa-trash"></i>
+							</button>
+						</form>
                     </div>
                 </td>
             </tr>

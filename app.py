@@ -326,36 +326,25 @@ def edit_member(member_id):
 
 @app.route('/members/delete/<int:member_id>', methods=['POST'])
 @login_required
-@role_required('admin')  # Only admins can delete members
+@role_required('admin', 'secretary')
 def delete_member(member_id):
-    """Delete a member (only if they have no transactions)"""
     db = get_db()
-    
-    # Check if member exists
     member = db.execute('SELECT * FROM members WHERE id = ?', (member_id,)).fetchone()
     if not member:
         flash('Member not found.', 'danger')
         return redirect(url_for('members'))
-    
-    # Check for related records
-    savings_count = db.execute('SELECT COUNT(*) FROM savings WHERE member_id = ?', (member_id,)).fetchone()[0]
-    loans_count = db.execute('SELECT COUNT(*) FROM loans WHERE member_id = ?', (member_id,)).fetchone()[0]
-    
-    if savings_count > 0 or loans_count > 0:
-        flash('Cannot delete member with existing savings or loans. Consider marking them as inactive instead.', 'danger')
-        return redirect(url_for('member_details', member_id=member_id))
-    
-    # If no related records, proceed with deletion
-    try:
-        db.execute('DELETE FROM members WHERE id = ?', (member_id,))
-        db.commit()
-        flash(f'Member {member["first_name"]} {member["last_name"]} has been deleted.', 'success')
-    except Exception as e:
-        db.rollback()
-        flash(f'Error deleting member: {str(e)}', 'danger')
-    
-    return redirect(url_for('members'))
 
+    # Check for savings or loans
+    savings = db.execute('SELECT COUNT(*) FROM savings WHERE member_id = ?', (member_id,)).fetchone()[0]
+    loans = db.execute('SELECT COUNT(*) FROM loans WHERE member_id = ?', (member_id,)).fetchone()[0]
+    if savings > 0 or loans > 0:
+        flash('Cannot delete member with existing savings or loans. Mark them as inactive instead.', 'danger')
+        return redirect(url_for('member_details', member_id=member_id))
+
+    db.execute('DELETE FROM members WHERE id = ?', (member_id,))
+    db.commit()
+    flash('Member deleted successfully.', 'success')
+    return redirect(url_for('members'))
 
 @app.route('/members/bulk-upload', methods=['GET', 'POST'])
 @login_required
@@ -969,44 +958,49 @@ def add_investment():
 @app.route('/reports')
 @login_required
 def reports():
-    """Reports dashboard - safe version with fallbacks"""
     db = get_db()
     
+    def safe_fetch(query, params=()):
+        result = db.execute(query, params).fetchone()
+        return result[0] if result and result[0] is not None else 0
+    
+    def get_val(query, params=()):
+        row = db.execute(query, params).fetchone()
+        return row[0] if row else 0
+    
     try:
-        # Helper to safely get a single numeric value
-        def safe_fetch(query, params=()):
-            result = db.execute(query, params).fetchone()
-            return result[0] if result and result[0] is not None else 0
-        
         # Member stats
-        total_members = safe_fetch('SELECT COUNT(*) FROM members')
-        active_members = safe_fetch('SELECT COUNT(*) FROM members WHERE status = "active"')
+        total_members = get_val('SELECT COUNT(*) FROM members')
+        active_members = get_val("SELECT COUNT(*) FROM members WHERE status = 'active'")
         inactive_members = total_members - active_members
-        members_with_loans = safe_fetch('SELECT COUNT(DISTINCT member_id) FROM loans WHERE status = "active"')
-        new_members_month = safe_fetch('SELECT COUNT(*) FROM members WHERE date_joined >= date("now", "-30 days")')
+        members_with_loans = get_val("SELECT COUNT(DISTINCT member_id) FROM loans WHERE status = 'active'")
+        
+        # New members in last 30 days (Python date)
+        thirty_days_ago = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
+        new_members_month = get_val("SELECT COUNT(*) FROM members WHERE date_joined >= ?", (thirty_days_ago,))
         
         # Savings stats
-        total_savings_all = safe_fetch('SELECT COALESCE(SUM(amount), 0) FROM savings')
+        total_savings_all = get_val('SELECT COALESCE(SUM(amount), 0) FROM savings')
         current_month = datetime.now().strftime('%Y-%m')
-        this_month_savings = safe_fetch('SELECT COALESCE(SUM(amount), 0) FROM savings WHERE month = ?', (current_month,))
-        total_late_fees = safe_fetch('SELECT COALESCE(SUM(late_fee), 0) FROM savings')
+        this_month_savings = get_val('SELECT COALESCE(SUM(amount), 0) FROM savings WHERE month = ?', (current_month,))
+        total_late_fees = get_val('SELECT COALESCE(SUM(late_fee), 0) FROM savings')
         avg_savings_per_member = total_savings_all / total_members if total_members > 0 else 0
         
         # Loan stats
-        active_loans_total = safe_fetch('SELECT COALESCE(SUM(amount), 0) FROM loans WHERE status = "active"')
-        total_disbursed = safe_fetch('SELECT COALESCE(SUM(amount), 0) FROM loans WHERE status IN ("active", "completed")')
-        total_repaid = safe_fetch('SELECT COALESCE(SUM(amount), 0) FROM repayments')
-        total_interest = (total_disbursed * 0.11) if total_disbursed else 0
+        active_loans_total = get_val("SELECT COALESCE(SUM(amount), 0) FROM loans WHERE status = 'active'")
+        total_disbursed = get_val("SELECT COALESCE(SUM(amount), 0) FROM loans WHERE status IN ('active', 'completed')")
+        total_repaid = get_val('SELECT COALESCE(SUM(amount), 0) FROM repayments')
+        total_interest = total_disbursed * 0.11 if total_disbursed else 0
         
-        active_loans_count = safe_fetch('SELECT COUNT(*) FROM loans WHERE status = "active"')
-        completed_loans_count = safe_fetch('SELECT COUNT(*) FROM loans WHERE status = "completed"')
-        pending_loans_count = safe_fetch('SELECT COUNT(*) FROM loans WHERE status = "pending"')
-        rejected_loans_count = safe_fetch('SELECT COUNT(*) FROM loans WHERE status = "rejected"')
+        active_loans_count = get_val("SELECT COUNT(*) FROM loans WHERE status = 'active'")
+        completed_loans_count = get_val("SELECT COUNT(*) FROM loans WHERE status = 'completed'")
+        pending_loans_count = get_val("SELECT COUNT(*) FROM loans WHERE status = 'pending'")
+        rejected_loans_count = get_val("SELECT COUNT(*) FROM loans WHERE status = 'rejected'")
         
         # Investment stats
-        total_investments_value = safe_fetch('SELECT COALESCE(SUM(amount), 0) FROM investments')
+        total_investments_value = get_val('SELECT COALESCE(SUM(amount), 0) FROM investments')
         
-        # Chart data – Monthly savings last 6 months (real data)
+        # Monthly savings trend (last 6 months)
         savings_months = []
         monthly_savings_data = []
         for i in range(5, -1, -1):
@@ -1014,32 +1008,24 @@ def reports():
             month_str = month_date.strftime('%Y-%m')
             month_name = month_date.strftime('%b')
             savings_months.append(month_name)
-            month_total = safe_fetch('SELECT COALESCE(SUM(amount), 0) FROM savings WHERE month = ?', (month_str,))
+            month_total = get_val('SELECT COALESCE(SUM(amount), 0) FROM savings WHERE month = ?', (month_str,))
             monthly_savings_data.append(month_total)
         
-        # Member join trend last 6 months
+        # Member join trend (last 6 months)
         join_months = []
         new_members_data = []
         for i in range(5, -1, -1):
-            month_date = datetime.now().replace(day=1) - timedelta(days=30*i)
-            month_name = month_date.strftime('%b')
-            join_months.append(month_name)
-            start = month_date.strftime('%Y-%m-01')
-            end = (month_date + timedelta(days=32)).replace(day=1).strftime('%Y-%m-01')
-            count = safe_fetch('SELECT COUNT(*) FROM members WHERE date_joined >= ? AND date_joined < ?', (start, end))
+            month_start = (datetime.now().replace(day=1) - timedelta(days=30*i)).strftime('%Y-%m-01')
+            month_end = (datetime.now().replace(day=1) - timedelta(days=30*(i-1))).strftime('%Y-%m-01') if i > 0 else None
+            month_name = datetime.now().replace(day=1) - timedelta(days=30*i)
+            join_months.append(month_name.strftime('%b'))
+            if month_end:
+                count = get_val("SELECT COUNT(*) FROM members WHERE date_joined >= ? AND date_joined < ?", (month_start, month_end))
+            else:
+                count = get_val("SELECT COUNT(*) FROM members WHERE date_joined >= ?", (month_start,))
             new_members_data.append(count)
         
-        # Investment type data (sample – you can replace with real category sums later)
-        investment_type_labels = ['Fixed Deposit', 'Shares', 'Real Estate', 'Government Bonds', 'Other']
-        investment_type_data = [random.randint(100000, 1000000) for _ in range(5)]
-        
-        # Dividends
-        dividend_amount = total_savings_all * 0.05
-        reserve_amount = dividend_amount * 0.3
-        honorarium_amount = dividend_amount * 0.1
-        other_appropriations = dividend_amount * 0.1
-        
-        # Top savers
+        # Top 5 savers
         top_savers = db.execute('''
             SELECT m.id, m.first_name, m.last_name, COALESCE(SUM(s.amount), 0) as total_savings
             FROM members m
@@ -1049,16 +1035,26 @@ def reports():
             LIMIT 5
         ''').fetchall()
         
-        # Additional variables expected by template
-        delinquent_loans = []
-        active_savings = total_savings_all
-        inactive_savings = 0
-        loan_member_savings = total_savings_all * 0.6   # placeholder
-        total_income_year = total_savings_all
-        total_expenses_year = total_investments_value
-        net_surplus_year = total_income_year - total_expenses_year
-        member_dividends = []
+        top_savers_list = []
+        for ts in top_savers:
+            top_savers_list.append({
+                'id': ts['id'],
+                'name': f"{ts['first_name']} {ts['last_name']}",
+                'total_savings': float(ts['total_savings']),
+                'monthly_avg': float(ts['total_savings']) / 6 if ts['total_savings'] > 0 else 0,
+                'join_date': ''
+            })
         
+        # Sample investment data (you can later replace with actual)
+        investment_type_labels = ['Fixed Deposit', 'Shares', 'Real Estate', 'Bonds', 'Other']
+        investment_type_data = [random.randint(100000, 1000000) for _ in range(5)]
+        
+        dividend_amount = total_savings_all * 0.05
+        reserve_amount = dividend_amount * 0.3
+        honorarium_amount = dividend_amount * 0.1
+        other_appropriations = dividend_amount * 0.1
+        
+        # Additional variables required by template
         return render_template('admin/reports.html',
             total_members=total_members,
             active_members=active_members,
@@ -1092,68 +1088,37 @@ def reports():
             reserve_amount=reserve_amount,
             honorarium_amount=honorarium_amount,
             other_appropriations=other_appropriations,
-            top_savers=top_savers,
-            delinquent_loans=delinquent_loans,
-            active_savings=active_savings,
-            inactive_savings=inactive_savings,
-            loan_member_savings=loan_member_savings,
-            total_income_year=total_income_year,
-            total_expenses_year=total_expenses_year,
-            net_surplus_year=net_surplus_year,
-            member_dividends=member_dividends
+            top_savers=top_savers_list,
+            delinquent_loans=[],
+            active_savings=total_savings_all,
+            inactive_savings=0,
+            loan_member_savings=total_savings_all * 0.6,
+            total_income_year=total_savings_all,
+            total_expenses_year=total_investments_value,
+            net_surplus_year=total_savings_all - total_investments_value,
+            member_dividends=[],
+            suspended_members=0
         )
     except Exception as e:
-        # Log error and fallback to a safe empty report
         import traceback
-        print(f"Reports error: {e}")
-        print(traceback.format_exc())
-        flash('Unable to load reports due to an internal error. Please try again later.', 'danger')
-        # Return a page with all zeros as fallback
-        zero_vars = {
-            'total_members': 0,
-            'active_members': 0,
-            'inactive_members': 0,
-            'members_with_loans': 0,
-            'new_members_month': 0,
-            'total_savings_all': 0,
-            'this_month_savings': 0,
-            'total_late_fees': 0,
-            'avg_savings_per_member': 0,
-            'active_loans_total': 0,
-            'total_disbursed': 0,
-            'total_repaid': 0,
-            'total_interest': 0,
-            'active_loans_count': 0,
-            'completed_loans_count': 0,
-            'pending_loans_count': 0,
-            'rejected_loans_count': 0,
-            'current_loans': 0,
-            'days_30_loans': 0,
-            'days_60_loans': 0,
-            'days_90_loans': 0,
-            'total_investments_value': 0,
-            'savings_months': [],
-            'monthly_savings_data': [],
-            'join_months': [],
-            'new_members_data': [],
-            'investment_type_labels': [],
-            'investment_type_data': [],
-            'dividend_amount': 0,
-            'reserve_amount': 0,
-            'honorarium_amount': 0,
-            'other_appropriations': 0,
-            'top_savers': [],
-            'delinquent_loans': [],
-            'active_savings': 0,
-            'inactive_savings': 0,
-            'loan_member_savings': 0,
-            'total_income_year': 0,
-            'total_expenses_year': 0,
-            'net_surplus_year': 0,
-            'member_dividends': []
-        }
-        return render_template('admin/reports.html', **zero_vars)
-
+        traceback.print_exc()
+        flash(f'Unable to load reports due to an internal error: {str(e)}', 'danger')
+        # Fallback safe dictionary
+        def zero_dict():
+            return {
+                'total_members':0, 'active_members':0, 'inactive_members':0, 'members_with_loans':0, 'new_members_month':0,
+                'total_savings_all':0, 'this_month_savings':0, 'total_late_fees':0, 'avg_savings_per_member':0,
+                'active_loans_total':0, 'total_disbursed':0, 'total_repaid':0, 'total_interest':0, 'active_loans_count':0,
+                'completed_loans_count':0, 'pending_loans_count':0, 'rejected_loans_count':0, 'current_loans':0,
+                'days_30_loans':0, 'days_60_loans':0, 'days_90_loans':0, 'total_investments_value':0,
+                'savings_months':[], 'monthly_savings_data':[], 'join_months':[], 'new_members_data':[],
+                'investment_type_labels':[], 'investment_type_data':[], 'dividend_amount':0, 'reserve_amount':0,
+                'honorarium_amount':0, 'other_appropriations':0, 'top_savers':[], 'delinquent_loans':[],
+                'active_savings':0, 'inactive_savings':0, 'loan_member_savings':0, 'total_income_year':0,
+                'total_expenses_year':0, 'net_surplus_year':0, 'member_dividends':[], 'suspended_members':0
+            }
+        return render_template('admin/reports.html', **zero_dict())
+        
 @app.route('/reports/financial')
 @login_required
 def financial_report():

@@ -1,158 +1,57 @@
 {% extends "base.html" %}
 
+{% block title %}Member Details{% endblock %}
+
 {% block content %}
 <div class="container-fluid">
     <div class="row mb-4">
         <div class="col-md-8">
-            <h2><i class="fas fa-user"></i> Member Details</h2>
-            <p class="text-muted">View and manage member information</p>
+            <h2>{{ member.first_name }} {{ member.last_name }}</h2>
+            <p class="text-muted">Member #: {{ member.member_number }} | Joined: {{ member.date_joined[:10] }}</p>
         </div>
         <div class="col-md-4 text-end">
             <a href="{{ url_for('members') }}" class="btn btn-secondary">
                 <i class="fas fa-arrow-left"></i> Back to Members
             </a>
-            <button class="btn btn-warning" onclick="printMemberDetails()">
-                <i class="fas fa-print"></i> Print
-            </button>
+            <a href="{{ url_for('edit_member', member_id=member.id) }}" class="btn btn-warning">
+                <i class="fas fa-edit"></i> Edit
+            </a>
         </div>
     </div>
-    
-    <!-- Member Summary Card -->
-    <div class="card mb-4">
-        <div class="card-header bg-primary text-white">
-            <h5 class="mb-0">Member Information</h5>
-        </div>
-        <div class="card-body">
-            <div class="row">
-                <div class="col-md-6">
-                    <table class="table table-borderless">
-                        <tr>
-                            <th width="150">Full Name:</th>
-                            <td><strong>{{ member.first_name }} {{ member.last_name }}</strong></td>
-                        </tr>
-                        <tr>
-                            <th>Member ID:</th>
-                            <td>#{{ member.id }}</td>
-                        </tr>
-                        <tr>
-                            <th>Email:</th>
-                            <td>{{ member.email|default('Not provided') }}</td>
-                        </tr>
-                        <tr>
-                            <th>Phone:</th>
-                            <td>{{ member.phone }}</td>
-                        </tr>
-                        <tr>
-                            <th>Occupation:</th>
-                            <td>{{ member.occupation|default('Not provided') }}</td>
-                        </tr>
-                    </table>
-                </div>
-                <div class="col-md-6">
-                    <table class="table table-borderless">
-                        <tr>
-                            <th width="150">Address:</th>
-                            <td>{{ member.address|default('Not provided') }}</td>
-                        </tr>
-                        <tr>
-                            <th>Date Joined:</th>
-                            <td>{{ member.date_joined[:10] }}</td>
-                        </tr>
-                        <tr>
-                            <th>Status:</th>
-                            <td>
-                                {% if member.status == 'active' %}
-                                <span class="badge bg-success">Active</span>
-                                {% else %}
-                                <span class="badge bg-danger">{{ member.status }}</span>
-                                {% endif %}
-                            </td>
-                        </tr>
-                        <tr>
-                            <th>Nominee:</th>
-                            <td>{{ member.nominee_name|default('Not designated') }}</td>
-                        </tr>
-                    </table>
-                </div>
-            </div>
-        </div>
-    </div>
-    
-    <!-- Financial Summary Cards -->
+
+    <!-- Member Summary Cards -->
     <div class="row g-4 mb-4">
-        <div class="col-md-4">
-            <div class="card bg-success text-white">
+        <div class="col-md-3">
+            <div class="card bg-primary text-white">
                 <div class="card-body">
                     <h6>Total Savings</h6>
                     <h3>₦{{ "{:,.2f}".format(total_savings) }}</h3>
-                    <small>Monthly: ₦{{ "{:,.0f}".format(member.monthly_savings) }}</small>
                 </div>
             </div>
         </div>
-        <div class="col-md-4">
-            <div class="card bg-warning text-white">
+        <div class="col-md-3">
+            <div class="card bg-success text-white">
                 <div class="card-body">
                     <h6>Active Loans</h6>
                     <h3>₦{{ "{:,.2f}".format(total_loans) }}</h3>
-                    <small>Max eligible: ₦{{ "{:,.2f}".format(member.total_savings * 2) }}</small>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-4">
-            <div class="card bg-info text-white">
-                <div class="card-body">
-                    <h6>Loan Eligibility</h6>
-                    <h3>
-                        {% if member.total_savings >= 50000 %}
-                        <i class="fas fa-check-circle"></i> Qualified
-                        {% else %}
-                        <i class="fas fa-times-circle"></i> Not Qualified
-                        {% endif %}
-                    </h3>
-                    <small>Need ₦50,000 savings minimum</small>
                 </div>
             </div>
         </div>
     </div>
-    
+
     <!-- Action Buttons -->
     <div class="row mb-4">
         <div class="col-md-12">
-            <button class="btn btn-primary" onclick="showSavingsModal({{ member.id }}, '{{ member.first_name }} {{ member.last_name }}')">
+            <button class="btn btn-primary" onclick="showSavingsModal()">
                 <i class="fas fa-piggy-bank"></i> Record Savings
             </button>
-            <a href="{{ url_for('apply_loan_member') }}?member_id={{ member.id }}" class="btn btn-success">
-                <i class="fas fa-hand-holding-usd"></i> Apply for Loan
-            </a>
-            <button class="btn btn-warning">
-              <a href="{{ url_for('edit_member', member_id=member.id) }}" class="btn btn-warning">
-					<i class="fas fa-edit"></i> Edit Member
-			  </a>
-            </button>
-            <button class="btn btn-info">
-              <a href="{{ url_for('member_statement', member_id=member.id) }}" class="btn btn-info">
-					<i class="fas fa-file-alt"></i> Statement of Account
-			  </a>
-            </button>
-			<button class="btn btn-Digital-Card">
-			   <a href="{{ url_for('view_member_card', member_id=member.id) }}" class="btn btn-info">
-					<i class="fas fa-id-card"></i> View Digital Card
-			   </a>
-			</button>
-			</button class="btnbtn-Regenrate-Card">
-				<a href="{{ url_for('generate_member_card', member_id=member.id) }}" class="btn btn-warning" onclick
-				="return confirm('Generate a new card? The old one will be replaced.')">
-					<i class="fas fa-sync-alt"></i> Regenerate Card
-				</a>
-			</button>
-			
         </div>
     </div>
-    
+
     <!-- Savings History -->
     <div class="card mb-4">
         <div class="card-header">
-            <h5 class="mb-0">Savings History</h5>
+            <h5>Savings History</h5>
         </div>
         <div class="card-body">
             <table class="table">
@@ -163,75 +62,45 @@
                         <th>Amount</th>
                         <th>Late Fee</th>
                         <th>Total</th>
-                        <th>Status</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {% for saving in savings %}
+                    {% for s in savings %}
                     <tr>
-                        <td>{{ saving.date[:10] }}</td>
-                        <td>{{ saving.month }}</td>
-                        <td>₦{{ "{:,.2f}".format(saving.amount - saving.late_fee) }}</td>
-                        <td>{% if saving.late_fee > 0 %}₦{{ "{:,.2f}".format(saving.late_fee) }}{% else %}-{% endif %}</td>
-                        <td><strong>₦{{ "{:,.2f}".format(saving.amount) }}</strong></td>
-                        <td>
-                            {% if saving.late_fee > 0 %}
-                            <span class="badge bg-warning">Late</span>
-                            {% else %}
-                            <span class="badge bg-success">On Time</span>
-                            {% endif %}
-                        </td>
+                        <td>{{ s.date[:10] }}</td>
+                        <td>{{ s.month }}</td>
+                        <td>₦{{ "{:,.2f}".format(s.amount - s.late_fee) }}</td>
+                        <td>₦{{ "{:,.2f}".format(s.late_fee) }}</td>
+                        <td>₦{{ "{:,.2f}".format(s.amount) }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
     </div>
-    
+
     <!-- Loans History -->
     <div class="card">
         <div class="card-header">
-            <h5 class="mb-0">Loans History</h5>
+            <h5>Loans History</h5>
         </div>
         <div class="card-body">
             <table class="table">
                 <thead>
                     <tr>
-                        <th>Date</th>
+                        <th>Loan Number</th>
                         <th>Amount</th>
-                        <th>Purpose</th>
-                        <th>Tenure</th>
-                        <th>Interest</th>
-                        <th>Total Repayment</th>
                         <th>Balance</th>
                         <th>Status</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {% for loan in loans %}
+                    {% for l in loans %}
                     <tr>
-                        <td>{{ loan.date_applied[:10] }}</td>
-                        <td>₦{{ "{:,.2f}".format(loan.amount) }}</td>
-                        <td>{{ loan.purpose[:30] }}</td>
-                        <td>{{ loan.tenure }} months</td>
-                        <td>{{ loan.interest_rate }}%</td>
-                        <td>₦{{ "{:,.2f}".format(loan.total_repayment) }}</td>
-                        <td>
-                            {% if loan.status == 'active' %}
-                            <strong>₦{{ "{:,.2f}".format(loan.balance) }}</strong>
-                            {% endif %}
-                        </td>
-                        <td>
-                            {% if loan.status == 'active' %}
-                            <span class="badge bg-success">Active</span>
-                            {% elif loan.status == 'completed' %}
-                            <span class="badge bg-info">Completed</span>
-                            {% elif loan.status == 'pending' %}
-                            <span class="badge bg-warning">Pending</span>
-                            {% else %}
-                            <span class="badge bg-danger">{{ loan.status }}</span>
-                            {% endif %}
-                        </td>
+                        <td>{{ l.loan_number }}</td>
+                        <td>₦{{ "{:,.2f}".format(l.amount) }}</td>
+                        <td>₦{{ "{:,.2f}".format(l.balance) }}</td>
+                        <td>{{ l.status|title }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -240,45 +109,32 @@
     </div>
 </div>
 
-<!-- Add Savings Modal (reuse from members.html) -->
 <!-- Record Savings Modal -->
 <div class="modal fade" id="savingsModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
-            <div class="modal-header bg-success text-white">
-                <h5 class="modal-title"><i class="fas fa-piggy-bank"></i> Record Monthly Savings</h5>
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title">Record Monthly Savings</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <form action="{{ url_for('add_saving') }}" method="POST">
                 <div class="modal-body">
                     <input type="hidden" name="member_id" value="{{ member.id }}">
-                    
-                    <div class="mb-3">
-                        <label class="form-label">Member</label>
-                        <input type="text" class="form-control" value="{{ member.first_name }} {{ member.last_name }}" readonly>
-                    </div>
-                    
                     <div class="mb-3">
                         <label class="form-label">Amount (₦)</label>
-                        <input type="number" class="form-control" name="amount" 
-                               min="5000" step="100" value="5000" required>
-                        <small class="text-muted">Minimum: ₦5,000 (Bye-laws 8.2.2)</small>
+                        <input type="number" class="form-control" name="amount" min="5000" step="100" required>
                     </div>
-                    
                     <div class="mb-3">
                         <label class="form-label">Month/Year</label>
-                        <input type="month" class="form-control" name="month" 
-                               value="{{ datetime.now().strftime('%Y-%m') }}" required>
+                        <input type="month" class="form-control" name="month" value="{{ now().strftime('%Y-%m') }}" required>
                     </div>
-                    
                     <div class="alert alert-info">
-                        <i class="fas fa-info-circle"></i>
-                        <strong>Note:</strong> A 10% late fee will be applied if payment is after the 10th of the month.
+                        A 10% late fee applies if payment is after the 10th.
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-success">Record Savings</button>
+                    <button type="submit" class="btn btn-primary">Save Savings</button>
                 </div>
             </form>
         </div>
@@ -286,23 +142,9 @@
 </div>
 
 <script>
-function showSavingsModal() {
-    var modal = new bootstrap.Modal(document.getElementById('savingsModal'));
-    modal.show();
-}
-</script>
-{% endblock %}
-
-{% block scripts %}
-<script>
-function printMemberDetails() {
-    window.print();
-}
-
-function showSavingsModal(memberId, memberName) {
-    // Reuse the savings modal from members page
-    // This would need the modal HTML included
-    alert('Record savings for ' + memberName);
-}
+    function showSavingsModal() {
+        var modal = new bootstrap.Modal(document.getElementById('savingsModal'));
+        modal.show();
+    }
 </script>
 {% endblock %}
