@@ -18,13 +18,24 @@ from io import StringIO
 from flask import make_response
 from io import StringIO, TextIOWrapper
 from werkzeug.utils import secure_filename
-
+from email_service import send_welcome_email, send_loan_approval_email, send_loan_rejection_email, send_payment_confirmation_email
 
 from database import init_db, get_db
 from card_generator import MemberCardGenerator
 
 # Create the Flask app instance FIRST
 app = Flask(__name__)
+
+from flask_mail import Mail, Message
+
+app.config['MAIL_SERVER'] = os.environ.get('MAIL_SERVER', 'smtp.gmail.com')
+app.config['MAIL_PORT'] = int(os.environ.get('MAIL_PORT', 587))
+app.config['MAIL_USE_TLS'] = os.environ.get('MAIL_USE_TLS', 'True') == 'True'
+app.config['MAIL_USERNAME'] = os.environ.get('MAIL_USERNAME')
+app.config['MAIL_PASSWORD'] = os.environ.get('MAIL_PASSWORD')
+app.config['MAIL_DEFAULT_SENDER'] = os.environ.get('MAIL_DEFAULT_SENDER', 'noreply@cooperative.com')
+
+mail = Mail(app)
 
 # Now configure the app
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-change-this-in-production')
@@ -235,9 +246,18 @@ def add_member():
                 'active'
             ))
             db.commit()
+            
 
             # Get the newly created member's ID
             member_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
+            # After db.commit() of the member insert
+            member = db.execute('SELECT * FROM members WHERE id = ?', (member_id,)).fetchone()
+            member_data = {
+                'full_name': f"{request.form['first_name']} {request.form['last_name']}",
+                'member_number': member_number,  # you should have this variable (generated earlier)
+                'coop_name': 'OOU Cooperative'
+            }
+            send_welcome_email(member['email'], member_data)
 
             # Handle photo upload
             if 'photo' in request.files:
@@ -530,6 +550,10 @@ def add_saving():
         
         db.execute('UPDATE members SET total_savings = total_savings + ? WHERE id = ?', (total_amount, member_id))
         db.commit()
+        member = db.execute('SELECT * FROM members WHERE id = ?', (member_id,)).fetchone()
+        new_saving = db.execute('SELECT * FROM savings WHERE id = ?', (db.last_insert_rowid(),)).fetchone()
+        send_payment_confirmation_email(member['email'], member, new_saving)
+        
         flash(f'Savings of ₦{amount:,.2f} recorded successfully! Receipt: {receipt_number}', 'success')
         
     except Exception as e:
@@ -708,6 +732,10 @@ def approve_loan(loan_id):
                 loan_id
             ))
             db.commit()
+                # 👇👇👇 NEW CODE – SEND APPROVAL EMAIL 👇👇👇
+            member = db.execute('SELECT * FROM members WHERE id = ?', (loan['member_id'],)).fetchone()
+            send_loan_approval_email(member['email'], member, loan)
+                # 👆👆👆 END OF NEW CODE 👆👆👆
             flash('Loan approved successfully!', 'success')
         else:
             flash('Loan not found or already processed', 'danger')
@@ -727,6 +755,11 @@ def reject_loan(loan_id):
     try:
         db.execute('UPDATE loans SET status = "rejected" WHERE id = ?', (loan_id,))
         db.commit()
+            # 👇👇👇 NEW CODE – SEND APPROVAL EMAIL 👇👇👇
+        member = db.execute('SELECT * FROM members WHERE id = ?', (loan['member_id'],)).fetchone()
+        reason = request.form.get('reason', 'Does not meet our lending criteria.')
+        send_loan_rejection_email(member['email'], member, loan)
+            # 👆👆👆 END OF NEW CODE 👆👆👆
         flash('Loan application rejected', 'info')
     except Exception as e:
         flash(f'Error rejecting loan: {str(e)}', 'danger')
@@ -1812,13 +1845,13 @@ def member_statement(member_id):
 @login_required
 def get_member_api(member_id):
     db = get_db()
-    member = db.execute('SELECT id, first_name, last_name, total_savings FROM members WHERE id = ?', (member_id,)).fetchone()
-    
+    member = db.execute('SELECT id, first_name, last_name, member_number, total_savings FROM members WHERE id = ?', (member_id,)).fetchone()
     if member:
         return jsonify({
             'id': member['id'],
             'first_name': member['first_name'],
             'last_name': member['last_name'],
+            'member_number': member['member_number'],
             'total_savings': float(member['total_savings'] or 0),
             'max_loan': float(member['total_savings'] or 0) * 2
         })
@@ -1992,6 +2025,15 @@ def verify_card(token):
     if not member:
         return render_template('errors/404.html'), 404
     return render_template('public/verify-card.html', member=member)
+    
+    
+@app.route('/test-email')
+@login_required
+def test_email():
+    from email_service import send_welcome_email
+    member = {'full_name': 'Test User', 'member_number': 'T123', 'coop_name': 'OOU Coop'}
+    send_welcome_email('your-test-email@gmail.com', member)   # change to your own email
+    return "Test email sent. Check your inbox."
 
 # ==================== RUN APPLICATION ====================
 
