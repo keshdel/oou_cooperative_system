@@ -91,8 +91,31 @@
                                 
                                 <div class="mb-3">
                                     <label class="form-label">Email</label>
-                                    <input type="email" class="form-control" name="email" 
+                                    <input type="email" class="form-control" name="email"
                                            value="{{ settings.email|default('') }}">
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label">
+                                        <i class="fab fa-whatsapp text-success me-1"></i>WhatsApp Number
+                                    </label>
+                                    <input type="text" class="form-control" name="whatsapp_number"
+                                           value="{{ settings.whatsapp_number|default('') }}"
+                                           placeholder="+2348071090281">
+                                    <small class="text-muted">Include country code. Used for the member support WhatsApp button.</small>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label">Support Email (shown to members)</label>
+                                    <input type="email" class="form-control" name="support_email"
+                                           value="{{ settings.support_email|default('') }}"
+                                           placeholder="support@ooucoop.ng">
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label">Office Address (shown to members)</label>
+                                    <textarea class="form-control" name="office_address" rows="2"
+                                              placeholder="OOU Main Campus, Ago-Iwoye">{{ settings.office_address|default('') }}</textarea>
                                 </div>
                             </div>
                             

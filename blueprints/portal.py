@@ -880,8 +880,22 @@ def support():
             return redirect(url_for('portal.support'))
         else:
             flash('Subject and message are required.', 'danger')
+
+    def _setting(key, default=''):
+        row = db.execute('SELECT value FROM settings WHERE key = ?', (key,)).fetchone()
+        return row['value'] if row and row['value'] else default
+
+    wa_raw    = _setting('whatsapp_number', '')
+    wa_digits = ''.join(c for c in wa_raw if c.isdigit())
+    wa_link   = f"https://wa.me/{wa_digits}" if wa_digits else None
+
     return render_template('member/support.html',
-                           member=_member_extras(member, db) if member else None)
+                           member=_member_extras(member, db) if member else None,
+                           whatsapp_number=wa_raw,
+                           whatsapp_link=wa_link,
+                           support_phone=_setting('phone', wa_raw),
+                           support_email=_setting('support_email', _setting('email', 'support@ooucoop.ng')),
+                           office_address=_setting('office_address', 'OOU Main Campus'))
 
 
 # ── PDF Statement (admin/member download) ─────────────────────────────────────────

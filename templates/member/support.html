@@ -1,59 +1,89 @@
 {% extends "base.html" %}
 
-{% block title %}Support - OOU Cooperative{% endblock %}
+{% block title %}Member Support - OOU Cooperative{% endblock %}
 
 {% block content %}
 <div class="container-fluid">
     <div class="row mb-4">
         <div class="col-md-8">
-            <h2><i class="fas fa-headset"></i> Member Support</h2>
+            <h2><i class="fas fa-headset me-2"></i>Member Support</h2>
             <p class="text-muted">Get help and support for your cooperative needs</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="{{ url_for('portal.member_portal') }}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left me-1"></i>Back to Portal
+            </a>
         </div>
     </div>
 
     <div class="row">
-        <div class="col-md-8 mx-auto">
+        <div class="col-lg-8 mx-auto">
+
             <!-- Contact Cards -->
-            <div class="row g-4 mb-4">
+            <div class="row g-3 mb-4">
+
+                {% if whatsapp_link %}
+                <!-- WhatsApp — primary CTA -->
                 <div class="col-md-4">
+                    <a href="{{ whatsapp_link }}" target="_blank" rel="noopener"
+                       class="card text-center h-100 text-decoration-none border-success"
+                       style="transition:.15s; cursor:pointer;"
+                       onmouseover="this.style.boxShadow='0 4px 16px rgba(37,211,102,.35)'"
+                       onmouseout="this.style.boxShadow=''">
+                        <div class="card-body py-4">
+                            <i class="fab fa-whatsapp fa-3x text-success mb-3"></i>
+                            <h5 class="text-success">WhatsApp Chat</h5>
+                            <p class="text-muted small mb-2">Fastest response</p>
+                            <strong class="d-block text-dark">{{ whatsapp_number }}</strong>
+                            <span class="badge bg-success mt-2">Chat Now</span>
+                        </div>
+                    </a>
+                </div>
+                {% endif %}
+
+                <!-- Phone -->
+                <div class="col-md-{% if whatsapp_link %}4{% else %}6{% endif %}">
                     <div class="card text-center h-100">
-                        <div class="card-body">
+                        <div class="card-body py-4">
                             <i class="fas fa-phone-alt fa-3x text-primary mb-3"></i>
                             <h5>Phone Support</h5>
-                            <p class="text-muted">Mon-Fri, 8am-5pm</p>
-                            <h6>+234 800 000 0000</h6>
+                            <p class="text-muted small mb-2">Mon–Fri, 8am–5pm</p>
+                            <strong>{{ support_phone or whatsapp_number or 'Contact office' }}</strong>
                         </div>
                     </div>
                 </div>
-                <div class="col-md-4">
+
+                <!-- Email -->
+                <div class="col-md-{% if whatsapp_link %}4{% else %}6{% endif %}">
                     <div class="card text-center h-100">
-                        <div class="card-body">
-                            <i class="fas fa-envelope fa-3x text-success mb-3"></i>
+                        <div class="card-body py-4">
+                            <i class="fas fa-envelope fa-3x text-info mb-3"></i>
                             <h5>Email Support</h5>
-                            <p class="text-muted">24/7 response within 24h</p>
-                            <h6>support@ooucoop.org</h6>
+                            <p class="text-muted small mb-2">Response within 24h</p>
+                            <a href="mailto:{{ support_email }}" class="fw-bold">{{ support_email }}</a>
                         </div>
                     </div>
                 </div>
-                <div class="col-md-4">
-                    <div class="card text-center h-100">
-                        <div class="card-body">
-                            <i class="fas fa-map-marker-alt fa-3x text-danger mb-3"></i>
-                            <h5>Branch Office</h5>
-                            <p class="text-muted">Visit us in person</p>
-                            <h6>OOU Main Campus</h6>
-                        </div>
-                    </div>
-                </div>
+
             </div>
 
-            <!-- FAQ Section -->
+            <!-- Office Address -->
+            {% if office_address %}
+            <div class="alert alert-light border d-flex align-items-center mb-4">
+                <i class="fas fa-map-marker-alt fa-lg text-danger me-3"></i>
+                <div>
+                    <strong>Branch Office:</strong> {{ office_address }}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- FAQ -->
             <div class="card mb-4">
                 <div class="card-header bg-info text-white">
-                    <h5 class="mb-0">Frequently Asked Questions</h5>
+                    <h5 class="mb-0"><i class="fas fa-question-circle me-2"></i>Frequently Asked Questions</h5>
                 </div>
-                <div class="card-body">
-                    <div class="accordion" id="faqAccordion">
+                <div class="card-body p-0">
+                    <div class="accordion accordion-flush" id="faqAccordion">
                         <div class="accordion-item">
                             <h2 class="accordion-header">
                                 <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#faq1">
@@ -61,32 +91,32 @@
                                 </button>
                             </h2>
                             <div id="faq1" class="accordion-collapse collapse show" data-bs-parent="#faqAccordion">
-                                <div class="accordion-body">
-                                    You can apply for a loan through the Member Portal under "Apply for Loan". Ensure you have at least 6 months membership and minimum savings of ₦50,000.
+                                <div class="accordion-body text-muted">
+                                    Use the <strong>Apply for Loan</strong> button in your portal. You need at least 6 months membership and minimum savings of ₦50,000. Loans are approved within 3–5 working days.
                                 </div>
                             </div>
                         </div>
                         <div class="accordion-item">
                             <h2 class="accordion-header">
                                 <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq2">
-                                    What is the maximum loan amount?
+                                    What is the maximum loan I can get?
                                 </button>
                             </h2>
                             <div id="faq2" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                                <div class="accordion-body">
-                                    You can borrow up to 2 times your total savings, subject to approval and availability of funds.
+                                <div class="accordion-body text-muted">
+                                    You can borrow up to <strong>2× your total savings</strong>, subject to approval and fund availability.
                                 </div>
                             </div>
                         </div>
                         <div class="accordion-item">
                             <h2 class="accordion-header">
                                 <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq3">
-                                    How do I update my nominee?
+                                    How do I change my monthly savings amount?
                                 </button>
                             </h2>
                             <div id="faq3" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                                <div class="accordion-body">
-                                    Go to Profile → Nominee Information. You can update your nominee details there.
+                                <div class="accordion-body text-muted">
+                                    Go to <strong>My Savings → Change Amount</strong> and submit a change request. The administrator will review and approve it.
                                 </div>
                             </div>
                         </div>
@@ -97,8 +127,20 @@
                                 </button>
                             </h2>
                             <div id="faq4" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                                <div class="accordion-body">
-                                    Dividends are calculated based on your average savings balance and the cooperative's surplus for the year. Minimum 50% of surplus is distributed as dividends.
+                                <div class="accordion-body text-muted">
+                                    Dividends are based on your average savings balance and the cooperative's annual surplus. At least 50% of surplus is distributed as dividends to members.
+                                </div>
+                            </div>
+                        </div>
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq5">
+                                    What happens if I pay savings late?
+                                </button>
+                            </h2>
+                            <div id="faq5" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                                <div class="accordion-body text-muted">
+                                    Savings paid after the 10th of each month attract a <strong>10% late fee</strong> on the monthly contribution amount, as per bye-law 8.2.3.
                                 </div>
                             </div>
                         </div>
@@ -109,28 +151,43 @@
             <!-- Contact Form -->
             <div class="card">
                 <div class="card-header bg-primary text-white">
-                    <h5 class="mb-0">Send us a Message</h5>
+                    <h5 class="mb-0"><i class="fas fa-paper-plane me-2"></i>Send us a Message</h5>
                 </div>
                 <div class="card-body">
-                    <form method="POST" action="{{ url_for('send_support_message') }}">
+                    {% with messages = get_flashed_messages(with_categories=true) %}
+                        {% for category, message in messages %}
+                        <div class="alert alert-{{ category }} alert-dismissible fade show">
+                            {{ message }}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        </div>
+                        {% endfor %}
+                    {% endwith %}
+
+                    <form method="POST" action="{{ url_for('portal.support') }}">
                         <div class="mb-3">
-                            <label class="form-label">Subject</label>
-                            <input type="text" class="form-control" name="subject" required>
+                            <label class="form-label fw-bold">Subject <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" name="subject" required
+                                   placeholder="e.g. Loan enquiry, Savings discrepancy…">
                         </div>
                         <div class="mb-3">
-                            <label class="form-label">Message</label>
-                            <textarea class="form-control" name="message" rows="5" required></textarea>
+                            <label class="form-label fw-bold">Message <span class="text-danger">*</span></label>
+                            <textarea class="form-control" name="message" rows="5" required
+                                      placeholder="Describe your issue in detail…"></textarea>
                         </div>
-                        <div class="mb-3">
-                            <label class="form-label">Attach File (optional)</label>
-                            <input type="file" class="form-control" name="attachment">
+                        <div class="d-flex justify-content-between align-items-center">
+                            {% if whatsapp_link %}
+                            <a href="{{ whatsapp_link }}" target="_blank" class="btn btn-success">
+                                <i class="fab fa-whatsapp me-2"></i>Chat on WhatsApp instead
+                            </a>
+                            {% endif %}
+                            <button type="submit" class="btn btn-primary ms-auto">
+                                <i class="fas fa-paper-plane me-2"></i>Send Message
+                            </button>
                         </div>
-                        <button type="submit" class="btn btn-primary">
-                            <i class="fas fa-paper-plane"></i> Send Message
-                        </button>
                     </form>
                 </div>
             </div>
+
         </div>
     </div>
 </div>
