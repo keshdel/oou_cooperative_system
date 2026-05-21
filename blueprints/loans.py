@@ -8,7 +8,7 @@ from flask_login import login_required, current_user
 
 from database import get_db
 from email_service import send_loan_approval_email, send_loan_rejection_email
-from utils import role_required, audit, notify_member
+from utils import role_required, audit, notify_member, compute_loan_schedule, PURPOSE_SETTING_KEY, METHOD_LABELS
 
 loans = Blueprint('loans', __name__)
 
@@ -30,6 +30,7 @@ def download_repayment_template():
 
 @loans.route('/loans')
 @login_required
+@role_required('admin', 'treasurer', 'secretary', 'exco')
 def loans_list():
     db = get_db()
     all_loans = db.execute('''
@@ -61,26 +62,37 @@ def loans_list():
 
 @loans.route('/loans/apply', methods=['GET', 'POST'])
 @login_required
+@role_required('admin', 'treasurer', 'secretary', 'exco')
 def apply_loan():
     db = get_db()
 
     max_tenure_row = db.execute("SELECT value FROM settings WHERE key = 'max_tenure_months'").fetchone()
     max_tenure = int(max_tenure_row['value']) if max_tenure_row else 18
 
+    # Load all interest_* settings in one query
     interest_rows = db.execute("SELECT key, value FROM settings WHERE key LIKE 'interest_%'").fetchall()
-    interest_rates_raw = {row['key']: float(row['value']) for row in interest_rows}
+    s_raw = {row['key']: row['value'] for row in interest_rows}
+
     interest_rates = {
-        'interest_regular':  interest_rates_raw.get('interest_regular', 11),
-        'interest_housing':  interest_rates_raw.get('interest_housing', 9),
-        'interest_emergency': interest_rates_raw.get('interest_emergency', 10),
-        'interest_asset':    interest_rates_raw.get('interest_asset', 10),
+        'Regular':        float(s_raw.get('interest_regular',    11)),
+        'Housing':        float(s_raw.get('interest_housing',     9)),
+        'Emergency':      float(s_raw.get('interest_emergency',  10)),
+        'Asset Purchase': float(s_raw.get('interest_asset',      10)),
+        'School Fees':    float(s_raw.get('interest_school_fees', 9)),
+    }
+    interest_methods = {
+        'Regular':        s_raw.get('interest_method_regular',    'reducing_annual'),
+        'Housing':        s_raw.get('interest_method_housing',    'reducing_annual'),
+        'Emergency':      s_raw.get('interest_method_emergency',  'reducing_annual'),
+        'Asset Purchase': s_raw.get('interest_method_asset',      'reducing_annual'),
+        'School Fees':    s_raw.get('interest_method_school_fees','flat'),
     }
 
     if request.method == 'POST':
         member_id = request.form.get('member_id')
-        amount = float(request.form.get('amount', 0))
-        purpose = request.form.get('purpose')
-        tenure = int(request.form.get('tenure', 0))
+        amount    = float(request.form.get('amount', 0))
+        purpose   = request.form.get('purpose')
+        tenure    = int(request.form.get('tenure', 0))
 
         if not member_id or amount <= 0 or not purpose or tenure <= 0:
             flash('All fields are required and must be valid.', 'danger')
@@ -121,31 +133,23 @@ def apply_loan():
                 flash(f'Maximum loan amount is ₦{max_loan:,.2f} (2x savings).', 'danger')
                 return redirect(url_for('members.member_details', member_id=member_id))
 
-            purpose_to_key = {
-                'Housing': 'interest_housing',
-                'Emergency': 'interest_emergency',
-                'Asset Purchase': 'interest_asset',
-            }
-            rate_key = purpose_to_key.get(purpose, 'interest_regular')
-            interest_rate = interest_rates.get(rate_key, 11)
+            # Look up rate and method for the chosen purpose
+            interest_rate   = interest_rates.get(purpose, interest_rates.get('Regular', 11))
+            interest_method = interest_methods.get(purpose, 'reducing_annual')
 
-            monthly_interest = (interest_rate / 100) / 12
-            if monthly_interest > 0:
-                monthly_payment = (amount * monthly_interest * (1 + monthly_interest) ** tenure
-                                   / ((1 + monthly_interest) ** tenure - 1))
-            else:
-                monthly_payment = amount / tenure
-            total_repayment = monthly_payment * tenure
+            monthly_payment, total_repayment, _ = compute_loan_schedule(
+                amount, interest_rate, tenure, interest_method
+            )
 
             loan_number = f"LOAN/{datetime.now().strftime('%Y%m%d')}/{random.randint(1000, 9999)}"
 
             db.execute('''
                 INSERT INTO loans (
                     loan_number, member_id, amount, purpose, tenure, interest_rate,
-                    total_repayment, balance, status, date_applied
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    interest_method, total_repayment, balance, status, date_applied
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (loan_number, member_id, amount, purpose, tenure, interest_rate,
-                  total_repayment, total_repayment, 'pending', datetime.now()))
+                  interest_method, total_repayment, total_repayment, 'pending', datetime.now()))
             db.commit()
             flash('Loan application submitted successfully! Pending approval.', 'success')
             return redirect(url_for('members.member_details', member_id=member_id))
@@ -161,7 +165,9 @@ def apply_loan():
     return render_template('admin/apply-loan.html',
                            members=all_members,
                            max_tenure=max_tenure,
-                           interest_rates=interest_rates)
+                           interest_rates=interest_rates,
+                           interest_methods=interest_methods,
+                           method_labels=METHOD_LABELS)
 
 
 @loans.route('/loans/approve/<int:loan_id>', methods=['POST'])

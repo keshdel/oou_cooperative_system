@@ -10,6 +10,7 @@ from io import StringIO, TextIOWrapper
 
 from flask import Blueprint, render_template, redirect, url_for, request, flash, make_response
 from flask_login import login_required
+from werkzeug.security import generate_password_hash
 
 from database import get_db
 from utils import role_required, audit
@@ -35,6 +36,78 @@ def _resolve_member(db, row):
 
 def _ref(prefix):
     return f"{prefix}/{datetime.now().strftime('%Y%m%d')}/{random.randint(1000, 9999)}"
+
+
+# Canonical loan purpose names (lower-case key → canonical value)
+_PURPOSE_MAP = {
+    'regular':        'Regular',
+    'personal':       'Regular',
+    'general':        'Regular',
+    'standard':       'Regular',
+    'consumer':       'Regular',
+    'housing':        'Housing',
+    'house':          'Housing',
+    'mortgage':       'Housing',
+    'home':           'Housing',
+    'property':       'Housing',
+    'emergency':      'Emergency',
+    'urgent':         'Emergency',
+    'asset':          'Asset Purchase',
+    'asset purchase': 'Asset Purchase',
+    'equipment':      'Asset Purchase',
+    'vehicle':        'Asset Purchase',
+    'car':            'Asset Purchase',
+    'school fees':    'School Fees',
+    'school':         'School Fees',
+    'education':      'School Fees',
+    'tuition':        'School Fees',
+    'fees':           'School Fees',
+}
+
+_VALID_PURPOSES = {'Regular', 'Housing', 'Emergency', 'Asset Purchase', 'School Fees'}
+
+
+def _normalize_purpose(raw):
+    """Map free-text purpose to one of the 5 canonical loan types."""
+    key = (raw or '').strip().lower()
+    if key in _PURPOSE_MAP:
+        return _PURPOSE_MAP[key]
+    # Check if it's already canonical (case-insensitive)
+    for canon in _VALID_PURPOSES:
+        if key == canon.lower():
+            return canon
+    # Unknown — keep as-is (won't break anything, just won't match interest rate presets)
+    return raw.strip() if raw.strip() else 'Regular'
+
+
+# Canonical loan status aliases
+_STATUS_MAP = {
+    'pending':   'pending',
+    'applied':   'pending',
+    'new':       'pending',
+    'approved':  'approved',
+    'active':    'active',
+    'disbursed': 'active',
+    'running':   'active',
+    'ongoing':   'active',
+    'completed': 'completed',
+    'cleared':   'completed',
+    'repaid':    'completed',
+    'paid':      'completed',
+    'closed':    'completed',
+    'settled':   'completed',
+    'defaulted': 'defaulted',
+    'default':   'defaulted',
+    'overdue':   'defaulted',
+    'rejected':  'rejected',
+    'declined':  'rejected',
+    'denied':    'rejected',
+}
+
+
+def _normalize_loan_status(raw, fallback='pending'):
+    key = (raw or '').strip().lower()
+    return _STATUS_MAP.get(key, fallback)
 
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
@@ -169,10 +242,27 @@ def import_members():
                     ))
 
                     # Auto-generate member_number if not supplied
+                    new_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
                     if not member_number:
-                        new_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
-                        mn = f"OOU/{(date_joined or datetime.now()).year}/{new_id:04d}"
-                        db.execute('UPDATE members SET member_number = ? WHERE id = ?', (mn, new_id))
+                        member_number = f"OOU/{(date_joined or datetime.now()).year}/{new_id:04d}"
+                        db.execute('UPDATE members SET member_number = ? WHERE id = ?',
+                                   (member_number, new_id))
+
+                    # Auto-create a member portal user account if email is available
+                    if email:
+                        existing_user = db.execute(
+                            'SELECT id FROM users WHERE email = ?', (email,)
+                        ).fetchone()
+                        if not existing_user:
+                            # Default password = member_number (member must change it)
+                            pw_hash   = generate_password_hash(member_number)
+                            full_name = f"{first_name} {last_name}"
+                            db.execute('''
+                                INSERT INTO users
+                                    (username, password_hash, role, full_name, email,
+                                     is_active, created_at)
+                                VALUES (?, ?, 'member', ?, ?, 1, ?)
+                            ''', (email, pw_hash, full_name, email, datetime.now()))
 
                     success += 1
                 except Exception as e:
@@ -400,7 +490,7 @@ def export_savings():
 LOANS_COLUMNS = [
     'member_number', 'email', 'loan_number', 'amount', 'purpose',
     'tenure', 'interest_rate', 'total_repayment', 'balance', 'status',
-    'date_applied', 'date_approved', 'notes',
+    'date_applied', 'date_approved', 'disbursement_date', 'disbursed_amount', 'notes',
 ]
 LOANS_REQUIRED = {'amount', 'purpose'}
 
@@ -452,24 +542,33 @@ def import_loans():
                         errors.append(f"Row {row_num}: amount must be > 0.")
                         continue
 
-                    purpose    = row.get('purpose', '').strip() or 'General'
+                    purpose    = _normalize_purpose(row.get('purpose', ''))
                     tenure     = int(row.get('tenure', '12').strip() or 12)
                     int_rate   = float(row.get('interest_rate', '11').strip() or 11)
                     total_rep  = float(row.get('total_repayment', '0').strip() or 0) or amount
                     balance    = float(row.get('balance', '0').strip() or 0) or total_rep
-                    status     = row.get('status', 'pending').strip() or 'pending'
+                    status     = _normalize_loan_status(row.get('status', ''), fallback='pending')
                     notes      = row.get('notes', '').strip() or None
 
-                    date_applied  = _parse_date(row.get('date_applied', '')) or datetime.now()
-                    date_approved = _parse_date(row.get('date_approved', ''))
+                    date_applied      = _parse_date(row.get('date_applied', '')) or datetime.now()
+                    date_approved     = _parse_date(row.get('date_approved', ''))
+                    disbursement_date = _parse_date(row.get('disbursement_date', ''))
+                    disbursed_raw     = row.get('disbursed_amount', '').strip()
+                    disbursed_amount  = float(disbursed_raw) if disbursed_raw else None
+
+                    # If disbursement_date given but no disbursed_amount, default to loan amount
+                    if disbursement_date and disbursed_amount is None:
+                        disbursed_amount = amount
 
                     db.execute('''
                         INSERT INTO loans
                             (loan_number, member_id, amount, purpose, tenure, interest_rate,
-                             total_repayment, balance, status, notes, date_applied, approved_at)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                             total_repayment, balance, status, notes, date_applied, approved_at,
+                             disbursement_date, disbursed_amount)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ''', (loan_number, member['id'], amount, purpose, tenure, int_rate,
-                          total_rep, balance, status, notes, date_applied, date_approved))
+                          total_rep, balance, status, notes, date_applied, date_approved,
+                          disbursement_date, disbursed_amount))
                     success += 1
                 except Exception as e:
                     errors.append(f"Row {row_num}: {e}")
@@ -504,12 +603,18 @@ def template_loans():
     out = StringIO()
     w = csv.writer(out)
     w.writerow(LOANS_COLUMNS)
+    # Active loan — already disbursed, partially repaid
     w.writerow(['OOU/2024/0001', 'john@example.com', 'LOAN/20240201/0001',
                 '200000', 'Regular', '12', '11', '224000', '100000',
-                'active', '2024-02-01', '2024-02-15', ''])
+                'active', '2024-02-01', '2024-02-15', '2024-02-20', '200000', ''])
+    # Pending loan — not yet disbursed
     w.writerow(['OOU/2024/0002', 'jane@example.com', '',
                 '100000', 'Emergency', '6', '10', '105000', '105000',
-                'pending', '2024-03-10', '', 'Awaiting guarantor'])
+                'pending', '2024-03-10', '', '', '', 'Awaiting guarantor'])
+    # Completed loan — fully repaid
+    w.writerow(['OOU/2024/0003', '', 'LOAN/20230601/0042',
+                '50000', 'School Fees', '6', '9', '52250', '0',
+                'completed', '2023-06-01', '2023-06-05', '2023-06-10', '50000', ''])
     return _csv_response(out, 'loans_import_template.csv')
 
 
@@ -521,7 +626,7 @@ def export_loans():
     rows = db.execute('''
         SELECT m.member_number, m.email, l.loan_number, l.amount, l.purpose,
                l.tenure, l.interest_rate, l.total_repayment, l.balance, l.status,
-               l.date_applied, l.approved_at, l.notes
+               l.date_applied, l.approved_at, l.disbursement_date, l.disbursed_amount, l.notes
         FROM loans l JOIN members m ON l.member_id = m.id
         ORDER BY l.date_applied DESC
     ''').fetchall()
@@ -529,10 +634,214 @@ def export_loans():
     w = csv.writer(out)
     w.writerow(['member_number', 'email', 'loan_number', 'amount', 'purpose',
                 'tenure', 'interest_rate', 'total_repayment', 'balance', 'status',
-                'date_applied', 'date_approved', 'notes'])
+                'date_applied', 'date_approved', 'disbursement_date', 'disbursed_amount', 'notes'])
     for r in rows:
         w.writerow(list(r))
     return _csv_response(out, 'loans_export.csv')
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# REPAYMENTS
+# ═══════════════════════════════════════════════════════════════════════════════
+
+REPAYMENTS_COLUMNS = [
+    'loan_number', 'member_number', 'email',
+    'amount', 'principal_paid', 'interest_paid', 'penalty_paid',
+    'payment_method', 'receipt_number', 'date', 'notes',
+]
+REPAYMENTS_REQUIRED = {'amount', 'date'}
+
+
+@migration.route('/repayments', methods=['GET', 'POST'])
+@login_required
+@role_required('admin', 'treasurer')
+def import_repayments():
+    if request.method == 'POST':
+        f = request.files.get('file')
+        if not f or not f.filename:
+            flash('No file selected.', 'danger')
+            return redirect(request.url)
+        if not f.filename.lower().endswith('.csv'):
+            flash('Please upload a CSV file.', 'danger')
+            return redirect(request.url)
+
+        db = get_db()
+        try:
+            stream = TextIOWrapper(f.stream, encoding='utf-8-sig')
+            reader = csv.DictReader(stream)
+            fieldnames = set(reader.fieldnames or [])
+            if not REPAYMENTS_REQUIRED.issubset(fieldnames):
+                flash(f'Missing columns: {", ".join(sorted(REPAYMENTS_REQUIRED - fieldnames))}',
+                      'danger')
+                return redirect(request.url)
+            has_loan_ref = 'loan_number' in fieldnames
+            has_member_ref = 'member_number' in fieldnames or 'email' in fieldnames
+            if not has_loan_ref and not has_member_ref:
+                flash('CSV must have at least one of: loan_number, member_number, email', 'danger')
+                return redirect(request.url)
+
+            success, skipped, errors = 0, 0, []
+
+            for row_num, row in enumerate(reader, start=2):
+                try:
+                    # ── Resolve loan ──────────────────────────────────────────
+                    loan = None
+                    loan_number = row.get('loan_number', '').strip()
+                    if loan_number:
+                        loan = db.execute(
+                            'SELECT * FROM loans WHERE loan_number = ?', (loan_number,)
+                        ).fetchone()
+                        if not loan:
+                            errors.append(f"Row {row_num}: loan_number '{loan_number}' not found.")
+                            continue
+                    else:
+                        # Fall back to member's most recent active/approved loan
+                        member = _resolve_member(db, row)
+                        if not member:
+                            errors.append(f"Row {row_num}: member not found and no loan_number given.")
+                            continue
+                        loan = db.execute(
+                            '''SELECT * FROM loans
+                               WHERE member_id = ? AND status IN ('active','approved')
+                               ORDER BY date_applied DESC LIMIT 1''',
+                            (member['id'],)
+                        ).fetchone()
+                        if not loan:
+                            errors.append(
+                                f"Row {row_num}: no active/approved loan for member "
+                                f"'{row.get('member_number','') or row.get('email','')}'. "
+                                f"Provide loan_number explicitly."
+                            )
+                            continue
+
+                    # ── Parse amounts ─────────────────────────────────────────
+                    amount_raw = row.get('amount', '').strip()
+                    if not amount_raw:
+                        errors.append(f"Row {row_num}: amount is required.")
+                        continue
+                    amount = float(amount_raw)
+                    if amount <= 0:
+                        errors.append(f"Row {row_num}: amount must be > 0.")
+                        continue
+
+                    principal_raw  = row.get('principal_paid', '').strip()
+                    interest_raw   = row.get('interest_paid', '').strip()
+                    penalty_raw    = row.get('penalty_paid', '').strip()
+
+                    interest_paid  = float(interest_raw)  if interest_raw  else 0.0
+                    penalty_paid   = float(penalty_raw)   if penalty_raw   else 0.0
+                    # If principal not given, derive it: amount − interest − penalty
+                    principal_paid = (float(principal_raw) if principal_raw
+                                      else max(0.0, amount - interest_paid - penalty_paid))
+
+                    payment_method = row.get('payment_method', 'cash').strip() or 'cash'
+                    receipt_number = row.get('receipt_number', '').strip() or _ref('RCPT')
+                    notes          = row.get('notes', '').strip() or None
+                    date           = _parse_date(row.get('date', ''))
+                    if not date:
+                        errors.append(f"Row {row_num}: unrecognised or missing date.")
+                        continue
+
+                    repayment_number = _ref('REP')
+
+                    db.execute('''
+                        INSERT INTO repayments
+                            (repayment_number, loan_id, amount, principal_paid,
+                             interest_paid, penalty_paid, payment_method,
+                             receipt_number, notes, date)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (repayment_number, loan['id'], amount, principal_paid,
+                          interest_paid, penalty_paid, payment_method,
+                          receipt_number, notes, date))
+
+                    # ── Update loan balance ───────────────────────────────────
+                    new_balance = max(0.0, (loan['balance'] or 0) - principal_paid)
+                    if new_balance <= 0:
+                        db.execute(
+                            '''UPDATE loans
+                               SET balance = 0, status = 'completed', completed_at = ?
+                               WHERE id = ?''',
+                            (datetime.now(), loan['id'])
+                        )
+                    else:
+                        db.execute('UPDATE loans SET balance = ? WHERE id = ?',
+                                   (new_balance, loan['id']))
+
+                    # Refresh loan row for subsequent repayments in same file
+                    loan = db.execute('SELECT * FROM loans WHERE id = ?',
+                                      (loan['id'],)).fetchone()
+                    success += 1
+
+                except Exception as e:
+                    errors.append(f"Row {row_num}: {e}")
+
+            db.commit()
+            audit(db, 'IMPORT_REPAYMENTS', 'migration',
+                  f"Imported {success} repayments, skipped {skipped}, {len(errors)} errors")
+
+        except Exception as e:
+            db.rollback()
+            flash(f'File processing error: {e}', 'danger')
+            return redirect(request.url)
+
+        _flash_result(success, skipped, errors, 'repayment')
+        return redirect(url_for('migration.index'))
+
+    return render_template('admin/migration/import.html',
+                           entity='repayments',
+                           title='Import Loan Repayments',
+                           required_cols=sorted(REPAYMENTS_REQUIRED) + ['loan_number (or member_number/email)'],
+                           optional_cols=[c for c in REPAYMENTS_COLUMNS
+                                          if c not in REPAYMENTS_REQUIRED
+                                          and c not in ('loan_number', 'member_number', 'email')],
+                           template_url=url_for('migration.template_repayments'),
+                           back_url=url_for('migration.index'))
+
+
+@migration.route('/repayments/template')
+@login_required
+@role_required('admin', 'treasurer')
+def template_repayments():
+    out = StringIO()
+    w = csv.writer(out)
+    w.writerow(REPAYMENTS_COLUMNS)
+    # Full repayment breakdown known
+    w.writerow(['LOAN/20240201/0001', 'OOU/2024/0001', 'john@example.com',
+                '18667', '15000', '3667', '0',
+                'salary_deduction', 'RCPT/20240310/0001', '2024-03-10', ''])
+    # Only amount known — principal will be derived as amount − interest − penalty
+    w.writerow(['LOAN/20240201/0001', '', '',
+                '18667', '', '', '',
+                'transfer', '', '2024-04-10', 'April instalment'])
+    # Resolved by member (latest active loan used)
+    w.writerow(['', 'OOU/2024/0002', 'jane@example.com',
+                '17500', '14000', '3500', '0',
+                'cash', 'RCPT/20240315/0003', '2024-03-15', ''])
+    return _csv_response(out, 'repayments_import_template.csv')
+
+
+@migration.route('/repayments/export')
+@login_required
+@role_required('admin', 'treasurer')
+def export_repayments():
+    db = get_db()
+    rows = db.execute('''
+        SELECT l.loan_number, m.member_number, m.email,
+               r.amount, r.principal_paid, r.interest_paid, r.penalty_paid,
+               r.payment_method, r.receipt_number, r.date, r.notes
+        FROM repayments r
+        JOIN loans l ON r.loan_id = l.id
+        JOIN members m ON l.member_id = m.id
+        ORDER BY r.date DESC
+    ''').fetchall()
+    out = StringIO()
+    w = csv.writer(out)
+    w.writerow(['loan_number', 'member_number', 'email',
+                'amount', 'principal_paid', 'interest_paid', 'penalty_paid',
+                'payment_method', 'receipt_number', 'date', 'notes'])
+    for r in rows:
+        w.writerow(list(r))
+    return _csv_response(out, 'repayments_export.csv')
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

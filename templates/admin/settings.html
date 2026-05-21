@@ -62,117 +62,178 @@
                 <!-- 1. GENERAL SETTINGS TAB -->
                 <div class="tab-pane fade show active" id="general" role="tabpanel">
                     <form method="POST" action="{{ url_for('admin_panel.update_settings') }}">
-                        <div class="row">
-                            <div class="col-md-6">
-                                <h5 class="mb-3">Cooperative Information</h5>
-                                
-                                <div class="mb-3">
-                                    <label class="form-label">Cooperative Name</label>
-                                    <input type="text" class="form-control" name="coop_name" 
-                                           value="{{ settings.coop_name|default('OOU Acctg 2005 Alumni CMS') }}">
-                                </div>
-                                
-                                <div class="mb-3">
-                                    <label class="form-label">Registration Number</label>
-                                    <input type="text" class="form-control" name="reg_number" 
-                                           value="{{ settings.reg_number|default('CMS/2005/001') }}">
-                                </div>
-                                
-                                <div class="mb-3">
-                                    <label class="form-label">Address</label>
-                                    <textarea class="form-control" name="address" rows="2">{{ settings.address|default('') }}</textarea>
-                                </div>
-                                
-                                <div class="mb-3">
-                                    <label class="form-label">Phone</label>
-                                    <input type="text" class="form-control" name="phone" 
-                                           value="{{ settings.phone|default('') }}">
-                                </div>
-                                
-                                <div class="mb-3">
-                                    <label class="form-label">Email</label>
-                                    <input type="email" class="form-control" name="email"
-                                           value="{{ settings.email|default('') }}">
-                                </div>
 
+                        <!-- ── Section A: Cooperative Identity ── -->
+                        <div class="row mb-4">
+                            <div class="col-12">
+                                <h5 class="text-primary mb-3">
+                                    <i class="fas fa-building me-2"></i>Cooperative Identity
+                                    <small class="text-muted fw-normal fs-6 ms-2">Used on PDF statements, letterheads and reports</small>
+                                </h5>
+                            </div>
+                            <div class="col-md-6">
                                 <div class="mb-3">
-                                    <label class="form-label">
+                                    <label class="form-label fw-semibold">Cooperative Name</label>
+                                    <input type="text" class="form-control" name="coop_name"
+                                           value="{{ settings.coop_name|default('') }}"
+                                           placeholder="e.g. OOU Acctg 2005 Alumni CMS">
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label fw-semibold">Registration Number</label>
+                                    <input type="text" class="form-control" name="reg_number"
+                                           value="{{ settings.reg_number|default('') }}"
+                                           placeholder="e.g. CMS/2005/001">
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label fw-semibold">Registered Address</label>
+                                    <textarea class="form-control" name="address" rows="2"
+                                              placeholder="Full registered address">{{ settings.address|default('') }}</textarea>
+                                    <small class="text-muted">Appears on PDF headers and official documents.</small>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label fw-semibold">Financial Year Start Month</label>
+                                    <select class="form-select" name="fy_start">
+                                        {% set month_names = ['January','February','March','April','May','June','July','August','September','October','November','December'] %}
+                                        {% for i in range(1, 13) %}
+                                        <option value="{{ i }}" {% if settings.fy_start|int == i %}selected{% endif %}>{{ month_names[i-1] }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label fw-semibold">Currency</label>
+                                    <select class="form-select" name="currency">
+                                        <option value="NGN" {% if settings.currency|default('NGN') == 'NGN' %}selected{% endif %}>Nigerian Naira (₦)</option>
+                                        <option value="USD" {% if settings.currency|default('') == 'USD' %}selected{% endif %}>US Dollar ($)</option>
+                                    </select>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label fw-semibold">Date Format</label>
+                                    <select class="form-select" name="date_format">
+                                        <option value="Y-m-d" {% if settings.date_format|default('Y-m-d') == 'Y-m-d' %}selected{% endif %}>YYYY-MM-DD</option>
+                                        <option value="d/m/Y" {% if settings.date_format|default('') == 'd/m/Y' %}selected{% endif %}>DD/MM/YYYY</option>
+                                        <option value="m/d/Y" {% if settings.date_format|default('') == 'm/d/Y' %}selected{% endif %}>MM/DD/YYYY</option>
+                                    </select>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label fw-semibold">Session Timeout (minutes)</label>
+                                    <input type="number" class="form-control" name="session_timeout"
+                                           value="{{ settings.session_timeout|default(30) }}" min="5" max="480">
+                                </div>
+                                <div class="mb-3 form-check">
+                                    <input type="checkbox" class="form-check-input" name="maintenance_mode"
+                                           id="maintenance_mode" {% if settings.maintenance_mode %}checked{% endif %}>
+                                    <label class="form-check-label" for="maintenance_mode">Maintenance Mode</label>
+                                    <small class="d-block text-muted">Only administrators can access the system while this is on.</small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <hr>
+
+                        <!-- ── Section B: Member-Facing Support Contact ── -->
+                        <div class="row mb-4">
+                            <div class="col-12">
+                                <h5 class="text-success mb-1">
+                                    <i class="fas fa-headset me-2"></i>Member Support Contact
+                                </h5>
+                                <p class="text-muted small mb-3">
+                                    All four fields below appear on the <strong>Member Portal → Support</strong> page.
+                                    Change any of them here and members will see the updated details immediately.
+                                </p>
+                            </div>
+
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label fw-semibold">
                                         <i class="fab fa-whatsapp text-success me-1"></i>WhatsApp Number
                                     </label>
                                     <input type="text" class="form-control" name="whatsapp_number"
                                            value="{{ settings.whatsapp_number|default('') }}"
                                            placeholder="+2348071090281">
-                                    <small class="text-muted">Include country code. Used for the member support WhatsApp button.</small>
+                                    <small class="text-muted">
+                                        Include country code (e.g. +234…). Renders as a <span class="badge bg-success">Chat Now</span> button that opens WhatsApp directly.
+                                    </small>
                                 </div>
 
                                 <div class="mb-3">
-                                    <label class="form-label">Support Email (shown to members)</label>
-                                    <input type="email" class="form-control" name="support_email"
-                                           value="{{ settings.support_email|default('') }}"
-                                           placeholder="support@ooucoop.ng">
-                                </div>
-
-                                <div class="mb-3">
-                                    <label class="form-label">Office Address (shown to members)</label>
-                                    <textarea class="form-control" name="office_address" rows="2"
-                                              placeholder="OOU Main Campus, Ago-Iwoye">{{ settings.office_address|default('') }}</textarea>
+                                    <label class="form-label fw-semibold">
+                                        <i class="fas fa-phone me-1 text-primary"></i>Support Phone Number
+                                    </label>
+                                    <input type="text" class="form-control" name="support_phone"
+                                           value="{{ settings.support_phone|default('') }}"
+                                           placeholder="+2348071090281">
+                                    <small class="text-muted">Shown on the Phone Support card on the support page.</small>
                                 </div>
                             </div>
-                            
+
                             <div class="col-md-6">
-                                <h5 class="mb-3">System Configuration</h5>
-                                
                                 <div class="mb-3">
-                                    <label class="form-label">Financial Year Start</label>
-                                    <select class="form-select" name="fy_start">
-                                        {% for month in range(1, 13) %}
-                                        <option value="{{ month }}" 
-                                                {% if settings.fy_start|int == month %}selected{% endif %}>
-                                            {{ datetime(2000, month, 1).strftime('%B') }}
-                                        </option>
-                                        {% endfor %}
-                                    </select>
-                                </div>
-                                
-                                <div class="mb-3">
-                                    <label class="form-label">Currency</label>
-                                    <select class="form-select" name="currency">
-                                        <option value="NGN" selected>Nigerian Naira (₦)</option>
-                                        <option value="USD">US Dollar ($)</option>
-                                    </select>
-                                </div>
-                                
-                                <div class="mb-3">
-                                    <label class="form-label">Date Format</label>
-                                    <select class="form-select" name="date_format">
-                                        <option value="Y-m-d">YYYY-MM-DD</option>
-                                        <option value="d/m/Y">DD/MM/YYYY</option>
-                                        <option value="m/d/Y">MM/DD/YYYY</option>
-                                    </select>
-                                </div>
-                                
-                                <div class="mb-3">
-                                    <label class="form-label">Session Timeout (minutes)</label>
-                                    <input type="number" class="form-control" name="session_timeout" 
-                                           value="{{ settings.session_timeout|default(30) }}" min="5" max="480">
-                                </div>
-                                
-                                <div class="mb-3 form-check">
-                                    <input type="checkbox" class="form-check-input" name="maintenance_mode" 
-                                           id="maintenance_mode" {% if settings.maintenance_mode %}checked{% endif %}>
-                                    <label class="form-check-label" for="maintenance_mode">
-                                        Maintenance Mode
+                                    <label class="form-label fw-semibold">
+                                        <i class="fas fa-envelope me-1 text-info"></i>Support Email Address
                                     </label>
-                                    <small class="d-block text-muted">Only administrators can access the system</small>
+                                    <input type="email" class="form-control" name="support_email"
+                                           value="{{ settings.support_email|default('') }}"
+                                           placeholder="support@yourcoop.ng">
+                                    <small class="text-muted">Shown on the Email Support card. Members click to send email.</small>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label fw-semibold">
+                                        <i class="fas fa-map-marker-alt me-1 text-danger"></i>Office / Branch Address
+                                    </label>
+                                    <textarea class="form-control" name="office_address" rows="3"
+                                              placeholder="e.g. Room 12, Admin Block, OOU Main Campus, Ago-Iwoye">{{ settings.office_address|default('') }}</textarea>
+                                    <small class="text-muted">Shown as the branch office location on the support page.</small>
+                                </div>
+                            </div>
+
+                            <!-- Live preview -->
+                            <div class="col-12">
+                                <div class="alert alert-light border rounded p-3">
+                                    <small class="text-muted d-block mb-2 fw-bold">
+                                        <i class="fas fa-eye me-1"></i>Preview — how it looks on the member support page:
+                                    </small>
+                                    <div class="row g-2 text-center">
+                                        <div class="col-3">
+                                            <div class="border rounded p-2 bg-white">
+                                                <i class="fab fa-whatsapp text-success"></i>
+                                                <small class="d-block text-muted">WhatsApp</small>
+                                                <strong id="prev_wa" class="small">{{ settings.whatsapp_number|default('—') }}</strong>
+                                            </div>
+                                        </div>
+                                        <div class="col-3">
+                                            <div class="border rounded p-2 bg-white">
+                                                <i class="fas fa-phone text-primary"></i>
+                                                <small class="d-block text-muted">Phone</small>
+                                                <strong id="prev_phone" class="small">{{ settings.support_phone|default('—') }}</strong>
+                                            </div>
+                                        </div>
+                                        <div class="col-3">
+                                            <div class="border rounded p-2 bg-white">
+                                                <i class="fas fa-envelope text-info"></i>
+                                                <small class="d-block text-muted">Email</small>
+                                                <strong id="prev_email" class="small">{{ settings.support_email|default('—') }}</strong>
+                                            </div>
+                                        </div>
+                                        <div class="col-3">
+                                            <div class="border rounded p-2 bg-white">
+                                                <i class="fas fa-map-marker-alt text-danger"></i>
+                                                <small class="d-block text-muted">Office</small>
+                                                <strong id="prev_addr" class="small">{{ (settings.office_address|default('—'))[:30] }}{% if settings.office_address|default('')|length > 30 %}…{% endif %}</strong>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
-                        
+
                         <hr>
-                        
+
                         <div class="text-end">
-                            <button type="submit" class="btn btn-primary">
-                                <i class="fas fa-save"></i> Save General Settings
+                            <button type="submit" class="btn btn-primary px-4">
+                                <i class="fas fa-save me-2"></i>Save General Settings
                             </button>
                         </div>
                     </form>
@@ -346,71 +407,214 @@
                 <!-- 4. INTEREST & FEES TAB -->
                 <div class="tab-pane fade" id="interest" role="tabpanel">
                     <form method="POST" action="{{ url_for('admin_panel.update_settings') }}">
-                        <div class="row">
-                            <div class="col-md-6">
-                                <h5 class="mb-3">Interest Rates</h5>
-                                
-                                <div class="mb-3">
-                                    <label class="form-label">Loan Interest Rate - Regular (%)</label>
-                                    <input type="number" class="form-control" name="interest_regular" 
-                                           value="{{ settings.interest_regular|default(11) }}" step="0.1">
-                                </div>
-                                
-                                <div class="mb-3">
-                                    <label class="form-label">Loan Interest Rate - Housing (%)</label>
-                                    <input type="number" class="form-control" name="interest_housing" 
-                                           value="{{ settings.interest_housing|default(9) }}" step="0.1">
-                                </div>
-                                
-                                <div class="mb-3">
-                                    <label class="form-label">Loan Interest Rate - Emergency (%)</label>
-                                    <input type="number" class="form-control" name="interest_emergency" 
-                                           value="{{ settings.interest_emergency|default(10) }}" step="0.1">
-                                </div>
-                                
-                                <div class="mb-3">
-                                    <label class="form-label">Loan Interest Rate - Asset (%)</label>
-                                    <input type="number" class="form-control" name="interest_asset" 
-                                           value="{{ settings.interest_asset|default(10) }}" step="0.1">
+
+                        <!-- ── Interest Rates & Computation Method per Loan Type ── -->
+                        <h5 class="text-primary mb-1">
+                            <i class="fas fa-percent me-2"></i>Loan Interest Rates &amp; Computation Methods
+                        </h5>
+                        <p class="text-muted small mb-3">
+                            Configure the annual interest rate and the computation method for each loan category.
+                            The method determines how monthly instalments are calculated.
+                        </p>
+
+                        <div class="table-responsive mb-3">
+                            <table class="table table-bordered align-middle">
+                                <thead class="table-primary">
+                                    <tr>
+                                        <th style="width:22%">Loan Type</th>
+                                        <th style="width:18%" class="text-center">Interest Rate (%)</th>
+                                        <th>Computation Method</th>
+                                        <th class="text-muted small" style="width:28%">Bye-law / Note</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <!-- Regular -->
+                                    <tr>
+                                        <td class="fw-semibold"><i class="fas fa-file-invoice-dollar text-primary me-1"></i>Regular</td>
+                                        <td class="text-center">
+                                            <input type="number" class="form-control form-control-sm text-center"
+                                                   name="interest_regular"
+                                                   value="{{ settings.interest_regular|default(11) }}"
+                                                   min="0" max="50" step="0.1" style="width:80px;margin:auto">
+                                        </td>
+                                        <td>
+                                            <select class="form-select form-select-sm" name="interest_method_regular">
+                                                {% set m = settings.interest_method_regular|default('reducing_annual') %}
+                                                <option value="reducing_annual"  {% if m=='reducing_annual'  %}selected{% endif %}>Declining Balance (Annual Rate)</option>
+                                                <option value="reducing_monthly" {% if m=='reducing_monthly' %}selected{% endif %}>Declining Balance (Monthly Rate)</option>
+                                                <option value="flat"             {% if m=='flat'             %}selected{% endif %}>Flat Rate</option>
+                                            </select>
+                                        </td>
+                                        <td class="text-muted small">Bye-laws 9.3.4: Max 11% p.a.</td>
+                                    </tr>
+                                    <!-- Housing -->
+                                    <tr>
+                                        <td class="fw-semibold"><i class="fas fa-home text-success me-1"></i>Housing</td>
+                                        <td class="text-center">
+                                            <input type="number" class="form-control form-control-sm text-center"
+                                                   name="interest_housing"
+                                                   value="{{ settings.interest_housing|default(9) }}"
+                                                   min="0" max="50" step="0.1" style="width:80px;margin:auto">
+                                        </td>
+                                        <td>
+                                            <select class="form-select form-select-sm" name="interest_method_housing">
+                                                {% set m = settings.interest_method_housing|default('reducing_annual') %}
+                                                <option value="reducing_annual"  {% if m=='reducing_annual'  %}selected{% endif %}>Declining Balance (Annual Rate)</option>
+                                                <option value="reducing_monthly" {% if m=='reducing_monthly' %}selected{% endif %}>Declining Balance (Monthly Rate)</option>
+                                                <option value="flat"             {% if m=='flat'             %}selected{% endif %}>Flat Rate</option>
+                                            </select>
+                                        </td>
+                                        <td class="text-muted small">Housing / property loans</td>
+                                    </tr>
+                                    <!-- Emergency -->
+                                    <tr>
+                                        <td class="fw-semibold"><i class="fas fa-ambulance text-danger me-1"></i>Emergency</td>
+                                        <td class="text-center">
+                                            <input type="number" class="form-control form-control-sm text-center"
+                                                   name="interest_emergency"
+                                                   value="{{ settings.interest_emergency|default(10) }}"
+                                                   min="0" max="50" step="0.1" style="width:80px;margin:auto">
+                                        </td>
+                                        <td>
+                                            <select class="form-select form-select-sm" name="interest_method_emergency">
+                                                {% set m = settings.interest_method_emergency|default('reducing_annual') %}
+                                                <option value="reducing_annual"  {% if m=='reducing_annual'  %}selected{% endif %}>Declining Balance (Annual Rate)</option>
+                                                <option value="reducing_monthly" {% if m=='reducing_monthly' %}selected{% endif %}>Declining Balance (Monthly Rate)</option>
+                                                <option value="flat"             {% if m=='flat'             %}selected{% endif %}>Flat Rate</option>
+                                            </select>
+                                        </td>
+                                        <td class="text-muted small">Emergency loans — faster approval</td>
+                                    </tr>
+                                    <!-- Asset Purchase -->
+                                    <tr>
+                                        <td class="fw-semibold"><i class="fas fa-car text-warning me-1"></i>Asset Purchase</td>
+                                        <td class="text-center">
+                                            <input type="number" class="form-control form-control-sm text-center"
+                                                   name="interest_asset"
+                                                   value="{{ settings.interest_asset|default(10) }}"
+                                                   min="0" max="50" step="0.1" style="width:80px;margin:auto">
+                                        </td>
+                                        <td>
+                                            <select class="form-select form-select-sm" name="interest_method_asset">
+                                                {% set m = settings.interest_method_asset|default('reducing_annual') %}
+                                                <option value="reducing_annual"  {% if m=='reducing_annual'  %}selected{% endif %}>Declining Balance (Annual Rate)</option>
+                                                <option value="reducing_monthly" {% if m=='reducing_monthly' %}selected{% endif %}>Declining Balance (Monthly Rate)</option>
+                                                <option value="flat"             {% if m=='flat'             %}selected{% endif %}>Flat Rate</option>
+                                            </select>
+                                        </td>
+                                        <td class="text-muted small">Vehicle, equipment, appliances</td>
+                                    </tr>
+                                    <!-- School Fees -->
+                                    <tr>
+                                        <td class="fw-semibold"><i class="fas fa-graduation-cap text-info me-1"></i>School Fees</td>
+                                        <td class="text-center">
+                                            <input type="number" class="form-control form-control-sm text-center"
+                                                   name="interest_school_fees"
+                                                   value="{{ settings.interest_school_fees|default(9) }}"
+                                                   min="0" max="50" step="0.1" style="width:80px;margin:auto">
+                                        </td>
+                                        <td>
+                                            <select class="form-select form-select-sm" name="interest_method_school_fees">
+                                                {% set m = settings.interest_method_school_fees|default('flat') %}
+                                                <option value="reducing_annual"  {% if m=='reducing_annual'  %}selected{% endif %}>Declining Balance (Annual Rate)</option>
+                                                <option value="reducing_monthly" {% if m=='reducing_monthly' %}selected{% endif %}>Declining Balance (Monthly Rate)</option>
+                                                <option value="flat"             {% if m=='flat'             %}selected{% endif %}>Flat Rate</option>
+                                            </select>
+                                        </td>
+                                        <td class="text-muted small">Education / school fee loans</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Method explanation cards -->
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-4">
+                                <div class="card border-success h-100">
+                                    <div class="card-header bg-success text-white py-2">
+                                        <strong><i class="fas fa-equals me-1"></i>Flat Rate</strong>
+                                    </div>
+                                    <div class="card-body small">
+                                        <p class="mb-1">Interest is calculated <strong>once</strong> on the original principal and spread equally over the loan tenure.</p>
+                                        <p class="mb-1 font-monospace bg-light rounded px-2 py-1">
+                                            Interest = P &times; Rate &times; (Tenure / 12)
+                                        </p>
+                                        <p class="mb-0 text-muted">Monthly payment is fixed. Good for short-term loans where simplicity is preferred.</p>
+                                    </div>
                                 </div>
                             </div>
-                            
-                            <div class="col-md-6">
-                                <h5 class="mb-3">Fees & Penalties</h5>
-                                
-                                <div class="mb-3">
-                                    <label class="form-label">Entrance Fee (₦)</label>
-                                    <input type="number" class="form-control" name="entrance_fee" 
-                                           value="{{ settings.entrance_fee|default(2000) }}" min="0" step="500">
-                                    <small class="text-muted">Bye-laws 8.9: One-time joining fee</small>
+                            <div class="col-md-4">
+                                <div class="card border-primary h-100">
+                                    <div class="card-header bg-primary text-white py-2">
+                                        <strong><i class="fas fa-chart-line me-1"></i>Declining Balance (Annual Rate)</strong>
+                                    </div>
+                                    <div class="card-body small">
+                                        <p class="mb-1">Standard loan amortisation. The <strong>annual rate ÷ 12</strong> is applied to the outstanding balance each month.</p>
+                                        <p class="mb-1 font-monospace bg-light rounded px-2 py-1">
+                                            r = Annual Rate / 12 &rarr; PMT formula
+                                        </p>
+                                        <p class="mb-0 text-muted">Most common method. Interest reduces as balance falls. <em>Default for all types.</em></p>
+                                    </div>
                                 </div>
-                                
-                                <div class="mb-3">
-                                    <label class="form-label">Re-entry Fee (₦)</label>
-                                    <input type="number" class="form-control" name="reentry_fee" 
-                                           value="{{ settings.reentry_fee|default(5000) }}" min="0" step="500">
-                                    <small class="text-muted">Bye-laws 8.9: For rejoining members</small>
-                                </div>
-                                
-                                <div class="mb-3">
-                                    <label class="form-label">Loan Application Fee (₦)</label>
-                                    <input type="number" class="form-control" name="loan_application_fee" 
-                                           value="{{ settings.loan_application_fee|default(1000) }}" min="0">
-                                </div>
-                                
-                                <div class="mb-3">
-                                    <label class="form-label">Statement Request Fee (₦)</label>
-                                    <input type="number" class="form-control" name="statement_fee" 
-                                           value="{{ settings.statement_fee|default(500) }}" min="0">
+                            </div>
+                            <div class="col-md-4">
+                                <div class="card border-warning h-100">
+                                    <div class="card-header bg-warning py-2">
+                                        <strong><i class="fas fa-calendar-alt me-1"></i>Declining Balance (Monthly Rate)</strong>
+                                    </div>
+                                    <div class="card-body small">
+                                        <p class="mb-1">The configured rate is treated as a <strong>monthly</strong> rate (e.g. 2% per month) applied to the declining balance.</p>
+                                        <p class="mb-1 font-monospace bg-light rounded px-2 py-1">
+                                            r = Rate / 100 (monthly) &rarr; PMT formula
+                                        </p>
+                                        <p class="mb-0 text-muted">Use when the cooperative quotes a per-month rate rather than an annual rate.</p>
+                                    </div>
                                 </div>
                             </div>
                         </div>
-                        
+
                         <hr>
-                        
+
+                        <!-- ── Fees & Penalties ── -->
+                        <h5 class="text-primary mb-3">
+                            <i class="fas fa-receipt me-2"></i>Fees &amp; Penalties
+                        </h5>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label fw-semibold">Entrance Fee (₦)</label>
+                                    <input type="number" class="form-control" name="entrance_fee"
+                                           value="{{ settings.entrance_fee|default(2000) }}" min="0" step="500">
+                                    <small class="text-muted">Bye-laws 8.9: One-time joining fee</small>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label fw-semibold">Re-entry Fee (₦)</label>
+                                    <input type="number" class="form-control" name="reentry_fee"
+                                           value="{{ settings.reentry_fee|default(5000) }}" min="0" step="500">
+                                    <small class="text-muted">Bye-laws 8.9: For rejoining members</small>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label fw-semibold">Loan Application Fee (₦)</label>
+                                    <input type="number" class="form-control" name="loan_application_fee"
+                                           value="{{ settings.loan_application_fee|default(1000) }}" min="0">
+                                    <small class="text-muted">Charged when a loan application is submitted</small>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label fw-semibold">Statement Request Fee (₦)</label>
+                                    <input type="number" class="form-control" name="statement_fee"
+                                           value="{{ settings.statement_fee|default(500) }}" min="0">
+                                    <small class="text-muted">Fee for printed or certified account statements</small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <hr>
+
                         <div class="text-end">
-                            <button type="submit" class="btn btn-primary">
-                                <i class="fas fa-save"></i> Save Interest & Fee Settings
+                            <button type="submit" class="btn btn-primary px-4">
+                                <i class="fas fa-save me-2"></i>Save Interest &amp; Fee Settings
                             </button>
                         </div>
                     </form>

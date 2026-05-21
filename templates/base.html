@@ -25,43 +25,90 @@
                     <h3>{{ coop_short_name }}</h3>
                     <p class="small">{{ coop_name }}</p>
                 </div>
+
                 <div class="sidebar-menu">
-                    <a href="{{ url_for('main.dashboard') }}" class="{% if request.endpoint == 'dashboard' %}active{% endif %}">
+                {% if current_user.role == 'member' %}
+                    {# ── Member-only navigation (portal pages only) ── #}
+                    <a href="{{ url_for('portal.member_portal') }}"
+                       class="{% if request.endpoint == 'portal.member_portal' %}active{% endif %}">
+                        <i class="fas fa-home"></i> My Dashboard
+                    </a>
+                    <a href="{{ url_for('portal.my_savings') }}"
+                       class="{% if request.endpoint == 'portal.my_savings' %}active{% endif %}">
+                        <i class="fas fa-piggy-bank"></i> My Savings
+                    </a>
+                    <a href="{{ url_for('portal.my_loans') }}"
+                       class="{% if request.endpoint == 'portal.my_loans' %}active{% endif %}">
+                        <i class="fas fa-hand-holding-usd"></i> My Loans
+                    </a>
+                    <a href="{{ url_for('portal.transactions') }}"
+                       class="{% if request.endpoint == 'portal.transactions' %}active{% endif %}">
+                        <i class="fas fa-exchange-alt"></i> Transactions
+                    </a>
+                    <a href="{{ url_for('portal.statements') }}"
+                       class="{% if request.endpoint == 'portal.statements' %}active{% endif %}">
+                        <i class="fas fa-file-alt"></i> Statement
+                    </a>
+                    <a href="{{ url_for('portal.apply_loan_member') }}"
+                       class="{% if request.endpoint == 'portal.apply_loan_member' %}active{% endif %}">
+                        <i class="fas fa-plus-circle"></i> Apply for Loan
+                    </a>
+                    <a href="{{ url_for('portal.support') }}"
+                       class="{% if request.endpoint == 'portal.support' %}active{% endif %}">
+                        <i class="fas fa-headset"></i> Support
+                    </a>
+                    <a href="{{ url_for('auth.logout') }}">
+                        <i class="fas fa-sign-out-alt"></i> Logout
+                    </a>
+
+                {% else %}
+                    {# ── Staff / admin navigation ── #}
+                    <a href="{{ url_for('main.dashboard') }}"
+                       class="{% if request.endpoint == 'main.dashboard' %}active{% endif %}">
                         <i class="fas fa-tachometer-alt"></i> Dashboard
                     </a>
-                    {% if current_user.role in ['admin', 'secretary'] %}
-                    <a href="{{ url_for('members.members_list') }}" class="{% if request.endpoint == 'members' %}active{% endif %}">
+                    {% if current_user.role in ['admin', 'secretary', 'exco'] %}
+                    <a href="{{ url_for('members.members_list') }}"
+                       class="{% if request.blueprint == 'members' %}active{% endif %}">
                         <i class="fas fa-users"></i> Members
                     </a>
                     {% endif %}
-                    <a href="{{ url_for('savings.savings_list') }}" class="{% if request.endpoint == 'savings' %}active{% endif %}">
+                    <a href="{{ url_for('savings.savings_list') }}"
+                       class="{% if request.blueprint == 'savings' %}active{% endif %}">
                         <i class="fas fa-piggy-bank"></i> Savings
                     </a>
-                    <a href="{{ url_for('loans.loans_list') }}" class="{% if request.endpoint == 'loans' %}active{% endif %}">
+                    <a href="{{ url_for('loans.loans_list') }}"
+                       class="{% if request.blueprint == 'loans' %}active{% endif %}">
                         <i class="fas fa-hand-holding-usd"></i> Loans
                     </a>
-                    {% if current_user.role in ['admin', 'treasurer'] %}
-                    <a href="{{ url_for('investments.investments_list') }}" class="{% if request.endpoint == 'investments' %}active{% endif %}">
+                    {% if current_user.role in ['admin', 'treasurer', 'exco'] %}
+                    <a href="{{ url_for('investments.investments_list') }}"
+                       class="{% if request.blueprint == 'investments' %}active{% endif %}">
                         <i class="fas fa-chart-line"></i> Investments
                     </a>
                     {% endif %}
-                    {% if current_user.role in ['admin', 'treasurer', 'secretary'] %}
-                    <a href="{{ url_for('reports.reports_list') }}" class="{% if request.endpoint == 'reports' %}active{% endif %}">
+                    {% if current_user.role in ['admin', 'treasurer', 'secretary', 'exco'] %}
+                    <a href="{{ url_for('reports.reports_list') }}"
+                       class="{% if request.blueprint == 'reports' %}active{% endif %}">
                         <i class="fas fa-file-alt"></i> Reports
                     </a>
                     {% endif %}
                     {% if current_user.role == 'admin' %}
-                    <a href="{{ url_for('admin_panel.settings') }}" class="{% if request.blueprint == 'admin_panel' and request.endpoint == 'admin_panel.settings' %}active{% endif %}">
+                    <a href="{{ url_for('admin_panel.settings') }}"
+                       class="{% if request.blueprint == 'admin_panel' %}active{% endif %}">
                         <i class="fas fa-cog"></i> Settings
                     </a>
-                    <a href="{{ url_for('migration.index') }}" class="{% if request.blueprint == 'migration' %}active{% endif %}">
+                    <a href="{{ url_for('migration.index') }}"
+                       class="{% if request.blueprint == 'migration' %}active{% endif %}">
                         <i class="fas fa-database"></i> Data Migration
                     </a>
                     {% endif %}
                     <a href="{{ url_for('auth.logout') }}">
                         <i class="fas fa-sign-out-alt"></i> Logout
                     </a>
+                {% endif %}
                 </div>
+
                 <div class="sidebar-footer">
                     <small>&copy; {{ now().year }} Adekail Professional Services</small>
                 </div>

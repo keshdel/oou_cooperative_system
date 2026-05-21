@@ -42,13 +42,14 @@
   <div class="row mb-5">
 
     {% set imports = [
-      ('members',     'Members',              'users',          'primary',   'members/template', 'Import full member roster with joining date, nominee, and bank details.'),
-      ('savings',     'Savings History',      'piggy-bank',     'success',   'savings/template', 'Historical monthly savings per member. Skips duplicates (same member + month).'),
-      ('loans',       'Loan Records',         'hand-holding-usd','warning',  'loans/template',  'Past and active loans. Generates loan_number if not provided.'),
-      ('expenses',    'Expenses',             'file-invoice-dollar','danger', 'expenses/template','Bulk operating expenses. Each row gets a unique expense number.'),
-      ('revenue',     'Revenue',              'coins',          'success',   'revenue/template', 'Other income sources (interest, fees, donations).'),
-      ('investments', 'Investments',          'chart-line',     'dark',      'investments/template','Investment portfolio — fixed deposits, bonds, shares, etc.'),
-      ('honorarium',  'Honorarium Payments',  'award',          'secondary', 'honorarium/template','Allowances paid to executives/officers.'),
+      ('members',     'Members',              'users',          'primary',   'members/template',    'Import full member roster with joining date, nominee, and bank details. A portal login is auto-created for each member with an email address (default password = member number).'),
+      ('savings',     'Savings History',      'piggy-bank',     'success',   'savings/template',    'Historical monthly savings per member. Skips duplicates (same member + month).'),
+      ('loans',       'Loan Records',         'hand-holding-usd','warning',  'loans/template',      'Past and active loans. Purpose and status values are auto-normalised. Supports disbursement_date and disbursed_amount columns.'),
+      ('repayments',  'Loan Repayments',      'receipt',        'info',      'repayments/template', 'Historical repayments linked to loans. Updates loan balance automatically and marks loans completed when balance reaches zero.'),
+      ('expenses',    'Expenses',             'file-invoice-dollar','danger', 'expenses/template',   'Bulk operating expenses. Each row gets a unique expense number.'),
+      ('revenue',     'Revenue',              'coins',          'success',   'revenue/template',    'Other income sources (interest, fees, donations).'),
+      ('investments', 'Investments',          'chart-line',     'dark',      'investments/template', 'Investment portfolio — fixed deposits, bonds, shares, etc.'),
+      ('honorarium',  'Honorarium Payments',  'award',          'secondary', 'honorarium/template',  'Allowances paid to executives/officers.'),
     ] %}
 
     {% for entity, label, icon, colour, tmpl_route, desc in imports %}
@@ -110,13 +111,14 @@
     </div>
     <div class="card-body">
       <ol class="mb-0 small">
-        <li class="mb-1"><strong>Import members first</strong> — savings, loans, and honorarium link to members by <code>member_number</code> or <code>email</code>.</li>
+        <li class="mb-1"><strong>Import members first</strong> — all other member-linked records resolve by <code>member_number</code> or <code>email</code>. A portal login (<code>role = member</code>) is automatically created for each member that has an email; the default password is the member number.</li>
         <li class="mb-1"><strong>Then import savings</strong> — duplicates (same member + same month) are silently skipped.</li>
-        <li class="mb-1"><strong>Then import loans</strong> — duplicate <code>loan_number</code> values are skipped.</li>
-        <li class="mb-1"><strong>Finally import financial records</strong> — expenses, revenue, investments, honorarium can be imported in any order.</li>
+        <li class="mb-1"><strong>Then import loans</strong> — duplicate <code>loan_number</code> values are skipped. Purpose values (e.g. "Personal", "Education") are auto-normalised to the system's 5 standard types. Status aliases like "disbursed", "cleared", "repaid" are also mapped automatically.</li>
+        <li class="mb-1"><strong>Then import repayments</strong> — link by <code>loan_number</code> (preferred), or by member identifier (uses the member's latest active loan). Loan balances and completion status are updated automatically.</li>
+        <li class="mb-1"><strong>Finally import financial records</strong> — expenses, revenue, investments, and honorarium can be imported in any order.</li>
         <li class="mb-1">Use <strong>UTF-8</strong> encoding when saving your CSV from Excel (<em>Save As → CSV UTF-8</em>).</li>
         <li class="mb-1">Date columns accept <strong>YYYY-MM-DD</strong>, <strong>DD/MM/YYYY</strong>, or <strong>MM/DD/YYYY</strong>.</li>
-        <li>An import file is processed atomically — if a critical error stops the file, no rows are saved. Row-level errors are reported but the rest of the file continues.</li>
+        <li>An import is processed in a single transaction — a critical file error rolls everything back. Row-level errors are reported and the rest of the file continues.</li>
       </ol>
     </div>
   </div>

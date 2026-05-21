@@ -60,32 +60,33 @@
 
                 <!-- Loan Calculator -->
                 <div class="card bg-light mt-3">
-                    <div class="card-header bg-secondary text-white">
+                    <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
                         <h6 class="mb-0"><i class="fas fa-calculator"></i> Loan Repayment Calculator</h6>
+                        <span id="methodBadge" class="badge bg-light text-dark fs-6 d-none"></span>
                     </div>
                     <div class="card-body">
                         <div class="row text-center">
-                            <div class="col-md-3">
-                                <label>Principal</label>
-                                <h5 id="calcPrincipal">₦0</h5>
+                            <div class="col-6 col-md-3 mb-2">
+                                <div class="text-muted small">Principal</div>
+                                <div class="h5 mb-0" id="calcPrincipal">₦—</div>
                             </div>
-                            <div class="col-md-3">
-                                <label>Total Interest</label>
-                                <h5 id="calcInterest">₦0</h5>
+                            <div class="col-6 col-md-3 mb-2">
+                                <div class="text-muted small">Total Interest</div>
+                                <div class="h5 mb-0 text-danger" id="calcInterest">₦—</div>
                             </div>
-                            <div class="col-md-3">
-                                <label>Total Repayment</label>
-                                <h5 id="calcTotal">₦0</h5>
+                            <div class="col-6 col-md-3 mb-2">
+                                <div class="text-muted small">Total Repayment</div>
+                                <div class="h5 mb-0 text-primary" id="calcTotal">₦—</div>
                             </div>
-                            <div class="col-md-3">
-                                <label>Monthly Payment</label>
-                                <h5 id="calcMonthly">₦0</h5>
+                            <div class="col-6 col-md-3 mb-2">
+                                <div class="text-muted small">Monthly Payment</div>
+                                <div class="h5 mb-0 text-success fw-bold" id="calcMonthly">₦—</div>
                             </div>
                         </div>
-                        <div class="row mt-2">
-                            <div class="col-md-12 text-muted small">
-                                * Interest rate depends on purpose. Fees (1% insurance + 1% application fee) will be deducted at disbursement.
-                            </div>
+                        <div class="mt-2 text-muted small">
+                            <i class="fas fa-info-circle me-1"></i>
+                            Rate and method are set by the cooperative for the selected loan purpose.
+                            Fees (1% insurance + 1% application) are deducted at disbursement.
                         </div>
                     </div>
                 </div>
@@ -107,53 +108,83 @@
 </div>
 
 <script>
-// Interest rates from server settings  { 'Regular': 11, 'Housing': 9, ... }
-const interestRates = {{ interest_rates|tojson }};
+// Data injected from server settings
+const interestRates   = {{ interest_rates|tojson }};   // { 'Regular': 11, ... }
+const interestMethods = {{ interest_methods|tojson }}; // { 'Regular': 'reducing_annual', ... }
+const methodLabels    = {{ method_labels|tojson }};    // { 'flat': 'Flat Rate', ... }
 
-function getInterestRate(purpose) {
-    return interestRates[purpose] !== undefined ? interestRates[purpose] : interestRates['Regular'];
+function fmt(n) {
+    return '₦' + n.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
 }
 
-function calculateLoan() {
-    const amount = parseFloat(document.getElementById('amount').value) || 0;
-    const tenure = parseInt(document.getElementById('tenure').value) || 0;
-    const purpose = document.getElementById('purpose').value;
-    const rate = getInterestRate(purpose);
-    
-    if (amount > 0 && tenure > 0) {
-        const monthlyRate = (rate / 100) / 12;
-        let monthlyPayment, totalRepayment, totalInterest;
-        if (monthlyRate > 0) {
-            monthlyPayment = amount * monthlyRate * Math.pow(1 + monthlyRate, tenure) / (Math.pow(1 + monthlyRate, tenure) - 1);
-        } else {
-            monthlyPayment = amount / tenure;
-        }
-        totalRepayment = monthlyPayment * tenure;
-        totalInterest = totalRepayment - amount;
-        
-        document.getElementById('calcPrincipal').textContent = '₦' + amount.toLocaleString(undefined, {minimumFractionDigits: 2});
-        document.getElementById('calcInterest').textContent = '₦' + totalInterest.toLocaleString(undefined, {minimumFractionDigits: 2});
-        document.getElementById('calcTotal').textContent = '₦' + totalRepayment.toLocaleString(undefined, {minimumFractionDigits: 2});
-        document.getElementById('calcMonthly').textContent = '₦' + monthlyPayment.toLocaleString(undefined, {minimumFractionDigits: 2});
+function computeMonthlyPayment(P, ratePct, n, method) {
+    if (n <= 0 || P <= 0) return { mp: 0, total: 0 };
+    if (method === 'flat') {
+        // Total interest applied once on original principal
+        const totalInterest = P * (ratePct / 100) * (n / 12);
+        const total = P + totalInterest;
+        return { mp: total / n, total };
+    } else if (method === 'reducing_monthly') {
+        // Rate IS the monthly rate (e.g. 2 means 2% per month)
+        const r = ratePct / 100;
+        const mp = r > 0
+            ? P * r * Math.pow(1 + r, n) / (Math.pow(1 + r, n) - 1)
+            : P / n;
+        return { mp, total: mp * n };
     } else {
-        document.getElementById('calcPrincipal').textContent = '₦0';
-        document.getElementById('calcInterest').textContent = '₦0';
-        document.getElementById('calcTotal').textContent = '₦0';
-        document.getElementById('calcMonthly').textContent = '₦0';
+        // reducing_annual: annual rate ÷ 12 for standard amortisation
+        const r = (ratePct / 100) / 12;
+        const mp = r > 0
+            ? P * r * Math.pow(1 + r, n) / (Math.pow(1 + r, n) - 1)
+            : P / n;
+        return { mp, total: mp * n };
     }
 }
 
-// Fetch member's savings to set max loan hint (for member portal, we need to fetch the logged-in member)
+function calculateLoan() {
+    const amount  = parseFloat(document.getElementById('amount').value)  || 0;
+    const tenure  = parseInt(document.getElementById('tenure').value)    || 0;
+    const purpose = document.getElementById('purpose').value;
+
+    const rate   = interestRates[purpose]   !== undefined ? interestRates[purpose]   : (interestRates['Regular'] || 11);
+    const method = interestMethods[purpose] !== undefined ? interestMethods[purpose] : 'reducing_annual';
+    const label  = methodLabels[method] || method;
+
+    // Update method badge
+    const badge = document.getElementById('methodBadge');
+    if (purpose) {
+        badge.textContent = `${rate}% · ${label}`;
+        badge.classList.remove('d-none');
+    } else {
+        badge.classList.add('d-none');
+    }
+
+    if (amount > 0 && tenure > 0 && purpose) {
+        const { mp, total } = computeMonthlyPayment(amount, rate, tenure, method);
+        const interest = total - amount;
+        document.getElementById('calcPrincipal').textContent = fmt(amount);
+        document.getElementById('calcInterest').textContent  = fmt(Math.max(0, interest));
+        document.getElementById('calcTotal').textContent     = fmt(total);
+        document.getElementById('calcMonthly').textContent   = fmt(mp);
+    } else {
+        ['calcPrincipal','calcInterest','calcTotal','calcMonthly'].forEach(id => {
+            document.getElementById(id).textContent = '₦—';
+        });
+    }
+}
+
+// Fetch member's savings to set max loan hint
 fetch('/api/member/current')
-    .then(response => response.json())
+    .then(r => r.json())
     .then(data => {
         if (data.total_savings) {
             const maxLoan = data.total_savings * 2;
-            document.getElementById('maxLoanHint').innerHTML = `Max eligible: ₦${maxLoan.toLocaleString()} (2x your savings of ₦${data.total_savings.toLocaleString()})`;
+            document.getElementById('maxLoanHint').innerHTML =
+                `Max eligible: <strong>₦${maxLoan.toLocaleString()}</strong> (2× your savings of ₦${data.total_savings.toLocaleString()})`;
             document.getElementById('amount').max = maxLoan;
         }
     })
-    .catch(err => console.error('Could not fetch member data', err));
+    .catch(() => {});
 
 // Event listeners
 document.getElementById('amount').addEventListener('input', calculateLoan);

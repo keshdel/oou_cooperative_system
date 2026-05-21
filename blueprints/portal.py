@@ -8,7 +8,7 @@ from flask_login import login_required, current_user, logout_user
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from database import get_db
-from utils import audit, notify_member
+from utils import audit, notify_member, compute_loan_schedule, METHOD_LABELS
 
 portal = Blueprint('portal', __name__)
 
@@ -40,13 +40,25 @@ def _member_extras(member, db):
 
 def _interest_rates(db):
     rows = db.execute("SELECT key, value FROM settings WHERE key LIKE 'interest_%'").fetchall()
-    r = {row['key']: float(row['value']) for row in rows}
+    r = {row['key']: row['value'] for row in rows}
     return {
-        'Regular':        r.get('interest_regular', 11),
-        'Housing':        r.get('interest_housing', 9),
-        'Emergency':      r.get('interest_emergency', 10),
-        'Asset Purchase': r.get('interest_asset', 10),
-        'School Fees':    r.get('interest_school_fees', 9),
+        'Regular':        float(r.get('interest_regular',    11)),
+        'Housing':        float(r.get('interest_housing',     9)),
+        'Emergency':      float(r.get('interest_emergency',  10)),
+        'Asset Purchase': float(r.get('interest_asset',      10)),
+        'School Fees':    float(r.get('interest_school_fees', 9)),
+    }
+
+
+def _interest_methods(db):
+    rows = db.execute("SELECT key, value FROM settings WHERE key LIKE 'interest_method_%'").fetchall()
+    r = {row['key']: row['value'] for row in rows}
+    return {
+        'Regular':        r.get('interest_method_regular',    'reducing_annual'),
+        'Housing':        r.get('interest_method_housing',    'reducing_annual'),
+        'Emergency':      r.get('interest_method_emergency',  'reducing_annual'),
+        'Asset Purchase': r.get('interest_method_asset',      'reducing_annual'),
+        'School Fees':    r.get('interest_method_school_fees','flat'),
     }
 
 
@@ -118,61 +130,111 @@ def member_portal():
 @portal.route('/my-savings')
 @login_required
 def my_savings():
+    from collections import defaultdict
     db     = get_db()
     member = _get_member()
     if not member:
         flash('Member profile not found.', 'warning')
         return redirect(url_for('main.dashboard'))
 
-    savings = db.execute(
-        'SELECT * FROM savings WHERE member_id = ? ORDER BY date DESC',
+    # All savings oldest-first (needed for running balance)
+    all_savings = db.execute(
+        'SELECT * FROM savings WHERE member_id = ? ORDER BY date ASC',
         (member['id'],)
     ).fetchall()
 
-    total_savings  = sum(s['amount'] for s in savings)
-    current_year   = str(datetime.now().year)
-    current_month  = datetime.now().strftime('%Y-%m')
-
-    year_savings   = sum(s['amount'] for s in savings if str(s['month']).startswith(current_year))
-    month_savings  = sum(s['amount'] for s in savings if s['month'] == current_month)
-
-    year_pct  = round((year_savings  / total_savings * 100) if total_savings > 0 else 0, 1)
-    mo_target = member['monthly_savings'] if 'monthly_savings' in member.keys() and member['monthly_savings'] else 5000
-    mo_pct    = round((month_savings / mo_target * 100) if mo_target > 0 else 0, 1)
-
-    total_late_fees = sum(s['late_fee'] or 0 for s in savings)
+    # ── Aggregate stats (always over full history) ─────────────────────────
+    total_savings   = sum(float(s['amount'] or 0) for s in all_savings)
+    total_late_fees = sum(float(s['late_fee'] or 0) for s in all_savings)
     total_principal = total_savings - total_late_fees
-    total_amount    = total_savings
+    current_year    = str(datetime.now().year)
+    current_month   = datetime.now().strftime('%Y-%m')
+    year_savings    = sum(float(s['amount'] or 0) for s in all_savings
+                          if str(s['month']).startswith(current_year))
+    month_savings   = sum(float(s['amount'] or 0) for s in all_savings
+                          if s['month'] == current_month)
+    year_pct   = round(year_savings  / total_savings * 100 if total_savings > 0 else 0, 1)
+    mo_target  = float(member['monthly_savings'] or 5000)
+    mo_pct     = round(month_savings / mo_target * 100 if mo_target > 0 else 0, 1)
 
-    # Yearly breakdown for the year-summary table
-    year_summary = SimpleNamespace(
-        total    = year_savings,
-        late_fees= sum(s['late_fee'] or 0 for s in savings if str(s['month']).startswith(current_year)),
-        net      = year_savings - sum(s['late_fee'] or 0 for s in savings if str(s['month']).startswith(current_year)),
-    )
+    # Yearly breakdown table
+    by_year = defaultdict(lambda: {'total': 0.0, 'late_fees': 0.0, 'count': 0})
+    for s in all_savings:
+        yr = str(s['month'])[:4]
+        by_year[yr]['total']     += float(s['amount'] or 0)
+        by_year[yr]['late_fees'] += float(s['late_fee'] or 0)
+        by_year[yr]['count']     += 1
+    yearly_summaries = [
+        SimpleNamespace(year=yr, total=v['total'], late_fees=v['late_fees'],
+                        net=v['total'] - v['late_fees'], count=v['count'])
+        for yr, v in sorted(by_year.items(), reverse=True)
+    ]
 
-    # Savings milestones (₦500k increments)
-    milestones = [500_000, 1_000_000, 2_000_000, 5_000_000, 10_000_000]
-    next_target = next((m for m in milestones if m > total_savings), milestones[-1])
+    # Milestones
+    milestones   = [500_000, 1_000_000, 2_000_000, 5_000_000, 10_000_000]
+    next_target  = next((m for m in milestones if m > total_savings), milestones[-1])
     next_milestone = SimpleNamespace(target=next_target, needed=max(0, next_target - total_savings))
 
-    # Chart data — last 12 months savings amounts
-    from collections import defaultdict
+    # Chart — last 12 months
     monthly_totals = defaultdict(float)
-    for s in savings:
+    for s in all_savings:
         monthly_totals[str(s['month'])[:7]] += float(s['amount'] or 0)
     sorted_months = sorted(monthly_totals.keys())[-12:]
-    chart_labels = sorted_months
-    chart_data   = [round(monthly_totals[m], 2) for m in sorted_months]
+    chart_labels  = sorted_months
+    chart_data    = [round(monthly_totals[m], 2) for m in sorted_months]
 
-    selected_year  = request.args.get('year',  '', type=str)
-    selected_month = request.args.get('month', 0,  type=int)
+    # ── Date-range & status filters ────────────────────────────────────────
+    from_date_str  = request.args.get('from_date', '')
+    to_date_str    = request.args.get('to_date',   '')
     status_filter  = request.args.get('status', '')
     page           = max(1, request.args.get('page', 1, type=int))
-    per_page       = 20
-    total_pages    = max(1, (len(savings) + per_page - 1) // per_page)
-    page           = min(page, total_pages)
-    savings_paged  = savings[(page - 1) * per_page : page * per_page]
+
+    filtered = list(all_savings)   # still oldest-first at this point
+
+    if from_date_str:
+        try:
+            fd = datetime.strptime(from_date_str, '%Y-%m-%d')
+            filtered = [s for s in filtered if _parse_dt(s['date']) >= fd]
+        except ValueError:
+            pass
+    if to_date_str:
+        try:
+            td = datetime.strptime(to_date_str, '%Y-%m-%d').replace(hour=23, minute=59, second=59)
+            filtered = [s for s in filtered if _parse_dt(s['date']) <= td]
+        except ValueError:
+            pass
+    if status_filter == 'late':
+        filtered = [s for s in filtered if (s['late_fee'] or 0) > 0]
+    elif status_filter == 'ontime':
+        filtered = [s for s in filtered if (s['late_fee'] or 0) == 0]
+
+    # ── Running balance (cumulative over full history up to each row) ──────
+    # First pass: build running balance for ALL savings (unfiltered, oldest first)
+    cumulative = 0.0
+    balance_map = {}   # savings.id → running balance at that point
+    for s in all_savings:
+        cumulative += float(s['amount'] or 0)
+        balance_map[s['id']] = round(cumulative, 2)
+
+    # Augment filtered rows and reverse for newest-first display
+    augmented = []
+    for s in reversed(filtered):   # newest first
+        d = dict(s)
+        d['running_balance'] = balance_map[s['id']]
+        d['date_parsed']     = _parse_dt(s['date'])
+        augmented.append(SimpleNamespace(**d))
+
+    # ── Filtered totals (for footer row) ──────────────────────────────────
+    filt_principal  = sum(float(s['amount'] or 0) - float(s['late_fee'] or 0) for s in filtered)
+    filt_late_fees  = sum(float(s['late_fee'] or 0) for s in filtered)
+    filt_total      = filt_principal + filt_late_fees
+
+    # ── Pagination over filtered set ───────────────────────────────────────
+    per_page    = 20
+    total_rows  = len(augmented)
+    total_pages = max(1, (total_rows + per_page - 1) // per_page)
+    page        = min(page, total_pages)
+    savings_paged = augmented[(page - 1) * per_page : page * per_page]
 
     return render_template('member/my-savings.html',
                            member=_member_extras(member, db),
@@ -183,16 +245,17 @@ def my_savings():
                            month_savings=month_savings,
                            month_percentage=min(mo_pct, 100),
                            dividend_earned=0,
-                           total_principal=total_principal,
-                           total_late_fees=total_late_fees,
-                           total_amount=total_amount,
-                           year_summary=year_summary,
+                           total_principal=filt_principal,
+                           total_late_fees=filt_late_fees,
+                           total_amount=filt_total,
+                           yearly_summaries=yearly_summaries,
                            next_milestone=next_milestone,
-                           selected_year=selected_year,
-                           selected_month=selected_month,
+                           from_date=from_date_str,
+                           to_date=to_date_str,
                            status=status_filter,
                            page=page,
                            total_pages=total_pages,
+                           total_rows=total_rows,
                            chart_labels=chart_labels,
                            chart_data=chart_data)
 
@@ -316,6 +379,7 @@ def loan_detail(loan_id):
     tenure = max(d.get('tenure') or 1, 1)
     amt    = d.get('amount') or 0
     rate   = d.get('interest_rate') or 0
+    method = d.get('interest_method') or 'reducing_annual'
 
     # Parse dates
     d['date_applied']      = _parse_dt(d.get('date_applied'))      if d.get('date_applied')      else None
@@ -329,42 +393,35 @@ def loan_detail(loan_id):
     d['total_repayment']    = d.get('total_repayment')    or 0
     d['balance']            = d.get('balance')            or 0
 
-    # Monthly payment
-    monthly_rate = (rate / 100) / 12
-    if monthly_rate > 0 and tenure > 0:
-        mp = amt * monthly_rate * (1 + monthly_rate) ** tenure / ((1 + monthly_rate) ** tenure - 1)
-    elif tenure > 0:
-        mp = amt / tenure
-    else:
-        mp = 0
-    d['monthly_payment'] = round(mp, 2)
+    # Compute schedule using the stored interest method
+    mp, total_rep, raw_schedule = compute_loan_schedule(amt, rate, tenure, method)
+    d['monthly_payment']  = mp
+    d['interest_method']  = method
+    d['method_label']     = METHOD_LABELS.get(method, method)
 
-    # Amortization schedule
+    # Build schedule with due dates and paid/overdue flags
     schedule   = []
-    bal        = amt
     start_date = d['disbursement_date'] or d['date_approved'] or d['date_applied'] or datetime.now()
     today      = datetime.now()
     paid_count = len(repayments_raw)
 
-    for i in range(1, tenure + 1):
+    for row in raw_schedule:
+        i   = row['month']
         due = start_date + timedelta(days=30 * i)
-        interest_part = round(bal * monthly_rate, 2) if monthly_rate > 0 else 0
-        principal_part = round(mp - interest_part, 2)
-        bal = max(0, round(bal - principal_part, 2))
         is_paid    = i <= paid_count
         is_overdue = not is_paid and due < today
         schedule.append(SimpleNamespace(
             month=i, due_date=due,
-            payment=round(mp, 2),
-            principal=principal_part,
-            interest=interest_part,
-            balance=bal,
+            payment=row['payment'],
+            principal=row['principal'],
+            interest=row['interest'],
+            balance=row['balance'],
             paid=is_paid, overdue=is_overdue,
         ))
 
     # Next payment date
     next_unpaid = next((s for s in schedule if not s.paid), None)
-    d['next_payment_date'] = next_unpaid.due_date if next_unpaid else None
+    d['next_payment_date']   = next_unpaid.due_date if next_unpaid else None
     d['progress_percentage'] = round(paid_count / tenure * 100, 1)
 
     # Payments with datetime objects
@@ -396,6 +453,7 @@ def apply_loan_member():
     max_tenure_row = db.execute("SELECT value FROM settings WHERE key = 'max_tenure_months'").fetchone()
     max_tenure     = int(max_tenure_row['value']) if max_tenure_row else 18
     rates          = _interest_rates(db)
+    methods        = _interest_methods(db)
 
     if request.method == 'POST':
         amount  = float(request.form.get('amount', 0))
@@ -436,18 +494,17 @@ def apply_loan_member():
                 flash(f'Maximum loan amount is ₦{max_loan:,.2f} (2× your savings).', 'danger')
                 return redirect(url_for('portal.apply_loan_member'))
 
-            rate = rates.get(purpose, rates['Regular'])
-            mi   = (rate / 100) / 12
-            mp   = (amount * mi * (1 + mi) ** tenure / ((1 + mi) ** tenure - 1)) if mi > 0 else amount / tenure
-            total_repayment = mp * tenure
+            rate   = rates.get(purpose, rates['Regular'])
+            method = methods.get(purpose, 'reducing_annual')
+            mp, total_repayment, _ = compute_loan_schedule(amount, rate, tenure, method)
 
             loan_number = f"LOAN/{datetime.now().strftime('%Y%m%d')}/{random.randint(1000, 9999)}"
             db.execute('''
                 INSERT INTO loans (loan_number, member_id, amount, purpose, tenure, interest_rate,
-                                   total_repayment, balance, status, date_applied)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+                                   interest_method, total_repayment, balance, status, date_applied)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
             ''', (loan_number, member['id'], amount, purpose, tenure, rate,
-                  total_repayment, total_repayment, datetime.now()))
+                  method, total_repayment, total_repayment, datetime.now()))
             db.commit()
 
             # Notify admin
@@ -474,6 +531,8 @@ def apply_loan_member():
                            member=_member_extras(member, db),
                            max_tenure=max_tenure,
                            interest_rates=rates,
+                           interest_methods=methods,
+                           method_labels=METHOD_LABELS,
                            loan_types=list(rates.keys()))
 
 
@@ -751,7 +810,7 @@ def transactions():
                            member=_member_extras(member, db))
 
 
-# ── Statement of Account (HTML printable) ─────────────────────────────────────────
+# ── Statement of Account (HTML printable / certifiable) ───────────────────────────
 
 @portal.route('/statements')
 @login_required
@@ -762,48 +821,163 @@ def statements():
         flash('Member profile not found.', 'warning')
         return redirect(url_for('main.dashboard'))
 
-    savings = db.execute(
-        'SELECT * FROM savings WHERE member_id = ? ORDER BY date DESC',
-        (member['id'],)
-    ).fetchall()
+    # ── Date range from query params (default: beginning of current year → today) ──
+    default_from = datetime(datetime.now().year, 1, 1).strftime('%Y-%m-%d')
+    default_to   = datetime.now().strftime('%Y-%m-%d')
+    from_date_str = request.args.get('from_date', default_from)
+    to_date_str   = request.args.get('to_date',   default_to)
 
-    loans = db.execute(
-        'SELECT * FROM loans WHERE member_id = ? ORDER BY date_applied DESC',
-        (member['id'],)
-    ).fetchall()
-
-    # Per-loan repayments
-    loan_repayments = {}
     try:
-        for r in db.execute('''
-            SELECT r.*, l.loan_number
+        from_date = datetime.strptime(from_date_str, '%Y-%m-%d')
+    except ValueError:
+        from_date = datetime(datetime.now().year, 1, 1)
+        from_date_str = from_date.strftime('%Y-%m-%d')
+    try:
+        to_date = datetime.strptime(to_date_str, '%Y-%m-%d').replace(hour=23, minute=59, second=59)
+    except ValueError:
+        to_date = datetime.now()
+        to_date_str = to_date.strftime('%Y-%m-%d')
+
+    # ── All savings (full history, for running balance) ─────────────────────
+    all_savings = db.execute(
+        'SELECT * FROM savings WHERE member_id = ? ORDER BY date ASC',
+        (member['id'],)
+    ).fetchall()
+
+    # ── All loans and repayments ────────────────────────────────────────────
+    all_loans = db.execute(
+        'SELECT * FROM loans WHERE member_id = ? ORDER BY date_applied ASC',
+        (member['id'],)
+    ).fetchall()
+
+    all_repayments = []
+    try:
+        all_repayments = db.execute('''
+            SELECT r.*, l.loan_number, l.purpose
             FROM repayments r JOIN loans l ON r.loan_id = l.id
-            WHERE l.member_id = ? ORDER BY r.date DESC
-        ''', (member['id'],)).fetchall():
-            loan_repayments.setdefault(r['loan_id'], []).append(r)
+            WHERE l.member_id = ? ORDER BY r.date ASC
+        ''', (member['id'],)).fetchall()
     except Exception:
         pass
 
-    # Group loans by purpose
-    loans_by_type = {}
-    for l in loans:
-        purpose = l['purpose'] or 'Other'
-        loans_by_type.setdefault(purpose, []).append(l)
+    # ── Build unified ledger (oldest first) ────────────────────────────────
+    entries = []
 
-    total_savings    = sum(s['amount'] for s in savings)
-    active_loans     = [l for l in loans if l['status'] == 'active']
-    outstanding      = sum(l['balance'] for l in active_loans)
-    net_position     = total_savings - outstanding
+    for s in all_savings:
+        entries.append({
+            'date':        _parse_dt(s['date']),
+            'ref':         s['receipt_number'] or f"SAV-{s['id']:06d}",
+            'description': f"Savings Deposit — {s['month']}",
+            'entry_type':  'savings',
+            'debit':       0.0,
+            'credit':      float(s['amount'] or 0),
+            'late_fee':    float(s['late_fee'] or 0),
+            'method':      (s['payment_method'] or 'cash').title(),
+        })
+
+    for l in all_loans:
+        if l['disbursement_date']:
+            entries.append({
+                'date':        _parse_dt(l['disbursement_date']),
+                'ref':         l['loan_number'],
+                'description': f"Loan Disbursed — {l['purpose']} ({l['tenure']} months)",
+                'entry_type':  'loan_disbursement',
+                'debit':       float(l['disbursed_amount'] or l['amount'] or 0),
+                'credit':      0.0,
+                'late_fee':    0.0,
+                'method':      'Bank Transfer',
+            })
+
+    for r in all_repayments:
+        entries.append({
+            'date':        _parse_dt(r['date']),
+            'ref':         r['repayment_number'] or r['receipt_number'] or f"REP-{r['id']:06d}",
+            'description': f"Loan Repayment — {r['loan_number']} ({r['purpose']})",
+            'entry_type':  'repayment',
+            'debit':       0.0,
+            'credit':      float(r['amount'] or 0),
+            'late_fee':    0.0,
+            'method':      (r['payment_method'] or 'cash').title(),
+        })
+
+    entries.sort(key=lambda e: e['date'])
+
+    # ── Compute running balances (savings account & loan balance) ───────────
+    run_savings = 0.0
+    run_loan    = 0.0
+    for e in entries:
+        if e['entry_type'] == 'savings':
+            run_savings += e['credit']
+        elif e['entry_type'] == 'loan_disbursement':
+            run_loan += e['debit']
+        elif e['entry_type'] == 'repayment':
+            principal = float(0)
+            # try to get principal_paid from repayment if available
+            run_loan = max(0.0, run_loan - e['credit'])
+        e['run_savings'] = round(run_savings, 2)
+        e['run_loan']    = round(run_loan, 2)
+        e['net']         = round(run_savings - run_loan, 2)
+
+    # ── Filter to requested date range ─────────────────────────────────────
+    period_entries = [e for e in entries
+                      if from_date <= e['date'] <= to_date]
+
+    # Opening balances (totals before from_date)
+    before = [e for e in entries if e['date'] < from_date]
+    ob_savings = round(sum(e['credit'] for e in before if e['entry_type'] == 'savings'), 2)
+    ob_loan    = round(sum(e['debit']  for e in before if e['entry_type'] == 'loan_disbursement')
+                     - sum(e['credit'] for e in before if e['entry_type'] == 'repayment'), 2)
+    ob_loan    = max(0.0, ob_loan)
+
+    # Re-run running balances for the period starting from opening balances
+    rs = ob_savings
+    rl = ob_loan
+    ledger = []
+    for e in period_entries:
+        if e['entry_type'] == 'savings':
+            rs += e['credit']
+        elif e['entry_type'] == 'loan_disbursement':
+            rl += e['debit']
+        elif e['entry_type'] == 'repayment':
+            rl = max(0.0, rl - e['credit'])
+        row = dict(e)
+        row['run_savings'] = round(rs, 2)
+        row['run_loan']    = round(rl, 2)
+        row['net']         = round(rs - rl, 2)
+        ledger.append(SimpleNamespace(**row))
+
+    # ── Period summary figures ─────────────────────────────────────────────
+    period_savings_in   = sum(e['credit'] for e in period_entries if e['entry_type'] == 'savings')
+    period_late_fees    = sum(e['late_fee'] for e in period_entries if e['entry_type'] == 'savings')
+    period_loans_out    = sum(e['debit']  for e in period_entries if e['entry_type'] == 'loan_disbursement')
+    period_repaid       = sum(e['credit'] for e in period_entries if e['entry_type'] == 'repayment')
+
+    # Closing balances
+    cb_savings = rs
+    cb_loan    = rl
+    cb_net     = round(cb_savings - cb_loan, 2)
+
+    # Full-history totals for summary cards
+    total_savings_ever = sum(float(s['amount'] or 0) for s in all_savings)
+    active_loans_list  = [l for l in all_loans if l['status'] == 'active']
+    total_outstanding  = sum(float(l['balance'] or 0) for l in active_loans_list)
 
     return render_template('member/statements.html',
                            member=_member_extras(member, db),
-                           savings=savings,
-                           loans=loans,
-                           loans_by_type=loans_by_type,
-                           loan_repayments=loan_repayments,
-                           total_savings=total_savings,
-                           outstanding=outstanding,
-                           net_position=net_position,
+                           ledger=ledger,
+                           from_date=from_date_str,
+                           to_date=to_date_str,
+                           ob_savings=ob_savings,
+                           ob_loan=ob_loan,
+                           cb_savings=cb_savings,
+                           cb_loan=cb_loan,
+                           cb_net=cb_net,
+                           period_savings_in=period_savings_in,
+                           period_late_fees=period_late_fees,
+                           period_loans_out=period_loans_out,
+                           period_repaid=period_repaid,
+                           total_savings_ever=total_savings_ever,
+                           total_outstanding=total_outstanding,
                            generated_on=datetime.now())
 
 
@@ -893,7 +1067,7 @@ def support():
                            member=_member_extras(member, db) if member else None,
                            whatsapp_number=wa_raw,
                            whatsapp_link=wa_link,
-                           support_phone=_setting('phone', wa_raw),
+                           support_phone=_setting('support_phone', wa_raw),
                            support_email=_setting('support_email', _setting('email', 'support@ooucoop.ng')),
                            office_address=_setting('office_address', 'OOU Main Campus'))
 

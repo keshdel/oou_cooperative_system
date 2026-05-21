@@ -15,6 +15,7 @@ savings = Blueprint('savings', __name__)
 
 @savings.route('/savings')
 @login_required
+@role_required('admin', 'treasurer', 'secretary', 'exco')
 def savings_list():
     db = get_db()
     all_savings = db.execute('''

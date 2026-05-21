@@ -1,14 +1,21 @@
-from flask import Blueprint, render_template
-from flask_login import login_required
+from flask import Blueprint, render_template, redirect, url_for
+from flask_login import login_required, current_user
 
 from database import get_db
 
 main = Blueprint('main', __name__)
 
+# Roles that may see organisation-wide data
+_PRIVILEGED_ROLES = {'admin', 'treasurer', 'secretary', 'exco'}
+
 
 @main.route('/dashboard')
 @login_required
 def dashboard():
+    # Members must never see org-wide data — send them to their own portal
+    if current_user.role not in _PRIVILEGED_ROLES:
+        return redirect(url_for('portal.member_portal'))
+
     db = get_db()
 
     members_count      = db.execute('SELECT COUNT(*) FROM members').fetchone()[0] or 0

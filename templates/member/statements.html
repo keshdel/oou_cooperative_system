@@ -1,239 +1,382 @@
 {% extends "base.html" %}
+{% block title %}Statement of Account — {{ member.full_name }}{% endblock %}
 
-{% block title %}Account Statement - OOU Cooperative{% endblock %}
+{% block extra_css %}
+<style>
+/* ── Print styles ─────────────────────────────────────────── */
+@media print {
+  .no-print { display: none !important; }
+  .sidebar, nav.navbar, footer { display: none !important; }
+  .main-content { margin: 0 !important; padding: 0 !important; }
+  .wrapper { display: block !important; }
+  .print-show { display: block !important; }
+  body { font-size: 11px; color: #000; }
+  .card { border: 1px solid #999 !important; box-shadow: none !important; page-break-inside: avoid; }
+  .soa-header { page-break-after: avoid; }
+  .cert-block { page-break-before: auto; margin-top: 30px; }
+  table { font-size: 10px; width: 100%; border-collapse: collapse; }
+  th, td { border: 1px solid #ccc; padding: 3px 6px !important; }
+  thead { background: #eee !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .badge { border: 1px solid #666; background: none !important; color: #000 !important; padding: 1px 3px; }
+  .text-success { color: #000 !important; }
+  .text-danger { color: #000 !important; }
+  .running-bal { font-weight: bold; }
+  @page { margin: 15mm 12mm; }
+}
+.print-show { display: none; }
+.running-bal { color: #198754; font-weight: 600; }
+.entry-savings    td:first-child { border-left: 3px solid #198754; }
+.entry-disbursement td:first-child { border-left: 3px solid #0d6efd; }
+.entry-repayment  td:first-child { border-left: 3px solid #0dcaf0; }
+.ob-row td { background: #fff3cd; font-style: italic; }
+.cert-block { border: 2px solid #dee2e6; border-radius: 8px; padding: 24px; margin-top: 32px; }
+</style>
+{% endblock %}
 
 {% block content %}
 <div class="container-fluid">
-    <!-- Header -->
-    <div class="row mb-4">
-        <div class="col-md-8">
-            <h2><i class="fas fa-file-invoice me-2"></i>Statement of Account</h2>
-            <p class="text-muted">Generated on {{ generated_on.strftime('%d %B %Y, %H:%M') }}</p>
+
+  <!-- ── Screen controls ── -->
+  <div class="row mb-3 no-print">
+    <div class="col-md-8">
+      <h2><i class="fas fa-file-alt me-2 text-primary"></i>Statement of Account</h2>
+      <p class="text-muted mb-0">
+        Certified record of all savings and loan transactions.
+        Filter by date range, then print for your records.
+      </p>
+    </div>
+    <div class="col-md-4 text-end">
+      <button class="btn btn-primary" onclick="window.print()">
+        <i class="fas fa-print me-1"></i>Print / Save PDF
+      </button>
+      <a href="{{ url_for('portal.member_portal') }}" class="btn btn-outline-secondary ms-1">
+        <i class="fas fa-arrow-left me-1"></i>Back
+      </a>
+    </div>
+  </div>
+
+  <!-- ── Date range filter ── -->
+  <div class="card mb-4 no-print border-0 shadow-sm">
+    <div class="card-body">
+      <form method="GET" class="row g-2 align-items-end">
+        <div class="col-6 col-md-3">
+          <label class="form-label fw-semibold small">From Date</label>
+          <input type="date" class="form-control form-control-sm" name="from_date" value="{{ from_date }}">
         </div>
-        <div class="col-md-4 text-end">
-            <a href="{{ url_for('portal.member_statement', member_id=member.id) }}" class="btn btn-danger me-2" target="_blank">
-                <i class="fas fa-file-pdf"></i> Download PDF
-            </a>
-            <button class="btn btn-secondary" onclick="window.print()">
-                <i class="fas fa-print"></i> Print
-            </button>
+        <div class="col-6 col-md-3">
+          <label class="form-label fw-semibold small">To Date</label>
+          <input type="date" class="form-control form-control-sm" name="to_date" value="{{ to_date }}">
         </div>
+        <div class="col-6 col-md-2">
+          <button type="submit" class="btn btn-primary btn-sm w-100">
+            <i class="fas fa-filter me-1"></i>Generate
+          </button>
+        </div>
+        <div class="col-6 col-md-2">
+          <a href="{{ url_for('portal.statements') }}" class="btn btn-outline-secondary btn-sm w-100">
+            <i class="fas fa-calendar me-1"></i>This Year
+          </a>
+        </div>
+        <div class="col-12 col-md-2">
+          <a href="{{ url_for('portal.statements', from_date='2000-01-01', to_date=now().strftime('%Y-%m-%d')) }}"
+             class="btn btn-outline-secondary btn-sm w-100">
+            <i class="fas fa-history me-1"></i>All Time
+          </a>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════════════
+       SOA DOCUMENT — this section renders on screen AND in print
+       ══════════════════════════════════════════════════════════════════════ -->
+  <div class="card shadow-sm soa-header">
+    <div class="card-body pb-2">
+
+      <!-- Letterhead -->
+      <div class="row align-items-start border-bottom pb-3 mb-3">
+        <div class="col-8">
+          <h4 class="mb-0 fw-bold">{{ coop_name }}</h4>
+          <div class="text-muted small">Member Statement of Account</div>
+        </div>
+        <div class="col-4 text-end">
+          <div class="text-muted small">Generated</div>
+          <div class="fw-semibold">{{ generated_on.strftime('%d %B %Y, %H:%M') }}</div>
+        </div>
+      </div>
+
+      <!-- Member info block -->
+      <div class="row mb-3">
+        <div class="col-md-6">
+          <table class="table table-sm table-borderless mb-0" style="font-size:.9rem">
+            <tr>
+              <td class="fw-semibold pe-3" style="width:140px">Member Name:</td>
+              <td>{{ member.full_name }}</td>
+            </tr>
+            <tr>
+              <td class="fw-semibold">Member No.:</td>
+              <td>{{ member.member_number }}</td>
+            </tr>
+            <tr>
+              <td class="fw-semibold">Email:</td>
+              <td>{{ member.email or '—' }}</td>
+            </tr>
+            <tr>
+              <td class="fw-semibold">Phone:</td>
+              <td>{{ member.phone or '—' }}</td>
+            </tr>
+          </table>
+        </div>
+        <div class="col-md-6">
+          <table class="table table-sm table-borderless mb-0" style="font-size:.9rem">
+            <tr>
+              <td class="fw-semibold pe-3" style="width:140px">Statement Period:</td>
+              <td>{{ from_date }} &mdash; {{ to_date }}</td>
+            </tr>
+            <tr>
+              <td class="fw-semibold">Date Joined:</td>
+              <td>{{ member.date_joined.strftime('%d %b %Y') if member.date_joined and member.date_joined is not string else (member.date_joined or '—') }}</td>
+            </tr>
+            <tr>
+              <td class="fw-semibold">Lifetime Savings:</td>
+              <td class="fw-bold text-success">₦{{ "{:,.2f}".format(total_savings_ever) }}</td>
+            </tr>
+            <tr>
+              <td class="fw-semibold">Outstanding Loans:</td>
+              <td class="fw-bold {% if total_outstanding > 0 %}text-danger{% else %}text-success{% endif %}">
+                ₦{{ "{:,.2f}".format(total_outstanding) }}
+              </td>
+            </tr>
+          </table>
+        </div>
+      </div>
+
+      <!-- Opening balance summary -->
+      <div class="alert alert-light border mb-3 py-2" style="font-size:.9rem">
+        <div class="row">
+          <div class="col-md-4">
+            <span class="text-muted">Opening Savings Balance:</span>
+            <strong class="ms-2 text-success">₦{{ "{:,.2f}".format(ob_savings) }}</strong>
+          </div>
+          <div class="col-md-4">
+            <span class="text-muted">Opening Loan Balance:</span>
+            <strong class="ms-2 text-danger">₦{{ "{:,.2f}".format(ob_loan) }}</strong>
+          </div>
+          <div class="col-md-4">
+            <span class="text-muted">Opening Net Position:</span>
+            <strong class="ms-2 {% if ob_savings - ob_loan >= 0 %}text-success{% else %}text-danger{% endif %}">
+              ₦{{ "{:,.2f}".format(ob_savings - ob_loan) }}
+            </strong>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Transaction ledger ── -->
+  <div class="card mt-3 shadow-sm">
+    <div class="card-header bg-dark text-white d-flex justify-content-between align-items-center">
+      <h6 class="mb-0"><i class="fas fa-table me-2"></i>Transaction Ledger</h6>
+      <span class="badge bg-light text-dark">{{ ledger|length }} entries</span>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-hover table-sm align-middle mb-0" id="ledgerTable">
+        <thead class="table-dark">
+          <tr>
+            <th class="ps-3" style="width:36px">#</th>
+            <th style="width:100px">Date</th>
+            <th style="width:160px">Reference</th>
+            <th>Description</th>
+            <th>Method</th>
+            <th class="text-end">Debit (₦)<br><small class="fw-normal opacity-75">Loan Out</small></th>
+            <th class="text-end">Credit (₦)<br><small class="fw-normal opacity-75">Savings / Repmt</small></th>
+            <th class="text-end" style="background:#1a4a2e;color:#fff">Savings Bal (₦)</th>
+            <th class="text-end" style="background:#3d1a1a;color:#fff">Loan Bal (₦)</th>
+            <th class="text-end" style="background:#1a3d4a;color:#fff">Net (₦)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Opening balance row -->
+          <tr class="ob-row">
+            <td class="ps-3 text-muted">—</td>
+            <td>{{ from_date }}</td>
+            <td colspan="3"><em>Opening Balance</em></td>
+            <td></td>
+            <td></td>
+            <td class="text-end fw-semibold">₦{{ "{:,.2f}".format(ob_savings) }}</td>
+            <td class="text-end fw-semibold">₦{{ "{:,.2f}".format(ob_loan) }}</td>
+            <td class="text-end fw-semibold">₦{{ "{:,.2f}".format(ob_savings - ob_loan) }}</td>
+          </tr>
+
+          {% for e in ledger %}
+          <tr class="entry-{{ e.entry_type }}">
+            <td class="ps-3 text-muted small">{{ loop.index }}</td>
+            <td class="small">{{ e.date.strftime('%d %b %Y') }}</td>
+            <td class="small font-monospace">{{ e.ref }}</td>
+            <td>
+              {{ e.description }}
+              {% if e.late_fee > 0 %}
+                <span class="badge bg-warning text-dark ms-1" style="font-size:.7rem">
+                  Late fee ₦{{ "{:,.2f}".format(e.late_fee) }}
+                </span>
+              {% endif %}
+            </td>
+            <td class="small text-muted">{{ e.method }}</td>
+            <td class="text-end">
+              {% if e.debit > 0 %}
+                <span class="text-primary fw-semibold">₦{{ "{:,.2f}".format(e.debit) }}</span>
+              {% else %}—{% endif %}
+            </td>
+            <td class="text-end">
+              {% if e.credit > 0 %}
+                <span class="text-success fw-semibold">₦{{ "{:,.2f}".format(e.credit) }}</span>
+              {% else %}—{% endif %}
+            </td>
+            <td class="text-end running-bal">₦{{ "{:,.2f}".format(e.run_savings) }}</td>
+            <td class="text-end {% if e.run_loan > 0 %}text-danger{% else %}text-muted{% endif %}">
+              ₦{{ "{:,.2f}".format(e.run_loan) }}
+            </td>
+            <td class="text-end fw-semibold {% if e.net >= 0 %}text-success{% else %}text-danger{% endif %}">
+              ₦{{ "{:,.2f}".format(e.net) }}
+            </td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="10" class="text-center py-5 text-muted">
+              <i class="fas fa-inbox fa-2x d-block mb-2"></i>
+              No transactions in this period.
+            </td>
+          </tr>
+          {% endfor %}
+
+          <!-- Closing balance row -->
+          <tr style="background:#e8f5e9; font-weight:700; border-top:2px solid #198754">
+            <td class="ps-3" colspan="5">Closing Balance ({{ to_date }})</td>
+            <td></td>
+            <td></td>
+            <td class="text-end text-success">₦{{ "{:,.2f}".format(cb_savings) }}</td>
+            <td class="text-end {% if cb_loan > 0 %}text-danger{% else %}text-success{% endif %}">₦{{ "{:,.2f}".format(cb_loan) }}</td>
+            <td class="text-end {% if cb_net >= 0 %}text-success{% else %}text-danger{% endif %}">₦{{ "{:,.2f}".format(cb_net) }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ── Period summary ── -->
+  <div class="card mt-3 shadow-sm">
+    <div class="card-header bg-light"><h6 class="mb-0">Period Summary</h6></div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-6 col-md-3">
+          <div class="border rounded p-3 text-center">
+            <div class="small text-muted">Savings Deposited</div>
+            <div class="h5 text-success mb-0">₦{{ "{:,.2f}".format(period_savings_in) }}</div>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="border rounded p-3 text-center">
+            <div class="small text-muted">Loans Disbursed</div>
+            <div class="h5 text-primary mb-0">₦{{ "{:,.2f}".format(period_loans_out) }}</div>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="border rounded p-3 text-center">
+            <div class="small text-muted">Loan Repayments</div>
+            <div class="h5 text-info mb-0">₦{{ "{:,.2f}".format(period_repaid) }}</div>
+          </div>
+        </div>
+        <div class="col-6 col-md-3">
+          <div class="border rounded p-3 text-center">
+            <div class="small text-muted">Late Fees Paid</div>
+            <div class="h5 text-warning mb-0">₦{{ "{:,.2f}".format(period_late_fees) }}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="row mt-3 g-3">
+        <div class="col-md-4">
+          <div class="border rounded p-3 text-center bg-success bg-opacity-10">
+            <div class="small text-muted">Closing Savings Balance</div>
+            <div class="h4 text-success mb-0">₦{{ "{:,.2f}".format(cb_savings) }}</div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="border rounded p-3 text-center bg-danger bg-opacity-10">
+            <div class="small text-muted">Outstanding Loan Balance</div>
+            <div class="h4 text-danger mb-0">₦{{ "{:,.2f}".format(cb_loan) }}</div>
+          </div>
+        </div>
+        <div class="col-md-4">
+          <div class="border rounded p-3 text-center {% if cb_net >= 0 %}bg-success{% else %}bg-danger{% endif %} bg-opacity-10">
+            <div class="small text-muted">Net Position</div>
+            <div class="h4 {% if cb_net >= 0 %}text-success{% else %}text-danger{% endif %} mb-0">
+              ₦{{ "{:,.2f}".format(cb_net) }}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Certification block ── -->
+  <div class="cert-block mt-4">
+    <h6 class="fw-bold mb-3">
+      <i class="fas fa-certificate me-2 text-primary no-print"></i>Member Certification
+    </h6>
+    <p style="font-size:.95rem; line-height:1.8">
+      I, <strong>{{ member.full_name }}</strong> (Member No. <strong>{{ member.member_number }}</strong>),
+      hereby confirm that I have reviewed the above Statement of Account for the period
+      <strong>{{ from_date }}</strong> to <strong>{{ to_date }}</strong>, issued by
+      <strong>{{ coop_name }}</strong> on <strong>{{ generated_on.strftime('%d %B %Y') }}</strong>.
+    </p>
+    <p style="font-size:.95rem; line-height:1.8" class="mb-4">
+      The statement <span style="border-bottom:1px solid #999">
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; accurately reflects my records &nbsp;/&nbsp;
+        contains discrepancies (detail overleaf) &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+      </span> (circle one).
+    </p>
+
+    <div class="row mt-4">
+      <div class="col-md-5">
+        <div style="border-bottom:1px solid #666; min-height:40px; margin-bottom:6px"></div>
+        <div class="small text-muted">Member Signature &amp; Date</div>
+        <div class="small text-muted mt-2">Name: {{ member.full_name }}</div>
+      </div>
+      <div class="col-md-2"></div>
+      <div class="col-md-5">
+        <div style="border-bottom:1px solid #666; min-height:40px; margin-bottom:6px"></div>
+        <div class="small text-muted">Cooperative Authorised Officer &amp; Stamp</div>
+      </div>
     </div>
 
-    <!-- Member Summary Banner -->
-    <div class="card mb-4 border-0 shadow-sm">
-        <div class="card-body" style="background: linear-gradient(135deg,#667eea 0%,#764ba2 100%); border-radius:.5rem; color:#fff;">
-            <div class="row">
-                <div class="col-md-6">
-                    <h4 class="mb-1">{{ member.full_name }}</h4>
-                    <p class="mb-1 opacity-75"><i class="fas fa-id-badge me-2"></i>{{ member.member_number }}</p>
-                    <p class="mb-0 opacity-75"><i class="fas fa-calendar me-2"></i>Member since {{ member.date_joined.strftime('%B %Y') if member.date_joined else 'N/A' }}</p>
-                </div>
-                <div class="col-md-6 text-end">
-                    <div class="row g-3">
-                        <div class="col-4">
-                            <div class="bg-white bg-opacity-25 rounded p-2">
-                                <small class="d-block opacity-75">Total Savings</small>
-                                <strong>₦{{ "{:,.0f}".format(total_savings) }}</strong>
-                            </div>
-                        </div>
-                        <div class="col-4">
-                            <div class="bg-white bg-opacity-25 rounded p-2">
-                                <small class="d-block opacity-75">Loan Balance</small>
-                                <strong>₦{{ "{:,.0f}".format(outstanding) }}</strong>
-                            </div>
-                        </div>
-                        <div class="col-4">
-                            <div class="bg-white bg-opacity-25 rounded p-2">
-                                <small class="d-block opacity-75">Net Position</small>
-                                <strong class="{{ 'text-warning' if net_position < 0 }}">₦{{ "{:,.0f}".format(net_position) }}</strong>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
+    <div class="mt-4 pt-3 border-top text-center">
+      <small class="text-muted">
+        This statement was generated electronically by the {{ coop_name }} Management System
+        on {{ generated_on.strftime('%d %B %Y at %H:%M') }}.
+        For queries contact the cooperative office.
+      </small>
     </div>
+  </div>
 
-    <!-- Savings History -->
-    <div class="card mb-4">
-        <div class="card-header bg-primary text-white">
-            <div class="d-flex justify-content-between align-items-center">
-                <h5 class="mb-0"><i class="fas fa-piggy-bank me-2"></i>Savings History</h5>
-                <span class="badge bg-light text-dark">{{ savings|length }} record(s)</span>
-            </div>
-        </div>
-        <div class="card-body p-0">
-            <div class="table-responsive">
-                <table class="table table-hover mb-0">
-                    <thead class="table-light">
-                        <tr>
-                            <th>Date</th>
-                            <th>Month</th>
-                            <th>Base Amount</th>
-                            <th>Late Fee</th>
-                            <th>Total Paid</th>
-                            <th>Status</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for s in savings %}
-                        <tr>
-                            <td>{{ s.date[:10] if s.date else 'N/A' }}</td>
-                            <td>{{ s.month }}</td>
-                            <td>₦{{ "{:,.2f}".format((s.amount or 0) - (s.late_fee or 0)) }}</td>
-                            <td>
-                                {% if s.late_fee and s.late_fee > 0 %}
-                                <span class="text-danger">₦{{ "{:,.2f}".format(s.late_fee) }}</span>
-                                {% else %}-{% endif %}
-                            </td>
-                            <td><strong>₦{{ "{:,.2f}".format(s.amount or 0) }}</strong></td>
-                            <td>
-                                {% if s.late_fee and s.late_fee > 0 %}
-                                <span class="badge bg-warning">Late</span>
-                                {% else %}
-                                <span class="badge bg-success">On Time</span>
-                                {% endif %}
-                            </td>
-                        </tr>
-                        {% else %}
-                        <tr><td colspan="6" class="text-center text-muted py-3">No savings records yet</td></tr>
-                        {% endfor %}
-                    </tbody>
-                    {% if savings %}
-                    <tfoot class="table-primary fw-bold">
-                        <tr>
-                            <td colspan="2">Total</td>
-                            <td>₦{{ "{:,.2f}".format(savings|sum(attribute='amount') - savings|sum(attribute='late_fee')) }}</td>
-                            <td>₦{{ "{:,.2f}".format(savings|sum(attribute='late_fee')) }}</td>
-                            <td>₦{{ "{:,.2f}".format(total_savings) }}</td>
-                            <td></td>
-                        </tr>
-                    </tfoot>
-                    {% endif %}
-                </table>
-            </div>
-        </div>
-    </div>
-
-    <!-- Loans Grouped by Type -->
-    <h4 class="mb-3"><i class="fas fa-hand-holding-usd me-2"></i>Loan History — Grouped by Type</h4>
-
-    {% if loans_by_type %}
-        {% for loan_type, type_loans in loans_by_type.items() %}
-        <div class="card mb-4">
-            <div class="card-header" style="background:#f0f4ff; border-left:4px solid #667eea;">
-                <div class="d-flex justify-content-between align-items-center">
-                    <h6 class="mb-0 fw-bold">
-                        <i class="fas fa-tag me-2 text-primary"></i>{{ loan_type }} Loans
-                    </h6>
-                    <div>
-                        <span class="badge bg-secondary me-1">{{ type_loans|length }} loan(s)</span>
-                        <span class="badge bg-primary">₦{{ "{:,.2f}".format(type_loans|sum(attribute='amount')) }} total</span>
-                    </div>
-                </div>
-            </div>
-            <div class="card-body p-0">
-                <div class="table-responsive">
-                    <table class="table table-hover mb-0">
-                        <thead class="table-light">
-                            <tr>
-                                <th>Loan Ref</th>
-                                <th>Date Applied</th>
-                                <th>Amount</th>
-                                <th>Interest Rate</th>
-                                <th>Tenure</th>
-                                <th>Total Repayment</th>
-                                <th>Balance</th>
-                                <th>Status</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for loan in type_loans %}
-                            <tr>
-                                <td><code>{{ loan.loan_number }}</code></td>
-                                <td>{{ loan.date_applied[:10] if loan.date_applied else 'N/A' }}</td>
-                                <td>₦{{ "{:,.2f}".format(loan.amount or 0) }}</td>
-                                <td>{{ loan.interest_rate or 'N/A' }}%</td>
-                                <td>{{ loan.tenure }} mo.</td>
-                                <td>₦{{ "{:,.2f}".format(loan.total_repayment or 0) }}</td>
-                                <td>
-                                    {% if loan.status == 'completed' %}
-                                    <span class="text-success">₦0.00</span>
-                                    {% else %}
-                                    <strong class="text-danger">₦{{ "{:,.2f}".format(loan.balance or 0) }}</strong>
-                                    {% endif %}
-                                </td>
-                                <td>
-                                    <span class="badge bg-{{ 'success' if loan.status == 'active' else ('secondary' if loan.status == 'completed' else ('warning' if loan.status == 'pending' else 'danger')) }}">
-                                        {{ loan.status|title }}
-                                    </span>
-                                </td>
-                            </tr>
-                            <!-- Repayment sub-rows -->
-                            {% if loan.id in loan_repayments %}
-                            <tr class="table-light">
-                                <td colspan="8" class="p-0">
-                                    <div class="px-4 py-2">
-                                        <small class="text-muted fw-bold">Repayment Schedule:</small>
-                                        <div class="table-responsive mt-1">
-                                            <table class="table table-sm table-borderless mb-0" style="font-size:0.85em;">
-                                                <thead>
-                                                    <tr class="text-muted">
-                                                        <th>Ref</th><th>Date</th><th>Amount</th><th>Principal</th><th>Interest</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody>
-                                                {% for rep in loan_repayments[loan.id] %}
-                                                <tr>
-                                                    <td><code>{{ rep.repayment_number }}</code></td>
-                                                    <td>{{ rep.date[:10] if rep.date else 'N/A' }}</td>
-                                                    <td class="text-success fw-bold">₦{{ "{:,.2f}".format(rep.amount or 0) }}</td>
-                                                    <td>₦{{ "{:,.2f}".format(rep.principal_payment or 0) }}</td>
-                                                    <td>₦{{ "{:,.2f}".format(rep.interest_payment or 0) }}</td>
-                                                </tr>
-                                                {% endfor %}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    </div>
-                                </td>
-                            </tr>
-                            {% endif %}
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-        {% endfor %}
-    {% else %}
-    <div class="card mb-4">
-        <div class="card-body text-center text-muted py-5">
-            <i class="fas fa-hand-holding-usd fa-3x mb-3 opacity-25"></i>
-            <p>No loan records found.</p>
-            <a href="{{ url_for('portal.apply_loan_member') }}" class="btn btn-success">Apply for a Loan</a>
-        </div>
-    </div>
-    {% endif %}
-
-    <!-- Footer Note -->
-    <div class="alert alert-info d-print-none">
-        <i class="fas fa-info-circle me-2"></i>
-        For a certified PDF copy of this statement, click <strong>Download PDF</strong> above.
-        Contact the cooperative office for any discrepancies.
-    </div>
 </div>
 {% endblock %}
 
 {% block extra_js %}
 <script>
-// Print styles
-window.addEventListener('beforeprint', function() {
-    document.querySelectorAll('.d-print-none').forEach(el => el.style.display = 'none');
-});
-window.addEventListener('afterprint', function() {
-    document.querySelectorAll('.d-print-none').forEach(el => el.style.display = '');
+// Quick preset buttons
+document.querySelectorAll('[data-preset]').forEach(btn => {
+  btn.addEventListener('click', function() {
+    const preset = this.dataset.preset;
+    const today  = new Date();
+    const fmt    = d => d.toISOString().slice(0,10);
+    let from, to = fmt(today);
+    if (preset === 'ytd')   from = fmt(new Date(today.getFullYear(), 0, 1));
+    if (preset === 'q1')    { from = fmt(new Date(today.getFullYear(), 0,  1)); to = fmt(new Date(today.getFullYear(), 2, 31)); }
+    if (preset === 'last6') from = fmt(new Date(today.setMonth(today.getMonth()-6)));
+    document.querySelector('[name=from_date]').value = from;
+    document.querySelector('[name=to_date]').value   = to;
+  });
 });
 </script>
 {% endblock %}

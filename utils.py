@@ -64,6 +64,122 @@ def clear_login_attempts(ip: str) -> None:
     _login_attempts.pop(ip, None)
 
 
+# ── Loan interest computation ─────────────────────────────────────────────────
+
+# Maps canonical purpose names → settings key suffix
+PURPOSE_SETTING_KEY = {
+    'Regular':        'regular',
+    'Housing':        'housing',
+    'Emergency':      'emergency',
+    'Asset Purchase': 'asset',
+    'School Fees':    'school_fees',
+}
+
+METHOD_LABELS = {
+    'flat':             'Flat Rate',
+    'reducing_monthly': 'Declining Balance (Monthly Rate)',
+    'reducing_annual':  'Declining Balance (Annual Rate)',
+}
+
+
+def compute_loan_schedule(principal, rate, tenure, method='reducing_annual'):
+    """
+    Compute loan repayment schedule using one of three interest methods.
+
+    Args:
+        principal : Loan amount (float, ₦)
+        rate      : Interest rate as a percentage, e.g. 11 for 11%
+        tenure    : Loan duration in months (int)
+        method    : One of:
+            'flat'             — Flat rate on original principal.
+                                 Interest = P × (rate/100) × (tenure/12).
+                                 Equal monthly instalments; rate is annual.
+            'reducing_monthly' — Declining balance; rate IS the monthly rate
+                                 (e.g. 2 means 2% per month).  PMT formula.
+            'reducing_annual'  — Declining balance; rate is annual, divided
+                                 by 12 for each month.  Standard amortisation.
+
+    Returns:
+        (monthly_payment: float, total_repayment: float, schedule: list[dict])
+        Each schedule dict has: month, payment, principal, interest, balance
+    """
+    P = float(principal)
+    r_pct = float(rate)
+    n = int(tenure)
+
+    if n <= 0 or P <= 0:
+        return 0.0, 0.0, []
+
+    if method == 'flat':
+        total_interest  = P * (r_pct / 100) * (n / 12)
+        total_repayment = P + total_interest
+        mp       = total_repayment / n          # equal monthly payment
+        prin_pm  = P / n
+        int_pm   = total_interest / n
+
+        balance  = P
+        schedule = []
+        for i in range(1, n + 1):
+            balance = round(max(0.0, balance - prin_pm), 2)
+            schedule.append({
+                'month':     i,
+                'payment':   round(mp, 2),
+                'principal': round(prin_pm, 2),
+                'interest':  round(int_pm, 2),
+                'balance':   balance,
+            })
+
+    elif method == 'reducing_monthly':
+        r = r_pct / 100                         # monthly rate as decimal
+        if r > 0:
+            mp = P * r * (1 + r) ** n / ((1 + r) ** n - 1)
+        else:
+            mp = P / n
+        total_repayment = mp * n
+
+        balance  = P
+        schedule = []
+        for i in range(1, n + 1):
+            interest_p  = round(balance * r, 2)
+            principal_p = round(mp - interest_p, 2)
+            balance     = round(max(0.0, balance - principal_p), 2)
+            if i == n:
+                balance = 0.0
+            schedule.append({
+                'month':     i,
+                'payment':   round(mp, 2),
+                'principal': principal_p,
+                'interest':  interest_p,
+                'balance':   balance,
+            })
+
+    else:  # 'reducing_annual' — standard amortisation (default)
+        r = (r_pct / 100) / 12                  # monthly rate from annual
+        if r > 0:
+            mp = P * r * (1 + r) ** n / ((1 + r) ** n - 1)
+        else:
+            mp = P / n
+        total_repayment = mp * n
+
+        balance  = P
+        schedule = []
+        for i in range(1, n + 1):
+            interest_p  = round(balance * r, 2)
+            principal_p = round(mp - interest_p, 2)
+            balance     = round(max(0.0, balance - principal_p), 2)
+            if i == n:
+                balance = 0.0
+            schedule.append({
+                'month':     i,
+                'payment':   round(mp, 2),
+                'principal': principal_p,
+                'interest':  interest_p,
+                'balance':   balance,
+            })
+
+    return round(mp, 2), round(total_repayment, 2), schedule
+
+
 # ── File upload validation ────────────────────────────────────────────────────
 
 _ALLOWED_IMAGE_EXTS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}

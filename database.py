@@ -97,7 +97,7 @@ def init_db():
         db.execute("ALTER TABLE savings ADD COLUMN payment_type TEXT DEFAULT 'monthly'")
     except Exception:
         pass  # column already exists
-    
+
     # Loans table
     db.execute('''
         CREATE TABLE IF NOT EXISTS loans (
@@ -109,6 +109,7 @@ def init_db():
             description TEXT,
             tenure INTEGER,
             interest_rate REAL,
+            interest_method TEXT DEFAULT 'reducing_annual',
             total_repayment REAL,
             balance REAL,
             status TEXT DEFAULT 'pending',
@@ -128,6 +129,11 @@ def init_db():
             FOREIGN KEY (member_id) REFERENCES members (id)
         )
     ''')
+    # Add interest_method to existing loan tables that pre-date this column
+    try:
+        db.execute("ALTER TABLE loans ADD COLUMN interest_method TEXT DEFAULT 'reducing_annual'")
+    except Exception:
+        pass  # column already exists
     
     # Repayments table
     db.execute('''
@@ -310,6 +316,12 @@ def init_db():
         ('interest_housing', '9', 'Housing loan interest rate'),
         ('interest_emergency', '10', 'Emergency loan interest rate'),
         ('interest_asset', '10', 'Asset loan interest rate'),
+        ('interest_school_fees', '9', 'School Fees loan interest rate'),
+        ('interest_method_regular', 'reducing_annual', 'Regular loan computation method'),
+        ('interest_method_housing', 'reducing_annual', 'Housing loan computation method'),
+        ('interest_method_emergency', 'reducing_annual', 'Emergency loan computation method'),
+        ('interest_method_asset', 'reducing_annual', 'Asset loan computation method'),
+        ('interest_method_school_fees', 'flat', 'School Fees loan computation method'),
         ('entrance_fee', '2000', 'Entrance fee'),
         ('reentry_fee', '5000', 'Re-entry fee'),
         ('loan_application_fee', '1000', 'Loan application fee'),

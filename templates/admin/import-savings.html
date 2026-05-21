@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Import Savings{% endblock %}
+{% block content %}
+<div class="container mt-4">
+    <h2>Import Savings from CSV</h2>
+    <div class="card">
+        <div class="card-body">
+            <a href="/static/savings_import_template.csv" class="btn btn-sm btn-secondary mb-3">
+                <i class="fas fa-download"></i> Download Template
+            </a>
+            <form method="POST" enctype="multipart/form-data">
+                <div class="mb-3">
+                    <label class="form-label">CSV File</label>
+                    <input type="file" name="file" accept=".csv" class="form-control" required>
+                </div>
+                <button type="submit" class="btn btn-primary">Upload & Import</button>
+                <a href="{{ url_for('members') }}" class="btn btn-secondary">Cancel</a>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
