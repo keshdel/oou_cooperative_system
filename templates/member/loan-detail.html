@@ -204,8 +204,9 @@
                 </div>
                 <div class="card-body">
                     {% if loan.status == 'active' %}
-                    <button class="btn btn-success w-100 mb-2" onclick="makePayment({{ loan.id }}, {{ loan.monthly_payment }})">
-                        <i class="fas fa-money-bill"></i> Make a Payment
+                    <button class="btn btn-success w-100 mb-2"
+                            data-bs-toggle="modal" data-bs-target="#payLoanModal">
+                        <i class="fas fa-credit-card me-1"></i>Pay Online
                     </button>
                     <a href="{{ url_for('portal.loan_calculator', amount=loan.amount, tenure=loan.tenure) }}" class="btn btn-info w-100 mb-2">
                         <i class="fas fa-calculator"></i> Recalculate
@@ -277,11 +278,6 @@
 </div>
 
 <script>
-function makePayment(loanId, amount) {
-    // Reuse payment modal from my-loans.html
-    window.location.href = "{{ url_for('portal.my_loans') }}?pay=" + loanId;
-}
-
 function viewReceipt(receiptNumber) {
     window.open('/api/receipt/' + receiptNumber, '_blank');
 }
@@ -298,4 +294,42 @@ function contactSupport() {
     window.location.href = "{{ url_for('portal.support') }}";
 }
 </script>
+
+<!-- Pay Loan Online Modal -->
+<div class="modal fade" id="payLoanModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header bg-success text-white">
+        <h5 class="modal-title"><i class="fas fa-credit-card me-2"></i>Make Online Loan Repayment</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST" action="{{ url_for('payments.initiate_loan_repayment', loan_id=loan.id) }}">
+        <div class="modal-body">
+          <div class="alert alert-info py-2 small">
+            <i class="fas fa-lock me-1"></i>
+            You will be redirected to a secure payment page. Your loan balance will update automatically.
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Loan</label>
+            <input type="text" class="form-control" value="{{ loan.loan_number }} — ₦{{ '{:,.2f}'.format(loan.balance) }} outstanding" readonly>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Amount to Pay (₦) <span class="text-danger">*</span></label>
+            <input type="number" class="form-control" name="amount" required
+                   min="100" step="0.01"
+                   max="{{ loan.balance }}"
+                   value="{{ loan.monthly_payment }}">
+            <div class="form-text">Monthly instalment is ₦{{ '{:,.2f}'.format(loan.monthly_payment) }}. Outstanding balance: ₦{{ '{:,.2f}'.format(loan.balance) }}.</div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-success">
+            <i class="fas fa-external-link-alt me-1"></i>Proceed to Payment
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
 {% endblock %}

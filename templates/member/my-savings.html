@@ -50,8 +50,11 @@
       <a href="{{ url_for('portal.statements') }}" class="btn btn-outline-primary me-1">
         <i class="fas fa-file-alt me-1"></i>Full Statement
       </a>
-      <button class="btn btn-success" onclick="window.print()">
+      <button class="btn btn-success me-1" onclick="window.print()">
         <i class="fas fa-print me-1"></i>Print
+      </button>
+      <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#paySavingsModal">
+        <i class="fas fa-credit-card me-1"></i>Pay Online
       </button>
     </div>
   </div>
@@ -351,4 +354,43 @@ if (ctx) {
   });
 }
 </script>
+
+<!-- Pay Savings Online Modal -->
+<div class="modal fade" id="paySavingsModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header bg-primary text-white">
+        <h5 class="modal-title"><i class="fas fa-credit-card me-2"></i>Pay Savings Online</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST" action="{{ url_for('payments.initiate_savings') }}">
+        <div class="modal-body">
+          <div class="alert alert-info py-2 small">
+            <i class="fas fa-lock me-1"></i>
+            You will be redirected to a secure payment page. Your payment will be recorded automatically.
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Month <span class="text-danger">*</span></label>
+            <input type="month" class="form-control" name="month" required
+                   value="{{ now().strftime('%Y-%m') }}">
+            <div class="form-text">The savings month you are paying for (YYYY-MM).</div>
+          </div>
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Amount (₦) <span class="text-danger">*</span></label>
+            <input type="number" class="form-control" name="amount" required
+                   min="100" step="0.01"
+                   value="{{ member.monthly_savings | default(5000) }}"
+                   placeholder="Enter amount">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">
+            <i class="fas fa-external-link-alt me-1"></i>Proceed to Payment
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
 {% endblock %}

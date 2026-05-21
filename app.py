@@ -92,6 +92,7 @@ from blueprints.admin_panel import admin_panel
 from blueprints.portal      import portal
 from blueprints.cards       import cards
 from blueprints.migration   import migration
+from blueprints.payments_bp import payments_bp
 from mobile_api             import mobile_api
 
 app.register_blueprint(auth)
@@ -105,6 +106,7 @@ app.register_blueprint(admin_panel)
 app.register_blueprint(portal)
 app.register_blueprint(cards)
 app.register_blueprint(migration)
+app.register_blueprint(payments_bp)
 app.register_blueprint(mobile_api)
 
 # ── Context processor ─────────────────────────────────────────────────────────
@@ -190,7 +192,15 @@ def check_maintenance():
 
 # ── Forced password-change gate ───────────────────────────────────────────────
 
-_ALLOWED_WHILE_FORCED = {'portal.change_password', 'auth.logout', 'static'}
+_ALLOWED_WHILE_FORCED = {
+    'portal.change_password',
+    'auth.logout',
+    'static',
+    # payment callbacks must be reachable so gateway redirects don't loop
+    'payments.payment_callback',
+    'payments.paystack_webhook',
+    'payments.flutterwave_webhook',
+}
 
 @app.before_request
 def enforce_password_change():

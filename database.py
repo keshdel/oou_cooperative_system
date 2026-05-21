@@ -275,6 +275,25 @@ def init_db():
         )
     ''')
     
+    # Pending payments table — tracks initiated-but-not-yet-verified online payments
+    db.execute('''
+        CREATE TABLE IF NOT EXISTS pending_payments (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            reference       TEXT UNIQUE NOT NULL,
+            member_id       INTEGER NOT NULL,
+            payment_type    TEXT NOT NULL,   -- 'savings' or 'loan_repayment'
+            related_id      INTEGER,         -- loan_id for loan_repayment
+            amount          REAL NOT NULL,
+            month           TEXT,            -- for savings: 'YYYY-MM'
+            gateway         TEXT NOT NULL,   -- 'paystack' | 'flutterwave'
+            status          TEXT DEFAULT 'pending',  -- pending | completed | failed
+            gateway_ref     TEXT,            -- gateway's own transaction id / ref
+            created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            completed_at    TIMESTAMP,
+            FOREIGN KEY (member_id) REFERENCES members (id)
+        )
+    ''')
+
     # Audit log table
     db.execute('''
         CREATE TABLE IF NOT EXISTS audit_log (
@@ -332,7 +351,14 @@ def init_db():
         ('entrance_fee', '2000', 'Entrance fee'),
         ('reentry_fee', '5000', 'Re-entry fee'),
         ('loan_application_fee', '1000', 'Loan application fee'),
-        ('statement_fee', '500', 'Statement request fee')
+        ('statement_fee', '500', 'Statement request fee'),
+        # ── Payment gateway settings (leave blank to disable online payments) ──
+        ('active_gateway',          'paystack',  'Active payment gateway: paystack or flutterwave'),
+        ('paystack_public_key',     '',          'Paystack publishable key (pk_...)'),
+        ('paystack_secret_key',     '',          'Paystack secret key (sk_...)'),
+        ('flutterwave_public_key',  '',          'Flutterwave public key (FLWPUBK_...)'),
+        ('flutterwave_secret_key',  '',          'Flutterwave secret key (FLWSECK_...)'),
+        ('flutterwave_webhook_hash','',          'Flutterwave webhook verification hash'),
     ]
     
     for key, value, desc in default_settings:

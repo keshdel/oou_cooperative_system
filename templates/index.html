@@ -1,128 +1,870 @@
-{% extends "base.html" %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ coop_name }} — Cooperative Management System</title>
 
-{% block content %}
-<div class="container">
-    <div class="row justify-content-center align-items-center min-vh-100">
-        <div class="col-md-8 text-center">
-            <div class="card p-5">
-                <i class="fas fa-hand-holding-usd fa-5x text-primary mb-4"></i>
-                
-                <h1 class="display-4 mb-3">{{ coop_name }}</h1>
-                
-                <h2 class="h4 text-muted mb-4">Cooperative Accounting & Management System</h2>
-                
-                <p class="lead mb-4">
-                    A complete, Ready to use accounting software designed specifically for 
-                    the {{ coop_name }}, 
-                    compliant with all Bye-laws and cooperative accounting standards.
-                </p>
-                
-                <div class="row g-4 mb-5">
-                    <div class="col-md-4">
-                        <div class="card h-100">
-                            <div class="card-body">
-                                <i class="fas fa-users fa-3x text-primary mb-3"></i>
-                                <h5>Member Management</h5>
-                                <p class="small">Manage member records, nominations, and status</p>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="col-md-4">
-                        <div class="card h-100">
-                            <div class="card-body">
-                                <i class="fas fa-piggy-bank fa-3x text-success mb-3"></i>
-                                <h5>Savings & Deposits</h5>
-                                <p class="small">Track monthly savings with automatic late fee calculation</p>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="col-md-4">
-                        <div class="card h-100">
-                            <div class="card-body">
-                                <i class="fas fa-hand-holding-usd fa-3x text-warning mb-3"></i>
-                                <h5>Loan Administration</h5>
-                                <p class="small">Process loans with interest, insurance, and repayment tracking</p>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="col-md-4">
-                        <div class="card h-100">
-                            <div class="card-body">
-                                <i class="fas fa-chart-line fa-3x text-info mb-3"></i>
-                                <h5>Investment Tracking</h5>
-                                <p class="small">Monitor all investments with approval workflow</p>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="col-md-4">
-                        <div class="card h-100">
-                            <div class="card-body">
-                                <i class="fas fa-file-alt fa-3x text-danger mb-3"></i>
-                                <h5>Financial Reports</h5>
-                                <p class="small">Generate comprehensive reports and surplus appropriation</p>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="col-md-4">
-                        <div class="card h-100">
-                            <div class="card-body">
-                                <i class="fas fa-shield-alt fa-3x text-secondary mb-3"></i>
-                                <h5>Role-Based Access</h5>
-                                <p class="small">Secure authentication with different user roles</p>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="d-grid gap-3 d-sm-flex justify-content-sm-center">
-                    <a href="{{ url_for('auth.login') }}" class="btn btn-primary btn-lg px-4 gap-3">
-                        <i class="fas fa-sign-in-alt"></i> Login to System
-                    </a>
-                    
-                    <a href="/setup" class="btn btn-outline-secondary btn-lg px-4">
-                        <i class="fas fa-tools"></i> Initial Setup
-                    </a>
-                </div>
-                
-                <hr class="my-5">
-                
-                <div class="row text-start">
-                    <div class="col-md-6">
-                        <h5><i class="fas fa-check-circle text-success"></i> Key Features</h5>
-                        <ul class="list-unstyled">
-                            <li><i class="fas fa-check text-success"></i> Member registration & management</li>
-                            <li><i class="fas fa-check text-success"></i> Monthly savings with late fees (10%)</li>
-                            <li><i class="fas fa-check text-success"></i> Loan processing (max 2x savings)</li>
-                            <li><i class="fas fa-check text-success"></i> Interest calculation (max 11%)</li>
-                            <li><i class="fas fa-check text-success"></i> Insurance premium deduction (1%)</li>
-                        </ul>
-                    </div>
-                    <div class="col-md-6">
-                        <h5><i class="fas fa-gavel text-warning"></i> Bye-Laws Compliance</h5>
-                        <ul class="list-unstyled">
-                            <li><i class="fas fa-check text-warning"></i> Section 4: Membership & Liability</li>
-                            <li><i class="fas fa-check text-warning"></i> Section 8: Creation of Funds</li>
-                            <li><i class="fas fa-check text-warning"></i> Section 9: Loan Administration</li>
-                            <li><i class="fas fa-check text-warning"></i> Section 10: Disposal of Surplus</li>
-                            <li><i class="fas fa-check text-warning"></i> Section 11: Books of Accounts</li>
-                        </ul>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="mt-4 text-muted">
-                <small>
-                    <i class="fas fa-shield-alt"></i> Production Ready | 
-                    <i class="fas fa-database"></i> SQLite Database | 
-                    <i class="fas fa-lock"></i> Secure Authentication
-                </small>
-            </div>
+  <!-- Bootstrap 5 -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Font Awesome 6 -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --primary:   #1a56db;
+      --primary-d: #1341a8;
+      --accent:    #f59e0b;
+      --dark:      #0f172a;
+      --text:      #374151;
+      --muted:     #6b7280;
+      --surface:   #f8fafc;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      color: var(--text);
+      background: #fff;
+      margin: 0;
+    }
+
+    /* ── Navbar ── */
+    .lp-nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
+      transition: background .35s, box-shadow .35s;
+      padding: 1rem 0;
+    }
+    .lp-nav.scrolled {
+      background: rgba(255,255,255,.97) !important;
+      box-shadow: 0 2px 20px rgba(0,0,0,.08);
+      padding: .6rem 0;
+    }
+    .lp-nav .navbar-brand { font-weight: 800; font-size: 1.25rem; }
+    .lp-nav .nav-link { font-weight: 500; color: rgba(255,255,255,.85); transition: color .2s; }
+    .lp-nav.scrolled .nav-link { color: var(--text); }
+    .lp-nav .nav-link:hover { color: #fff; }
+    .lp-nav.scrolled .nav-link:hover { color: var(--primary); }
+    .lp-nav.scrolled .navbar-brand { color: var(--dark); }
+
+    /* ── Hero ── */
+    .hero {
+      min-height: 100vh;
+      background: linear-gradient(135deg, #0f172a 0%, #1a3a6e 50%, #1a56db 100%);
+      display: flex; align-items: center;
+      position: relative; overflow: hidden;
+      padding-top: 80px;
+    }
+    .hero::before {
+      content: '';
+      position: absolute; inset: 0;
+      background:
+        radial-gradient(circle at 20% 80%, rgba(245,158,11,.12) 0%, transparent 50%),
+        radial-gradient(circle at 80% 20%, rgba(99,102,241,.15) 0%, transparent 50%);
+    }
+    .hero-badge {
+      display: inline-flex; align-items: center; gap: .4rem;
+      background: rgba(255,255,255,.12);
+      border: 1px solid rgba(255,255,255,.2);
+      border-radius: 50px; padding: .35rem 1rem;
+      font-size: .8rem; font-weight: 600; color: #fbbf24;
+      margin-bottom: 1.5rem;
+      backdrop-filter: blur(4px);
+    }
+    .hero h1 {
+      font-size: clamp(2.2rem, 5vw, 3.8rem);
+      font-weight: 800; color: #fff; line-height: 1.15;
+      margin-bottom: 1.25rem;
+    }
+    .hero h1 span { color: #fbbf24; }
+    .hero .lead { color: rgba(255,255,255,.78); font-size: 1.15rem; line-height: 1.7; }
+    .hero-cta .btn { padding: .85rem 2rem; font-weight: 600; border-radius: 50px; font-size: 1rem; }
+    .btn-hero-primary {
+      background: var(--accent); color: #fff; border: none;
+      box-shadow: 0 4px 20px rgba(245,158,11,.4);
+      transition: transform .2s, box-shadow .2s;
+    }
+    .btn-hero-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(245,158,11,.5); color:#fff; }
+    .btn-hero-outline {
+      background: transparent; color: #fff;
+      border: 2px solid rgba(255,255,255,.4);
+      transition: border-color .2s, background .2s;
+    }
+    .btn-hero-outline:hover { border-color: #fff; background: rgba(255,255,255,.1); color:#fff; }
+
+    /* floating cards in hero */
+    .hero-card {
+      background: rgba(255,255,255,.08);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,.15);
+      border-radius: 16px; padding: 1.25rem 1.5rem;
+      color: #fff;
+    }
+    .hero-stat-num { font-size: 2rem; font-weight: 800; color: #fbbf24; }
+    .hero-stat-lbl { font-size: .78rem; color: rgba(255,255,255,.65); }
+
+    /* ── Stats bar ── */
+    .stats-bar {
+      background: var(--dark);
+      padding: 2.5rem 0;
+    }
+    .stat-item { text-align: center; }
+    .stat-num  { font-size: 2.5rem; font-weight: 800; color: var(--accent); line-height: 1; }
+    .stat-lbl  { color: rgba(255,255,255,.55); font-size: .85rem; margin-top: .25rem; }
+
+    /* ── Section titles ── */
+    .section-label {
+      font-size: .78rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .12em; color: var(--primary);
+    }
+    .section-title { font-size: clamp(1.6rem, 3vw, 2.4rem); font-weight: 800; color: var(--dark); }
+
+    /* ── Feature tabs ── */
+    .features-section { background: var(--surface); }
+    .feat-tabs .nav-link {
+      border: none; border-radius: 12px;
+      padding: 1rem 1.25rem;
+      color: var(--muted); font-weight: 500;
+      transition: background .2s, color .2s;
+      display: flex; align-items: center; gap: .75rem;
+      margin-bottom: .5rem;
+    }
+    .feat-tabs .nav-link .tab-icon {
+      width: 40px; height: 40px; border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.1rem; flex-shrink: 0;
+      transition: background .2s;
+    }
+    .feat-tabs .nav-link .tab-text-lbl { font-size: .95rem; display: block; }
+    .feat-tabs .nav-link .tab-text-sub { font-size: .78rem; color: var(--muted); display: block; }
+    .feat-tabs .nav-link.active,
+    .feat-tabs .nav-link:hover {
+      background: #fff;
+      color: var(--dark);
+      box-shadow: 0 4px 20px rgba(0,0,0,.07);
+    }
+    .feat-tabs .nav-link.active .tab-text-sub { color: var(--muted); }
+
+    /* tab icon colours */
+    .tab-icon.blue   { background: #dbeafe; color: #1d4ed8; }
+    .tab-icon.green  { background: #dcfce7; color: #16a34a; }
+    .tab-icon.amber  { background: #fef3c7; color: #d97706; }
+    .tab-icon.indigo { background: #e0e7ff; color: #4338ca; }
+    .tab-icon.red    { background: #fee2e2; color: #dc2626; }
+    .tab-icon.purple { background: #f3e8ff; color: #7c3aed; }
+    .feat-tabs .nav-link.active .tab-icon.blue   { background: #1d4ed8; color: #fff; }
+    .feat-tabs .nav-link.active .tab-icon.green  { background: #16a34a; color: #fff; }
+    .feat-tabs .nav-link.active .tab-icon.amber  { background: #d97706; color: #fff; }
+    .feat-tabs .nav-link.active .tab-icon.indigo { background: #4338ca; color: #fff; }
+    .feat-tabs .nav-link.active .tab-icon.red    { background: #dc2626; color: #fff; }
+    .feat-tabs .nav-link.active .tab-icon.purple { background: #7c3aed; color: #fff; }
+
+    .tab-panel-card {
+      background: #fff;
+      border-radius: 20px;
+      padding: 2.5rem;
+      box-shadow: 0 8px 40px rgba(0,0,0,.06);
+      min-height: 420px;
+    }
+    .tab-panel-icon {
+      width: 64px; height: 64px; border-radius: 16px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.75rem; margin-bottom: 1.25rem;
+    }
+    .feature-bullet {
+      display: flex; align-items: flex-start; gap: .75rem;
+      margin-bottom: .85rem;
+    }
+    .feature-bullet .check {
+      width: 22px; height: 22px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: .65rem; flex-shrink: 0; margin-top: 2px;
+    }
+    .feature-bullet p { margin: 0; font-size: .95rem; line-height: 1.5; }
+    .feature-bullet strong { color: var(--dark); }
+
+    /* ── How it works ── */
+    .step-card {
+      border-radius: 20px; padding: 2rem;
+      background: #fff; height: 100%;
+      border: 1px solid #e5e7eb;
+      transition: transform .25s, box-shadow .25s;
+    }
+    .step-card:hover { transform: translateY(-4px); box-shadow: 0 12px 40px rgba(0,0,0,.08); }
+    .step-num {
+      width: 52px; height: 52px; border-radius: 50%;
+      background: var(--primary); color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.3rem; font-weight: 800; margin-bottom: 1.25rem;
+    }
+    .step-connector {
+      position: absolute; top: 26px; left: calc(50% + 26px);
+      width: calc(100% - 52px);
+      height: 2px; background: #e5e7eb;
+    }
+
+    /* ── Compliance section ── */
+    .compliance-section { background: linear-gradient(135deg, #1e3a5f, #1a56db); }
+    .compliance-item {
+      display: flex; gap: 1rem; align-items: flex-start;
+      background: rgba(255,255,255,.08); border-radius: 12px;
+      padding: 1.25rem; border: 1px solid rgba(255,255,255,.12);
+      transition: background .2s;
+    }
+    .compliance-item:hover { background: rgba(255,255,255,.13); }
+    .compliance-num {
+      font-size: .75rem; font-weight: 700; color: #fbbf24;
+      background: rgba(245,158,11,.15); border-radius: 6px;
+      padding: .25rem .5rem; flex-shrink: 0; margin-top: .1rem;
+    }
+
+    /* ── CTA banner ── */
+    .cta-section {
+      background: radial-gradient(circle at center, #f0f5ff, #e8efff);
+    }
+    .cta-card {
+      background: linear-gradient(135deg, var(--primary), var(--primary-d));
+      border-radius: 24px; padding: 4rem 3rem;
+      box-shadow: 0 20px 60px rgba(26,86,219,.3);
+    }
+
+    /* ── Footer ── */
+    .lp-footer {
+      background: var(--dark);
+      padding: 2rem 0;
+    }
+
+    /* ── Animations ── */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(24px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .fade-up { opacity: 0; animation: fadeUp .6s ease forwards; }
+    .delay-1 { animation-delay: .15s; }
+    .delay-2 { animation-delay: .3s;  }
+    .delay-3 { animation-delay: .45s; }
+    .delay-4 { animation-delay: .6s;  }
+
+    /* ── Responsive ── */
+    @media (max-width: 768px) {
+      .feat-tabs { flex-direction: row !important; overflow-x: auto; flex-wrap: nowrap !important; padding-bottom: .5rem; }
+      .feat-tabs .nav-link { min-width: 140px; }
+      .cta-card { padding: 2.5rem 1.5rem; }
+      .hero { padding-top: 90px; padding-bottom: 2rem; }
+      .hero-stats-row { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════
+     NAVBAR
+═══════════════════════════════════════════════ -->
+<nav class="lp-nav" id="lpNav">
+  <div class="container">
+    <div class="d-flex align-items-center justify-content-between">
+      <a class="navbar-brand text-white d-flex align-items-center gap-2" href="#">
+        <i class="fas fa-hand-holding-usd fa-lg text-warning"></i>
+        <span>{{ coop_name }}</span>
+      </a>
+      <div class="d-flex align-items-center gap-3">
+        <div class="d-none d-md-flex gap-3 me-2">
+          <a class="nav-link" href="#features">Features</a>
+          <a class="nav-link" href="#how-it-works">How It Works</a>
+          <a class="nav-link" href="#compliance">Compliance</a>
         </div>
+        <a href="{{ url_for('auth.login') }}"
+           class="btn btn-sm rounded-pill px-4 fw-600"
+           style="background:#fff;color:var(--primary);font-weight:600;transition:background .2s;">
+          <i class="fas fa-sign-in-alt me-1"></i>Sign In
+        </a>
+      </div>
     </div>
-</div>
-{% endblock %}
+  </div>
+</nav>
+
+
+<!-- ══════════════════════════════════════════════
+     HERO
+═══════════════════════════════════════════════ -->
+<section class="hero">
+  <div class="container position-relative" style="z-index:1">
+    <div class="row align-items-center g-5">
+
+      <!-- Left -->
+      <div class="col-lg-6">
+        <div class="hero-badge fade-up">
+          <i class="fas fa-shield-alt"></i> Bye-Laws Compliant · Production Ready
+        </div>
+        <h1 class="fade-up delay-1">
+          The smarter way to run <span>your cooperative</span>
+        </h1>
+        <p class="lead mb-4 fade-up delay-2">
+          A complete accounting and member-management platform built for
+          <strong style="color:#fff">{{ coop_name }}</strong>.
+          From savings tracking to loan disbursement — all in one place.
+        </p>
+        <div class="hero-cta d-flex flex-wrap gap-3 fade-up delay-3">
+          <a href="{{ url_for('auth.login') }}" class="btn btn-hero-primary">
+            <i class="fas fa-sign-in-alt me-2"></i>Login to System
+          </a>
+          <a href="#features" class="btn btn-hero-outline">
+            Explore Features <i class="fas fa-arrow-down ms-2"></i>
+          </a>
+        </div>
+        <!-- mini trust bar -->
+        <div class="d-flex flex-wrap gap-4 mt-4 fade-up delay-4">
+          <div class="d-flex align-items-center gap-2">
+            <i class="fas fa-check-circle text-success"></i>
+            <small style="color:rgba(255,255,255,.7)">Role-based access</small>
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            <i class="fas fa-check-circle text-success"></i>
+            <small style="color:rgba(255,255,255,.7)">Online payments</small>
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            <i class="fas fa-check-circle text-success"></i>
+            <small style="color:rgba(255,255,255,.7)">Audit trail</small>
+          </div>
+          <div class="d-flex align-items-center gap-2">
+            <i class="fas fa-check-circle text-success"></i>
+            <small style="color:rgba(255,255,255,.7)">PDF statements</small>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right — floating stat cards -->
+      <div class="col-lg-6 d-none d-lg-block hero-stats-row">
+        <div class="row g-3">
+          <div class="col-6">
+            <div class="hero-card">
+              <div class="hero-stat-num">₦∞</div>
+              <div class="hero-stat-lbl">No transaction limit</div>
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="hero-card">
+              <div class="hero-stat-num">5</div>
+              <div class="hero-stat-lbl">Loan types supported</div>
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="hero-card">
+              <i class="fas fa-lock mb-2" style="color:#fbbf24;font-size:1.5rem"></i>
+              <div style="font-size:.9rem;font-weight:600">Bank-grade security</div>
+              <div class="hero-stat-lbl">Encrypted sessions</div>
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="hero-card">
+              <div class="hero-stat-num">3</div>
+              <div class="hero-stat-lbl">Interest methods (flat, reducing)</div>
+            </div>
+          </div>
+          <div class="col-12">
+            <div class="hero-card d-flex align-items-center gap-3">
+              <div>
+                <i class="fas fa-credit-card fa-2x" style="color:#fbbf24"></i>
+              </div>
+              <div>
+                <div style="font-weight:600">Paystack &amp; Flutterwave</div>
+                <div class="hero-stat-lbl">Members pay savings &amp; loans online</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- scroll hint -->
+  <a href="#stats" class="position-absolute bottom-0 start-50 translate-middle-x pb-4 text-white-50"
+     style="text-decoration:none;animation:bounce 2s infinite">
+    <i class="fas fa-chevron-down"></i>
+  </a>
+</section>
+<style>
+@keyframes bounce {
+  0%,100%{transform:translateX(-50%) translateY(0)}
+  50%{transform:translateX(-50%) translateY(6px)}
+}
+</style>
+
+
+<!-- ══════════════════════════════════════════════
+     STATS BAR
+═══════════════════════════════════════════════ -->
+<section class="stats-bar" id="stats">
+  <div class="container">
+    <div class="row g-4 justify-content-center">
+      {% set stats = [
+        ('6+',   'Configurable user roles'),
+        ('100%', 'Bye-laws compliant'),
+        ('2×',   'Loan-to-savings multiplier'),
+        ('0',    'Vendor lock-in'),
+        ('A4',   'Print-ready PDF statements'),
+      ] %}
+      {% for num, lbl in stats %}
+      <div class="col-6 col-md-4 col-lg-2 stat-item">
+        <div class="stat-num">{{ num }}</div>
+        <div class="stat-lbl">{{ lbl }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════
+     FEATURE TABS
+═══════════════════════════════════════════════ -->
+<section class="features-section py-6" id="features" style="padding:5rem 0">
+  <div class="container">
+
+    <div class="text-center mb-5">
+      <div class="section-label">Everything you need</div>
+      <h2 class="section-title mt-1">Powerful features, zero complexity</h2>
+      <p class="text-muted mt-2" style="max-width:540px;margin:auto">
+        Click any module below to explore how it works and what it covers.
+      </p>
+    </div>
+
+    <div class="row g-4">
+      <!-- Tab nav (left column) -->
+      <div class="col-lg-4">
+        <div class="nav flex-column feat-tabs" id="featureTabs" role="tablist">
+
+          {% set tabs = [
+            ('members',    'Member Management',    'fa-users',               'blue',   'Profiles, nominees, bank details'),
+            ('savings',    'Savings & Deposits',   'fa-piggy-bank',          'green',  'Monthly tracking with late fees'),
+            ('loans',      'Loan Administration',  'fa-hand-holding-usd',    'amber',  '5 loan types, 3 interest methods'),
+            ('reports',    'Financial Reports',    'fa-chart-bar',           'indigo', 'Surplus, P&L, member statements'),
+            ('investments','Investment Tracking',  'fa-chart-line',          'red',    'Fixed deposits, bonds, shares'),
+            ('security',   'Security & Access',    'fa-shield-alt',          'purple', 'Roles, audit log, 2FA ready'),
+          ] %}
+
+          {% for key, label, icon, colour, sub in tabs %}
+          <a class="nav-link {% if loop.first %}active{% endif %}"
+             id="tab-{{ key }}"
+             data-bs-toggle="tab" href="#panel-{{ key }}" role="tab">
+            <span class="tab-icon {{ colour }}"><i class="fas {{ icon }}"></i></span>
+            <span>
+              <span class="tab-text-lbl">{{ label }}</span>
+              <span class="tab-text-sub">{{ sub }}</span>
+            </span>
+          </a>
+          {% endfor %}
+
+        </div>
+      </div>
+
+      <!-- Tab content (right column) -->
+      <div class="col-lg-8">
+        <div class="tab-content" id="featureTabsContent">
+
+          <!-- ── Members ── -->
+          <div class="tab-pane fade show active" id="panel-members" role="tabpanel">
+            <div class="tab-panel-card">
+              <div class="tab-panel-icon" style="background:#dbeafe;color:#1d4ed8">
+                <i class="fas fa-users"></i>
+              </div>
+              <h3 class="fw-700 mb-1" style="font-weight:700">Member Management</h3>
+              <p class="text-muted mb-4">A full member registry with everything your cooperative needs — from onboarding to exit.</p>
+              <div class="row g-3">
+                <div class="col-md-6">
+                  {% for item in [
+                    ('Complete profiles', 'Name, photo, occupation, address, date of birth'),
+                    ('Nominee records',   'Primary &amp; alternate nominees with contact details'),
+                    ('Bank details',      'BVN, NIN, account name, number, and bank'),
+                    ('Member portal',     'Self-service login for every member with an email'),
+                  ] %}
+                  <div class="feature-bullet">
+                    <span class="check" style="background:#dbeafe;color:#1d4ed8"><i class="fas fa-check fa-xs"></i></span>
+                    <p><strong>{{ item[0] }}</strong><br><span class="text-muted small">{{ item[1] }}</span></p>
+                  </div>
+                  {% endfor %}
+                </div>
+                <div class="col-md-6">
+                  {% for item in [
+                    ('Membership card',    'Generate printable ID cards with QR codes'),
+                    ('Status tracking',    'Active, inactive, suspended — with audit trail'),
+                    ('Bulk import',        'CSV migration from any existing system'),
+                    ('Auto portal login',  'Temporary password created on import; member resets on first login'),
+                  ] %}
+                  <div class="feature-bullet">
+                    <span class="check" style="background:#dbeafe;color:#1d4ed8"><i class="fas fa-check fa-xs"></i></span>
+                    <p><strong>{{ item[0] }}</strong><br><span class="text-muted small">{{ item[1] }}</span></p>
+                  </div>
+                  {% endfor %}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── Savings ── -->
+          <div class="tab-pane fade" id="panel-savings" role="tabpanel">
+            <div class="tab-panel-card">
+              <div class="tab-panel-icon" style="background:#dcfce7;color:#16a34a">
+                <i class="fas fa-piggy-bank"></i>
+              </div>
+              <h3 class="fw-700 mb-1" style="font-weight:700">Savings & Deposits</h3>
+              <p class="text-muted mb-4">Track every kobo members save — with automatic late fees, running balances, and online payment.</p>
+              <div class="row g-3">
+                <div class="col-md-6">
+                  {% for item in [
+                    ('Monthly contributions', 'Record and verify each member\'s monthly deposit'),
+                    ('Running balance',       'Real-time cumulative balance per member across all time'),
+                    ('Late fee automation',   'Configurable % penalty applied when payment misses due date'),
+                    ('Date-range filters',    'Filter savings history by custom period, status, or year'),
+                  ] %}
+                  <div class="feature-bullet">
+                    <span class="check" style="background:#dcfce7;color:#16a34a"><i class="fas fa-check fa-xs"></i></span>
+                    <p><strong>{{ item[0] }}</strong><br><span class="text-muted small">{{ item[1] }}</span></p>
+                  </div>
+                  {% endfor %}
+                </div>
+                <div class="col-md-6">
+                  {% for item in [
+                    ('Annual summaries',   'Gross saved, late fees, and net per calendar year'),
+                    ('Online payments',    'Paystack &amp; Flutterwave — member pays from the portal'),
+                    ('Print-optimised',   'A4-ready savings statement with letterhead'),
+                    ('Bulk CSV import',   'Migrate years of savings history in one upload'),
+                  ] %}
+                  <div class="feature-bullet">
+                    <span class="check" style="background:#dcfce7;color:#16a34a"><i class="fas fa-check fa-xs"></i></span>
+                    <p><strong>{{ item[0] }}</strong><br><span class="text-muted small">{{ item[1] }}</span></p>
+                  </div>
+                  {% endfor %}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── Loans ── -->
+          <div class="tab-pane fade" id="panel-loans" role="tabpanel">
+            <div class="tab-panel-card">
+              <div class="tab-panel-icon" style="background:#fef3c7;color:#d97706">
+                <i class="fas fa-hand-holding-usd"></i>
+              </div>
+              <h3 class="fw-700 mb-1" style="font-weight:700">Loan Administration</h3>
+              <p class="text-muted mb-4">Five loan types, three interest computation methods, full amortisation schedules, and online repayment.</p>
+              <div class="row g-3">
+                <div class="col-md-6">
+                  {% for item in [
+                    ('5 loan types',         'Regular · Housing · Emergency · Asset Purchase · School Fees'),
+                    ('3 interest methods',    'Flat rate · Declining balance (annual) · Declining balance (monthly)'),
+                    ('Amortisation schedule', 'Full instalment table: principal, interest, balance per month'),
+                    ('Eligibility engine',    'Auto-check savings threshold, tenure, and multiplier limits'),
+                  ] %}
+                  <div class="feature-bullet">
+                    <span class="check" style="background:#fef3c7;color:#d97706"><i class="fas fa-check fa-xs"></i></span>
+                    <p><strong>{{ item[0] }}</strong><br><span class="text-muted small">{{ item[1] }}</span></p>
+                  </div>
+                  {% endfor %}
+                </div>
+                <div class="col-md-6">
+                  {% for item in [
+                    ('Approval workflow',  'Apply → Review → Approve/Reject → Disburse'),
+                    ('Repayment tracking','Principal, interest, and penalty breakdown per payment'),
+                    ('Online repayment',  'Members pay instalments directly via Paystack / Flutterwave'),
+                    ('Bulk import',       'Migrate historical loans and repayments with CSV upload'),
+                  ] %}
+                  <div class="feature-bullet">
+                    <span class="check" style="background:#fef3c7;color:#d97706"><i class="fas fa-check fa-xs"></i></span>
+                    <p><strong>{{ item[0] }}</strong><br><span class="text-muted small">{{ item[1] }}</span></p>
+                  </div>
+                  {% endfor %}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── Reports ── -->
+          <div class="tab-pane fade" id="panel-reports" role="tabpanel">
+            <div class="tab-panel-card">
+              <div class="tab-panel-icon" style="background:#e0e7ff;color:#4338ca">
+                <i class="fas fa-chart-bar"></i>
+              </div>
+              <h3 class="fw-700 mb-1" style="font-weight:700">Financial Reports</h3>
+              <p class="text-muted mb-4">Accountant-grade statements and cooperative surplus reports, printable in seconds.</p>
+              <div class="row g-3">
+                <div class="col-md-6">
+                  {% for item in [
+                    ('Statement of Account',  'Unified chronological ledger: savings, loan disbursements, and repayments in one table'),
+                    ('Running balances',       '3 running columns: Savings Balance · Loan Balance · Net Position'),
+                    ('Opening &amp; closing',  'Pre-period opening balance so every figure reconciles'),
+                    ('Surplus appropriation',  'Compute and distribute surplus per cooperative bye-laws'),
+                  ] %}
+                  <div class="feature-bullet">
+                    <span class="check" style="background:#e0e7ff;color:#4338ca"><i class="fas fa-check fa-xs"></i></span>
+                    <p><strong>{{ item[0] }}</strong><br><span class="text-muted small">{{ item[1] }}</span></p>
+                  </div>
+                  {% endfor %}
+                </div>
+                <div class="col-md-6">
+                  {% for item in [
+                    ('Certification block', 'Member name, period, dual signature lines, stamp space'),
+                    ('Date-range filters',  'Quick shortcuts: This Year, Last Year, All Time'),
+                    ('Period summary',      'Total saved, loans disbursed, repaid, fees charged'),
+                    ('Print CSS',           '@page A4 margins, sidebar hidden, borders visible'),
+                  ] %}
+                  <div class="feature-bullet">
+                    <span class="check" style="background:#e0e7ff;color:#4338ca"><i class="fas fa-check fa-xs"></i></span>
+                    <p><strong>{{ item[0] }}</strong><br><span class="text-muted small">{{ item[1] }}</span></p>
+                  </div>
+                  {% endfor %}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── Investments ── -->
+          <div class="tab-pane fade" id="panel-investments" role="tabpanel">
+            <div class="tab-panel-card">
+              <div class="tab-panel-icon" style="background:#fee2e2;color:#dc2626">
+                <i class="fas fa-chart-line"></i>
+              </div>
+              <h3 class="fw-700 mb-1" style="font-weight:700">Investment Tracking</h3>
+              <p class="text-muted mb-4">Keep full visibility of every kobo the cooperative puts to work — fixed deposits, bonds, shares, and more.</p>
+              <div class="row g-3">
+                <div class="col-md-6">
+                  {% for item in [
+                    ('Multiple asset types',  'Fixed deposits, treasury bills, bonds, equity, mutual funds'),
+                    ('Return tracking',       'Expected vs actual return with maturity date alerts'),
+                    ('Risk classification',   'Low / Medium / High risk per instrument'),
+                    ('Institution records',   'Bank, fund manager, or broker per investment'),
+                  ] %}
+                  <div class="feature-bullet">
+                    <span class="check" style="background:#fee2e2;color:#dc2626"><i class="fas fa-check fa-xs"></i></span>
+                    <p><strong>{{ item[0] }}</strong><br><span class="text-muted small">{{ item[1] }}</span></p>
+                  </div>
+                  {% endfor %}
+                </div>
+                <div class="col-md-6">
+                  {% for item in [
+                    ('Approval workflow', 'Investments require authorised officer approval before recording'),
+                    ('Portfolio view',    'Current value vs cost across all positions'),
+                    ('Bulk import',       'Migrate investment history via CSV'),
+                    ('Audit trail',       'Every change logged with user, timestamp, and IP'),
+                  ] %}
+                  <div class="feature-bullet">
+                    <span class="check" style="background:#fee2e2;color:#dc2626"><i class="fas fa-check fa-xs"></i></span>
+                    <p><strong>{{ item[0] }}</strong><br><span class="text-muted small">{{ item[1] }}</span></p>
+                  </div>
+                  {% endfor %}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── Security ── -->
+          <div class="tab-pane fade" id="panel-security" role="tabpanel">
+            <div class="tab-panel-card">
+              <div class="tab-panel-icon" style="background:#f3e8ff;color:#7c3aed">
+                <i class="fas fa-shield-alt"></i>
+              </div>
+              <h3 class="fw-700 mb-1" style="font-weight:700">Security & Access Control</h3>
+              <p class="text-muted mb-4">Fine-grained role permissions, tamper-evident audit logs, and secure-by-default configuration.</p>
+              <div class="row g-3">
+                <div class="col-md-6">
+                  {% for item in [
+                    ('6 role levels',          'Admin · President · Secretary · Treasurer · Financial Secretary · Member'),
+                    ('Rate-limited login',      '15-minute lockout after repeated failed attempts'),
+                    ('Forced password change',  'Imported members must set a new password on first login'),
+                    ('Cryptographic passwords', 'Werkzeug PBKDF2 hashing — no plaintext storage'),
+                  ] %}
+                  <div class="feature-bullet">
+                    <span class="check" style="background:#f3e8ff;color:#7c3aed"><i class="fas fa-check fa-xs"></i></span>
+                    <p><strong>{{ item[0] }}</strong><br><span class="text-muted small">{{ item[1] }}</span></p>
+                  </div>
+                  {% endfor %}
+                </div>
+                <div class="col-md-6">
+                  {% for item in [
+                    ('Full audit log',         'Every login, create, update, and delete recorded with IP &amp; user agent'),
+                    ('Secure SECRET_KEY',       'Server refuses to start if key is absent or a known-weak default'),
+                    ('CSRF protection',         'SameSite=Lax cookies block cross-site POST by default'),
+                    ('Webhook validation',      'HMAC-SHA512 (Paystack) and hash comparison (Flutterwave) on all webhooks'),
+                  ] %}
+                  <div class="feature-bullet">
+                    <span class="check" style="background:#f3e8ff;color:#7c3aed"><i class="fas fa-check fa-xs"></i></span>
+                    <p><strong>{{ item[0] }}</strong><br><span class="text-muted small">{{ item[1] }}</span></p>
+                  </div>
+                  {% endfor %}
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div><!-- /tab-content -->
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════
+     HOW IT WORKS
+═══════════════════════════════════════════════ -->
+<section style="padding:5rem 0;background:#fff" id="how-it-works">
+  <div class="container">
+    <div class="text-center mb-5">
+      <div class="section-label">Simple process</div>
+      <h2 class="section-title mt-1">Up and running in three steps</h2>
+    </div>
+
+    <div class="row g-4 position-relative">
+      {% set steps = [
+        ('1', 'fa-database',     '#1d4ed8', '#dbeafe', 'Set up your cooperative',
+          'Create admin accounts, configure cooperative details, interest rates, loan rules, and payment gateway keys — all from the Settings page.'),
+        ('2', 'fa-users',        '#16a34a', '#dcfce7', 'Import or register members',
+          'Upload your existing member roster via CSV. Portal logins are created automatically. Each member receives a secure temporary password they must change on first login.'),
+        ('3', 'fa-chart-line',   '#d97706', '#fef3c7', 'Run your cooperative',
+          'Record savings, process loan applications, disburse funds, accept online repayments, generate reports, and view the live financial dashboard — every day.'),
+      ] %}
+      {% for num, icon, col, bg, title, desc in steps %}
+      <div class="col-md-4">
+        <div class="step-card">
+          <div class="step-num" style="background:{{ col }}">{{ num }}</div>
+          <div class="mb-3">
+            <span style="background:{{ bg }};color:{{ col }};padding:.6rem .85rem;border-radius:10px;font-size:1.25rem">
+              <i class="fas {{ icon }}"></i>
+            </span>
+          </div>
+          <h5 class="fw-700" style="font-weight:700">{{ title }}</h5>
+          <p class="text-muted small mb-0">{{ desc }}</p>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════
+     COMPLIANCE
+═══════════════════════════════════════════════ -->
+<section class="compliance-section py-5" id="compliance" style="padding:5rem 0 !important">
+  <div class="container">
+    <div class="row align-items-center g-5">
+      <div class="col-lg-5">
+        <div class="section-label text-warning">Built to the rules</div>
+        <h2 class="section-title text-white mt-2">Fully compliant with your cooperative's Bye-Laws</h2>
+        <p style="color:rgba(255,255,255,.7);line-height:1.8" class="mt-3">
+          Every financial calculation, approval flow, and report format in this system
+          was designed to match the specific sections of your cooperative's bye-laws —
+          not a generic template.
+        </p>
+        <a href="{{ url_for('auth.login') }}" class="btn btn-hero-primary mt-3">
+          <i class="fas fa-sign-in-alt me-2"></i>Access the System
+        </a>
+      </div>
+      <div class="col-lg-7">
+        <div class="row g-3">
+          {% set byelaws = [
+            ('§4',  'Membership & Liability',      'Registration rules, entrance fees, membership rights and obligations.'),
+            ('§8',  'Creation of Funds',           'Reserve fund, dividend fund, education fund — managed automatically.'),
+            ('§9',  'Loan Administration',         'Maximum amounts (2× savings), interest caps, guarantor requirements.'),
+            ('§10', 'Disposal of Surplus',         'Surplus appropriation report generated automatically at year-end.'),
+            ('§11', 'Books of Accounts',           'Ledger, savings register, loan register — all maintained and exportable.'),
+            ('§6',  'Officers & Authorisation',    'Role-based approval: only authorised officers can disburse or approve.'),
+          ] %}
+          {% for num, title, desc in byelaws %}
+          <div class="col-md-6">
+            <div class="compliance-item">
+              <span class="compliance-num">{{ num }}</span>
+              <div>
+                <div style="font-weight:600;color:#fff;font-size:.9rem">{{ title }}</div>
+                <div style="color:rgba(255,255,255,.6);font-size:.8rem;margin-top:.25rem">{{ desc }}</div>
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════
+     FINAL CTA
+═══════════════════════════════════════════════ -->
+<section class="cta-section py-5" style="padding:5rem 0 !important">
+  <div class="container">
+    <div class="cta-card text-center text-white">
+      <div class="mb-3">
+        <i class="fas fa-hand-holding-usd fa-3x" style="color:#fbbf24"></i>
+      </div>
+      <h2 style="font-weight:800;font-size:2rem">Ready to modernise your cooperative?</h2>
+      <p style="color:rgba(255,255,255,.8);max-width:480px;margin:.75rem auto 2rem">
+        Everything is configured and waiting. Log in to the dashboard and start managing
+        your members, savings, and loans today.
+      </p>
+      <div class="d-flex justify-content-center gap-3 flex-wrap">
+        <a href="{{ url_for('auth.login') }}" class="btn btn-hero-primary btn-lg">
+          <i class="fas fa-sign-in-alt me-2"></i>Login to System
+        </a>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════
+     FOOTER
+═══════════════════════════════════════════════ -->
+<footer class="lp-footer">
+  <div class="container">
+    <div class="row align-items-center">
+      <div class="col-md-6 text-white-50 small">
+        <i class="fas fa-hand-holding-usd text-warning me-2"></i>
+        {{ coop_name }} &mdash; Cooperative Management System
+      </div>
+      <div class="col-md-6 text-md-end text-white-50 small mt-2 mt-md-0">
+        <i class="fas fa-shield-alt me-1"></i> Secure &nbsp;·&nbsp;
+        <i class="fas fa-database me-1"></i> SQLite &nbsp;·&nbsp;
+        <i class="fas fa-lock me-1"></i> Encrypted sessions
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+<!-- Bootstrap JS -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+// Navbar scroll effect
+const nav = document.getElementById('lpNav');
+window.addEventListener('scroll', () => {
+  if (window.scrollY > 40) { nav.classList.add('scrolled'); }
+  else                      { nav.classList.remove('scrolled'); }
+}, { passive: true });
+
+// Smooth scroll for anchor links
+document.querySelectorAll('a[href^="#"]').forEach(a => {
+  a.addEventListener('click', e => {
+    const target = document.querySelector(a.getAttribute('href'));
+    if (target) { e.preventDefault(); target.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+  });
+});
+
+// Animate section headings as they enter view
+const observer = new IntersectionObserver(entries => {
+  entries.forEach(e => {
+    if (e.isIntersecting) { e.target.style.animationPlayState = 'running'; }
+  });
+}, { threshold: 0.15 });
+document.querySelectorAll('.fade-up').forEach(el => {
+  el.style.animationPlayState = 'paused';
+  observer.observe(el);
+});
+</script>
+
+</body>
+</html>

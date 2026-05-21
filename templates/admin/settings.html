@@ -49,6 +49,11 @@
                     </a>
                 </li>
                 <li class="nav-item">
+                    <a class="nav-link" id="payments-tab" data-bs-toggle="tab" href="#payments-settings" role="tab">
+                        <i class="fas fa-credit-card"></i> Payments
+                    </a>
+                </li>
+                <li class="nav-item">
                     <a class="nav-link" id="audit-tab" data-bs-toggle="tab" href="#audit" role="tab">
                         <i class="fas fa-history"></i> Audit Log
                     </a>
@@ -1034,6 +1039,127 @@
                         </table>
                     </div>
                 </div>
+
+                <!-- ── PAYMENTS TAB ── -->
+                <div class="tab-pane fade" id="payments-settings" role="tabpanel">
+                  <form method="POST" action="{{ url_for('admin_panel.update_settings') }}">
+
+                    <!-- Active Gateway -->
+                    <div class="row mb-4">
+                      <div class="col-12">
+                        <h5 class="text-primary mb-3">
+                          <i class="fas fa-credit-card me-2"></i>Online Payment Gateway
+                          <small class="text-muted fw-normal fs-6 ms-2">Enables members to pay savings &amp; loan repayments online</small>
+                        </h5>
+                      </div>
+                      <div class="col-md-4">
+                        <label class="form-label fw-semibold">Active Gateway</label>
+                        <select class="form-select" name="active_gateway" id="gatewaySelect" onchange="toggleGatewayPanels()">
+                          <option value="paystack"     {% if settings.active_gateway|default('paystack') == 'paystack'     %}selected{% endif %}>Paystack</option>
+                          <option value="flutterwave"  {% if settings.active_gateway|default('') == 'flutterwave'  %}selected{% endif %}>Flutterwave</option>
+                        </select>
+                        <div class="form-text">Leave API keys blank to disable online payments.</div>
+                      </div>
+                    </div>
+
+                    <!-- Paystack panel -->
+                    <div id="paystackPanel" class="border rounded p-3 mb-4">
+                      <h6 class="text-success mb-3"><i class="fab fa-stripe me-2"></i>Paystack Credentials</h6>
+                      <div class="alert alert-info py-2 small mb-3">
+                        <i class="fas fa-info-circle"></i>
+                        Get your keys from <strong>Paystack Dashboard → Settings → API Keys &amp; Webhooks</strong>.
+                        Use <em>Test</em> keys during development; switch to <em>Live</em> keys in production.
+                      </div>
+                      <div class="row g-3">
+                        <div class="col-md-6">
+                          <label class="form-label fw-semibold">Public Key <small class="text-muted">(pk_...)</small></label>
+                          <input type="text" class="form-control font-monospace" name="paystack_public_key"
+                                 value="{{ settings.paystack_public_key|default('') }}"
+                                 placeholder="pk_test_xxxxxxxxxxxxxxxxxxxx" autocomplete="off">
+                        </div>
+                        <div class="col-md-6">
+                          <label class="form-label fw-semibold">Secret Key <small class="text-muted">(sk_...)</small></label>
+                          <div class="input-group">
+                            <input type="password" class="form-control font-monospace" name="paystack_secret_key"
+                                   id="psStack" value="{{ settings.paystack_secret_key|default('') }}"
+                                   placeholder="sk_test_xxxxxxxxxxxxxxxxxxxx" autocomplete="off">
+                            <button type="button" class="btn btn-outline-secondary" onclick="toggleVis('psStack', this)">
+                              <i class="fas fa-eye"></i>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="mt-3">
+                        <label class="form-label fw-semibold">Webhook URL <small class="text-muted">(add this in Paystack → Webhooks)</small></label>
+                        <div class="input-group">
+                          <input type="text" class="form-control font-monospace bg-light"
+                                 value="{{ request.host_url.rstrip('/') }}/webhooks/paystack" readonly>
+                          <button type="button" class="btn btn-outline-secondary"
+                                  onclick="navigator.clipboard.writeText('{{ request.host_url.rstrip(\"/\") }}/webhooks/paystack')">
+                            <i class="fas fa-copy"></i>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Flutterwave panel -->
+                    <div id="flutterwavePanel" class="border rounded p-3 mb-4" style="display:none">
+                      <h6 class="text-warning mb-3"><i class="fas fa-bolt me-2"></i>Flutterwave Credentials</h6>
+                      <div class="alert alert-info py-2 small mb-3">
+                        <i class="fas fa-info-circle"></i>
+                        Get your keys from <strong>Flutterwave Dashboard → Settings → API</strong>.
+                        Set the <em>Webhook Secret Hash</em> to any string of your choice and enter the same value below.
+                      </div>
+                      <div class="row g-3">
+                        <div class="col-md-6">
+                          <label class="form-label fw-semibold">Public Key <small class="text-muted">(FLWPUBK_...)</small></label>
+                          <input type="text" class="form-control font-monospace" name="flutterwave_public_key"
+                                 value="{{ settings.flutterwave_public_key|default('') }}"
+                                 placeholder="FLWPUBK_TEST-xxxxxxxxxxxxxxxxxxxx" autocomplete="off">
+                        </div>
+                        <div class="col-md-6">
+                          <label class="form-label fw-semibold">Secret Key <small class="text-muted">(FLWSECK_...)</small></label>
+                          <div class="input-group">
+                            <input type="password" class="form-control font-monospace" name="flutterwave_secret_key"
+                                   id="flwSecret" value="{{ settings.flutterwave_secret_key|default('') }}"
+                                   placeholder="FLWSECK_TEST-xxxxxxxxxxxxxxxxxxxx" autocomplete="off">
+                            <button type="button" class="btn btn-outline-secondary" onclick="toggleVis('flwSecret', this)">
+                              <i class="fas fa-eye"></i>
+                            </button>
+                          </div>
+                        </div>
+                        <div class="col-md-6">
+                          <label class="form-label fw-semibold">Webhook Secret Hash</label>
+                          <div class="input-group">
+                            <input type="password" class="form-control font-monospace" name="flutterwave_webhook_hash"
+                                   id="flwHash" value="{{ settings.flutterwave_webhook_hash|default('') }}"
+                                   placeholder="A secret string you define" autocomplete="off">
+                            <button type="button" class="btn btn-outline-secondary" onclick="toggleVis('flwHash', this)">
+                              <i class="fas fa-eye"></i>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="mt-3">
+                        <label class="form-label fw-semibold">Webhook URL <small class="text-muted">(add this in Flutterwave → Webhooks)</small></label>
+                        <div class="input-group">
+                          <input type="text" class="form-control font-monospace bg-light"
+                                 value="{{ request.host_url.rstrip('/') }}/webhooks/flutterwave" readonly>
+                          <button type="button" class="btn btn-outline-secondary"
+                                  onclick="navigator.clipboard.writeText('{{ request.host_url.rstrip(\"/\") }}/webhooks/flutterwave')">
+                            <i class="fas fa-copy"></i>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">
+                      <i class="fas fa-save me-1"></i> Save Payment Settings
+                    </button>
+                  </form>
+                </div>
+                <!-- end PAYMENTS TAB -->
+
             </div>
         </div>
     </div>
@@ -1212,6 +1338,30 @@ function fillProvider(server, port, tls) {
 if (window.location.hash === '#mail') {
     const mailTab = document.getElementById('mail-tab');
     if (mailTab) { new bootstrap.Tab(mailTab).show(); }
+}
+
+// ── Payments tab helpers ──────────────────────────────────────────────────────
+function toggleGatewayPanels() {
+    const gw = document.getElementById('gatewaySelect').value;
+    document.getElementById('paystackPanel').style.display    = (gw === 'paystack')    ? '' : 'none';
+    document.getElementById('flutterwavePanel').style.display = (gw === 'flutterwave') ? '' : 'none';
+}
+function toggleVis(inputId, btn) {
+    const el = document.getElementById(inputId);
+    if (el.type === 'password') {
+        el.type = 'text';
+        btn.innerHTML = '<i class="fas fa-eye-slash"></i>';
+    } else {
+        el.type = 'password';
+        btn.innerHTML = '<i class="fas fa-eye"></i>';
+    }
+}
+// Initialise panels on load
+toggleGatewayPanels();
+// Open payments tab if URL ends with #payments
+if (window.location.hash === '#payments') {
+    const paymentsTab = document.getElementById('payments-tab');
+    if (paymentsTab) { new bootstrap.Tab(paymentsTab).show(); }
 }
 </script>
 {% endblock %}
