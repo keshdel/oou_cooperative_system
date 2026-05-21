@@ -10,7 +10,7 @@
             <p class="text-muted">{{ from_date }} to {{ to_date }}</p>
         </div>
         <div class="col-md-4 text-end">
-            <a href="{{ url_for('reports') }}" class="btn btn-secondary">
+            <a href="{{ url_for('reports.reports_list') }}" class="btn btn-secondary">
                 <i class="fas fa-arrow-left"></i> Back to Reports
             </a>
             <button class="btn btn-primary" onclick="window.print()">

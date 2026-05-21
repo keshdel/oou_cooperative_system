@@ -10,7 +10,7 @@
             <p class="text-muted">View complete information for this savings transaction</p>
         </div>
         <div class="col-md-4 text-end">
-            <a href="{{ url_for('my_savings') }}" class="btn btn-secondary">
+            <a href="{{ url_for('portal.my_savings') }}" class="btn btn-secondary">
                 <i class="fas fa-arrow-left"></i> Back to Savings
             </a>
             <button class="btn btn-primary" onclick="window.print()">
@@ -238,7 +238,7 @@
                 <div class="card-body">
                     <div class="list-group">
                         {% for trans in recent_transactions %}
-                        <a href="{{ url_for('saving_detail', saving_id=trans.id) }}" 
+                        <a href="{{ url_for('portal.saving_detail', saving_id=trans.id) }}" 
                            class="list-group-item list-group-item-action">
                             <div class="d-flex justify-content-between">
                                 <div>
@@ -291,7 +291,7 @@ function shareReceipt() {
 
 // Email Receipt
 function emailReceipt() {
-    window.location.href = 'mailto:?subject=Savings Receipt&body=Receipt #{{ saving.receipt_number }} - ₦{{ "{:,.2f}".format(saving.amount) }}%0A%0AView online: {{ url_for('saving_detail', saving_id=saving.id, _external=True) }}';
+    window.location.href = 'mailto:?subject=Savings Receipt&body=Receipt #{{ saving.receipt_number }} - ₦{{ "{:,.2f}".format(saving.amount) }}%0A%0AView online: {{ url_for('portal.saving_detail', saving_id=saving.id, _external=True) }}';
 }
 
 // Verify Receipt

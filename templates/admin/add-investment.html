@@ -10,7 +10,7 @@
             <p class="text-muted">Record a new investment made by the cooperative</p>
         </div>
         <div class="col-md-4 text-end">
-            <a href="{{ url_for('investments') }}" class="btn btn-secondary">
+            <a href="{{ url_for('investments.investments_list') }}" class="btn btn-secondary">
                 <i class="fas fa-arrow-left"></i> Back to Investments
             </a>
         </div>
@@ -92,7 +92,7 @@
                 </div>
 
                 <div class="text-end">
-                    <a href="{{ url_for('investments') }}" class="btn btn-secondary">Cancel</a>
+                    <a href="{{ url_for('investments.investments_list') }}" class="btn btn-secondary">Cancel</a>
                     <button type="submit" class="btn btn-primary">
                         <i class="fas fa-save"></i> Add Investment
                     </button>

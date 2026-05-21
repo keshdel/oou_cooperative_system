@@ -8,7 +8,7 @@
             <p class="text-muted">Register a new cooperative member</p>
         </div>
         <div class="col-md-4 text-end">
-            <a href="{{ url_for('members') }}" class="btn btn-secondary">
+            <a href="{{ url_for('members.members_list') }}" class="btn btn-secondary">
                 <i class="fas fa-arrow-left"></i> Back to Members
             </a>
         </div>
@@ -19,7 +19,7 @@
             <h5 class="mb-0">Member Registration Form</h5>
         </div>
         <div class="card-body">
-            <form method="POST" action="{{ url_for('add_member') }}">
+            <form method="POST" action="{{ url_for('members.add_member') }}">
                 <div class="row">
                     <div class="col-md-6">
                         <h5 class="mb-3">Personal Information</h5>

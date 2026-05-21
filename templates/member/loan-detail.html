@@ -10,7 +10,7 @@
             <p class="text-muted">View complete information for loan #{{ loan.loan_number }}</p>
         </div>
         <div class="col-md-4 text-end">
-            <a href="{{ url_for('my_loans') }}" class="btn btn-secondary">
+            <a href="{{ url_for('portal.my_loans') }}" class="btn btn-secondary">
                 <i class="fas fa-arrow-left"></i> Back to Loans
             </a>
             <button class="btn btn-primary" onclick="window.print()">
@@ -207,7 +207,7 @@
                     <button class="btn btn-success w-100 mb-2" onclick="makePayment({{ loan.id }}, {{ loan.monthly_payment }})">
                         <i class="fas fa-money-bill"></i> Make a Payment
                     </button>
-                    <a href="{{ url_for('loan_calculator', amount=loan.amount, tenure=loan.tenure) }}" class="btn btn-info w-100 mb-2">
+                    <a href="{{ url_for('portal.loan_calculator', amount=loan.amount, tenure=loan.tenure) }}" class="btn btn-info w-100 mb-2">
                         <i class="fas fa-calculator"></i> Recalculate
                     </a>
                     {% endif %}
@@ -279,7 +279,7 @@
 <script>
 function makePayment(loanId, amount) {
     // Reuse payment modal from my-loans.html
-    window.location.href = "{{ url_for('my_loans') }}?pay=" + loanId;
+    window.location.href = "{{ url_for('portal.my_loans') }}?pay=" + loanId;
 }
 
 function viewReceipt(receiptNumber) {
@@ -295,7 +295,7 @@ function exportSchedule() {
 }
 
 function contactSupport() {
-    window.location.href = "{{ url_for('support') }}";
+    window.location.href = "{{ url_for('portal.support') }}";
 }
 </script>
 {% endblock %}

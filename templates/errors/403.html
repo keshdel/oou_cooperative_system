@@ -14,10 +14,10 @@
                     <img src="{{ url_for('static', filename='images/403-illustration.svg') }}" alt="Forbidden" class="img-fluid" style="max-height: 200px;">
                 </div>
                 <div class="d-flex justify-content-center gap-3">
-                    <a href="{{ url_for('dashboard') }}" class="btn btn-primary btn-lg">
+                    <a href="{{ url_for('main.dashboard') }}" class="btn btn-primary btn-lg">
                         <i class="fas fa-tachometer-alt"></i> Go to Dashboard
                     </a>
-                    <a href="{{ url_for('logout') }}" class="btn btn-outline-danger btn-lg">
+                    <a href="{{ url_for('auth.logout') }}" class="btn btn-outline-danger btn-lg">
                         <i class="fas fa-sign-out-alt"></i> Logout
                     </a>
                 </div>

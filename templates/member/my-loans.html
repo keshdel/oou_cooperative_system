@@ -11,10 +11,10 @@
             <p class="text-muted">View and manage all your loan applications</p>
         </div>
         <div class="col-md-4 text-end">
-            <a href="{{ url_for('apply_loan_member') }}" class="btn btn-success">
+            <a href="{{ url_for('portal.apply_loan_member') }}" class="btn btn-success">
                 <i class="fas fa-plus-circle"></i> Apply for New Loan
             </a>
-            <a href="{{ url_for('loan_calculator') }}" class="btn btn-info">
+            <a href="{{ url_for('portal.loan_calculator') }}" class="btn btn-info">
                 <i class="fas fa-calculator"></i> Calculator
             </a>
         </div>
@@ -157,7 +157,7 @@
                                         <div class="text-center">
                                             <h6 class="mb-3">Quick Actions</h6>
                                             <div class="d-grid gap-2">
-                                                <a href="{{ url_for('loan_detail', loan_id=loan.id) }}" 
+                                                <a href="{{ url_for('portal.loan_detail', loan_id=loan.id) }}" 
                                                    class="btn btn-primary">
                                                     <i class="fas fa-eye"></i> View Details
                                                 </a>
@@ -191,7 +191,7 @@
                         <i class="fas fa-check-circle fa-4x text-success mb-3"></i>
                         <h5>No Active Loans</h5>
                         <p>You don't have any active loans at the moment.</p>
-                        <a href="{{ url_for('apply_loan_member') }}" class="btn btn-primary">
+                        <a href="{{ url_for('portal.apply_loan_member') }}" class="btn btn-primary">
                             Apply for a Loan
                         </a>
                     </div>
@@ -248,7 +248,7 @@
                                     <td>{{ loan.completed_at.strftime('%d/%m/%Y') }}</td>
                                     <td>₦{{ "{:,.2f}".format(loan.total_repayment) }}</td>
                                     <td>
-                                        <a href="{{ url_for('loan_detail', loan_id=loan.id) }}" 
+                                        <a href="{{ url_for('portal.loan_detail', loan_id=loan.id) }}" 
                                            class="btn btn-sm btn-info">View</a>
                                     </td>
                                 </tr>
@@ -293,7 +293,7 @@
                                     </td>
                                     <td>₦{{ "{:,.2f}".format(loan.balance) }}</td>
                                     <td>
-                                        <a href="{{ url_for('loan_detail', loan_id=loan.id) }}" 
+                                        <a href="{{ url_for('portal.loan_detail', loan_id=loan.id) }}" 
                                            class="btn btn-sm btn-primary">View</a>
                                     </td>
                                 </tr>

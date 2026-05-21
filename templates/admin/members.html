@@ -11,7 +11,7 @@
             <p class="text-muted">View and manage all cooperative members</p>
         </div>
         <div class="col-md-4 text-end">
-            <a href="{{ url_for('add_member') }}" class="btn btn-primary">
+            <a href="{{ url_for('members.add_member') }}" class="btn btn-primary">
                 <i class="fas fa-user-plus"></i> Add New Member
             </a>
         </div>
@@ -86,7 +86,7 @@
             <button class="btn btn-success" onclick="exportMembers()">
                 <i class="fas fa-file-excel"></i> Export
             </button>
-            <a href="{{ url_for('bulk_upload_members') }}" class="btn btn-info">
+            <a href="{{ url_for('members.bulk_upload_members') }}" class="btn btn-info">
                 <i class="fas fa-upload"></i> Bulk Upload
             </a>
         </div>
@@ -187,7 +187,7 @@
                 <h5 class="modal-title"><i class="fas fa-piggy-bank"></i> Record Monthly Savings</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <form action="{{ url_for('add_saving') }}" method="POST" id="savingsForm">
+            <form action="{{ url_for('savings.add_saving') }}" method="POST" id="savingsForm">
                 <div class="modal-body">
                     <input type="hidden" name="member_id" id="savings_member_id" value="">
                     

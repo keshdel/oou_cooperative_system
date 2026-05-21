@@ -26,36 +26,36 @@
                     <p class="small">{{ coop_name }}</p>
                 </div>
                 <div class="sidebar-menu">
-                    <a href="{{ url_for('dashboard') }}" class="{% if request.endpoint == 'dashboard' %}active{% endif %}">
+                    <a href="{{ url_for('main.dashboard') }}" class="{% if request.endpoint == 'dashboard' %}active{% endif %}">
                         <i class="fas fa-tachometer-alt"></i> Dashboard
                     </a>
                     {% if current_user.role in ['admin', 'secretary'] %}
-                    <a href="{{ url_for('members') }}" class="{% if request.endpoint == 'members' %}active{% endif %}">
+                    <a href="{{ url_for('members.members_list') }}" class="{% if request.endpoint == 'members' %}active{% endif %}">
                         <i class="fas fa-users"></i> Members
                     </a>
                     {% endif %}
-                    <a href="{{ url_for('savings') }}" class="{% if request.endpoint == 'savings' %}active{% endif %}">
+                    <a href="{{ url_for('savings.savings_list') }}" class="{% if request.endpoint == 'savings' %}active{% endif %}">
                         <i class="fas fa-piggy-bank"></i> Savings
                     </a>
-                    <a href="{{ url_for('loans') }}" class="{% if request.endpoint == 'loans' %}active{% endif %}">
+                    <a href="{{ url_for('loans.loans_list') }}" class="{% if request.endpoint == 'loans' %}active{% endif %}">
                         <i class="fas fa-hand-holding-usd"></i> Loans
                     </a>
                     {% if current_user.role in ['admin', 'treasurer'] %}
-                    <a href="{{ url_for('investments') }}" class="{% if request.endpoint == 'investments' %}active{% endif %}">
+                    <a href="{{ url_for('investments.investments_list') }}" class="{% if request.endpoint == 'investments' %}active{% endif %}">
                         <i class="fas fa-chart-line"></i> Investments
                     </a>
                     {% endif %}
                     {% if current_user.role in ['admin', 'treasurer', 'secretary'] %}
-                    <a href="{{ url_for('reports') }}" class="{% if request.endpoint == 'reports' %}active{% endif %}">
+                    <a href="{{ url_for('reports.reports_list') }}" class="{% if request.endpoint == 'reports' %}active{% endif %}">
                         <i class="fas fa-file-alt"></i> Reports
                     </a>
                     {% endif %}
                     {% if current_user.role == 'admin' %}
-                    <a href="{{ url_for('settings') }}" class="{% if request.endpoint == 'settings' %}active{% endif %}">
+                    <a href="{{ url_for('admin_panel.settings') }}" class="{% if request.endpoint == 'settings' %}active{% endif %}">
                         <i class="fas fa-cog"></i> Settings
                     </a>
                     {% endif %}
-                    <a href="{{ url_for('logout') }}">
+                    <a href="{{ url_for('auth.logout') }}">
                         <i class="fas fa-sign-out-alt"></i> Logout
                     </a>
                 </div>
@@ -84,11 +84,11 @@
                         </button>
                         <ul class="dropdown-menu dropdown-menu-end">
                             {% if current_user.role == 'member' %}
-                            <li><a class="dropdown-item" href="{{ url_for('profile') }}"><i class="fas fa-user"></i> Profile</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('portal.profile') }}"><i class="fas fa-user"></i> Profile</a></li>
                             {% endif %}
-                            <li><a class="dropdown-item" href="{{ url_for('change_password') }}"><i class="fas fa-key"></i> Change Password</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('portal.change_password') }}"><i class="fas fa-key"></i> Change Password</a></li>
                             <li><hr class="dropdown-divider"></li>
-                            <li><a class="dropdown-item" href="{{ url_for('logout') }}"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('auth.logout') }}"><i class="fas fa-sign-out-alt"></i> Logout</a></li>
                         </ul>
                     </div>
                 </div>

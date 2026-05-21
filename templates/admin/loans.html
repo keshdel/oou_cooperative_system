@@ -8,13 +8,13 @@
             <p class="text-muted">Process and track all loan applications</p>
         </div>
         <div class="col-md-4 text-end">
-            <a href="{{ url_for('apply_loan') }}" class="btn btn-primary">
+            <a href="{{ url_for('loans.apply_loan') }}" class="btn btn-primary">
                 <i class="fas fa-plus-circle"></i> New Loan Application
             </a>
-			<a href="{{ url_for('export_loans') }}" class="btn btn-success">
+			<a href="{{ url_for('loans.export_loans') }}" class="btn btn-success">
 				<i class="fas fa-download"></i> Export Loans
 			</a>
-			<a href="{{ url_for('bulk_loan_repayments') }}" class="btn btn-info">
+			<a href="{{ url_for('loans.bulk_loan_repayments') }}" class="btn btn-info">
 				<i class="fas fa-upload"></i> Bulk Repayments
 			</a>
         </div>
@@ -102,7 +102,7 @@
                                 <tr>
                                     <td>{{ loan.id }}</td>
                                     <td>
-                                        <a href="{{ url_for('member_details', member_id=loan.member_id) }}">
+                                        <a href="{{ url_for('members.member_details', member_id=loan.member_id) }}">
                                             {{ loan.member_name }}
                                         </a>
                                     </td>
@@ -139,12 +139,12 @@
                                             </button>
                                             
                                             {% if loan.status == 'pending' and current_user.role in ['admin', 'treasurer'] %}
-                                            <form action="{{ url_for('approve_loan', loan_id=loan.id) }}" method="POST" class="d-inline">
+                                            <form action="{{ url_for('loans.approve_loan', loan_id=loan.id) }}" method="POST" class="d-inline">
                                                 <button type="submit" class="btn btn-success" title="Approve">
                                                     <i class="fas fa-check"></i>
                                                 </button>
                                             </form>
-                                            <form action="{{ url_for('reject_loan', loan_id=loan.id) }}" method="POST" class="d-inline">
+                                            <form action="{{ url_for('loans.reject_loan', loan_id=loan.id) }}" method="POST" class="d-inline">
                                                 <button type="submit" class="btn btn-danger" title="Reject">
                                                     <i class="fas fa-times"></i>
                                                 </button>

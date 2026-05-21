@@ -8,7 +8,7 @@
             <p class="text-muted">View and manage member information</p>
         </div>
         <div class="col-md-4 text-end">
-            <a href="{{ url_for('members') }}" class="btn btn-secondary">
+            <a href="{{ url_for('members.members_list') }}" class="btn btn-secondary">
                 <i class="fas fa-arrow-left"></i> Back to Members
             </a>
             <button class="btn btn-warning" onclick="printMemberDetails()">
@@ -121,7 +121,7 @@
             <button class="btn btn-primary" onclick="showSavingsModal({{ member.id }}, '{{ member.first_name }} {{ member.last_name }}')">
                 <i class="fas fa-piggy-bank"></i> Record Savings
             </button>
-            <a href="{{ url_for('apply_loan') }}?member_id={{ member.id }}" class="btn btn-success">
+            <a href="{{ url_for('loans.apply_loan') }}?member_id={{ member.id }}" class="btn btn-success">
                 <i class="fas fa-hand-holding-usd"></i> Apply for Loan
             </a>
             <button class="btn btn-warning">

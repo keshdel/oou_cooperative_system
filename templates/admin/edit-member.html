@@ -10,7 +10,7 @@
             <p class="text-muted">Update member information</p>
         </div>
         <div class="col-md-4 text-end">
-            <a href="{{ url_for('member_details', member_id=member.id) }}" class="btn btn-secondary">
+            <a href="{{ url_for('members.member_details', member_id=member.id) }}" class="btn btn-secondary">
                 <i class="fas fa-arrow-left"></i> Back to Details
             </a>
         </div>
@@ -120,7 +120,7 @@
                 </div>
 
                 <div class="text-end">
-                    <a href="{{ url_for('member_details', member_id=member.id) }}" class="btn btn-secondary">
+                    <a href="{{ url_for('members.member_details', member_id=member.id) }}" class="btn btn-secondary">
                         Cancel
                     </a>
                     <button type="submit" class="btn btn-primary">

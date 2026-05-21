@@ -8,7 +8,7 @@
             <p class="text-muted">Record a new investment</p>
         </div>
         <div class="col-md-4 text-end">
-            <a href="{{ url_for('investments') }}" class="btn btn-secondary">
+            <a href="{{ url_for('investments.investments_list') }}" class="btn btn-secondary">
                 <i class="fas fa-arrow-left"></i> Back to Investments
             </a>
         </div>
@@ -19,7 +19,7 @@
             <h5 class="mb-0">Investment Form</h5>
         </div>
         <div class="card-body">
-            <form method="POST" action="{{ url_for('add_investment') }}">
+            <form method="POST" action="{{ url_for('investments.add_investment') }}">
                 <div class="row">
                     <div class="col-md-12">
                         <div class="alert alert-info">
