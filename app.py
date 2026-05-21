@@ -120,6 +120,42 @@ def utility_processor():
 
 # ── Before-request hook ───────────────────────────────────────────────────────
 
+def _check_billing_status():
+    """
+    If BILLING_API_KEY and BILLING_PORTAL_URL are set, call the billing portal
+    to verify this cooperative's subscription is active.
+    Returns True if active (or if billing is not configured), False if suspended.
+    Caches the result in app.config for 60 minutes to avoid hitting the API
+    on every single request.
+    """
+    api_key    = os.environ.get('BILLING_API_KEY', '')
+    portal_url = os.environ.get('BILLING_PORTAL_URL', '')
+    if not api_key or not portal_url:
+        return True  # billing not configured — allow access
+
+    import time
+    cache_key   = '_billing_cache'
+    cache_until = '_billing_cache_until'
+    now = time.time()
+
+    if app.config.get(cache_until, 0) > now:
+        return app.config.get(cache_key, True)
+
+    try:
+        import urllib.request, json as _json
+        url  = f'{portal_url.rstrip("/")}/api/status?api_key={api_key}'
+        req  = urllib.request.Request(url, headers={'Accept': 'application/json'})
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = _json.loads(resp.read())
+        active = data.get('active', True)
+    except Exception:
+        active = True  # fail open — don't block app if billing portal is unreachable
+
+    app.config[cache_key]   = active
+    app.config[cache_until] = now + 3600  # cache for 1 hour
+    return active
+
+
 @app.before_request
 def check_maintenance():
     if current_user.is_authenticated and current_user.role == 'admin':
@@ -127,6 +163,11 @@ def check_maintenance():
     maintenance = False  # fetch from settings when needed
     if maintenance and request.endpoint not in ['auth.login', 'static']:
         return render_template('errors/maintenance.html'), 503
+
+    # Billing subscription check
+    if request.endpoint not in ['auth.login', 'auth.logout', 'static']:
+        if not _check_billing_status():
+            return render_template('errors/subscription_expired.html'), 402
 
 
 # ── Error handlers ────────────────────────────────────────────────────────────
