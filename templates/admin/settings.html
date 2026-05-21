@@ -34,6 +34,11 @@
                     </a>
                 </li>
                 <li class="nav-item">
+                    <a class="nav-link" id="mail-tab" data-bs-toggle="tab" href="#mail-settings" role="tab">
+                        <i class="fas fa-envelope-open-text"></i> Mail / SMTP
+                    </a>
+                </li>
+                <li class="nav-item">
                     <a class="nav-link" id="users-tab" data-bs-toggle="tab" href="#users" role="tab">
                         <i class="fas fa-users-cog"></i> User Management
                     </a>
@@ -388,7 +393,129 @@
                     </form>
                 </div>
                 
-                <!-- 5. USER MANAGEMENT TAB -->
+                <!-- 5. MAIL / SMTP TAB -->
+                <div class="tab-pane fade" id="mail-settings" role="tabpanel">
+                    <div class="row">
+                        <div class="col-md-7">
+                            <form method="POST" action="{{ url_for('admin_panel.update_mail_settings') }}">
+                                <h5 class="mb-3">SMTP Configuration</h5>
+
+                                <div class="mb-3 form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="mail_enabled"
+                                           name="mail_enabled" {% if settings.mail_enabled == '1' %}checked{% endif %}>
+                                    <label class="form-check-label" for="mail_enabled">
+                                        <strong>Enable outgoing email</strong>
+                                    </label>
+                                    <small class="d-block text-muted">When off, all emails are silently skipped.</small>
+                                </div>
+
+                                <hr>
+
+                                <div class="row">
+                                    <div class="col-md-8 mb-3">
+                                        <label class="form-label">SMTP Server</label>
+                                        <input type="text" class="form-control" name="mail_server"
+                                               placeholder="smtp.gmail.com"
+                                               value="{{ settings.mail_server|default('') }}">
+                                    </div>
+                                    <div class="col-md-4 mb-3">
+                                        <label class="form-label">Port</label>
+                                        <input type="number" class="form-control" name="mail_port"
+                                               placeholder="587"
+                                               value="{{ settings.mail_port|default('587') }}">
+                                    </div>
+                                </div>
+
+                                <div class="mb-3 form-check">
+                                    <input type="checkbox" class="form-check-input" id="mail_use_tls"
+                                           name="mail_use_tls"
+                                           {% if settings.mail_use_tls != '0' %}checked{% endif %}>
+                                    <label class="form-check-label" for="mail_use_tls">Use TLS (recommended)</label>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label">SMTP Username</label>
+                                    <input type="text" class="form-control" name="mail_username"
+                                           placeholder="your@gmail.com"
+                                           value="{{ settings.mail_username|default('') }}">
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label">SMTP Password</label>
+                                    <input type="password" class="form-control" name="mail_password"
+                                           placeholder="{% if settings.mail_password %}(saved – leave blank to keep){% else %}App password or SMTP password{% endif %}">
+                                    <small class="text-muted">
+                                        For Gmail: use an
+                                        <a href="https://myaccount.google.com/apppasswords" target="_blank">App Password</a>,
+                                        not your regular password.
+                                        Leave blank to keep the existing password.
+                                    </small>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label">Default Sender Address</label>
+                                    <input type="email" class="form-control" name="mail_sender"
+                                           placeholder="noreply@cooperative.com"
+                                           value="{{ settings.mail_sender|default('') }}">
+                                    <small class="text-muted">Shown as the "From" address on all emails.</small>
+                                </div>
+
+                                <div class="text-end">
+                                    <button type="submit" class="btn btn-primary">
+                                        <i class="fas fa-save"></i> Save Mail Settings
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+
+                        <div class="col-md-5">
+                            <!-- Test email card -->
+                            <div class="card border-0 bg-light h-100">
+                                <div class="card-body">
+                                    <h6 class="mb-3"><i class="fas fa-paper-plane text-primary"></i> Send Test Email</h6>
+                                    <p class="text-muted small">
+                                        Save your settings first, then send a test message to verify the connection.
+                                    </p>
+                                    <div class="mb-3">
+                                        <label class="form-label">Recipient</label>
+                                        <input type="email" class="form-control" id="testMailRecipient"
+                                               placeholder="admin@example.com">
+                                    </div>
+                                    <button class="btn btn-outline-primary w-100" onclick="sendTestMail()">
+                                        <i class="fas fa-paper-plane"></i> Send Test Email
+                                    </button>
+                                    <div id="testMailResult" class="mt-3"></div>
+
+                                    <hr>
+
+                                    <!-- Provider quick-fill -->
+                                    <h6 class="mb-2 mt-2"><i class="fas fa-magic text-secondary"></i> Quick fill</h6>
+                                    <p class="text-muted small">Click a provider to pre-fill the SMTP fields.</p>
+                                    <div class="d-grid gap-2">
+                                        <button type="button" class="btn btn-sm btn-outline-secondary"
+                                                onclick="fillProvider('smtp.gmail.com', 587, true)">
+                                            <i class="fab fa-google"></i> Gmail (587 / TLS)
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary"
+                                                onclick="fillProvider('smtp.office365.com', 587, true)">
+                                            <i class="fab fa-microsoft"></i> Outlook / Office 365
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary"
+                                                onclick="fillProvider('smtp.zoho.com', 587, true)">
+                                            Zoho Mail
+                                        </button>
+                                        <button type="button" class="btn btn-sm btn-outline-secondary"
+                                                onclick="fillProvider('smtp.sendgrid.net', 587, true)">
+                                            SendGrid
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 6. USER MANAGEMENT TAB -->
                 <div class="tab-pane fade" id="users" role="tabpanel">
                     <div class="row mb-4">
                         <div class="col-md-12">
@@ -817,6 +944,47 @@ function testConnection() {
                 alert('Database connection failed: ' + data.error);
             }
         });
+}
+
+// Mail settings tab
+function sendTestMail() {
+    const recipient = document.getElementById('testMailRecipient').value.trim();
+    const resultDiv = document.getElementById('testMailResult');
+    if (!recipient) {
+        resultDiv.innerHTML = '<div class="alert alert-warning py-2">Please enter a recipient email.</div>';
+        return;
+    }
+    resultDiv.innerHTML = '<div class="alert alert-info py-2"><i class="fas fa-spinner fa-spin"></i> Sending…</div>';
+
+    const form = new FormData();
+    form.append('recipient', recipient);
+
+    fetch('{{ url_for("admin_panel.test_mail") }}', { method: 'POST', body: form })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                resultDiv.innerHTML = `<div class="alert alert-success py-2"><i class="fas fa-check"></i> ${data.message}</div>`;
+            } else {
+                resultDiv.innerHTML = `<div class="alert alert-danger py-2"><i class="fas fa-times"></i> ${data.error}</div>`;
+            }
+        })
+        .catch(err => {
+            resultDiv.innerHTML = `<div class="alert alert-danger py-2">Request failed: ${err}</div>`;
+        });
+}
+
+function fillProvider(server, port, tls) {
+    document.querySelector('[name="mail_server"]').value = server;
+    document.querySelector('[name="mail_port"]').value = port;
+    document.getElementById('mail_use_tls').checked = tls;
+    // scroll to the server field
+    document.querySelector('[name="mail_server"]').focus();
+}
+
+// Open the correct tab if URL ends with #mail
+if (window.location.hash === '#mail') {
+    const mailTab = document.getElementById('mail-tab');
+    if (mailTab) { new bootstrap.Tab(mailTab).show(); }
 }
 </script>
 {% endblock %}

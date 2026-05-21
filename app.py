@@ -28,6 +28,16 @@ app.config['MAIL_PASSWORD']       = os.environ.get('MAIL_PASSWORD')
 app.config['MAIL_DEFAULT_SENDER'] = os.environ.get('MAIL_DEFAULT_SENDER', 'noreply@cooperative.com')
 mail.init_app(app)
 
+# Override mail config from DB if the admin has saved settings via the UI
+with app.app_context():
+    try:
+        from blueprints.admin_panel import _apply_mail_config
+        _db = get_db()
+        _apply_mail_config(_db, app)
+        mail.init_app(app)
+    except Exception:
+        pass
+
 # ── Login manager ─────────────────────────────────────────────────────────────
 
 login_manager = LoginManager()

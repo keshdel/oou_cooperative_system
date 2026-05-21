@@ -13,6 +13,13 @@ from utils import role_required, audit, validate_image
 admin_panel = Blueprint('admin_panel', __name__)
 
 _DEFAULT_SETTINGS = {
+    'mail_enabled':  '0',
+    'mail_server':   '',
+    'mail_port':     '587',
+    'mail_use_tls':  '1',
+    'mail_username': '',
+    'mail_password': '',
+    'mail_sender':   '',
     'coop_name': 'OOU Acctg 2005 Alumni CMS',
     'reg_number': 'CMS/2005/001',
     'address': '',
@@ -340,3 +347,101 @@ def test_db():
         return jsonify({'success': True, 'message': 'Database connection successful'})
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
+
+
+@admin_panel.route('/settings/update-mail', methods=['POST'])
+@login_required
+@role_required('admin')
+def update_mail_settings():
+    from flask import current_app
+    from extensions import mail as mail_ext
+
+    db = get_db()
+    try:
+        keys = ['mail_enabled', 'mail_server', 'mail_port', 'mail_use_tls',
+                'mail_username', 'mail_password', 'mail_sender']
+
+        for key in keys:
+            if key == 'mail_password':
+                val = request.form.get(key, '').strip()
+                if not val:
+                    continue  # blank → keep existing password
+            elif key == 'mail_use_tls':
+                val = '1' if request.form.get(key) else '0'
+            elif key == 'mail_enabled':
+                val = '1' if request.form.get(key) else '0'
+            else:
+                val = request.form.get(key, '').strip()
+
+            existing = db.execute('SELECT id FROM settings WHERE key = ?', (key,)).fetchone()
+            if existing:
+                db.execute('UPDATE settings SET value = ? WHERE key = ?', (val, key))
+            else:
+                db.execute('INSERT INTO settings (key, value, description) VALUES (?, ?, ?)',
+                           (key, val, f'Mail setting: {key}'))
+
+        db.commit()
+
+        # Reconfigure Flask-Mail immediately so the test-mail button works without restart
+        _apply_mail_config(db, current_app._get_current_object())
+        mail_ext.init_app(current_app._get_current_object())
+
+        audit(db, 'UPDATE_MAIL_SETTINGS', 'settings', 'SMTP mail settings updated')
+        flash('Mail settings saved successfully!', 'success')
+    except Exception as e:
+        db.rollback()
+        flash(f'Error saving mail settings: {str(e)}', 'danger')
+
+    return redirect(url_for('admin_panel.settings') + '#mail')
+
+
+@admin_panel.route('/settings/test-mail', methods=['POST'])
+@login_required
+@role_required('admin')
+def test_mail():
+    from flask import jsonify, current_app
+    from flask_mail import Message
+    from extensions import mail as mail_ext
+
+    recipient = request.form.get('recipient', '').strip()
+    if not recipient:
+        return jsonify({'success': False, 'error': 'Recipient email is required'})
+
+    db = get_db()
+    enabled = db.execute("SELECT value FROM settings WHERE key = 'mail_enabled'").fetchone()
+    if not enabled or enabled['value'] != '1':
+        return jsonify({'success': False, 'error': 'Mail is disabled. Enable it first and save settings.'})
+
+    try:
+        msg = Message(
+            subject=f"Test Email from {current_app.config.get('MAIL_DEFAULT_SENDER', 'Cooperative System')}",
+            recipients=[recipient],
+            html=f"""
+            <h2>Test Email</h2>
+            <p>This is a test email from your cooperative management system.</p>
+            <p>If you received this, your SMTP settings are configured correctly.</p>
+            <hr>
+            <small>Sent at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</small>
+            """,
+        )
+        mail_ext.send(msg)
+        audit(db, 'TEST_MAIL', 'settings', f"Test email sent to {recipient}")
+        return jsonify({'success': True, 'message': f'Test email sent to {recipient}'})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+
+def _apply_mail_config(db, app):
+    """Read mail settings from the DB and push them into app.config."""
+    mappings = {
+        'mail_server':   ('MAIL_SERVER',         str),
+        'mail_port':     ('MAIL_PORT',            int),
+        'mail_use_tls':  ('MAIL_USE_TLS',         lambda v: v == '1'),
+        'mail_username': ('MAIL_USERNAME',        str),
+        'mail_password': ('MAIL_PASSWORD',        str),
+        'mail_sender':   ('MAIL_DEFAULT_SENDER',  str),
+    }
+    for db_key, (cfg_key, cast) in mappings.items():
+        row = db.execute('SELECT value FROM settings WHERE key = ?', (db_key,)).fetchone()
+        if row and row['value']:
+            app.config[cfg_key] = cast(row['value'])
