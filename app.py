@@ -87,11 +87,24 @@ def utility_processor():
     coop_name  = db.execute("SELECT value FROM settings WHERE key = 'coop_name'").fetchone()
     coop_logo  = db.execute("SELECT value FROM settings WHERE key = 'coop_logo'").fetchone()
     coop_short = db.execute("SELECT value FROM settings WHERE key = 'coop_short_name'").fetchone()
+
+    unread_count = 0
+    if current_user.is_authenticated:
+        try:
+            row = db.execute(
+                'SELECT COUNT(*) FROM notifications WHERE user_id = ? AND is_read = 0',
+                (current_user.id,)
+            ).fetchone()
+            unread_count = row[0] if row else 0
+        except Exception:
+            pass
+
     return {
-        'now':            datetime.now,
-        'coop_name':      coop_name['value']  if coop_name  else 'OOU Cooperative',
-        'coop_logo':      coop_logo['value']  if coop_logo  else '',
-        'coop_short_name': coop_short['value'] if coop_short else 'Coop',
+        'now':                      datetime.now,
+        'coop_name':                coop_name['value']  if coop_name  else 'OOU Cooperative',
+        'coop_logo':                coop_logo['value']  if coop_logo  else '',
+        'coop_short_name':          coop_short['value'] if coop_short else 'Coop',
+        'unread_notifications_count': unread_count,
     }
 
 

@@ -8,7 +8,7 @@ from flask_login import login_required, current_user
 
 from database import get_db
 from email_service import send_loan_approval_email, send_loan_rejection_email
-from utils import role_required, audit
+from utils import role_required, audit, notify_member
 
 loans = Blueprint('loans', __name__)
 
@@ -178,6 +178,11 @@ def approve_loan(loan_id):
             member = db.execute('SELECT * FROM members WHERE id = ?', (loan['member_id'],)).fetchone()
             if member and member['email']:
                 send_loan_approval_email(member['email'], member, loan)
+                notify_member(db, member['email'],
+                              'Loan Approved',
+                              f"Your loan of ₦{loan['amount']:,.2f} has been approved and will be disbursed shortly.",
+                              notification_type='success',
+                              action_url='/my-loans')
             audit(db, 'APPROVE_LOAN', 'loans',
                   f"Approved loan ID {loan_id} – ₦{loan['amount']:,.2f} for member ID {loan['member_id']}")
             flash('Loan approved successfully!', 'success')
@@ -207,6 +212,12 @@ def reject_loan(loan_id):
         reason = request.form.get('reason', 'Does not meet our lending criteria.')
         if member and member['email']:
             send_loan_rejection_email(member['email'], member, reason)
+            notify_member(db, member['email'],
+                          'Loan Application Update',
+                          f"Your loan application could not be approved at this time. "
+                          f"Reason: {reason}",
+                          notification_type='warning',
+                          action_url='/my-loans')
         audit(db, 'REJECT_LOAN', 'loans', f"Rejected loan ID {loan_id} – reason: {reason}")
         flash('Loan application rejected', 'info')
     except Exception as e:

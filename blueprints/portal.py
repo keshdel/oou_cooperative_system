@@ -226,7 +226,62 @@ def statements():
 @portal.route('/notifications')
 @login_required
 def notifications():
-    return render_template('member/notifications.html')
+    from flask import jsonify
+    db = get_db()
+    active_filter = request.args.get('filter', 'all')
+    page = max(1, request.args.get('page', 1, type=int))
+    per_page = 20
+
+    base_query = 'SELECT * FROM notifications WHERE user_id = ?'
+    params = [current_user.id]
+
+    if active_filter == 'unread':
+        base_query += ' AND is_read = 0'
+    elif active_filter == 'important':
+        base_query += " AND notification_type IN ('warning', 'danger')"
+
+    total = db.execute(
+        base_query.replace('SELECT *', 'SELECT COUNT(*)'), params
+    ).fetchone()[0]
+
+    notifs = db.execute(
+        base_query + ' ORDER BY created_at DESC LIMIT ? OFFSET ?',
+        params + [per_page, (page - 1) * per_page]
+    ).fetchall()
+
+    pages = max(1, (total + per_page - 1) // per_page)
+    return render_template('member/notifications.html',
+                           notifications=notifs,
+                           filter=active_filter,
+                           page=page,
+                           pages=pages,
+                           total=total)
+
+
+@portal.route('/notifications/mark-read/<int:notif_id>', methods=['POST'])
+@login_required
+def mark_notification_read(notif_id):
+    from flask import jsonify
+    db = get_db()
+    db.execute(
+        'UPDATE notifications SET is_read = 1, read_at = ? WHERE id = ? AND user_id = ?',
+        (datetime.now(), notif_id, current_user.id)
+    )
+    db.commit()
+    return jsonify({'ok': True})
+
+
+@portal.route('/notifications/mark-all-read', methods=['POST'])
+@login_required
+def mark_all_notifications_read():
+    from flask import jsonify
+    db = get_db()
+    db.execute(
+        'UPDATE notifications SET is_read = 1, read_at = ? WHERE user_id = ? AND is_read = 0',
+        (datetime.now(), current_user.id)
+    )
+    db.commit()
+    return jsonify({'ok': True})
 
 
 @portal.route('/support', methods=['GET', 'POST'])

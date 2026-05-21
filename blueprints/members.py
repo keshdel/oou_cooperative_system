@@ -9,7 +9,7 @@ from werkzeug.utils import secure_filename
 
 from database import get_db
 from email_service import send_welcome_email
-from utils import role_required, validate_image, audit
+from utils import role_required, validate_image, audit, notify_member
 
 members = Blueprint('members', __name__)
 
@@ -82,6 +82,11 @@ def add_member():
                     'member_number': member_number,
                     'coop_name':     'OOU Cooperative',
                 })
+                notify_member(db, member['email'],
+                              'Welcome to OOU Cooperative!',
+                              f"Your member number is {member_number}. "
+                              f"You can now log in to view your savings and loans.",
+                              notification_type='success')
 
             if 'photo' in request.files:
                 photo = request.files['photo']

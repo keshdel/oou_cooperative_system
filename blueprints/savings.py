@@ -8,7 +8,7 @@ from flask_login import login_required
 
 from database import get_db
 from email_service import send_payment_confirmation_email
-from utils import role_required, audit
+from utils import role_required, audit, notify_member
 
 savings = Blueprint('savings', __name__)
 
@@ -73,6 +73,12 @@ def add_saving():
         new_saving = db.execute('SELECT * FROM savings WHERE id = ?', (saving_id,)).fetchone()
         if member and member['email']:
             send_payment_confirmation_email(member['email'], member, new_saving)
+            notify_member(db, member['email'],
+                          'Savings Payment Confirmed',
+                          f"₦{total_amount:,.2f} {payment_type} savings recorded for "
+                          f"{month}. Receipt: {receipt_number}.",
+                          notification_type='info',
+                          action_url='/my-savings')
 
         audit(db, 'ADD_SAVING', 'savings',
               f"Recorded ₦{amount:,.2f} {payment_type} savings for member ID {member_id}, "

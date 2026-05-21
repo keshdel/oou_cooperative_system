@@ -91,6 +91,37 @@ def validate_image(file) -> tuple[bool, str]:
     return True, ''
 
 
+# ── In-app notification helper ────────────────────────────────────────────────
+
+def notify(db, user_id: int, title: str, message: str,
+           notification_type: str = 'info', action_url: str = '') -> None:
+    """Insert a notification record for a specific user. Never raises."""
+    if not user_id:
+        return
+    try:
+        from datetime import datetime
+        db.execute('''
+            INSERT INTO notifications
+                (user_id, title, message, notification_type, is_read, action_url, created_at)
+            VALUES (?, ?, ?, ?, 0, ?, ?)
+        ''', (user_id, title, message, notification_type, action_url or '', datetime.now()))
+    except Exception:
+        pass  # notifications are non-critical — never break the main flow
+
+
+def notify_member(db, member_email: str, title: str, message: str,
+                  notification_type: str = 'info', action_url: str = '') -> None:
+    """Find the user account matching member_email and create a notification."""
+    if not member_email:
+        return
+    try:
+        user = db.execute('SELECT id FROM users WHERE email = ?', (member_email,)).fetchone()
+        if user:
+            notify(db, user['id'], title, message, notification_type, action_url)
+    except Exception:
+        pass
+
+
 # ── Audit helper ──────────────────────────────────────────────────────────────
 
 def audit(db, action: str, module: str, description: str, data: str = '') -> None:
