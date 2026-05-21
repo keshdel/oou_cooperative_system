@@ -14,14 +14,67 @@ import uuid
 import re
 import json
 import csv
-from io import StringIO
+import time
+from collections import defaultdict
+from io import StringIO, BytesIO, TextIOWrapper
 from flask import make_response
-from io import StringIO, TextIOWrapper
 from werkzeug.utils import secure_filename
+from PIL import Image
 from email_service import send_welcome_email, send_loan_approval_email, send_loan_rejection_email, send_payment_confirmation_email
 
 from database import init_db, get_db
 from card_generator import MemberCardGenerator
+from security import log_audit
+
+# ── Login rate limiting ──────────────────────────────────────────────────────
+_login_attempts: dict = defaultdict(list)  # ip -> [epoch timestamps]
+_RATE_WINDOW   = 300   # 5 minutes
+_RATE_MAX      = 5     # max failures before block
+_RATE_BLOCK    = 900   # block for 15 minutes
+
+def _is_rate_limited(ip: str) -> bool:
+    now = time.time()
+    attempts = [t for t in _login_attempts[ip] if now - t < _RATE_WINDOW]
+    _login_attempts[ip] = attempts
+    return len(attempts) >= _RATE_MAX
+
+def _record_failed_login(ip: str) -> None:
+    _login_attempts[ip].append(time.time())
+
+def _clear_login_attempts(ip: str) -> None:
+    _login_attempts.pop(ip, None)
+
+# ── File upload validation ───────────────────────────────────────────────────
+_ALLOWED_IMAGE_EXTS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+_MAX_UPLOAD_BYTES   = 5 * 1024 * 1024  # 5 MB
+
+def _validate_image(file) -> tuple[bool, str]:
+    """Check extension, size, and real image content. Returns (ok, error_msg).
+    Seeks the stream back to 0 on success so the caller can still save the file."""
+    filename = secure_filename(file.filename or '')
+    if '.' not in filename:
+        return False, 'File has no extension.'
+    ext = filename.rsplit('.', 1)[1].lower()
+    if ext not in _ALLOWED_IMAGE_EXTS:
+        return False, f'File type .{ext} is not allowed. Use PNG, JPG, GIF, or WEBP.'
+    data = file.read(_MAX_UPLOAD_BYTES + 1)
+    if len(data) > _MAX_UPLOAD_BYTES:
+        return False, 'File too large. Maximum size is 5 MB.'
+    try:
+        img = Image.open(BytesIO(data))
+        img.verify()
+    except Exception:
+        return False, 'File does not appear to be a valid image.'
+    file.stream.seek(0)
+    return True, ''
+
+def _audit(db, action, module, description, data=''):
+    """Call log_audit pre-filled with current request and user context."""
+    uid      = current_user.id       if not current_user.is_anonymous else None
+    uname    = current_user.username if not current_user.is_anonymous else 'anonymous'
+    ip       = request.remote_addr or ''
+    ua       = request.user_agent.string if request.user_agent else ''
+    log_audit(db, uid, uname, action, module, description, ip, ua, data)
 
 # Create the Flask app instance FIRST
 app = Flask(__name__)
@@ -40,6 +93,7 @@ mail = Mail(app)
 # Now configure the app
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-change-this-in-production')
 app.config['DATABASE'] = 'cooperative.db'
+app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10 MB global request cap
 
 # Override database URL if in production (PostgreSQL)
 if os.environ.get('DATABASE_URL'):
@@ -65,6 +119,10 @@ mail.init_app(app)
 # Initialize database
 init_db()
 
+# Register blueprints
+from mobile_api import mobile_api
+app.register_blueprint(mobile_api)
+
 # Make datetime available in all templates
 @app.context_processor
 def utility_processor():
@@ -88,15 +146,16 @@ def load_user(user_id):
     db = get_db()
     user = db.execute('SELECT * FROM users WHERE id = ?', (user_id,)).fetchone()
     if user:
-        return User(user['id'], user['username'], user['password_hash'], user['role'])
+        return User(user['id'], user['username'], user['password_hash'], user['role'], user['email'] if 'email' in user.keys() else '')
     return None
 
 class User(UserMixin):
-    def __init__(self, id, username, password_hash, role):
+    def __init__(self, id, username, password_hash, role, email=''):
         self.id = id
         self.username = username
         self.password_hash = password_hash
         self.role = role
+        self.email = email
 
 # Role-based access control decorator
 def role_required(*roles):
@@ -119,18 +178,31 @@ def index():
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
+        ip = request.remote_addr or '0.0.0.0'
+        if _is_rate_limited(ip):
+            flash('Too many failed attempts. Please wait 15 minutes before trying again.', 'danger')
+            return render_template('login.html')
+
         username = request.form['username']
         password = request.form['password']
-        
+
         db = get_db()
         user = db.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
-        
+
         if user and check_password_hash(user['password_hash'], password):
-            user_obj = User(user['id'], user['username'], user['password_hash'], user['role'])
+            _clear_login_attempts(ip)
+            user_obj = User(user['id'], user['username'], user['password_hash'], user['role'],
+                            user['email'] if 'email' in user.keys() else '')
             login_user(user_obj)
+            log_audit(db, user['id'], user['username'], 'LOGIN', 'auth',
+                      'User logged in', ip, request.user_agent.string if request.user_agent else '')
             flash('Login successful!', 'success')
             return redirect(url_for('dashboard'))
         else:
+            _record_failed_login(ip)
+            log_audit(db, None, username, 'FAILED_LOGIN', 'auth',
+                      f'Failed login attempt for username: {username}',
+                      ip, request.user_agent.string if request.user_agent else '')
             flash('Invalid username or password', 'danger')
     
     return render_template('login.html')
@@ -138,6 +210,8 @@ def login():
 @app.route('/logout')
 @login_required
 def logout():
+    db = get_db()
+    _audit(db, 'LOGOUT', 'auth', 'User logged out')
     logout_user()
     flash('You have been logged out', 'info')
     return redirect(url_for('index'))
@@ -225,11 +299,11 @@ def add_member():
     if request.method == 'POST':
         db = get_db()
         try:
-            # Insert member
+            # Insert member (member_number generated after we have the ID)
             db.execute('''
                 INSERT INTO members (
-                    first_name, last_name, email, phone, address, 
-                    occupation, date_of_birth, nominee_name, 
+                    first_name, last_name, email, phone, address,
+                    occupation, date_of_birth, nominee_name,
                     nominee_relationship, monthly_savings, status
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
@@ -246,34 +320,40 @@ def add_member():
                 'active'
             ))
             db.commit()
-            
 
-            # Get the newly created member's ID
+            # Generate and save member_number using the new row's ID
             member_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
-            # After db.commit() of the member insert
+            member_number = f"OOU/{datetime.now().year}/{member_id:04d}"
+            db.execute('UPDATE members SET member_number = ? WHERE id = ?', (member_number, member_id))
+            db.commit()
+
             member = db.execute('SELECT * FROM members WHERE id = ?', (member_id,)).fetchone()
             member_data = {
                 'full_name': f"{request.form['first_name']} {request.form['last_name']}",
-                'member_number': member_number,  # you should have this variable (generated earlier)
+                'member_number': member_number,
                 'coop_name': 'OOU Cooperative'
             }
-            send_welcome_email(member['email'], member_data)
+            if member['email']:
+                send_welcome_email(member['email'], member_data)
 
             # Handle photo upload
             if 'photo' in request.files:
                 photo = request.files['photo']
                 if photo and photo.filename:
-                    from werkzeug.utils import secure_filename
-                    import os
-                    filename = secure_filename(photo.filename)
-                    ext = filename.rsplit('.', 1)[1].lower()
-                    unique_name = f"member_{member_id}_{int(datetime.now().timestamp())}.{ext}"
-                    photo_path = os.path.join('static/uploads/member-photos', unique_name)
-                    os.makedirs('static/uploads/member-photos', exist_ok=True)
-                    photo.save(photo_path)
-                    db.execute('UPDATE members SET photo_path = ? WHERE id = ?', (photo_path, member_id))
-                    db.commit()
+                    ok, err = _validate_image(photo)
+                    if not ok:
+                        flash(f'Photo not saved: {err}', 'warning')
+                    else:
+                        ext = secure_filename(photo.filename).rsplit('.', 1)[1].lower()
+                        unique_name = f"member_{member_id}_{int(datetime.now().timestamp())}.{ext}"
+                        photo_path = os.path.join('static/uploads/member-photos', unique_name)
+                        os.makedirs('static/uploads/member-photos', exist_ok=True)
+                        photo.save(photo_path)
+                        db.execute('UPDATE members SET photo_path = ? WHERE id = ?', (photo_path, member_id))
+                        db.commit()
 
+            _audit(db, 'ADD_MEMBER', 'members',
+                   f"Added member {member_number} – {request.form['first_name']} {request.form['last_name']}")
             flash('Member added successfully!', 'success')
         except Exception as e:   # <--- FIXED: added 'as e' and colon
             db.rollback()
@@ -319,17 +399,19 @@ def edit_member(member_id):
             if 'photo' in request.files:
                 photo = request.files['photo']
                 if photo and photo.filename:
-                    from werkzeug.utils import secure_filename
-                    import os
-                    filename = secure_filename(photo.filename)
-                    ext = filename.rsplit('.', 1)[1].lower()
-                    unique_name = f"member_{member_id}_{int(datetime.now().timestamp())}.{ext}"
-                    photo_path = os.path.join('static/uploads/member-photos', unique_name)
-                    os.makedirs('static/uploads/member-photos', exist_ok=True)
-                    photo.save(photo_path)
-                    db.execute('UPDATE members SET photo_path = ? WHERE id = ?', (photo_path, member_id))
-                    db.commit()
+                    ok, err = _validate_image(photo)
+                    if not ok:
+                        flash(f'Photo not saved: {err}', 'warning')
+                    else:
+                        ext = secure_filename(photo.filename).rsplit('.', 1)[1].lower()
+                        unique_name = f"member_{member_id}_{int(datetime.now().timestamp())}.{ext}"
+                        photo_path = os.path.join('static/uploads/member-photos', unique_name)
+                        os.makedirs('static/uploads/member-photos', exist_ok=True)
+                        photo.save(photo_path)
+                        db.execute('UPDATE members SET photo_path = ? WHERE id = ?', (photo_path, member_id))
+                        db.commit()
 
+            _audit(db, 'EDIT_MEMBER', 'members', f"Edited member ID {member_id}")
             flash('Member updated successfully!', 'success')
         except Exception as e:   # <--- Proper except clause
             db.rollback()
@@ -363,6 +445,8 @@ def delete_member(member_id):
 
     db.execute('DELETE FROM members WHERE id = ?', (member_id,))
     db.commit()
+    _audit(db, 'DELETE_MEMBER', 'members',
+           f"Deleted member {member['member_number']} – {member['first_name']} {member['last_name']}")
     flash('Member deleted successfully.', 'success')
     return redirect(url_for('members'))
 
@@ -554,12 +638,14 @@ def add_saving():
         new_saving = db.execute('SELECT * FROM savings WHERE id = ?', (db.last_insert_rowid(),)).fetchone()
         send_payment_confirmation_email(member['email'], member, new_saving)
         
+        _audit(db, 'ADD_SAVING', 'savings',
+               f"Recorded ₦{amount:,.2f} savings for member ID {member_id}, receipt {receipt_number}")
         flash(f'Savings of ₦{amount:,.2f} recorded successfully! Receipt: {receipt_number}', 'success')
-        
+
     except Exception as e:
         db.rollback()
         flash(f'Error recording savings: {str(e)}', 'danger')
-    
+
     return redirect(url_for('member_details', member_id=member_id))
 
 @app.route('/loans')
@@ -732,10 +818,11 @@ def approve_loan(loan_id):
                 loan_id
             ))
             db.commit()
-                # 👇👇👇 NEW CODE – SEND APPROVAL EMAIL 👇👇👇
             member = db.execute('SELECT * FROM members WHERE id = ?', (loan['member_id'],)).fetchone()
-            send_loan_approval_email(member['email'], member, loan)
-                # 👆👆👆 END OF NEW CODE 👆👆👆
+            if member and member['email']:
+                send_loan_approval_email(member['email'], member, loan)
+            _audit(db, 'APPROVE_LOAN', 'loans',
+                   f"Approved loan ID {loan_id} – ₦{loan['amount']:,.2f} for member ID {loan['member_id']}")
             flash('Loan approved successfully!', 'success')
         else:
             flash('Loan not found or already processed', 'danger')
@@ -753,15 +840,23 @@ def reject_loan(loan_id):
     db = get_db()
     
     try:
+        loan = db.execute('SELECT * FROM loans WHERE id = ?', (loan_id,)).fetchone()
+        if not loan:
+            flash('Loan not found', 'danger')
+            return redirect(url_for('loans'))
+
         db.execute('UPDATE loans SET status = "rejected" WHERE id = ?', (loan_id,))
         db.commit()
-            # 👇👇👇 NEW CODE – SEND APPROVAL EMAIL 👇👇👇
+
         member = db.execute('SELECT * FROM members WHERE id = ?', (loan['member_id'],)).fetchone()
         reason = request.form.get('reason', 'Does not meet our lending criteria.')
-        send_loan_rejection_email(member['email'], member, loan)
-            # 👆👆👆 END OF NEW CODE 👆👆👆
+        if member and member['email']:
+            send_loan_rejection_email(member['email'], member, reason)
+        _audit(db, 'REJECT_LOAN', 'loans',
+               f"Rejected loan ID {loan_id} – reason: {reason}")
         flash('Loan application rejected', 'info')
     except Exception as e:
+        db.rollback()
         flash(f'Error rejecting loan: {str(e)}', 'danger')
     
     return redirect(url_for('loans'))
@@ -975,6 +1070,8 @@ def add_investment():
                 datetime.now()
             ))
             db.commit()
+            _audit(db, 'ADD_INVESTMENT', 'investments',
+                   f"Added investment {investment_number} – {name} ₦{amount:,.2f}")
             flash(f'Investment "{name}" added successfully! Reference: {investment_number}', 'success')
             return redirect(url_for('investments'))
             
@@ -1281,11 +1378,15 @@ def settings():
                 'last_login': 'Never',
                 'status': 'active'
             })
-        
-        return render_template('admin/settings.html', 
+
+        audit_logs = db.execute(
+            'SELECT * FROM audit_log ORDER BY timestamp DESC LIMIT 100'
+        ).fetchall()
+
+        return render_template('admin/settings.html',
                              settings=settings_dict,
                              system_users=user_list,
-                             audit_logs=[],
+                             audit_logs=audit_logs,
                              backup_history=[],
                              datetime=datetime)
         
@@ -1308,10 +1409,12 @@ def update_settings():
     if 'coop_logo' in request.files:
         logo = request.files['coop_logo']
         if logo and logo.filename:
-            from werkzeug.utils import secure_filename
-            import os
-            filename = secure_filename(logo.filename)
-            ext = filename.rsplit('.', 1)[1].lower()
+            ok, err = _validate_image(logo)
+            if not ok:
+                flash(f'Logo not saved: {err}', 'warning')
+                logo = None  # skip save below
+        if logo and logo.filename:
+            ext = secure_filename(logo.filename).rsplit('.', 1)[1].lower()
             unique_name = f"coop_logo_{int(datetime.now().timestamp())}.{ext}"
             logo_path = os.path.join('static/uploads', unique_name)
             os.makedirs('static/uploads', exist_ok=True)
@@ -1338,8 +1441,9 @@ def update_settings():
                           (key, value, f'Setting for {key}'))
         
         db.commit()
+        _audit(db, 'UPDATE_SETTINGS', 'settings', 'System settings updated')
         flash('✅ Settings saved successfully!', 'success')
-        
+
     except Exception as e:
         db.rollback()
         flash(f'❌ Error saving settings: {str(e)}', 'danger')
@@ -1392,6 +1496,8 @@ def add_expense():
             ))
             
             db.commit()
+            _audit(db, 'ADD_EXPENSE', 'expenses',
+                   f"Recorded expense {expense_number} – ₦{float(request.form['amount']):,.2f}")
             flash('Expense recorded successfully!', 'success')
         except Exception as e:
             db.rollback()
@@ -1446,6 +1552,8 @@ def add_revenue():
             ))
             
             db.commit()
+            _audit(db, 'ADD_REVENUE', 'revenue',
+                   f"Recorded revenue {revenue_number} – ₦{float(request.form['amount']):,.2f}")
             flash('Revenue recorded successfully!', 'success')
         except Exception as e:
             db.rollback()

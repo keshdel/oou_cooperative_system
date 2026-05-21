@@ -1,9 +1,10 @@
 import sqlite3
 import os
+import secrets
 from datetime import datetime
 from werkzeug.security import generate_password_hash
 
-DATABASE = 'cooperative.db'
+DATABASE = os.environ.get('SQLITE_DB_PATH', 'cooperative.db')
 
 def get_db():
     db = sqlite3.connect(DATABASE)
@@ -320,22 +321,40 @@ def init_db():
         except Exception as e:
             print(f"Error inserting setting {key}: {e}")
     
-    # Create default users using ON CONFLICT
-    users = [
-        ('admin', generate_password_hash('admin123'), 'admin'),
-        ('treasurer', generate_password_hash('treasurer123'), 'treasurer'),
-        ('secretary', generate_password_hash('secretary123'), 'secretary')
+    # Create default users only if they do not already exist.
+    # Passwords are taken from env vars; if absent a random password is generated
+    # and printed ONCE to stdout — save it immediately, it will not be shown again.
+    existing_users = {row[0] for row in db.execute('SELECT username FROM users').fetchall()}
+
+    seed_users = [
+        ('admin',     os.environ.get('ADMIN_PASSWORD'),     'admin'),
+        ('treasurer', os.environ.get('TREASURER_PASSWORD'), 'treasurer'),
+        ('secretary', os.environ.get('SECRETARY_PASSWORD'), 'secretary'),
     ]
-    
-    for username, pwd_hash, role in users:
+
+    generated = []
+    for username, password, role in seed_users:
+        if username in existing_users:
+            continue
+        if not password:
+            password = secrets.token_urlsafe(12)
+            generated.append((username, password))
         try:
-            db.execute('''
-                INSERT INTO users (username, password_hash, role, created_at)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(username) DO NOTHING
-            ''', (username, pwd_hash, role, datetime.now()))
+            db.execute(
+                'INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, ?, ?)',
+                (username, generate_password_hash(password), role, datetime.now())
+            )
         except Exception as e:
             print(f"Error creating user {username}: {e}")
+
+    if generated:
+        print("\n" + "=" * 60)
+        print("  FIRST-RUN CREDENTIALS — change these immediately!")
+        for username, password in generated:
+            print(f"  {username:12s}  {password}")
+        print("  Set ADMIN_PASSWORD / TREASURER_PASSWORD / SECRETARY_PASSWORD")
+        print("  environment variables to avoid seeing this message.")
+        print("=" * 60 + "\n")
     
     db.commit()
     db.close()
