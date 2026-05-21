@@ -381,9 +381,9 @@ def loan_detail(loan_id):
     rate   = d.get('interest_rate') or 0
     method = d.get('interest_method') or 'reducing_annual'
 
-    # Parse dates
+    # Parse dates (DB column is approved_at, alias to date_approved for templates)
     d['date_applied']      = _parse_dt(d.get('date_applied'))      if d.get('date_applied')      else None
-    d['date_approved']     = _parse_dt(d.get('date_approved'))      if d.get('date_approved')     else None
+    d['date_approved']     = _parse_dt(d.get('approved_at'))       if d.get('approved_at')       else None
     d['disbursement_date'] = _parse_dt(d.get('disbursement_date'))  if d.get('disbursement_date') else None
 
     # Ensure numeric fields have safe defaults
@@ -428,9 +428,10 @@ def loan_detail(loan_id):
     payments = []
     for r in repayments_raw:
         rd = dict(r)
-        rd['date'] = _parse_dt(rd.get('date')) if rd.get('date') else datetime.now()
-        rd.setdefault('principal_paid', rd.get('principal_payment') or 0)
-        rd.setdefault('interest_paid',  rd.get('interest_payment')  or 0)
+        rd['date']          = _parse_dt(rd.get('date')) if rd.get('date') else datetime.now()
+        rd['principal_paid'] = rd.get('principal_paid') or 0
+        rd['interest_paid']  = rd.get('interest_paid')  or 0
+        rd['penalty_paid']   = rd.get('penalty_paid')   or 0
         payments.append(SimpleNamespace(**rd))
 
     return render_template('member/loan-detail.html',
