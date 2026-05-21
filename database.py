@@ -79,6 +79,7 @@ def init_db():
             member_id INTEGER NOT NULL,
             amount REAL NOT NULL,
             month TEXT NOT NULL,
+            payment_type TEXT DEFAULT 'monthly',
             late_fee REAL DEFAULT 0,
             payment_method TEXT DEFAULT 'cash',
             reference TEXT,
@@ -91,6 +92,11 @@ def init_db():
             FOREIGN KEY (member_id) REFERENCES members (id)
         )
     ''')
+    # Add payment_type to existing databases that pre-date this column
+    try:
+        db.execute("ALTER TABLE savings ADD COLUMN payment_type TEXT DEFAULT 'monthly'")
+    except Exception:
+        pass  # column already exists
     
     # Loans table
     db.execute('''

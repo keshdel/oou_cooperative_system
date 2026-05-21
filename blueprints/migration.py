@@ -255,7 +255,7 @@ def export_members():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 SAVINGS_COLUMNS = [
-    'member_number', 'email', 'amount', 'month',
+    'member_number', 'email', 'amount', 'month', 'payment_type',
     'late_fee', 'payment_method', 'receipt_number', 'date', 'notes',
 ]
 SAVINGS_REQUIRED = {'amount', 'month'}
@@ -286,7 +286,7 @@ def import_savings():
                 flash('CSV must have at least one of: member_number, email', 'danger')
                 return redirect(request.url)
 
-            success, skipped, errors = 0, 0, []
+            success, errors = 0, []
 
             for row_num, row in enumerate(reader, start=2):
                 try:
@@ -308,29 +308,22 @@ def import_savings():
                         errors.append(f"Row {row_num}: month is required (format YYYY-MM).")
                         continue
 
-                    # Skip duplicate (same member + same month)
-                    dup = db.execute(
-                        'SELECT id FROM savings WHERE member_id = ? AND month = ?',
-                        (member['id'], month)
-                    ).fetchone()
-                    if dup:
-                        skipped += 1
-                        continue
-
-                    late_fee = float(row.get('late_fee', '0').strip() or 0)
+                    # Multiple savings per month are allowed (salary + personal etc.)
+                    payment_type   = row.get('payment_type', 'monthly').strip() or 'monthly'
+                    late_fee       = float(row.get('late_fee', '0').strip() or 0)
                     payment_method = row.get('payment_method', 'cash').strip() or 'cash'
                     receipt_number = row.get('receipt_number', '').strip() or _ref('RCPT')
-                    notes = row.get('notes', '').strip() or None
+                    notes          = row.get('notes', '').strip() or None
 
                     date_raw = row.get('date', '').strip()
                     date = _parse_date(date_raw) or datetime.now()
 
                     db.execute('''
                         INSERT INTO savings
-                            (member_id, amount, month, late_fee, payment_method,
-                             receipt_number, notes, date)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (member['id'], amount, month, late_fee,
+                            (member_id, amount, month, payment_type, late_fee,
+                             payment_method, receipt_number, notes, date)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (member['id'], amount, month, payment_type, late_fee,
                           payment_method, receipt_number, notes, date))
 
                     db.execute(
@@ -343,14 +336,14 @@ def import_savings():
 
             db.commit()
             audit(db, 'IMPORT_SAVINGS', 'migration',
-                  f"Imported {success} savings records, skipped {skipped}, {len(errors)} errors")
+                  f"Imported {success} savings records, {len(errors)} errors")
 
         except Exception as e:
             db.rollback()
             flash(f'File processing error: {e}', 'danger')
             return redirect(request.url)
 
-        _flash_result(success, skipped, errors, 'savings record')
+        _flash_result(success, 0, errors, 'savings record')
         return redirect(url_for('migration.index'))
 
     return render_template('admin/migration/import.html',
@@ -371,10 +364,12 @@ def template_savings():
     out = StringIO()
     w = csv.writer(out)
     w.writerow(SAVINGS_COLUMNS)
-    w.writerow(['OOU/2024/0001', 'john@example.com', '5000', '2024-01',
-                '0', 'cash', 'RCPT/20240115/0001', '2024-01-10', ''])
-    w.writerow(['OOU/2024/0002', 'jane@example.com', '10000', '2024-01',
-                '1000', 'transfer', 'RCPT/20240118/0002', '2024-01-18', 'Late payment'])
+    w.writerow(['OOU/2024/0001', 'john@example.com', '5000', '2024-01', 'monthly',
+                '0', 'salary_deduction', 'RCPT/20240115/0001', '2024-01-10', ''])
+    w.writerow(['OOU/2024/0001', 'john@example.com', '2000', '2024-01', 'personal',
+                '0', 'cash', 'RCPT/20240115/0002', '2024-01-15', 'Personal top-up'])
+    w.writerow(['OOU/2024/0002', 'jane@example.com', '10000', '2024-01', 'monthly',
+                '1000', 'transfer', 'RCPT/20240118/0003', '2024-01-18', 'Late payment'])
     return _csv_response(out, 'savings_import_template.csv')
 
 

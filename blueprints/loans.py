@@ -270,25 +270,36 @@ def bulk_loan_repayments():
                         errors.append(f"Row {row_num}: Loan number {loan_number} not found")
                         continue
 
-                    if amount > loan['balance']:
-                        errors.append(
-                            f"Row {row_num}: Payment ₦{amount:,.2f} exceeds balance ₦{loan['balance']:,.2f}"
-                        )
-                        continue
+                    # Pre-liquidation: if amount >= balance, settle in full
+                    is_pre_liquidation = amount >= loan['balance']
+                    settled_amount = loan['balance'] if is_pre_liquidation else amount
 
                     repayment_number = f"REP/{datetime.now().strftime('%Y%m%d')}/{row_num:04d}"
+                    repayment_notes = notes
+                    if is_pre_liquidation:
+                        repayment_notes = ('Pre-liquidation – loan settled in full. ' + (notes or '')).strip()
+
                     db.execute('''
                         INSERT INTO repayments (
                             repayment_number, loan_id, amount, payment_method,
                             receipt_number, notes, date
                         ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                    ''', (repayment_number, loan['id'], amount, payment_method,
-                          receipt_number, notes, payment_date))
+                    ''', (repayment_number, loan['id'], settled_amount, payment_method,
+                          receipt_number, repayment_notes, payment_date))
 
-                    new_balance = loan['balance'] - amount
+                    new_balance = loan['balance'] - settled_amount
                     status = 'completed' if new_balance <= 0 else 'active'
-                    db.execute('UPDATE loans SET balance = ?, status = ? WHERE id = ?',
-                               (new_balance, status, loan['id']))
+                    completed_at = payment_date if status == 'completed' else None
+                    db.execute(
+                        'UPDATE loans SET balance = ?, status = ?, completed_at = ? WHERE id = ?',
+                        (new_balance, status, completed_at, loan['id'])
+                    )
+                    if is_pre_liquidation:
+                        errors.append(
+                            f"Row {row_num}: Note — ₦{amount:,.2f} entered but only "
+                            f"₦{settled_amount:,.2f} (outstanding balance) was recorded. "
+                            f"Loan {loan_number} marked as completed."
+                        )
                     success += 1
                 except Exception as e:
                     errors.append(f"Row {row_num}: {str(e)}")
