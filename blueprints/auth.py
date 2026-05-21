@@ -76,6 +76,31 @@ def setup():
     return redirect(url_for('main.dashboard'))
 
 
+@auth.route('/debug-auth')
+def debug_auth():
+    """Temporary diagnostic endpoint — requires RESET_TOKEN."""
+    import os
+    from flask import request as req
+    expected_token = os.environ.get('RESET_TOKEN', '')
+    provided_token = req.args.get('token', '')
+    if not expected_token or provided_token != expected_token:
+        return '<h2>Not available</h2>', 403
+
+    db   = get_db()
+    rows = db.execute('SELECT id, username, role, must_change_password, created_at FROM users').fetchall()
+    db_path = os.environ.get('SQLITE_DB_PATH', 'cooperative.db (default)')
+    admin_pw = os.environ.get('ADMIN_PASSWORD', '')
+    pw_hint  = (admin_pw[:3] + '***') if admin_pw else 'NOT SET'
+
+    lines = [f'<p><b>DB path:</b> {db_path}</p>']
+    lines.append(f'<p><b>ADMIN_PASSWORD hint:</b> {pw_hint}</p>')
+    lines.append(f'<p><b>Users in DB ({len(rows)}):</b></p><ul>')
+    for r in rows:
+        lines.append(f'<li>id={r["id"]} username=<b>{r["username"]}</b> role={r["role"]} must_change={r["must_change_password"]} created={r["created_at"]}</li>')
+    lines.append('</ul>')
+    return ''.join(lines), 200
+
+
 @auth.route('/emergency-reset')
 def emergency_reset():
     """
