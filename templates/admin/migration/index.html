@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Data Migration – OOU Cooperative{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+
+  <!-- Header -->
+  <div class="row mb-4">
+    <div class="col">
+      <h2><i class="fas fa-database"></i> Data Migration Centre</h2>
+      <p class="text-muted">Import historical data from your old system or export records for backup.</p>
+    </div>
+  </div>
+
+  <!-- Current record counts -->
+  <div class="row mb-4">
+    {% set entities = [
+      ('members',     'Members',     'users',          'primary'),
+      ('savings',     'Savings',     'piggy-bank',     'success'),
+      ('loans',       'Loans',       'hand-holding-usd','warning'),
+      ('repayments',  'Repayments',  'receipt',        'info'),
+      ('expenses',    'Expenses',    'file-invoice-dollar','danger'),
+      ('revenue',     'Revenue',     'coins',          'success'),
+      ('investments', 'Investments', 'chart-line',     'dark'),
+      ('honorarium',  'Honorarium',  'award',          'secondary'),
+    ] %}
+    {% for key, label, icon, colour in entities %}
+    <div class="col-md-3 col-sm-6 mb-3">
+      <div class="card border-{{ colour }} h-100">
+        <div class="card-body text-center py-3">
+          <i class="fas fa-{{ icon }} fa-2x text-{{ colour }} mb-2"></i>
+          <h4 class="mb-0">{{ counts[key] | default(0) }}</h4>
+          <small class="text-muted">{{ label }} records</small>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- Import cards -->
+  <h5 class="mb-3"><i class="fas fa-upload"></i> Import Data</h5>
+  <div class="row mb-5">
+
+    {% set imports = [
+      ('members',     'Members',              'users',          'primary',   'members/template', 'Import full member roster with joining date, nominee, and bank details.'),
+      ('savings',     'Savings History',      'piggy-bank',     'success',   'savings/template', 'Historical monthly savings per member. Skips duplicates (same member + month).'),
+      ('loans',       'Loan Records',         'hand-holding-usd','warning',  'loans/template',  'Past and active loans. Generates loan_number if not provided.'),
+      ('expenses',    'Expenses',             'file-invoice-dollar','danger', 'expenses/template','Bulk operating expenses. Each row gets a unique expense number.'),
+      ('revenue',     'Revenue',              'coins',          'success',   'revenue/template', 'Other income sources (interest, fees, donations).'),
+      ('investments', 'Investments',          'chart-line',     'dark',      'investments/template','Investment portfolio — fixed deposits, bonds, shares, etc.'),
+      ('honorarium',  'Honorarium Payments',  'award',          'secondary', 'honorarium/template','Allowances paid to executives/officers.'),
+    ] %}
+
+    {% for entity, label, icon, colour, tmpl_route, desc in imports %}
+    <div class="col-md-6 col-lg-4 mb-4">
+      <div class="card h-100 shadow-sm">
+        <div class="card-header bg-{{ colour }} bg-opacity-10 border-{{ colour }}">
+          <h6 class="mb-0 text-{{ colour }}">
+            <i class="fas fa-{{ icon }}"></i> {{ label }}
+          </h6>
+        </div>
+        <div class="card-body">
+          <p class="small text-muted mb-3">{{ desc }}</p>
+          <div class="d-flex gap-2 flex-wrap">
+            <a href="{{ url_for('migration.import_' ~ entity) }}"
+               class="btn btn-sm btn-{{ colour }}">
+              <i class="fas fa-upload"></i> Import
+            </a>
+            <a href="{{ url_for('migration.template_' ~ entity) }}"
+               class="btn btn-sm btn-outline-secondary">
+              <i class="fas fa-download"></i> Template
+            </a>
+            <a href="{{ url_for('migration.export_' ~ entity) }}"
+               class="btn btn-sm btn-outline-dark">
+              <i class="fas fa-file-export"></i> Export
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <!-- Migration tips -->
+  <div class="card border-info mb-4">
+    <div class="card-header bg-info bg-opacity-10">
+      <h6 class="mb-0"><i class="fas fa-lightbulb text-info"></i> Migration Tips</h6>
+    </div>
+    <div class="card-body">
+      <ol class="mb-0 small">
+        <li class="mb-1"><strong>Import members first</strong> — savings, loans, and honorarium link to members by <code>member_number</code> or <code>email</code>.</li>
+        <li class="mb-1"><strong>Then import savings</strong> — duplicates (same member + same month) are silently skipped.</li>
+        <li class="mb-1"><strong>Then import loans</strong> — duplicate <code>loan_number</code> values are skipped.</li>
+        <li class="mb-1"><strong>Finally import financial records</strong> — expenses, revenue, investments, honorarium can be imported in any order.</li>
+        <li class="mb-1">Use <strong>UTF-8</strong> encoding when saving your CSV from Excel (<em>Save As → CSV UTF-8</em>).</li>
+        <li class="mb-1">Date columns accept <strong>YYYY-MM-DD</strong>, <strong>DD/MM/YYYY</strong>, or <strong>MM/DD/YYYY</strong>.</li>
+        <li>An import file is processed atomically — if a critical error stops the file, no rows are saved. Row-level errors are reported but the rest of the file continues.</li>
+      </ol>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

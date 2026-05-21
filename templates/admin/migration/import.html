@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} – OOU Cooperative{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+
+  <!-- Header -->
+  <div class="row mb-4">
+    <div class="col-md-8">
+      <h2><i class="fas fa-file-upload"></i> {{ title }}</h2>
+      <p class="text-muted">Upload a CSV file to import records in bulk.</p>
+    </div>
+    <div class="col-md-4 text-end">
+      <a href="{{ back_url }}" class="btn btn-secondary">
+        <i class="fas fa-arrow-left"></i> Back to Migration Centre
+      </a>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="col-lg-8">
+
+      <!-- Upload form -->
+      <div class="card mb-4">
+        <div class="card-header bg-primary text-white">
+          <h6 class="mb-0"><i class="fas fa-upload"></i> Upload CSV File</h6>
+        </div>
+        <div class="card-body">
+
+          <!-- Column info -->
+          <div class="alert alert-info">
+            <h6><i class="fas fa-info-circle"></i> File Requirements</h6>
+            <ul class="mb-1">
+              <li>Format: <strong>CSV</strong>, UTF-8 encoded (use <em>Save As → CSV UTF-8</em> in Excel)</li>
+              <li>First row must be the header row with exact column names</li>
+              <li>
+                Required columns:
+                {% for col in required_cols %}
+                  <code>{{ col }}</code>{% if not loop.last %},{% endif %}
+                {% endfor %}
+              </li>
+              {% if optional_cols %}
+              <li>
+                Optional columns:
+                {% for col in optional_cols %}
+                  <code>{{ col }}</code>{% if not loop.last %},{% endif %}
+                {% endfor %}
+              </li>
+              {% endif %}
+              {% if entity in ['savings', 'loans', 'honorarium'] %}
+              <li>Member lookup: provide <code>member_number</code> and/or <code>email</code> to identify each member</li>
+              {% endif %}
+            </ul>
+            {% if entity == 'savings' %}
+            <small class="text-muted">Duplicate check: rows with the same member + month are skipped automatically.</small>
+            {% elif entity == 'loans' %}
+            <small class="text-muted">Duplicate check: rows with the same <code>loan_number</code> are skipped.</small>
+            {% elif entity == 'members' %}
+            <small class="text-muted">Duplicate check: rows with an existing email or member_number are skipped.</small>
+            {% endif %}
+          </div>
+
+          <form method="POST" enctype="multipart/form-data">
+            <div class="mb-3">
+              <label class="form-label fw-bold">Select CSV File</label>
+              <input type="file" class="form-control" name="file" accept=".csv" required>
+            </div>
+            <div class="d-flex gap-2">
+              <button type="submit" class="btn btn-primary">
+                <i class="fas fa-upload"></i> Upload &amp; Import
+              </button>
+              <a href="{{ template_url }}" class="btn btn-outline-secondary">
+                <i class="fas fa-download"></i> Download Template
+              </a>
+            </div>
+          </form>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Sidebar: column reference -->
+    <div class="col-lg-4">
+      <div class="card">
+        <div class="card-header bg-light">
+          <h6 class="mb-0"><i class="fas fa-table"></i> Column Reference</h6>
+        </div>
+        <div class="card-body p-0">
+          <table class="table table-sm table-striped mb-0">
+            <thead class="table-dark">
+              <tr><th>Column</th><th>Required?</th></tr>
+            </thead>
+            <tbody>
+              {% for col in required_cols %}
+              <tr>
+                <td><code>{{ col }}</code></td>
+                <td><span class="badge bg-danger">Required</span></td>
+              </tr>
+              {% endfor %}
+              {% for col in optional_cols %}
+              <tr>
+                <td><code>{{ col }}</code></td>
+                <td><span class="badge bg-secondary">Optional</span></td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

@@ -63,6 +63,7 @@ from blueprints.reports     import reports
 from blueprints.admin_panel import admin_panel
 from blueprints.portal      import portal
 from blueprints.cards       import cards
+from blueprints.migration   import migration
 from mobile_api             import mobile_api
 
 app.register_blueprint(auth)
@@ -75,6 +76,7 @@ app.register_blueprint(reports)
 app.register_blueprint(admin_panel)
 app.register_blueprint(portal)
 app.register_blueprint(cards)
+app.register_blueprint(migration)
 app.register_blueprint(mobile_api)
 
 # ── Context processor ─────────────────────────────────────────────────────────
