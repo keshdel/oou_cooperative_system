@@ -20,7 +20,11 @@ members = Blueprint('members', __name__)
 def members_list():
     db  = get_db()
     all_members = db.execute('SELECT * FROM members ORDER BY date_joined DESC').fetchall()
-    return render_template('admin/members.html', members=all_members)
+    members_with_loans = db.execute(
+        'SELECT COUNT(DISTINCT member_id) FROM loans WHERE status = "active"'
+    ).fetchone()[0] or 0
+    return render_template('admin/members.html', members=all_members,
+                           members_with_loans=members_with_loans)
 
 
 @members.route('/members/<int:member_id>')
@@ -285,4 +289,42 @@ def download_template():
     response = make_response(output.getvalue())
     response.headers['Content-Type'] = 'text/csv'
     response.headers['Content-Disposition'] = 'attachment; filename=member_template.csv'
+    return response
+
+
+@members.route('/members/export')
+@login_required
+@role_required('admin', 'secretary')
+def export_members():
+    db = get_db()
+    all_members = db.execute('''
+        SELECT m.member_number, m.first_name, m.last_name, m.email, m.phone,
+               m.address, m.occupation, m.status, m.total_savings, m.date_joined
+        FROM members m
+        ORDER BY m.date_joined DESC
+    ''').fetchall()
+
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        'Member Number', 'First Name', 'Last Name', 'Email', 'Phone',
+        'Address', 'Occupation', 'Status', 'Total Savings', 'Date Joined'
+    ])
+    for m in all_members:
+        writer.writerow([
+            m['member_number'] or '',
+            m['first_name'],
+            m['last_name'],
+            m['email'] or '',
+            m['phone'] or '',
+            m['address'] or '',
+            m['occupation'] or '',
+            m['status'],
+            f"₦{m['total_savings']:,.2f}" if m['total_savings'] else '₦0.00',
+            m['date_joined'][:10] if m['date_joined'] else '',
+        ])
+
+    response = make_response(output.getvalue())
+    response.headers['Content-Type'] = 'text/csv'
+    response.headers['Content-Disposition'] = 'attachment; filename=members_export.csv'
     return response

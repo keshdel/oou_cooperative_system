@@ -1,169 +1,239 @@
 {% extends "base.html" %}
 
-{% block title %}Account Statements - OOU Cooperative{% endblock %}
+{% block title %}Account Statement - OOU Cooperative{% endblock %}
 
 {% block content %}
 <div class="container-fluid">
+    <!-- Header -->
     <div class="row mb-4">
         <div class="col-md-8">
-            <h2><i class="fas fa-file-invoice"></i> Account Statements</h2>
-            <p class="text-muted">Download your account statements</p>
+            <h2><i class="fas fa-file-invoice me-2"></i>Statement of Account</h2>
+            <p class="text-muted">Generated on {{ generated_on.strftime('%d %B %Y, %H:%M') }}</p>
         </div>
         <div class="col-md-4 text-end">
-            <a href="{{ url_for('portal.transactions') }}" class="btn btn-secondary">
-                <i class="fas fa-exchange-alt"></i> View Transactions
+            <a href="{{ url_for('portal.member_statement', member_id=member.id) }}" class="btn btn-danger me-2" target="_blank">
+                <i class="fas fa-file-pdf"></i> Download PDF
             </a>
+            <button class="btn btn-secondary" onclick="window.print()">
+                <i class="fas fa-print"></i> Print
+            </button>
         </div>
     </div>
 
-    <div class="row">
-        <div class="col-md-8 mx-auto">
-            <div class="card">
-                <div class="card-header bg-primary text-white">
-                    <h5 class="mb-0">Generate Statement</h5>
+    <!-- Member Summary Banner -->
+    <div class="card mb-4 border-0 shadow-sm">
+        <div class="card-body" style="background: linear-gradient(135deg,#667eea 0%,#764ba2 100%); border-radius:.5rem; color:#fff;">
+            <div class="row">
+                <div class="col-md-6">
+                    <h4 class="mb-1">{{ member.full_name }}</h4>
+                    <p class="mb-1 opacity-75"><i class="fas fa-id-badge me-2"></i>{{ member.member_number }}</p>
+                    <p class="mb-0 opacity-75"><i class="fas fa-calendar me-2"></i>Member since {{ member.date_joined.strftime('%B %Y') if member.date_joined else 'N/A' }}</p>
                 </div>
-                <div class="card-body">
-                    <form method="POST" action="{{ url_for('generate_statement') }}" target="_blank">
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Statement Type</label>
-                                <select class="form-select" name="type" required>
-                                    <option value="savings">Savings Statement</option>
-                                    <option value="loan">Loan Statement</option>
-                                    <option value="all">Full Account Statement</option>
-                                    <option value="dividend">Dividend Statement</option>
-                                </select>
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Period</label>
-                                <select class="form-select" name="period" required>
-                                    <option value="current">Current Month</option>
-                                    <option value="last3">Last 3 Months</option>
-                                    <option value="last6">Last 6 Months</option>
-                                    <option value="last12">Last 12 Months</option>
-                                    <option value="custom">Custom Range</option>
-                                    <option value="all">All Time</option>
-                                </select>
+                <div class="col-md-6 text-end">
+                    <div class="row g-3">
+                        <div class="col-4">
+                            <div class="bg-white bg-opacity-25 rounded p-2">
+                                <small class="d-block opacity-75">Total Savings</small>
+                                <strong>₦{{ "{:,.0f}".format(total_savings) }}</strong>
                             </div>
                         </div>
-
-                        <div id="customRange" style="display: none;">
-                            <div class="row">
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label">From Date</label>
-                                    <input type="date" class="form-control" name="from_date">
-                                </div>
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label">To Date</label>
-                                    <input type="date" class="form-control" name="to_date">
-                                </div>
+                        <div class="col-4">
+                            <div class="bg-white bg-opacity-25 rounded p-2">
+                                <small class="d-block opacity-75">Loan Balance</small>
+                                <strong>₦{{ "{:,.0f}".format(outstanding) }}</strong>
                             </div>
                         </div>
-
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Format</label>
-                                <select class="form-select" name="format" required>
-                                    <option value="pdf">PDF</option>
-                                    <option value="excel">Excel</option>
-                                    <option value="csv">CSV</option>
-                                </select>
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Include</label>
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" name="include_interest" id="include_interest" checked>
-                                    <label class="form-check-label" for="include_interest">Include Interest Calculation</label>
-                                </div>
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" name="include_transactions" id="include_transactions" checked>
-                                    <label class="form-check-label" for="include_transactions">List All Transactions</label>
-                                </div>
+                        <div class="col-4">
+                            <div class="bg-white bg-opacity-25 rounded p-2">
+                                <small class="d-block opacity-75">Net Position</small>
+                                <strong class="{{ 'text-warning' if net_position < 0 }}">₦{{ "{:,.0f}".format(net_position) }}</strong>
                             </div>
                         </div>
-
-                        <hr>
-
-                        <h5 class="mb-3">Available Statements</h5>
-                        <div class="list-group mb-3">
-                            {% for statement in available_statements %}
-                            <a href="{{ url_for('download_statement', filename=statement.file) }}" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
-                                <div>
-                                    <i class="fas fa-file-{{ 'pdf' if statement.type == 'pdf' else 'excel' }} me-2"></i>
-                                    {{ statement.name }}
-                                    <small class="text-muted d-block">{{ statement.date.strftime('%d %B %Y') }}</small>
-                                </div>
-                                <span class="badge bg-primary rounded-pill">{{ statement.size }}</span>
-                            </a>
-                            {% else %}
-                            <p class="text-muted">No statements generated yet.</p>
-                            {% endfor %}
-                        </div>
-
-                        <div class="text-center">
-                            <button type="submit" class="btn btn-primary btn-lg">
-                                <i class="fas fa-file-pdf"></i> Generate Statement
-                            </button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-
-            <div class="card mt-4">
-                <div class="card-header bg-info text-white">
-                    <h5 class="mb-0">Statement Archive</h5>
-                </div>
-                <div class="card-body">
-                    <div class="table-responsive">
-                        <table class="table">
-                            <thead>
-                                <tr>
-                                    <th>Date Generated</th>
-                                    <th>Statement Type</th>
-                                    <th>Period</th>
-                                    <th>Format</th>
-                                    <th>Size</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for stmt in statement_archive %}
-                                <tr>
-                                    <td>{{ stmt.generated_at.strftime('%d/%m/%Y') }}</td>
-                                    <td>{{ stmt.type|title }}</td>
-                                    <td>{{ stmt.period }}</td>
-                                    <td>{{ stmt.format|upper }}</td>
-                                    <td>{{ stmt.size }}</td>
-                                    <td>
-                                        <a href="{{ url_for('download_statement', filename=stmt.file) }}" class="btn btn-sm btn-success">
-                                            <i class="fas fa-download"></i> Download
-                                        </a>
-                                        <button class="btn btn-sm btn-danger" onclick="deleteStatement('{{ stmt.file }}')">
-                                            <i class="fas fa-trash"></i>
-                                        </button>
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
                     </div>
                 </div>
             </div>
         </div>
     </div>
+
+    <!-- Savings History -->
+    <div class="card mb-4">
+        <div class="card-header bg-primary text-white">
+            <div class="d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-piggy-bank me-2"></i>Savings History</h5>
+                <span class="badge bg-light text-dark">{{ savings|length }} record(s)</span>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Date</th>
+                            <th>Month</th>
+                            <th>Base Amount</th>
+                            <th>Late Fee</th>
+                            <th>Total Paid</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for s in savings %}
+                        <tr>
+                            <td>{{ s.date[:10] if s.date else 'N/A' }}</td>
+                            <td>{{ s.month }}</td>
+                            <td>₦{{ "{:,.2f}".format((s.amount or 0) - (s.late_fee or 0)) }}</td>
+                            <td>
+                                {% if s.late_fee and s.late_fee > 0 %}
+                                <span class="text-danger">₦{{ "{:,.2f}".format(s.late_fee) }}</span>
+                                {% else %}-{% endif %}
+                            </td>
+                            <td><strong>₦{{ "{:,.2f}".format(s.amount or 0) }}</strong></td>
+                            <td>
+                                {% if s.late_fee and s.late_fee > 0 %}
+                                <span class="badge bg-warning">Late</span>
+                                {% else %}
+                                <span class="badge bg-success">On Time</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr><td colspan="6" class="text-center text-muted py-3">No savings records yet</td></tr>
+                        {% endfor %}
+                    </tbody>
+                    {% if savings %}
+                    <tfoot class="table-primary fw-bold">
+                        <tr>
+                            <td colspan="2">Total</td>
+                            <td>₦{{ "{:,.2f}".format(savings|sum(attribute='amount') - savings|sum(attribute='late_fee')) }}</td>
+                            <td>₦{{ "{:,.2f}".format(savings|sum(attribute='late_fee')) }}</td>
+                            <td>₦{{ "{:,.2f}".format(total_savings) }}</td>
+                            <td></td>
+                        </tr>
+                    </tfoot>
+                    {% endif %}
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loans Grouped by Type -->
+    <h4 class="mb-3"><i class="fas fa-hand-holding-usd me-2"></i>Loan History — Grouped by Type</h4>
+
+    {% if loans_by_type %}
+        {% for loan_type, type_loans in loans_by_type.items() %}
+        <div class="card mb-4">
+            <div class="card-header" style="background:#f0f4ff; border-left:4px solid #667eea;">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0 fw-bold">
+                        <i class="fas fa-tag me-2 text-primary"></i>{{ loan_type }} Loans
+                    </h6>
+                    <div>
+                        <span class="badge bg-secondary me-1">{{ type_loans|length }} loan(s)</span>
+                        <span class="badge bg-primary">₦{{ "{:,.2f}".format(type_loans|sum(attribute='amount')) }} total</span>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Loan Ref</th>
+                                <th>Date Applied</th>
+                                <th>Amount</th>
+                                <th>Interest Rate</th>
+                                <th>Tenure</th>
+                                <th>Total Repayment</th>
+                                <th>Balance</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for loan in type_loans %}
+                            <tr>
+                                <td><code>{{ loan.loan_number }}</code></td>
+                                <td>{{ loan.date_applied[:10] if loan.date_applied else 'N/A' }}</td>
+                                <td>₦{{ "{:,.2f}".format(loan.amount or 0) }}</td>
+                                <td>{{ loan.interest_rate or 'N/A' }}%</td>
+                                <td>{{ loan.tenure }} mo.</td>
+                                <td>₦{{ "{:,.2f}".format(loan.total_repayment or 0) }}</td>
+                                <td>
+                                    {% if loan.status == 'completed' %}
+                                    <span class="text-success">₦0.00</span>
+                                    {% else %}
+                                    <strong class="text-danger">₦{{ "{:,.2f}".format(loan.balance or 0) }}</strong>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <span class="badge bg-{{ 'success' if loan.status == 'active' else ('secondary' if loan.status == 'completed' else ('warning' if loan.status == 'pending' else 'danger')) }}">
+                                        {{ loan.status|title }}
+                                    </span>
+                                </td>
+                            </tr>
+                            <!-- Repayment sub-rows -->
+                            {% if loan.id in loan_repayments %}
+                            <tr class="table-light">
+                                <td colspan="8" class="p-0">
+                                    <div class="px-4 py-2">
+                                        <small class="text-muted fw-bold">Repayment Schedule:</small>
+                                        <div class="table-responsive mt-1">
+                                            <table class="table table-sm table-borderless mb-0" style="font-size:0.85em;">
+                                                <thead>
+                                                    <tr class="text-muted">
+                                                        <th>Ref</th><th>Date</th><th>Amount</th><th>Principal</th><th>Interest</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                {% for rep in loan_repayments[loan.id] %}
+                                                <tr>
+                                                    <td><code>{{ rep.repayment_number }}</code></td>
+                                                    <td>{{ rep.date[:10] if rep.date else 'N/A' }}</td>
+                                                    <td class="text-success fw-bold">₦{{ "{:,.2f}".format(rep.amount or 0) }}</td>
+                                                    <td>₦{{ "{:,.2f}".format(rep.principal_payment or 0) }}</td>
+                                                    <td>₦{{ "{:,.2f}".format(rep.interest_payment or 0) }}</td>
+                                                </tr>
+                                                {% endfor %}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endif %}
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    {% else %}
+    <div class="card mb-4">
+        <div class="card-body text-center text-muted py-5">
+            <i class="fas fa-hand-holding-usd fa-3x mb-3 opacity-25"></i>
+            <p>No loan records found.</p>
+            <a href="{{ url_for('portal.apply_loan_member') }}" class="btn btn-success">Apply for a Loan</a>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Footer Note -->
+    <div class="alert alert-info d-print-none">
+        <i class="fas fa-info-circle me-2"></i>
+        For a certified PDF copy of this statement, click <strong>Download PDF</strong> above.
+        Contact the cooperative office for any discrepancies.
+    </div>
 </div>
+{% endblock %}
 
+{% block extra_js %}
 <script>
-// Show/hide custom date range based on period selection
-document.querySelector('select[name="period"]').addEventListener('change', function() {
-    document.getElementById('customRange').style.display = this.value === 'custom' ? 'block' : 'none';
+// Print styles
+window.addEventListener('beforeprint', function() {
+    document.querySelectorAll('.d-print-none').forEach(el => el.style.display = 'none');
 });
-
-function deleteStatement(filename) {
-    if(confirm('Delete this statement?')) {
-        fetch('/api/statement/' + filename, { method: 'DELETE' })
-            .then(() => location.reload());
-    }
-}
+window.addEventListener('afterprint', function() {
+    document.querySelectorAll('.d-print-none').forEach(el => el.style.display = '');
+});
 </script>
 {% endblock %}

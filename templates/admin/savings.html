@@ -127,18 +127,17 @@
 </div>
 {% endblock %}
 
-{% block scripts %}
+{% block extra_js %}
 <script>
 // Search functionality
-document.getElementById('searchTable').addEventListener('keyup', function() {
+['keyup','input'].forEach(ev => document.getElementById('searchTable').addEventListener(ev, function() {
     var input = this.value.toLowerCase();
     var rows = document.querySelectorAll('#savingsTable tbody tr');
-    
     rows.forEach(function(row) {
         var text = row.textContent.toLowerCase();
         row.style.display = text.includes(input) ? '' : 'none';
     });
-});
+}));
 
 // Export to CSV
 function exportToCSV() {

@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+
+{% block title %}Change Savings Amount - Member Portal{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h2><i class="fas fa-piggy-bank"></i> Request Savings Amount Change</h2>
+            <p class="text-muted">Submit a request to change your monthly savings contribution</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="{{ url_for('portal.my_savings') }}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> Back to My Savings
+            </a>
+        </div>
+    </div>
+
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+
+            <!-- Current Info -->
+            <div class="card mb-4 border-primary">
+                <div class="card-header bg-primary text-white">
+                    <h6 class="mb-0"><i class="fas fa-info-circle me-2"></i>Current Savings Details</h6>
+                </div>
+                <div class="card-body">
+                    <div class="row text-center">
+                        <div class="col-md-4">
+                            <p class="text-muted mb-1">Current Monthly Amount</p>
+                            <h4 class="text-primary">₦{{ "{:,.2f}".format(member.monthly_savings or 5000) }}</h4>
+                        </div>
+                        <div class="col-md-4">
+                            <p class="text-muted mb-1">Total Savings to Date</p>
+                            <h4 class="text-success">₦{{ "{:,.2f}".format(member.total_savings or 0) }}</h4>
+                        </div>
+                        <div class="col-md-4">
+                            <p class="text-muted mb-1">Member Since</p>
+                            <h4 class="text-info">{{ member.date_joined.strftime('%b %Y') if member.date_joined else 'N/A' }}</h4>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Request Form -->
+            <div class="card">
+                <div class="card-header bg-warning text-dark">
+                    <h5 class="mb-0"><i class="fas fa-edit me-2"></i>Change Request Form</h5>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-2"></i>
+                        <strong>Note:</strong> The minimum monthly savings is <strong>₦5,000</strong> as per cooperative bye-laws (section 8.2.2).
+                        Your request will be reviewed and approved by the administrator.
+                    </div>
+
+                    <form method="POST" id="savingsChangeForm">
+                        <div class="mb-4">
+                            <label class="form-label fw-bold">New Monthly Savings Amount (₦) <span class="text-danger">*</span></label>
+                            <div class="input-group input-group-lg">
+                                <span class="input-group-text">₦</span>
+                                <input type="number" class="form-control" name="new_amount" id="new_amount"
+                                       min="5000" step="500" placeholder="e.g. 10000" required>
+                            </div>
+                            <small class="text-muted">Minimum: ₦5,000 | Enter the full monthly amount you wish to contribute</small>
+                        </div>
+
+                        <!-- Live comparison -->
+                        <div class="card bg-light mb-4" id="comparisonCard" style="display:none;">
+                            <div class="card-body">
+                                <div class="row text-center">
+                                    <div class="col-4">
+                                        <small class="text-muted">Current Amount</small>
+                                        <h5 class="text-secondary" id="compCurrent">₦{{ "{:,.2f}".format(member.monthly_savings or 5000) }}</h5>
+                                    </div>
+                                    <div class="col-4 d-flex align-items-center justify-content-center">
+                                        <i class="fas fa-arrow-right fa-2x text-primary"></i>
+                                    </div>
+                                    <div class="col-4">
+                                        <small class="text-muted">New Amount</small>
+                                        <h5 class="text-success" id="compNew">₦0</h5>
+                                    </div>
+                                </div>
+                                <div class="text-center mt-2">
+                                    <span id="changeBadge" class="badge fs-6"></span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mb-4">
+                            <label class="form-label fw-bold">Reason for Change <span class="text-danger">*</span></label>
+                            <textarea class="form-control" name="reason" rows="4" required
+                                      placeholder="Please provide a reason for this change (e.g., salary increase, financial adjustment, etc.)"></textarea>
+                        </div>
+
+                        <div class="form-check mb-4">
+                            <input class="form-check-input" type="checkbox" id="confirmCheck" required>
+                            <label class="form-check-label" for="confirmCheck">
+                                I understand that this change is subject to approval by the cooperative administrator,
+                                and will take effect from the next contribution cycle.
+                            </label>
+                        </div>
+
+                        <div class="d-flex justify-content-between">
+                            <a href="{{ url_for('portal.my_savings') }}" class="btn btn-secondary">
+                                <i class="fas fa-times me-2"></i>Cancel
+                            </a>
+                            <button type="submit" class="btn btn-warning btn-lg" id="submitBtn" disabled>
+                                <i class="fas fa-paper-plane me-2"></i>Submit Request
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Info Card -->
+            <div class="card mt-4 border-info">
+                <div class="card-header bg-info text-white">
+                    <h6 class="mb-0"><i class="fas fa-question-circle me-2"></i>What happens next?</h6>
+                </div>
+                <div class="card-body">
+                    <ol class="mb-0">
+                        <li class="mb-2">Your request will be sent to the cooperative administrator for review.</li>
+                        <li class="mb-2">You will receive a notification once the request is approved or declined.</li>
+                        <li class="mb-2">If approved, the new amount will apply from your next monthly contribution.</li>
+                        <li>Contact the office directly if you need urgent assistance: <strong>support@ooucoop.ng</strong></li>
+                    </ol>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const currentAmount = {{ member.monthly_savings or 5000 }};
+const amountInput   = document.getElementById('new_amount');
+const submitBtn     = document.getElementById('submitBtn');
+const confirmCheck  = document.getElementById('confirmCheck');
+const compCard      = document.getElementById('comparisonCard');
+const compNew       = document.getElementById('compNew');
+const changeBadge   = document.getElementById('changeBadge');
+
+function updateComparison() {
+    const val = parseFloat(amountInput.value) || 0;
+    if (val >= 5000) {
+        compCard.style.display = '';
+        compNew.textContent = '₦' + val.toLocaleString('en-NG', {minimumFractionDigits: 2});
+        const diff = val - currentAmount;
+        if (diff > 0) {
+            changeBadge.className = 'badge bg-success fs-6';
+            changeBadge.textContent = '▲ Increase of ₦' + diff.toLocaleString('en-NG', {minimumFractionDigits: 2});
+        } else if (diff < 0) {
+            changeBadge.className = 'badge bg-warning text-dark fs-6';
+            changeBadge.textContent = '▼ Decrease of ₦' + Math.abs(diff).toLocaleString('en-NG', {minimumFractionDigits: 2});
+        } else {
+            changeBadge.className = 'badge bg-secondary fs-6';
+            changeBadge.textContent = 'No change';
+        }
+    } else {
+        compCard.style.display = 'none';
+    }
+    toggleSubmit();
+}
+
+function toggleSubmit() {
+    const val = parseFloat(amountInput.value) || 0;
+    submitBtn.disabled = !(val >= 5000 && confirmCheck.checked);
+}
+
+amountInput.addEventListener('input', updateComparison);
+confirmCheck.addEventListener('change', toggleSubmit);
+</script>
+{% endblock %}

@@ -121,12 +121,12 @@
                                             </div>
                                             <div class="col-md-3">
                                                 <small class="text-muted">Disbursement Date</small>
-                                                <h6>{{ loan.disbursement_date.strftime('%d/%m/%Y') }}</h6>
+                                                <h6>{{ loan.disbursement_date.strftime('%d/%m/%Y') if loan.disbursement_date else 'Pending' }}</h6>
                                             </div>
                                             <div class="col-md-3">
                                                 <small class="text-muted">Next Payment</small>
                                                 <h6 class="{% if loan.is_overdue %}text-danger{% endif %}">
-                                                    {{ loan.next_payment_date.strftime('%d/%m/%Y') }}
+                                                    {{ loan.next_payment_date.strftime('%d/%m/%Y') if loan.next_payment_date else 'N/A' }}
                                                     {% if loan.is_overdue %}(Overdue){% endif %}
                                                 </h6>
                                             </div>
@@ -207,7 +207,7 @@
                                 <div>
                                     <h6>Loan #{{ loan.loan_number }}</h6>
                                     <p class="mb-0">Amount: ₦{{ "{:,.2f}".format(loan.amount) }} | Purpose: {{ loan.purpose }}</p>
-                                    <small class="text-muted">Applied: {{ loan.date_applied.strftime('%d/%m/%Y') }}</small>
+                                    <small class="text-muted">Applied: {{ loan.date_applied.strftime('%d/%m/%Y') if loan.date_applied else 'N/A' }}</small>
                                 </div>
                                 <div>
                                     <span class="badge bg-warning p-2">Pending Approval</span>
@@ -244,8 +244,8 @@
                                     <td>{{ loan.loan_number }}</td>
                                     <td>₦{{ "{:,.2f}".format(loan.amount) }}</td>
                                     <td>{{ loan.purpose }}</td>
-                                    <td>{{ loan.date_approved.strftime('%d/%m/%Y') }}</td>
-                                    <td>{{ loan.completed_at.strftime('%d/%m/%Y') }}</td>
+                                    <td>{{ loan.date_approved.strftime('%d/%m/%Y') if loan.date_approved else 'N/A' }}</td>
+                                    <td>{{ loan.completed_at.strftime('%d/%m/%Y') if loan.completed_at else 'N/A' }}</td>
                                     <td>₦{{ "{:,.2f}".format(loan.total_repayment) }}</td>
                                     <td>
                                         <a href="{{ url_for('portal.loan_detail', loan_id=loan.id) }}" 
@@ -279,7 +279,7 @@
                                     <td>{{ loan.loan_number }}</td>
                                     <td>₦{{ "{:,.2f}".format(loan.amount) }}</td>
                                     <td>{{ loan.purpose }}</td>
-                                    <td>{{ loan.date_applied.strftime('%d/%m/%Y') }}</td>
+                                    <td>{{ loan.date_applied.strftime('%d/%m/%Y') if loan.date_applied else 'N/A' }}</td>
                                     <td>
                                         {% if loan.status == 'active' %}
                                         <span class="badge bg-success">Active</span>

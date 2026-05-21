@@ -39,7 +39,24 @@ def loans_list():
         ORDER BY l.date_applied DESC
     ''').fetchall()
     active_loans = db.execute('SELECT SUM(amount) FROM loans WHERE status = "active"').fetchone()[0] or 0
-    return render_template('admin/loans.html', loans=all_loans, active_loans=active_loans)
+
+    # Compute overdue: active loans where disbursement_date + tenure months < today
+    today = datetime.now()
+    overdue = []
+    for loan in all_loans:
+        if loan['status'] != 'active':
+            continue
+        try:
+            disbursed_str = loan['disbursement_date'] or loan['date_applied']
+            disbursed = datetime.fromisoformat(str(disbursed_str).replace('Z', '+00:00').split('+')[0])
+            due = disbursed + timedelta(days=int(loan['tenure']) * 30)
+            if due < today:
+                overdue.append(loan)
+        except Exception:
+            pass
+
+    return render_template('admin/loans.html', loans=all_loans, active_loans=active_loans,
+                           overdue_loans=overdue)
 
 
 @loans.route('/loans/apply', methods=['GET', 'POST'])
@@ -362,3 +379,71 @@ def export_loans():
     response.headers['Content-Type'] = 'text/csv'
     response.headers['Content-Disposition'] = 'attachment; filename=loans_export.csv'
     return response
+
+
+@loans.route('/loans/repay/<int:loan_id>', methods=['POST'])
+@login_required
+@role_required('admin', 'treasurer')
+def repay_loan(loan_id):
+    db = get_db()
+    try:
+        loan = db.execute('SELECT * FROM loans WHERE id = ?', (loan_id,)).fetchone()
+        if not loan:
+            flash('Loan not found.', 'danger')
+            return redirect(url_for('loans.loans_list'))
+
+        if loan['status'] != 'active':
+            flash('Only active loans can receive repayments.', 'warning')
+            return redirect(url_for('loans.loans_list'))
+
+        amount = float(request.form.get('amount', 0))
+        method = request.form.get('method', 'cash')
+
+        if amount <= 0:
+            flash('Payment amount must be greater than zero.', 'danger')
+            return redirect(url_for('loans.loans_list'))
+
+        # Cap payment at outstanding balance (pre-liquidation)
+        is_pre_liq = amount >= loan['balance']
+        settled    = loan['balance'] if is_pre_liq else amount
+
+        repayment_number = f"REP/{datetime.now().strftime('%Y%m%d%H%M%S')}/{loan_id}"
+        notes = 'Pre-liquidation – loan settled in full.' if is_pre_liq else ''
+
+        db.execute('''
+            INSERT INTO repayments (repayment_number, loan_id, amount, payment_method, notes, date)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (repayment_number, loan_id, settled, method, notes, datetime.now()))
+
+        new_balance = loan['balance'] - settled
+        new_status  = 'completed' if new_balance <= 0 else 'active'
+        completed_at = datetime.now() if new_status == 'completed' else None
+
+        db.execute(
+            'UPDATE loans SET balance = ?, status = ?, completed_at = ? WHERE id = ?',
+            (new_balance, new_status, completed_at, loan_id)
+        )
+        db.commit()
+
+        member = db.execute('SELECT * FROM members WHERE id = ?', (loan['member_id'],)).fetchone()
+        if member and member['email']:
+            notify_member(db, member['email'],
+                          'Loan Repayment Recorded',
+                          f"A repayment of ₦{settled:,.2f} has been recorded on your loan. "
+                          f"Outstanding balance: ₦{new_balance:,.2f}.",
+                          notification_type='info',
+                          action_url='/my-loans')
+
+        audit(db, 'LOAN_REPAYMENT', 'loans',
+              f"Recorded repayment ₦{settled:,.2f} for loan ID {loan_id} – balance now ₦{new_balance:,.2f}")
+
+        if is_pre_liq:
+            flash(f'Loan fully settled! ₦{settled:,.2f} recorded.', 'success')
+        else:
+            flash(f'Repayment of ₦{settled:,.2f} recorded. Balance: ₦{new_balance:,.2f}', 'success')
+
+    except Exception as e:
+        db.rollback()
+        flash(f'Error recording repayment: {str(e)}', 'danger')
+
+    return redirect(url_for('loans.loans_list'))

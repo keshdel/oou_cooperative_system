@@ -76,9 +76,7 @@
                     <li><a class="dropdown-item filter-option" href="#" data-filter="all">All Members</a></li>
                     <li><a class="dropdown-item filter-option" href="#" data-filter="active">Active Only</a></li>
                     <li><a class="dropdown-item filter-option" href="#" data-filter="inactive">Inactive Only</a></li>
-                    <li><a class="dropdown-item filter-option" href="#" data-filter="with-loans">With Loans</a></li>
-                    <li><hr class="dropdown-divider"></li>
-                    <li><a class="dropdown-item filter-option" href="#" data-filter="recent">Joined Last 30 Days</a></li>
+                    <li><a class="dropdown-item filter-option" href="#" data-filter="pending">Pending Only</a></li>
                 </ul>
             </div>
         </div>
@@ -294,7 +292,7 @@
 </div>
 {% endblock %}
 
-{% block scripts %}
+{% block extra_js %}
 <script>
 // Show savings modal
 function showSavingsModal(memberId, memberName) {
@@ -388,20 +386,18 @@ function quickViewMember(memberId) {
 }
 
 // Search functionality
-document.getElementById('searchMember')?.addEventListener('keyup', function() {
+['keyup','input'].forEach(ev => document.getElementById('searchMember')?.addEventListener(ev, function() {
     const searchText = this.value.toLowerCase();
     const tables = document.querySelectorAll('.tab-pane.active table tbody');
-    
     tables.forEach(table => {
         if (!table) return;
         const rows = table.getElementsByTagName('tr');
-        
         for (let row of rows) {
             const text = row.textContent.toLowerCase();
             row.style.display = text.includes(searchText) ? '' : 'none';
         }
     });
-});
+}));
 
 // Filter options
 document.querySelectorAll('.filter-option').forEach(option => {
@@ -419,7 +415,7 @@ document.querySelectorAll('.filter-option').forEach(option => {
 
 // Export members
 function exportMembers() {
-    window.location.href = '/api/members/export';
+    window.location.href = '/members/export';
 }
 
 // Validate savings form
