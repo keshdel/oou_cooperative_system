@@ -51,8 +51,11 @@
                     </a>
                     {% endif %}
                     {% if current_user.role == 'admin' %}
-                    <a href="{{ url_for('admin_panel.settings') }}" class="{% if request.endpoint == 'settings' %}active{% endif %}">
+                    <a href="{{ url_for('admin_panel.settings') }}" class="{% if request.blueprint == 'admin_panel' and request.endpoint == 'admin_panel.settings' %}active{% endif %}">
                         <i class="fas fa-cog"></i> Settings
+                    </a>
+                    <a href="{{ url_for('migration.index') }}" class="{% if request.blueprint == 'migration' %}active{% endif %}">
+                        <i class="fas fa-database"></i> Data Migration
                     </a>
                     {% endif %}
                     <a href="{{ url_for('auth.logout') }}">

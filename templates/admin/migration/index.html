@@ -81,6 +81,28 @@
     {% endfor %}
   </div>
 
+  <!-- Danger Zone -->
+  <div class="card border-danger mb-4">
+    <div class="card-header bg-danger bg-opacity-10 d-flex justify-content-between align-items-center">
+      <h6 class="mb-0 text-danger"><i class="fas fa-exclamation-triangle"></i> Danger Zone</h6>
+    </div>
+    <div class="card-body">
+      <div class="d-flex align-items-center justify-content-between flex-wrap gap-3">
+        <div>
+          <strong>Purge all transactional data</strong>
+          <p class="mb-0 small text-muted">
+            Deletes every member, saving, loan, expense, revenue, investment, and notification record.
+            Your admin account and system settings are <strong>not</strong> affected.
+            Use this to reset after a test import.
+          </p>
+        </div>
+        <button class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#purgeModal">
+          <i class="fas fa-trash-alt"></i> Purge Database
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- Migration tips -->
   <div class="card border-info mb-4">
     <div class="card-header bg-info bg-opacity-10">
@@ -99,5 +121,42 @@
     </div>
   </div>
 
+</div>
+
+<!-- Purge confirmation modal -->
+<div class="modal fade" id="purgeModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content border-danger">
+      <div class="modal-header bg-danger text-white">
+        <h5 class="modal-title"><i class="fas fa-exclamation-triangle"></i> Confirm Database Purge</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST" action="{{ url_for('migration.purge_database') }}">
+        <div class="modal-body">
+          <div class="alert alert-danger">
+            <strong>This will permanently delete:</strong>
+            <ul class="mb-0 mt-1">
+              <li>All members and their records</li>
+              <li>All savings, loans, and repayments</li>
+              <li>All expenses, revenue, and investments</li>
+              <li>All notifications and audit logs</li>
+            </ul>
+          </div>
+          <p>Your <strong>admin account</strong> and <strong>system settings</strong> will not be affected.</p>
+          <div class="mb-3">
+            <label class="form-label">Type <strong>PURGE ALL DATA</strong> to confirm:</label>
+            <input type="text" class="form-control" name="confirm_phrase"
+                   placeholder="PURGE ALL DATA" autocomplete="off" required>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-danger">
+            <i class="fas fa-trash-alt"></i> Purge Everything
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
 </div>
 {% endblock %}

@@ -988,6 +988,38 @@ def export_honorarium():
     return _csv_response(out, 'honorarium_export.csv')
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# PURGE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_PURGEABLE_TABLES = [
+    'repayments', 'loans', 'savings',
+    'honorarium', 'expenses', 'revenue', 'investments',
+    'notifications', 'audit_log', 'members',
+]
+
+@migration.route('/purge', methods=['POST'])
+@login_required
+@role_required('admin')
+def purge_database():
+    confirm = request.form.get('confirm_phrase', '').strip()
+    if confirm != 'PURGE ALL DATA':
+        flash('Confirmation phrase did not match. Purge cancelled.', 'danger')
+        return redirect(url_for('migration.index'))
+
+    db = get_db()
+    try:
+        for table in _PURGEABLE_TABLES:
+            db.execute(f'DELETE FROM {table}')
+        db.commit()
+        flash('All transactional data has been purged. Users and settings were kept.', 'success')
+    except Exception as e:
+        db.rollback()
+        flash(f'Purge failed: {str(e)}', 'danger')
+
+    return redirect(url_for('migration.index'))
+
+
 # ── Shared utilities ──────────────────────────────────────────────────────────
 
 def _parse_date(raw):
