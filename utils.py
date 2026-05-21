@@ -19,12 +19,14 @@ from security import log_audit
 # ── User model ───────────────────────────────────────────────────────────────
 
 class User(UserMixin):
-    def __init__(self, id, username, password_hash, role, email=''):
-        self.id            = id
-        self.username      = username
-        self.password_hash = password_hash
-        self.role          = role
-        self.email         = email
+    def __init__(self, id, username, password_hash, role, email='',
+                 must_change_password=0):
+        self.id                  = id
+        self.username            = username
+        self.password_hash       = password_hash
+        self.role                = role
+        self.email               = email
+        self.must_change_password = bool(must_change_password)
 
 
 # ── Role-based access control ─────────────────────────────────────────────────

@@ -16,7 +16,23 @@ from utils import User
 
 app = Flask(__name__)
 
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'change-this-in-production')
+_KNOWN_BAD_KEYS = {
+    'change-this-in-production',
+    'your-super-secret-key-change-this-in-production-2024',
+    'secret',
+    'dev',
+    '',
+}
+_secret_key = os.environ.get('SECRET_KEY', '')
+if not _secret_key or _secret_key in _KNOWN_BAD_KEYS:
+    raise RuntimeError(
+        "\n\n  *** STARTUP ABORTED ***\n"
+        "  SECRET_KEY is not set or is using a known insecure default.\n"
+        "  Generate a secure key and set it as an environment variable:\n\n"
+        "      python -c \"import secrets; print(secrets.token_hex(32))\"\n\n"
+        "  Then set:  SECRET_KEY=<generated-value>\n"
+    )
+app.config['SECRET_KEY'] = _secret_key
 app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10 MB
 
 # Mail
@@ -50,9 +66,11 @@ def load_user(user_id):
     db = get_db()
     user = db.execute('SELECT * FROM users WHERE id = ?', (user_id,)).fetchone()
     if user:
+        keys = user.keys()
         return User(
             user['id'], user['username'], user['password_hash'], user['role'],
-            user['email'] if 'email' in user.keys() else ''
+            user['email'] if 'email' in keys else '',
+            user['must_change_password'] if 'must_change_password' in keys else 0,
         )
     return None
 
@@ -168,6 +186,26 @@ def check_maintenance():
     if request.endpoint not in ['auth.login', 'auth.logout', 'static']:
         if not _check_billing_status():
             return render_template('errors/subscription_expired.html'), 402
+
+
+# ── Forced password-change gate ───────────────────────────────────────────────
+
+_ALLOWED_WHILE_FORCED = {'portal.change_password', 'auth.logout', 'static'}
+
+@app.before_request
+def enforce_password_change():
+    """Redirect any user with must_change_password=True to the change-password
+    page until they set a new password.  Static assets and the change/logout
+    endpoints are always permitted so the page can actually render."""
+    if not current_user.is_authenticated:
+        return
+    if not getattr(current_user, 'must_change_password', False):
+        return
+    if request.endpoint in _ALLOWED_WHILE_FORCED:
+        return
+    from flask import redirect, url_for, flash
+    flash('You must set a new password before continuing.', 'warning')
+    return redirect(url_for('portal.change_password'))
 
 
 # ── Error handlers ────────────────────────────────────────────────────────────

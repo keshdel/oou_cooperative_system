@@ -25,12 +25,19 @@ def init_db():
             email TEXT,
             phone TEXT,
             is_active INTEGER DEFAULT 1,
+            must_change_password INTEGER DEFAULT 0,
             two_factor_secret TEXT,
             last_login TIMESTAMP,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
     
+    # Add must_change_password to existing users tables that pre-date this column
+    try:
+        db.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0")
+    except Exception:
+        pass  # column already exists
+
     # Members table
     db.execute('''
         CREATE TABLE IF NOT EXISTS members (

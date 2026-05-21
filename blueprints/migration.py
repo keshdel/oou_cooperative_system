@@ -5,10 +5,11 @@ All imports use atomic transactions — the whole file succeeds or rolls back.
 """
 import csv
 import random
+import secrets
 from datetime import datetime
 from io import StringIO, TextIOWrapper
 
-from flask import Blueprint, render_template, redirect, url_for, request, flash, make_response
+from flask import Blueprint, render_template, redirect, url_for, request, flash, make_response, session
 from flask_login import login_required
 from werkzeug.security import generate_password_hash
 
@@ -127,7 +128,11 @@ def index():
         'investments': db.execute('SELECT COUNT(*) FROM investments').fetchone()[0],
         'honorarium':  db.execute('SELECT COUNT(*) FROM honorarium').fetchone()[0],
     }
-    return render_template('admin/migration/index.html', counts=counts)
+    # Pop temp credentials from session (show once, then gone)
+    new_credentials = session.pop('new_member_credentials', None)
+    return render_template('admin/migration/index.html',
+                           counts=counts,
+                           new_credentials=new_credentials)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -169,6 +174,7 @@ def import_members():
                 return redirect(request.url)
 
             success, skipped, errors = 0, 0, []
+            new_credentials = []  # {name, email, username, password} for auto-created accounts
 
             for row_num, row in enumerate(reader, start=2):
                 try:
@@ -254,15 +260,25 @@ def import_members():
                             'SELECT id FROM users WHERE email = ?', (email,)
                         ).fetchone()
                         if not existing_user:
-                            # Default password = member_number (member must change it)
-                            pw_hash   = generate_password_hash(member_number)
+                            # Generate a cryptographically random temporary password.
+                            # must_change_password=1 forces the member to set their own
+                            # password on first login — the temp password is shown to the
+                            # admin after import so they can communicate it to the member.
+                            temp_pw   = secrets.token_urlsafe(12)
+                            pw_hash   = generate_password_hash(temp_pw)
                             full_name = f"{first_name} {last_name}"
                             db.execute('''
                                 INSERT INTO users
                                     (username, password_hash, role, full_name, email,
-                                     is_active, created_at)
-                                VALUES (?, ?, 'member', ?, ?, 1, ?)
+                                     is_active, must_change_password, created_at)
+                                VALUES (?, ?, 'member', ?, ?, 1, 1, ?)
                             ''', (email, pw_hash, full_name, email, datetime.now()))
+                            new_credentials.append({
+                                'name':     full_name,
+                                'email':    email,
+                                'username': email,
+                                'password': temp_pw,
+                            })
 
                     success += 1
                 except Exception as e:
@@ -271,6 +287,10 @@ def import_members():
             db.commit()
             audit(db, 'IMPORT_MEMBERS', 'migration',
                   f"Imported {success} members, skipped {skipped} duplicates, {len(errors)} errors")
+
+            # Stash temp credentials in the session so the index page can display them once.
+            if new_credentials:
+                session['new_member_credentials'] = new_credentials
 
         except Exception as e:
             db.rollback()

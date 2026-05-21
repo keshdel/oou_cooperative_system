@@ -31,12 +31,17 @@ def login():
 
         if user and check_password_hash(user['password_hash'], password):
             clear_login_attempts(ip)
+            keys = user.keys()
             user_obj = User(
                 user['id'], user['username'], user['password_hash'], user['role'],
-                user['email'] if 'email' in user.keys() else ''
+                user['email'] if 'email' in keys else '',
+                user['must_change_password'] if 'must_change_password' in keys else 0,
             )
             login_user(user_obj)
             log_audit(db, user['id'], user['username'], 'LOGIN', 'auth', 'User logged in', ip, ua)
+            if user_obj.must_change_password:
+                flash('Welcome! You must set a new password before you can continue.', 'warning')
+                return redirect(url_for('portal.change_password'))
             flash('Login successful!', 'success')
             return redirect(url_for('main.dashboard'))
         else:

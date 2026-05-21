@@ -676,8 +676,10 @@ def change_password():
             flash('Current password is incorrect.', 'danger')
             return redirect(url_for('portal.change_password'))
 
-        db.execute('UPDATE users SET password_hash = ? WHERE id = ?',
-                   (generate_password_hash(new_pw), current_user.id))
+        db.execute(
+            'UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?',
+            (generate_password_hash(new_pw), current_user.id)
+        )
         db.commit()
         flash('Password changed successfully! Please log in again.', 'success')
         logout_user()

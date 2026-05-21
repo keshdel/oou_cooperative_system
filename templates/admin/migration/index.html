@@ -12,6 +12,60 @@
     </div>
   </div>
 
+  <!-- ── Temp credentials panel (shown once after member import) ── -->
+  {% if new_credentials %}
+  <div class="alert alert-warning border-warning shadow-sm mb-4" id="credentialsPanel">
+    <div class="d-flex justify-content-between align-items-start mb-2">
+      <div>
+        <h5 class="mb-1"><i class="fas fa-key me-2"></i>New Member Portal Credentials</h5>
+        <p class="mb-0 small">
+          The following portal accounts were created during the import.
+          <strong>Share each member's temporary password securely</strong> — they will be forced to set
+          a new password on first login. <em>This panel will not appear again after you leave this page.</em>
+        </p>
+      </div>
+      <button type="button" class="btn-close ms-3" onclick="document.getElementById('credentialsPanel').remove()"></button>
+    </div>
+    <div class="table-responsive mt-3">
+      <table class="table table-sm table-bordered bg-white mb-0">
+        <thead class="table-warning">
+          <tr>
+            <th>Member Name</th>
+            <th>Username (Email)</th>
+            <th>Temporary Password</th>
+            <th>Action Required</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in new_credentials %}
+          <tr>
+            <td>{{ c.name }}</td>
+            <td><code>{{ c.username }}</code></td>
+            <td><code class="text-danger fw-bold">{{ c.password }}</code></td>
+            <td><span class="badge bg-warning text-dark">Must change on first login</span></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="mt-2 d-flex gap-2">
+      <button class="btn btn-sm btn-outline-secondary" onclick="copyCredentials()">
+        <i class="fas fa-copy me-1"></i>Copy as Text
+      </button>
+    </div>
+  </div>
+  <script>
+  function copyCredentials() {
+    const rows = [['Name', 'Username', 'Temp Password']];
+    {% for c in new_credentials %}
+    rows.push(['{{ c.name|e }}', '{{ c.username|e }}', '{{ c.password|e }}']);
+    {% endfor %}
+    const text = rows.map(r => r.join('\t')).join('\n');
+    navigator.clipboard.writeText(text).then(() => alert('Credentials copied to clipboard'));
+  }
+  </script>
+  {% endif %}
+
   <!-- Current record counts -->
   <div class="row mb-4">
     {% set entities = [
@@ -42,7 +96,7 @@
   <div class="row mb-5">
 
     {% set imports = [
-      ('members',     'Members',              'users',          'primary',   'members/template',    'Import full member roster with joining date, nominee, and bank details. A portal login is auto-created for each member with an email address (default password = member number).'),
+      ('members',     'Members',              'users',          'primary',   'members/template',    'Import full member roster with joining date, nominee, and bank details. A portal login is auto-created for each member with an email address. A secure temporary password is generated and shown to you after import — members must set their own password on first login.'),
       ('savings',     'Savings History',      'piggy-bank',     'success',   'savings/template',    'Historical monthly savings per member. Skips duplicates (same member + month).'),
       ('loans',       'Loan Records',         'hand-holding-usd','warning',  'loans/template',      'Past and active loans. Purpose and status values are auto-normalised. Supports disbursement_date and disbursed_amount columns.'),
       ('repayments',  'Loan Repayments',      'receipt',        'info',      'repayments/template', 'Historical repayments linked to loans. Updates loan balance automatically and marks loans completed when balance reaches zero.'),
