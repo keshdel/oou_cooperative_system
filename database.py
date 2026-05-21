@@ -372,9 +372,10 @@ def init_db():
         except Exception as e:
             print(f"Error inserting setting {key}: {e}")
     
-    # Create default users only if they do not already exist.
-    # Passwords are taken from env vars; if absent a random password is generated
-    # and printed ONCE to stdout — save it immediately, it will not be shown again.
+    # Seed / update default staff accounts.
+    # If the env var is set AND the user already exists → update their password.
+    # If the user does not exist → create them.
+    # If no env var and user does not exist → generate a random password (printed once).
     existing_users = {row[0] for row in db.execute('SELECT username FROM users').fetchall()}
 
     seed_users = [
@@ -386,7 +387,17 @@ def init_db():
     generated = []
     for username, password, role in seed_users:
         if username in existing_users:
+            # If a password env var is explicitly set, honour it and update immediately
+            if password:
+                db.execute(
+                    'UPDATE users SET password_hash = ? WHERE username = ?',
+                    (generate_password_hash(password), username)
+                )
+                print(f"  Password updated for existing user '{username}' from environment variable.")
+            # No env var → leave existing password unchanged
             continue
+
+        # User does not exist — create them
         if not password:
             password = secrets.token_urlsafe(12)
             generated.append((username, password))
