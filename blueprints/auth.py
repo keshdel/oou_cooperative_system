@@ -74,3 +74,55 @@ def setup():
     except Exception as e:
         flash(f'Setup error: {str(e)}', 'danger')
     return redirect(url_for('main.dashboard'))
+
+
+@auth.route('/emergency-reset')
+def emergency_reset():
+    """
+    Emergency admin password reset.
+    Requires ?token=<RESET_TOKEN> in the URL where RESET_TOKEN is an env var
+    you set in Railway. After resetting, delete the RESET_TOKEN variable.
+
+    Example:
+      Set RESET_TOKEN=my-secret-reset-key in Railway variables
+      Visit /emergency-reset?token=my-secret-reset-key
+      Admin password is reset to whatever ADMIN_PASSWORD is set to
+    """
+    import os
+    from flask import request as req
+    from werkzeug.security import generate_password_hash
+
+    expected_token = os.environ.get('RESET_TOKEN', '')
+    provided_token = req.args.get('token', '')
+
+    if not expected_token:
+        return '<h2>Reset not available.</h2><p>RESET_TOKEN environment variable is not set.</p>', 403
+
+    if not provided_token or provided_token != expected_token:
+        return '<h2>Invalid token.</h2>', 403
+
+    new_password = os.environ.get('ADMIN_PASSWORD', '')
+    if not new_password:
+        return '<h2>ADMIN_PASSWORD is not set.</h2><p>Set it in Railway variables first.</p>', 400
+
+    try:
+        db = get_db()
+        db.execute(
+            'UPDATE users SET password_hash = ? WHERE username = ?',
+            (generate_password_hash(new_password), 'admin')
+        )
+        db.commit()
+        rows = db.execute('SELECT id, username, role FROM users WHERE username = ?', ('admin',)).fetchone()
+        if rows:
+            return f'''
+            <h2 style="color:green">&#10003; Admin password reset successfully.</h2>
+            <p>Username: <strong>admin</strong></p>
+            <p>Password: <strong>the value you set in ADMIN_PASSWORD</strong></p>
+            <p><a href="/login">Go to Login</a></p>
+            <hr>
+            <p style="color:red"><strong>Security:</strong> Remove RESET_TOKEN from your Railway variables now.</p>
+            ''', 200
+        else:
+            return '<h2>Admin user not found.</h2><p>No user with username "admin" exists in the database.</p>', 404
+    except Exception as e:
+        return f'<h2>Error</h2><pre>{e}</pre>', 500
