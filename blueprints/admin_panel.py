@@ -67,15 +67,18 @@ def settings():
         for key, default_value in _DEFAULT_SETTINGS.items():
             settings_dict.setdefault(key, default_value)
 
-        users = db.execute('SELECT id, username, role, created_at FROM users ORDER BY id').fetchall()
+        users = db.execute(
+            'SELECT id, username, full_name, email, role, is_active, last_login FROM users ORDER BY id'
+        ).fetchall()
         user_list = [
             {
-                'id': u['id'],
-                'username': u['username'],
-                'full_name': u['username'],
-                'role': u['role'],
-                'last_login': 'Never',
-                'status': 'active',
+                'id':        u['id'],
+                'username':  u['username'],
+                'full_name': u['full_name'] or u['username'],
+                'email':     u['email'] or '',
+                'role':      u['role'],
+                'is_active': u['is_active'] if u['is_active'] is not None else 1,
+                'last_login': u['last_login'] or 'Never',
             }
             for u in users
         ]

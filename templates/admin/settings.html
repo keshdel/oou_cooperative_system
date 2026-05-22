@@ -1101,7 +1101,7 @@
                           <input type="text" class="form-control font-monospace bg-light"
                                  value="{{ request.host_url.rstrip('/') }}/webhooks/paystack" readonly>
                           <button type="button" class="btn btn-outline-secondary"
-                                  onclick="navigator.clipboard.writeText('{{ request.host_url.rstrip(\"/\") }}/webhooks/paystack')">
+                                  onclick="navigator.clipboard.writeText('{{ request.host_url.rstrip('/') }}/webhooks/paystack')">
                             <i class="fas fa-copy"></i>
                           </button>
                         </div>
@@ -1152,7 +1152,7 @@
                           <input type="text" class="form-control font-monospace bg-light"
                                  value="{{ request.host_url.rstrip('/') }}/webhooks/flutterwave" readonly>
                           <button type="button" class="btn btn-outline-secondary"
-                                  onclick="navigator.clipboard.writeText('{{ request.host_url.rstrip(\"/\") }}/webhooks/flutterwave')">
+                                  onclick="navigator.clipboard.writeText('{{ request.host_url.rstrip('/') }}/webhooks/flutterwave')">
                             <i class="fas fa-copy"></i>
                           </button>
                         </div>
