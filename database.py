@@ -452,7 +452,9 @@ def init_db():
 
     # ── Default settings ───────────────────────────────────────────────────────
     default_settings = [
-        ('coop_name', 'OOU Acctg 2005 Alumni CMS', 'Cooperative name'),
+        ('coop_name',       'OOU Acctg 2005 Alumni CMS', 'Cooperative full name'),
+        ('coop_short_name', 'OOU Coop',                  'Short name shown in sidebar and reports'),
+        ('coop_logo',       '',                           'Logo path relative to static/ (e.g. uploads/logo.png)'),
         ('reg_number', 'CMS/2005/001', 'Registration number'),
         ('address', '', 'Cooperative address'),
         ('phone', '', 'Contact phone'),

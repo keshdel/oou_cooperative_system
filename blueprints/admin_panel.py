@@ -119,16 +119,18 @@ def update_settings():
         if logo and logo.filename:
             ext = secure_filename(logo.filename).rsplit('.', 1)[1].lower()
             unique_name = f"coop_logo_{int(datetime.now().timestamp())}.{ext}"
-            logo_path = os.path.join('static/uploads', unique_name)
-            os.makedirs('static/uploads', exist_ok=True)
-            logo.save(logo_path)
+            # db_path is relative to static/ so url_for('static', filename=db_path) works
+            db_path   = f"uploads/{unique_name}"
+            disk_path = os.path.join('static', 'uploads', unique_name)
+            os.makedirs(os.path.join('static', 'uploads'), exist_ok=True)
+            logo.save(disk_path)
             existing = db.execute("SELECT id FROM settings WHERE key = 'coop_logo'").fetchone()
             if existing:
-                db.execute("UPDATE settings SET value = ? WHERE key = 'coop_logo'", (logo_path,))
+                db.execute("UPDATE settings SET value = ? WHERE key = 'coop_logo'", (db_path,))
             else:
                 db.execute(
                     'INSERT INTO settings (key, value, description) VALUES (?, ?, ?)',
-                    ('coop_logo', logo_path, 'Cooperative logo')
+                    ('coop_logo', db_path, 'Cooperative logo (path relative to static/)')
                 )
 
     try:

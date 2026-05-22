@@ -66,7 +66,8 @@
                 
                 <!-- 1. GENERAL SETTINGS TAB -->
                 <div class="tab-pane fade show active" id="general" role="tabpanel">
-                    <form method="POST" action="{{ url_for('admin_panel.update_settings') }}">
+                    <form method="POST" action="{{ url_for('admin_panel.update_settings') }}"
+                          enctype="multipart/form-data">
 
                         <!-- ── Section A: Cooperative Identity ── -->
                         <div class="row mb-4">
@@ -84,6 +85,13 @@
                                            placeholder="e.g. OOU Acctg 2005 Alumni CMS">
                                 </div>
                                 <div class="mb-3">
+                                    <label class="form-label fw-semibold">Short / Display Name</label>
+                                    <input type="text" class="form-control" name="coop_short_name"
+                                           value="{{ settings.coop_short_name|default('') }}"
+                                           placeholder="e.g. OOU Coop">
+                                    <small class="text-muted">Shown in the sidebar header and report footers.</small>
+                                </div>
+                                <div class="mb-3">
                                     <label class="form-label fw-semibold">Registration Number</label>
                                     <input type="text" class="form-control" name="reg_number"
                                            value="{{ settings.reg_number|default('') }}"
@@ -94,6 +102,34 @@
                                     <textarea class="form-control" name="address" rows="2"
                                               placeholder="Full registered address">{{ settings.address|default('') }}</textarea>
                                     <small class="text-muted">Appears on PDF headers and official documents.</small>
+                                </div>
+
+                                <!-- Logo upload -->
+                                <div class="mb-3">
+                                    <label class="form-label fw-semibold">
+                                        <i class="fas fa-image me-1"></i>Cooperative Logo
+                                    </label>
+                                    {% if coop_logo %}
+                                    <div class="mb-2 d-flex align-items-center gap-3">
+                                        <img src="{{ url_for('static', filename=coop_logo) }}"
+                                             alt="Current logo" height="60"
+                                             class="border rounded p-1 bg-white">
+                                        <span class="text-muted small">Current logo</span>
+                                    </div>
+                                    {% endif %}
+                                    <input type="file" class="form-control" name="coop_logo"
+                                           accept="image/png,image/jpeg,image/gif,image/webp"
+                                           id="logoInput">
+                                    <small class="text-muted">
+                                        PNG, JPG or WebP. Max 2 MB. Appears in the sidebar and on printed documents.
+                                        {% if coop_logo %}Upload a new file to replace the current logo.{% endif %}
+                                    </small>
+                                    <!-- Live preview -->
+                                    <div id="logoPreview" class="mt-2" style="display:none;">
+                                        <img id="logoPreviewImg" src="" alt="Preview" height="60"
+                                             class="border rounded p-1 bg-white">
+                                        <span class="text-muted small ms-2">New logo preview</span>
+                                    </div>
                                 </div>
                             </div>
                             <div class="col-md-6">
@@ -1564,5 +1600,17 @@ function clearUserFilters() {
     document.getElementById('statusFilter').value = '';
     filterUsers();
 }
+
+// ── Logo live preview ─────────────────────────────────────────────────────────
+document.getElementById('logoInput').addEventListener('change', function () {
+    const file = this.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function (e) {
+        document.getElementById('logoPreviewImg').src = e.target.result;
+        document.getElementById('logoPreview').style.display = '';
+    };
+    reader.readAsDataURL(file);
+});
 </script>
 {% endblock %}
