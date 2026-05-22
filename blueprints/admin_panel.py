@@ -525,16 +525,27 @@ def test_mail():
 @login_required
 @role_required('admin', 'treasurer')
 def subscription_page():
+    from datetime import datetime, timedelta
     db = get_db()
     rows = {r['key']: r['value'] for r in db.execute('SELECT key, value FROM settings').fetchall()}
 
-    expiry_str  = rows.get('subscription_expiry', '').strip()
-    fee         = int(rows.get('subscription_fee', '50000') or 50000)
-    coop_email  = rows.get('subscription_email') or rows.get('email', '')
-    coop_name   = rows.get('coop_name', 'Cooperative')
-    pk          = rows.get('paystack_public_key', '')
+    expiry_str   = rows.get('subscription_expiry', '').strip()
+    per_user_fee = int(rows.get('subscription_per_user_fee', '5000') or 5000)
+    coop_email   = rows.get('subscription_email') or rows.get('email', '')
+    coop_name    = rows.get('coop_name', 'Cooperative')
+    pk           = rows.get('paystack_public_key', '')
 
-    from datetime import datetime
+    # Count active members to compute per-user fee
+    try:
+        member_count = db.execute(
+            "SELECT COUNT(*) FROM members WHERE status = 'active'"
+        ).fetchone()[0] or 0
+    except Exception:
+        member_count = 0
+
+    # Total fee = active members × per_user_fee (minimum 1 member to avoid ₦0)
+    total_fee = max(member_count, 1) * per_user_fee
+
     expiry_date = None
     days_left   = None
     is_active   = False
@@ -549,15 +560,26 @@ def subscription_page():
     else:
         is_active = True  # no billing configured
 
+    # Pre-compute new expiry so the template never needs now() or timedelta
+    base = expiry_date if (is_active and expiry_date) else datetime.now()
+    new_expiry_display = (base + timedelta(days=365)).strftime('%d %b %Y')
+
+    # Safe days_left — never negative for display
+    days_left_safe = max(days_left, 0) if days_left is not None else None
+
     return render_template(
         'subscription.html',
         expiry_date=expiry_date,
         days_left=days_left,
+        days_left_safe=days_left_safe,
         is_active=is_active,
-        fee=fee,
+        fee=total_fee,
+        per_user_fee=per_user_fee,
+        member_count=member_count,
         coop_email=coop_email,
         coop_name=coop_name,
         paystack_public_key=pk,
+        new_expiry_display=new_expiry_display,
     )
 
 

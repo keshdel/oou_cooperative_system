@@ -487,9 +487,9 @@ def init_db():
         ('flutterwave_secret_key',  '',          'Flutterwave secret key (FLWSECK_...)'),
         ('flutterwave_webhook_hash','',          'Flutterwave webhook verification hash'),
         # ── Subscription billing ──────────────────────────────────────────────
-        ('subscription_expiry',  '',       'Subscription expiry date YYYY-MM-DD (blank = no billing)'),
-        ('subscription_fee',     '50000',  'Annual subscription fee in Naira'),
-        ('subscription_email',   '',       'Billing contact email for payment receipts'),
+        ('subscription_expiry',       '',      'Subscription expiry date YYYY-MM-DD (blank = no billing)'),
+        ('subscription_per_user_fee', '5000', 'Per-member annual subscription fee in Naira'),
+        ('subscription_email',        '',      'Billing contact email for payment receipts'),
     ]
 
     for key, value, desc in default_settings:

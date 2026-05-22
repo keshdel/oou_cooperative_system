@@ -67,13 +67,13 @@
                         </p>
                     {% endif %}
                 </div>
-                {% if days_left is not none %}
+                {% if days_left_safe is not none %}
                 <div class="col-auto">
                     <div class="text-center px-3 py-2 rounded-3"
                          style="background:{% if not is_active %}#fef2f2{% elif days_left <= 30 %}#fffbeb{% else %}#f0fdf4{% endif %}">
                         <div class="fw-bold fs-3"
                              style="color:{% if not is_active %}#dc2626{% elif days_left <= 30 %}#d97706{% else %}#16a34a{% endif %}">
-                            {{ [days_left, 0]|max }}
+                            {{ days_left_safe }}
                         </div>
                         <div class="text-muted small">days left</div>
                     </div>
@@ -91,7 +91,7 @@
             <p class="text-muted small mb-2">To enable subscription billing:</p>
             <ol class="text-muted small">
                 <li>Set a <strong>Paystack Secret Key</strong> in Settings → Payments</li>
-                <li>Set the <strong>Subscription Fee</strong> and <strong>Billing Email</strong> below</li>
+                <li>Set the <strong>Per-User Fee</strong> and <strong>Billing Email</strong> below</li>
                 <li>Set an initial expiry date to activate billing</li>
             </ol>
         </div>
@@ -112,25 +112,36 @@
                 {% if is_active and expiry_date %}{{ expiry_date.strftime('%d %b %Y') }}{% else %}today{% endif %}.
             </p>
 
-            <div class="d-flex align-items-center gap-3 mb-4">
+            <!-- Per-user fee breakdown -->
+            <div class="alert alert-light border mb-3 py-2 px-3">
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <i class="fas fa-users text-primary"></i>
+                    <span class="text-muted small">
+                        <strong>{{ member_count }}</strong> active member{{ 's' if member_count != 1 else '' }}
+                        &nbsp;&times;&nbsp;
+                        <strong>₦{{ '{:,.0f}'.format(per_user_fee) }}</strong>/member/year
+                        &nbsp;=&nbsp;
+                        <strong class="text-dark">₦{{ '{:,.0f}'.format(fee) }}</strong> total
+                    </span>
+                </div>
+            </div>
+
+            <div class="d-flex align-items-center gap-3 mb-4 flex-wrap">
                 <div>
                     <div class="text-muted small">Amount Due</div>
                     <div class="fw-bold fs-4" style="color:#1a3a6c;">
                         ₦{{ '{:,.0f}'.format(fee) }}
                     </div>
                 </div>
-                <div class="vr"></div>
+                <div class="vr d-none d-sm-block"></div>
                 <div>
                     <div class="text-muted small">Billing Email</div>
                     <div class="fw-semibold">{{ coop_email or '(set below)' }}</div>
                 </div>
-                <div class="vr"></div>
+                <div class="vr d-none d-sm-block"></div>
                 <div>
                     <div class="text-muted small">New Expiry</div>
-                    <div class="fw-semibold">
-                        {% set base = expiry_date if (is_active and expiry_date) else now() %}
-                        {{ (base + timedelta(days=365)).strftime('%d %b %Y') if base else '1 year from today' }}
-                    </div>
+                    <div class="fw-semibold">{{ new_expiry_display }}</div>
                 </div>
             </div>
 
@@ -170,10 +181,14 @@
             <form method="POST" action="{{ url_for('admin_panel.update_settings') }}">
                 <div class="row g-3">
                     <div class="col-md-6">
-                        <label class="form-label fw-semibold">Annual Subscription Fee (₦)</label>
-                        <input type="number" class="form-control" name="subscription_fee"
-                               value="{{ fee }}" min="1000" step="1000">
-                        <small class="text-muted">Amount charged per year for system access.</small>
+                        <label class="form-label fw-semibold">Per-Member Annual Fee (₦)</label>
+                        <input type="number" class="form-control" name="subscription_per_user_fee"
+                               value="{{ per_user_fee }}" min="500" step="500">
+                        <small class="text-muted">
+                            Fee charged per active member per year.
+                            Current: {{ member_count }} members × ₦{{ '{:,.0f}'.format(per_user_fee) }}
+                            = <strong>₦{{ '{:,.0f}'.format(fee) }}</strong>
+                        </small>
                     </div>
                     <div class="col-md-6">
                         <label class="form-label fw-semibold">Billing Contact Email</label>
@@ -218,9 +233,18 @@ function payNow() {
         amount:    {{ fee * 100 }},
         currency:  'NGN',
         ref:       'SUB-' + Date.now(),
-        metadata:  { custom_fields: [{ display_name: 'Cooperative', variable_name: 'coop', value: '{{ coop_name }}' }] },
+        metadata:  {
+            custom_fields: [{
+                display_name:  'Cooperative',
+                variable_name: 'coop',
+                value:         '{{ coop_name }}'
+            }, {
+                display_name:  'Members',
+                variable_name: 'member_count',
+                value:         '{{ member_count }}'
+            }]
+        },
         callback: function(response) {
-            // Verify server-side and extend subscription
             window.location.href = '{{ url_for("admin_panel.subscription_callback") }}?reference=' + response.reference;
         },
         onClose: function() {
