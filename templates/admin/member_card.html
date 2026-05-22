@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Member Card — {{ member.first_name }} {{ member.last_name }}</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>
+        /* ── Screen layout ───────────────────────────────────────── */
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: #e8ecf1;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 32px 16px;
+            gap: 24px;
+        }
+
+        /* ── Action bar (hidden on print) ────────────────────────── */
+        .action-bar {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            border: none;
+            text-decoration: none;
+        }
+        .btn-primary { background: #1a3a6c; color: #fff; }
+        .btn-secondary { background: #6b7280; color: #fff; }
+        .btn:hover { opacity: .88; }
+
+        /* ── Card shell ──────────────────────────────────────────── */
+        /* CR80 business card: 85.6 × 54 mm  ≈  3.37 × 2.13 in     */
+        /* Scale 3× for comfortable screen preview                    */
+        .card-wrap {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0;
+            filter: drop-shadow(0 8px 32px rgba(0,0,0,.22));
+        }
+
+        /* FRONT */
+        .id-card {
+            width:  324px;   /* 85.6 mm × 3.79 px/mm ≈ 324 px */
+            height: 204px;   /* 54 mm  × 3.79 px/mm ≈ 204 px  */
+            border-radius: 12px;
+            overflow: hidden;
+            position: relative;
+            background: linear-gradient(135deg, #0f2a5c 0%, #1e4d8c 55%, #1a3a6c 100%);
+            color: #fff;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Decorative wave */
+        .card-wave {
+            position: absolute;
+            bottom: 0; left: 0; right: 0;
+            height: 70px;
+            background: rgba(255,255,255,.07);
+            border-radius: 50% 50% 0 0 / 30px;
+        }
+        .card-wave-2 {
+            position: absolute;
+            bottom: 0; left: -20px; right: -20px;
+            height: 50px;
+            background: rgba(255,255,255,.05);
+            border-radius: 60% 60% 0 0 / 20px;
+        }
+
+        /* ── Card header strip ───────────────────────────────────── */
+        .card-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px 6px;
+            background: rgba(0,0,0,.25);
+            flex-shrink: 0;
+        }
+        .card-header img.coop-logo {
+            height: 28px;
+            width:  28px;
+            object-fit: contain;
+            border-radius: 4px;
+            background: #fff;
+            padding: 2px;
+        }
+        .card-header .logo-placeholder {
+            width: 28px; height: 28px;
+            background: rgba(255,255,255,.15);
+            border-radius: 4px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 14px;
+        }
+        .card-header .coop-info { flex: 1; min-width: 0; }
+        .card-header .coop-name {
+            font-size: 7.5px;
+            font-weight: 700;
+            letter-spacing: .3px;
+            line-height: 1.2;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .card-header .card-type {
+            font-size: 6px;
+            letter-spacing: 1.5px;
+            text-transform: uppercase;
+            opacity: .75;
+        }
+
+        /* ── Card body ───────────────────────────────────────────── */
+        .card-body {
+            flex: 1;
+            display: flex;
+            align-items: stretch;
+            padding: 8px 12px 10px;
+            gap: 10px;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* Photo column */
+        .card-photo {
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+        }
+        .photo-frame {
+            width:  56px;
+            height: 66px;
+            border-radius: 6px;
+            border: 2px solid rgba(255,255,255,.5);
+            overflow: hidden;
+            background: rgba(255,255,255,.1);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .photo-frame img {
+            width: 100%; height: 100%;
+            object-fit: cover;
+        }
+        .photo-frame .photo-icon {
+            font-size: 28px;
+            opacity: .45;
+        }
+        .qr-wrap {
+            width: 56px; height: 56px;
+            background: #fff;
+            border-radius: 5px;
+            padding: 3px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .qr-wrap canvas, .qr-wrap img { width: 100% !important; height: 100% !important; }
+
+        /* Info column */
+        .card-info {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            gap: 3px;
+            min-width: 0;
+        }
+        .member-name {
+            font-size: 13px;
+            font-weight: 700;
+            line-height: 1.2;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .member-number {
+            font-size: 9px;
+            font-family: 'Courier New', monospace;
+            letter-spacing: .8px;
+            opacity: .85;
+            margin-bottom: 4px;
+        }
+        .info-row {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 7.5px;
+            opacity: .8;
+            white-space: nowrap;
+            overflow: hidden;
+        }
+        .info-row i { width: 10px; text-align: center; font-size: 7px; }
+        .status-badge {
+            display: inline-block;
+            padding: 1px 7px;
+            border-radius: 10px;
+            font-size: 7px;
+            font-weight: 700;
+            letter-spacing: .5px;
+            text-transform: uppercase;
+            margin-top: 4px;
+            align-self: flex-start;
+        }
+        .status-active   { background: #16a34a; color: #fff; }
+        .status-inactive { background: #dc2626; color: #fff; }
+        .status-other    { background: #d97706; color: #fff; }
+
+        /* ── BACK card ───────────────────────────────────────────── */
+        .id-card-back {
+            width:  324px;
+            height: 204px;
+            border-radius: 12px;
+            overflow: hidden;
+            background: #fff;
+            display: flex;
+            flex-direction: column;
+        }
+        .back-stripe {
+            height: 40px;
+            background: #1a3a6c;
+            flex-shrink: 0;
+        }
+        .back-body {
+            flex: 1;
+            padding: 10px 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        .back-row {
+            display: flex;
+            font-size: 8px;
+            color: #374151;
+            gap: 6px;
+        }
+        .back-label {
+            font-weight: 700;
+            color: #1a3a6c;
+            min-width: 80px;
+            flex-shrink: 0;
+        }
+        .back-val { color: #374151; }
+        .back-divider {
+            border: none;
+            border-top: 1px solid #e5e7eb;
+            margin: 4px 0;
+        }
+        .back-footer {
+            margin-top: auto;
+            font-size: 7px;
+            color: #9ca3af;
+            text-align: center;
+            padding-top: 4px;
+            border-top: 1px solid #f3f4f6;
+        }
+        .back-signature-line {
+            border-bottom: 1px solid #9ca3af;
+            width: 100%;
+            margin-top: 8px;
+        }
+        .back-sig-label {
+            font-size: 7px;
+            color: #9ca3af;
+            text-align: center;
+            margin-top: 2px;
+        }
+
+        /* ── Page labels (screen only) ───────────────────────────── */
+        .side-label {
+            font-size: 11px;
+            color: #6b7280;
+            font-weight: 600;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            margin-bottom: 6px;
+            align-self: flex-start;
+        }
+        .card-side { display: flex; flex-direction: column; }
+
+        /* ── Print styles ────────────────────────────────────────── */
+        @media print {
+            @page {
+                size: 85.6mm 54mm;
+                margin: 0;
+            }
+            body {
+                background: none;
+                padding: 0;
+                display: block;
+            }
+            .action-bar  { display: none !important; }
+            .side-label  { display: none !important; }
+            .card-wrap   { filter: none; gap: 0; }
+            .card-side   { break-after: page; }
+            .id-card,
+            .id-card-back {
+                width:  85.6mm;
+                height: 54mm;
+                border-radius: 0;
+            }
+            /* Scale QR to match print size */
+            .qr-wrap { width: 14.8mm; height: 14.8mm; }
+            .photo-frame { width: 14.8mm; height: 17.4mm; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- Action buttons -->
+<div class="action-bar">
+    <button class="btn btn-primary" onclick="window.print()">
+        <i class="fas fa-print"></i> Print Card
+    </button>
+    <a href="{{ url_for('members.member_details', member_id=member.id) }}" class="btn btn-secondary">
+        <i class="fas fa-arrow-left"></i> Back to Profile
+    </a>
+</div>
+
+<div class="card-wrap">
+
+    <!-- FRONT -->
+    <div class="card-side">
+        <div class="side-label">Front</div>
+        <div class="id-card">
+            <div class="card-wave"></div>
+            <div class="card-wave-2"></div>
+
+            <!-- Header -->
+            <div class="card-header">
+                {% if coop.coop_logo %}
+                <img class="coop-logo"
+                     src="{{ url_for('static', filename=coop.coop_logo) }}"
+                     alt="Logo">
+                {% else %}
+                <div class="logo-placeholder"><i class="fas fa-building"></i></div>
+                {% endif %}
+                <div class="coop-info">
+                    <div class="coop-name">{{ coop.coop_name or 'Cooperative Society' }}</div>
+                    <div class="card-type">Member Identity Card</div>
+                </div>
+            </div>
+
+            <!-- Body -->
+            <div class="card-body">
+                <!-- Photo + QR -->
+                <div class="card-photo">
+                    <div class="photo-frame">
+                        {% if photo_static %}
+                        <img src="{{ url_for('static', filename=photo_static) }}"
+                             alt="{{ member.first_name }}">
+                        {% else %}
+                        <i class="fas fa-user-circle photo-icon"></i>
+                        {% endif %}
+                    </div>
+                    <div class="qr-wrap" id="qrcode"></div>
+                </div>
+
+                <!-- Info -->
+                <div class="card-info">
+                    <div class="member-name">{{ member.first_name }} {{ member.last_name }}</div>
+                    <div class="member-number">{{ member.member_number or 'N/A' }}</div>
+
+                    {% if member.occupation %}
+                    <div class="info-row">
+                        <i class="fas fa-briefcase"></i>
+                        {{ member.occupation }}
+                    </div>
+                    {% endif %}
+
+                    {% if member.date_joined %}
+                    <div class="info-row">
+                        <i class="fas fa-calendar-alt"></i>
+                        Joined {{ member.date_joined[:10] }}
+                    </div>
+                    {% endif %}
+
+                    {% if member.phone %}
+                    <div class="info-row">
+                        <i class="fas fa-phone"></i>
+                        {{ member.phone }}
+                    </div>
+                    {% endif %}
+
+                    <span class="status-badge
+                        {% if member.status == 'active' %}status-active
+                        {% elif member.status == 'inactive' %}status-inactive
+                        {% else %}status-other{% endif %}">
+                        {{ member.status | title }}
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- BACK -->
+    <div class="card-side" style="margin-top: 20px;">
+        <div class="side-label">Back</div>
+        <div class="id-card-back">
+            <div class="back-stripe"></div>
+            <div class="back-body">
+                {% if member.email %}
+                <div class="back-row">
+                    <span class="back-label">Email</span>
+                    <span class="back-val">{{ member.email }}</span>
+                </div>
+                {% endif %}
+                {% if member.address %}
+                <div class="back-row">
+                    <span class="back-label">Address</span>
+                    <span class="back-val">{{ member.address }}</span>
+                </div>
+                {% endif %}
+                {% if member.nominee_name %}
+                <div class="back-row">
+                    <span class="back-label">Next of Kin</span>
+                    <span class="back-val">{{ member.nominee_name }}{% if member.nominee_relationship %} ({{ member.nominee_relationship }}){% endif %}</span>
+                </div>
+                {% endif %}
+                {% if member.nominee_phone %}
+                <div class="back-row">
+                    <span class="back-label">NOK Phone</span>
+                    <span class="back-val">{{ member.nominee_phone }}</span>
+                </div>
+                {% endif %}
+
+                <hr class="back-divider">
+
+                <div class="back-signature-line"></div>
+                <div class="back-sig-label">Member's Signature</div>
+
+                <div class="back-footer">
+                    {{ coop.coop_name or 'Cooperative Society' }}
+                    {% if coop.reg_number %} · Reg. {{ coop.reg_number }}{% endif %}<br>
+                    If found, please return to the nearest branch or call {{ coop.address or '' }}
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<!-- QR code generation -->
+<script>
+(function () {
+    const qrText = {{ (member.member_number or member.id | string) | tojson }};
+    new QRCode(document.getElementById('qrcode'), {
+        text:           qrText,
+        width:          50,
+        height:         50,
+        colorDark:      '#0f2a5c',
+        colorLight:     '#ffffff',
+        correctLevel:   QRCode.CorrectLevel.M,
+    });
+})();
+</script>
+</body>
+</html>

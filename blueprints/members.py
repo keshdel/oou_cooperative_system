@@ -328,3 +328,33 @@ def export_members():
     response.headers['Content-Type'] = 'text/csv'
     response.headers['Content-Disposition'] = 'attachment; filename=members_export.csv'
     return response
+
+
+@members.route('/members/<int:member_id>/card')
+@login_required
+@role_required('admin', 'secretary', 'treasurer', 'exco')
+def member_card(member_id):
+    """Render a printable ID card with QR code for a member."""
+    db = get_db()
+    member = db.execute('SELECT * FROM members WHERE id = ?', (member_id,)).fetchone()
+    if not member:
+        flash('Member not found', 'danger')
+        return redirect(url_for('members.members_list'))
+
+    # Normalise photo path: strip leading 'static/' so url_for('static') works
+    photo_static = None
+    raw_photo = member['photo_path'] if member['photo_path'] else ''
+    if raw_photo:
+        photo_static = raw_photo[len('static/'):] if raw_photo.startswith('static/') else raw_photo
+
+    # Pull coop identity settings for the card header
+    rows = db.execute(
+        "SELECT key, value FROM settings "
+        "WHERE key IN ('coop_name','coop_short_name','coop_logo','reg_number','address')"
+    ).fetchall()
+    coop = {r['key']: r['value'] for r in rows}
+
+    return render_template('admin/member_card.html',
+                           member=member,
+                           photo_static=photo_static,
+                           coop=coop)
