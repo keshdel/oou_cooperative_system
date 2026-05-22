@@ -758,8 +758,47 @@
                         </div>
                     </div>
                     
+                    <!-- Search / filter bar -->
+                    <div class="row g-2 mb-3">
+                        <div class="col-md-5">
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="fas fa-search"></i></span>
+                                <input type="text" id="userSearch" class="form-control"
+                                       placeholder="Search by username, name or email…"
+                                       oninput="filterUsers()">
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <select id="roleFilter" class="form-select" onchange="filterUsers()">
+                                <option value="">All Roles</option>
+                                <option value="admin">Admin</option>
+                                <option value="president">President</option>
+                                <option value="vice_president">Vice President</option>
+                                <option value="secretary">Secretary</option>
+                                <option value="treasurer">Treasurer</option>
+                                <option value="financial_secretary">Financial Secretary</option>
+                                <option value="member">Member</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <select id="statusFilter" class="form-select" onchange="filterUsers()">
+                                <option value="">All Status</option>
+                                <option value="active">Active</option>
+                                <option value="inactive">Inactive</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <button class="btn btn-outline-secondary w-100" onclick="clearUserFilters()">
+                                <i class="fas fa-times me-1"></i>Clear
+                            </button>
+                        </div>
+                    </div>
+                    <div id="userNoResults" class="alert alert-info d-none">
+                        <i class="fas fa-info-circle me-2"></i>No users match your filter.
+                    </div>
+
                     <div class="table-responsive">
-                        <table class="table table-bordered table-hover align-middle">
+                        <table class="table table-bordered table-hover align-middle" id="usersTable">
                             <thead class="table-dark">
                                 <tr>
                                     <th>ID</th>
@@ -773,7 +812,7 @@
                             </thead>
                             <tbody>
                                 {% for user in system_users|default([]) %}
-                                <tr>
+                                <tr data-role="{{ user.role }}" data-status="{{ 'active' if user.is_active else 'inactive' }}">
                                     <td>{{ user.id }}</td>
                                     <td>{{ user.username }}</td>
                                     <td>{{ user.full_name }}</td>
@@ -827,7 +866,7 @@
                         </div>
                         <div class="card-body">
                             <table class="table table-bordered">
-                                <thead>
+                                <thead class="table-dark">
                                     <tr>
                                         <th>Permission</th>
                                         <th>Admin</th>
@@ -1491,6 +1530,39 @@ function toggleResetPwd() {
     const i = document.getElementById('resetPwdIcon');
     if (f.type === 'password') { f.type = 'text';     i.className = 'fas fa-eye-slash'; }
     else                       { f.type = 'password'; i.className = 'fas fa-eye'; }
+}
+
+// ── User table search & filter ────────────────────────────────────────────────
+function filterUsers() {
+    const search = (document.getElementById('userSearch').value || '').toLowerCase();
+    const role   = (document.getElementById('roleFilter').value || '').toLowerCase();
+    const status = (document.getElementById('statusFilter').value || '').toLowerCase();
+
+    const rows   = document.querySelectorAll('#usersTable tbody tr');
+    let visible  = 0;
+
+    rows.forEach(row => {
+        const text     = row.textContent.toLowerCase();
+        const rowRole  = (row.dataset.role  || '').toLowerCase();
+        const rowStatus= (row.dataset.status|| '').toLowerCase();
+
+        const matchSearch = !search || text.includes(search);
+        const matchRole   = !role   || rowRole   === role;
+        const matchStatus = !status || rowStatus  === status;
+
+        const show = matchSearch && matchRole && matchStatus;
+        row.style.display = show ? '' : 'none';
+        if (show) visible++;
+    });
+
+    document.getElementById('userNoResults').classList.toggle('d-none', visible > 0);
+}
+
+function clearUserFilters() {
+    document.getElementById('userSearch').value  = '';
+    document.getElementById('roleFilter').value  = '';
+    document.getElementById('statusFilter').value = '';
+    filterUsers();
 }
 </script>
 {% endblock %}
