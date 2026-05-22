@@ -34,12 +34,12 @@ def download_repayment_template():
 def loans_list():
     db = get_db()
     all_loans = db.execute('''
-        SELECT l.*, m.first_name || " " || m.last_name as member_name
+        SELECT l.*, m.first_name || ' ' || m.last_name as member_name
         FROM loans l
         JOIN members m ON l.member_id = m.id
         ORDER BY l.date_applied DESC
     ''').fetchall()
-    active_loans = db.execute('SELECT SUM(amount) FROM loans WHERE status = "active"').fetchone()[0] or 0
+    active_loans = db.execute("SELECT SUM(amount) FROM loans WHERE status = 'active'").fetchone()[0] or 0
 
     # Compute overdue: active loans where disbursement_date + tenure months < today
     today = datetime.now()
@@ -122,7 +122,7 @@ def apply_loan():
                 return redirect(url_for('members.member_details', member_id=member_id))
 
             outstanding = db.execute(
-                'SELECT id FROM loans WHERE member_id = ? AND status = "active"', (member_id,)
+                "SELECT id FROM loans WHERE member_id = ? AND status = 'active'", (member_id,)
             ).fetchone()
             if outstanding:
                 flash('Member already has an active loan. Please complete it before applying for a new one.', 'danger')
@@ -160,7 +160,7 @@ def apply_loan():
             return redirect(url_for('loans.apply_loan'))
 
     all_members = db.execute(
-        'SELECT id, first_name, last_name FROM members WHERE status = "active"'
+        "SELECT id, first_name, last_name FROM members WHERE status = 'active'"
     ).fetchall()
     return render_template('admin/apply-loan.html',
                            members=all_members,
@@ -228,7 +228,7 @@ def reject_loan(loan_id):
             flash('Loan not found', 'danger')
             return redirect(url_for('loans.loans_list'))
 
-        db.execute('UPDATE loans SET status = "rejected" WHERE id = ?', (loan_id,))
+        db.execute("UPDATE loans SET status = 'rejected' WHERE id = ?", (loan_id,))
         db.commit()
 
         member = db.execute('SELECT * FROM members WHERE id = ?', (loan['member_id'],)).fetchone()

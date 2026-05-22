@@ -484,7 +484,7 @@ def apply_loan_member():
                 return redirect(url_for('portal.apply_loan_member'))
 
             existing = db.execute(
-                'SELECT id FROM loans WHERE member_id = ? AND status = "active"', (member['id'],)
+                "SELECT id FROM loans WHERE member_id = ? AND status = 'active'", (member['id'],)
             ).fetchone()
             if existing:
                 flash('You already have an active loan. Please complete it before applying for a new one.', 'danger')

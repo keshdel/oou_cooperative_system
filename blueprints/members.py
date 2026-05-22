@@ -7,7 +7,7 @@ from flask import Blueprint, render_template, redirect, url_for, request, flash,
 from flask_login import login_required
 from werkzeug.utils import secure_filename
 
-from database import get_db
+from database import get_db, last_insert_id
 from email_service import send_welcome_email
 from utils import role_required, validate_image, audit, notify_member
 
@@ -21,7 +21,7 @@ def members_list():
     db  = get_db()
     all_members = db.execute('SELECT * FROM members ORDER BY date_joined DESC').fetchall()
     members_with_loans = db.execute(
-        'SELECT COUNT(DISTINCT member_id) FROM loans WHERE status = "active"'
+        "SELECT COUNT(DISTINCT member_id) FROM loans WHERE status = 'active'"
     ).fetchone()[0] or 0
     return render_template('admin/members.html', members=all_members,
                            members_with_loans=members_with_loans)
@@ -39,7 +39,7 @@ def member_details(member_id):
     savings      = db.execute('SELECT * FROM savings WHERE member_id = ? ORDER BY date DESC', (member_id,)).fetchall()
     loans        = db.execute('SELECT * FROM loans WHERE member_id = ? ORDER BY date_applied DESC', (member_id,)).fetchall()
     total_savings = db.execute('SELECT SUM(amount) FROM savings WHERE member_id = ?', (member_id,)).fetchone()[0] or 0
-    total_loans   = db.execute('SELECT SUM(amount) FROM loans WHERE member_id = ? AND status = "active"', (member_id,)).fetchone()[0] or 0
+    total_loans   = db.execute("SELECT SUM(amount) FROM loans WHERE member_id = ? AND status = 'active'", (member_id,)).fetchone()[0] or 0
 
     return render_template('admin/member-detail.html',
                            member=member, savings=savings, loans=loans,
@@ -74,7 +74,7 @@ def add_member():
             ))
             db.commit()
 
-            member_id     = db.execute('SELECT last_insert_rowid()').fetchone()[0]
+            member_id     = last_insert_id(db)
             member_number = f"OOU/{datetime.now().year}/{member_id:04d}"
             db.execute('UPDATE members SET member_number = ? WHERE id = ?', (member_number, member_id))
             db.commit()
@@ -252,7 +252,7 @@ def bulk_upload_members():
                     ''', (member_number, first_name, last_name, email, phone,
                           address, occupation, monthly_savings, 'active', datetime.now()))
 
-                    member_id     = db.execute('SELECT last_insert_rowid()').fetchone()[0]
+                    member_id     = last_insert_id(db)
                     current_month = datetime.now().strftime('%Y-%m')
                     db.execute('INSERT INTO savings (member_id, amount, month, late_fee, date) VALUES (?, ?, ?, ?, ?)',
                                (member_id, monthly_savings, current_month, 0, datetime.now()))

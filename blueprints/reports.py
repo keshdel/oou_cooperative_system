@@ -188,8 +188,8 @@ def financial_report():
         ).fetchone()[0]
 
         loan_interest = db.execute(
-            'SELECT COALESCE(SUM(amount * ? / 100), 0) FROM loans '
-            'WHERE status = "active" AND date_applied BETWEEN ? AND ?',
+            "SELECT COALESCE(SUM(amount * ? / 100), 0) FROM loans "
+            "WHERE status = 'active' AND date_applied BETWEEN ? AND ?",
             (11, from_date, to_date)
         ).fetchone()[0]
 

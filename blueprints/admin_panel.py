@@ -122,9 +122,9 @@ def update_settings():
             logo_path = os.path.join('static/uploads', unique_name)
             os.makedirs('static/uploads', exist_ok=True)
             logo.save(logo_path)
-            existing = db.execute('SELECT id FROM settings WHERE key = "coop_logo"').fetchone()
+            existing = db.execute("SELECT id FROM settings WHERE key = 'coop_logo'").fetchone()
             if existing:
-                db.execute('UPDATE settings SET value = ? WHERE key = "coop_logo"', (logo_path,))
+                db.execute("UPDATE settings SET value = ? WHERE key = 'coop_logo'", (logo_path,))
             else:
                 db.execute(
                     'INSERT INTO settings (key, value, description) VALUES (?, ?, ?)',

@@ -6,7 +6,7 @@ from io import StringIO
 from flask import Blueprint, render_template, redirect, url_for, request, flash, make_response
 from flask_login import login_required
 
-from database import get_db
+from database import get_db, last_insert_id
 from email_service import send_payment_confirmation_email
 from utils import role_required, audit, notify_member
 
@@ -19,7 +19,7 @@ savings = Blueprint('savings', __name__)
 def savings_list():
     db = get_db()
     all_savings = db.execute('''
-        SELECT s.*, m.first_name || " " || m.last_name as member_name
+        SELECT s.*, m.first_name || ' ' || m.last_name as member_name
         FROM savings s
         JOIN members m ON s.member_id = m.id
         ORDER BY s.date DESC
@@ -69,7 +69,7 @@ def add_saving():
                    (total_amount, member_id))
         db.commit()
 
-        saving_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
+        saving_id = last_insert_id(db)
         member    = db.execute('SELECT * FROM members WHERE id = ?', (member_id,)).fetchone()
         new_saving = db.execute('SELECT * FROM savings WHERE id = ?', (saving_id,)).fetchone()
         if member and member['email']:
