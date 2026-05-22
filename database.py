@@ -1,21 +1,162 @@
-import sqlite3
+"""
+database.py — dual-backend database layer
+  • PostgreSQL in production (DATABASE_URL env var set by Railway add-on)
+  • SQLite for local development (no DATABASE_URL)
+
+All application code uses the same API:
+    db = get_db()
+    db.execute(sql, params)   # uses ? placeholders everywhere
+    row['column']  or  row[0] # both work
+    db.commit() / db.rollback() / db.close()
+"""
+
 import os
+import re
 import secrets
 from datetime import datetime
 from werkzeug.security import generate_password_hash
 
-DATABASE = os.environ.get('SQLITE_DB_PATH', 'cooperative.db')
+# ── Backend detection ──────────────────────────────────────────────────────────
+
+DATABASE_URL = os.environ.get('DATABASE_URL', '')
+# Railway injects postgres:// URLs; psycopg2 requires postgresql://
+if DATABASE_URL.startswith('postgres://'):
+    DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
+
+USE_POSTGRES = bool(DATABASE_URL and DATABASE_URL.startswith('postgresql'))
+
+if USE_POSTGRES:
+    import psycopg2
+    import psycopg2.extras
+else:
+    import sqlite3
+    _SQLITE_DB = os.environ.get('SQLITE_DB_PATH', 'cooperative.db')
+
+
+# ── Row wrapper ────────────────────────────────────────────────────────────────
+
+class _DictRow(dict):
+    """
+    Dict subclass that also supports integer index access (like sqlite3.Row).
+    Allows row[0] and row['column'] to both work, so existing code needs
+    no changes when switching from SQLite.
+    """
+    def __init__(self, mapping):
+        super().__init__(mapping)
+        self._vals = list(mapping.values())
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return self._vals[key]
+        return super().__getitem__(key)
+
+    def keys(self):
+        return super().keys()
+
+
+# ── PostgreSQL cursor wrapper ──────────────────────────────────────────────────
+
+class _PGCursor:
+    def __init__(self, cur):
+        self._cur = cur
+
+    def fetchone(self):
+        row = self._cur.fetchone()
+        return _DictRow(row) if row is not None else None
+
+    def fetchall(self):
+        return [_DictRow(r) for r in (self._cur.fetchall() or [])]
+
+    def __iter__(self):
+        return iter(self.fetchall())
+
+
+# ── PostgreSQL connection wrapper ──────────────────────────────────────────────
+
+class _PGConn:
+    """
+    Wraps a psycopg2 connection so it looks like sqlite3 to the rest of the app:
+    - Accepts ? placeholders (converts to %s for psycopg2)
+    - Returns _DictRow objects that support both dict and index access
+    """
+    def __init__(self, raw):
+        self._conn = raw
+
+    def execute(self, sql, params=()):
+        cur = self._conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        pg_sql = sql.replace('?', '%s')
+        cur.execute(pg_sql, params if params else None)
+        return _PGCursor(cur)
+
+    def commit(self):
+        self._conn.commit()
+
+    def rollback(self):
+        self._conn.rollback()
+
+    def close(self):
+        try:
+            self._conn.close()
+        except Exception:
+            pass
+
+    def __del__(self):
+        self.close()
+
+
+# ── Public API ─────────────────────────────────────────────────────────────────
 
 def get_db():
-    db = sqlite3.connect(DATABASE)
+    """Return a database connection (PostgreSQL or SQLite depending on env)."""
+    if USE_POSTGRES:
+        conn = psycopg2.connect(DATABASE_URL)
+        return _PGConn(conn)
+    db = sqlite3.connect(_SQLITE_DB)
     db.row_factory = sqlite3.Row
     return db
 
+
+# ── DDL helpers ────────────────────────────────────────────────────────────────
+
+def _adapt(sql):
+    """Convert SQLite DDL to PostgreSQL-compatible DDL."""
+    if not USE_POSTGRES:
+        return sql
+    # AUTOINCREMENT → SERIAL (PostgreSQL sequences)
+    sql = sql.replace('INTEGER PRIMARY KEY AUTOINCREMENT', 'SERIAL PRIMARY KEY')
+    # SQLite REAL = 8-byte float; PostgreSQL REAL = 4-byte; use DOUBLE PRECISION
+    sql = re.sub(r'\bREAL\b', 'DOUBLE PRECISION', sql)
+    return sql
+
+
+def _add_col(db, table, column, col_def):
+    """
+    ALTER TABLE … ADD COLUMN — safe for both databases.
+    Uses SAVEPOINTs for PostgreSQL so a duplicate-column error doesn't
+    abort the whole transaction.
+    """
+    if USE_POSTGRES:
+        sp = f"sp_{table}_{column}"
+        db.execute(f"SAVEPOINT {sp}")
+        try:
+            db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_def}")
+            db.execute(f"RELEASE SAVEPOINT {sp}")
+        except Exception:
+            db.execute(f"ROLLBACK TO SAVEPOINT {sp}")
+    else:
+        try:
+            db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_def}")
+        except Exception:
+            pass  # column already exists
+
+
+# ── Schema ─────────────────────────────────────────────────────────────────────
+
 def init_db():
     db = get_db()
-    
+
     # Users table
-    db.execute('''
+    db.execute(_adapt('''
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT UNIQUE NOT NULL,
@@ -30,16 +171,11 @@ def init_db():
             last_login TIMESTAMP,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
-    ''')
-    
-    # Add must_change_password to existing users tables that pre-date this column
-    try:
-        db.execute("ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0")
-    except Exception:
-        pass  # column already exists
+    '''))
+    _add_col(db, 'users', 'must_change_password', 'INTEGER DEFAULT 0')
 
     # Members table
-    db.execute('''
+    db.execute(_adapt('''
         CREATE TABLE IF NOT EXISTS members (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             member_number TEXT UNIQUE,
@@ -77,10 +213,10 @@ def init_db():
             bvn TEXT,
             nin TEXT
         )
-    ''')
-    
+    '''))
+
     # Savings table
-    db.execute('''
+    db.execute(_adapt('''
         CREATE TABLE IF NOT EXISTS savings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             member_id INTEGER NOT NULL,
@@ -98,15 +234,11 @@ def init_db():
             verified_at TIMESTAMP,
             FOREIGN KEY (member_id) REFERENCES members (id)
         )
-    ''')
-    # Add payment_type to existing databases that pre-date this column
-    try:
-        db.execute("ALTER TABLE savings ADD COLUMN payment_type TEXT DEFAULT 'monthly'")
-    except Exception:
-        pass  # column already exists
+    '''))
+    _add_col(db, 'savings', 'payment_type', "TEXT DEFAULT 'monthly'")
 
     # Loans table
-    db.execute('''
+    db.execute(_adapt('''
         CREATE TABLE IF NOT EXISTS loans (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             loan_number TEXT UNIQUE,
@@ -135,15 +267,11 @@ def init_db():
             date_applied TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (member_id) REFERENCES members (id)
         )
-    ''')
-    # Add interest_method to existing loan tables that pre-date this column
-    try:
-        db.execute("ALTER TABLE loans ADD COLUMN interest_method TEXT DEFAULT 'reducing_annual'")
-    except Exception:
-        pass  # column already exists
-    
+    '''))
+    _add_col(db, 'loans', 'interest_method', "TEXT DEFAULT 'reducing_annual'")
+
     # Repayments table
-    db.execute('''
+    db.execute(_adapt('''
         CREATE TABLE IF NOT EXISTS repayments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             repayment_number TEXT UNIQUE,
@@ -163,10 +291,10 @@ def init_db():
             date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (loan_id) REFERENCES loans (id)
         )
-    ''')
-    
+    '''))
+
     # Investments table
-    db.execute('''
+    db.execute(_adapt('''
         CREATE TABLE IF NOT EXISTS investments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             investment_number TEXT UNIQUE,
@@ -194,10 +322,10 @@ def init_db():
             FOREIGN KEY (approved_by) REFERENCES users (id),
             FOREIGN KEY (created_by) REFERENCES users (id)
         )
-    ''')
-    
+    '''))
+
     # Honorarium table
-    db.execute('''
+    db.execute(_adapt('''
         CREATE TABLE IF NOT EXISTS honorarium (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             recipient_id INTEGER,
@@ -210,10 +338,10 @@ def init_db():
             FOREIGN KEY (recipient_id) REFERENCES members (id),
             FOREIGN KEY (paid_by) REFERENCES users (id)
         )
-    ''')
-    
+    '''))
+
     # Expenses table
-    db.execute('''
+    db.execute(_adapt('''
         CREATE TABLE IF NOT EXISTS expenses (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             expense_number TEXT UNIQUE,
@@ -231,10 +359,10 @@ def init_db():
             FOREIGN KEY (approved_by) REFERENCES users (id),
             FOREIGN KEY (recorded_by) REFERENCES users (id)
         )
-    ''')
-    
+    '''))
+
     # Revenue table
-    db.execute('''
+    db.execute(_adapt('''
         CREATE TABLE IF NOT EXISTS revenue (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             revenue_number TEXT UNIQUE,
@@ -247,20 +375,20 @@ def init_db():
             notes TEXT,
             FOREIGN KEY (received_by) REFERENCES users (id)
         )
-    ''')
-    
+    '''))
+
     # Settings table
-    db.execute('''
+    db.execute(_adapt('''
         CREATE TABLE IF NOT EXISTS settings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             key TEXT UNIQUE NOT NULL,
             value TEXT NOT NULL,
             description TEXT
         )
-    ''')
-    
+    '''))
+
     # Notifications table
-    db.execute('''
+    db.execute(_adapt('''
         CREATE TABLE IF NOT EXISTS notifications (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -273,29 +401,29 @@ def init_db():
             read_at TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users (id)
         )
-    ''')
-    
-    # Pending payments table — tracks initiated-but-not-yet-verified online payments
-    db.execute('''
+    '''))
+
+    # Pending payments table
+    db.execute(_adapt('''
         CREATE TABLE IF NOT EXISTS pending_payments (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
             reference       TEXT UNIQUE NOT NULL,
             member_id       INTEGER NOT NULL,
-            payment_type    TEXT NOT NULL,   -- 'savings' or 'loan_repayment'
-            related_id      INTEGER,         -- loan_id for loan_repayment
+            payment_type    TEXT NOT NULL,
+            related_id      INTEGER,
             amount          REAL NOT NULL,
-            month           TEXT,            -- for savings: 'YYYY-MM'
-            gateway         TEXT NOT NULL,   -- 'paystack' | 'flutterwave'
-            status          TEXT DEFAULT 'pending',  -- pending | completed | failed
-            gateway_ref     TEXT,            -- gateway's own transaction id / ref
+            month           TEXT,
+            gateway         TEXT NOT NULL,
+            status          TEXT DEFAULT 'pending',
+            gateway_ref     TEXT,
             created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             completed_at    TIMESTAMP,
             FOREIGN KEY (member_id) REFERENCES members (id)
         )
-    ''')
+    '''))
 
     # Audit log table
-    db.execute('''
+    db.execute(_adapt('''
         CREATE TABLE IF NOT EXISTS audit_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER,
@@ -309,9 +437,9 @@ def init_db():
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users (id)
         )
-    ''')
-    
-    # Insert default settings (PostgreSQL‑compatible: ON CONFLICT)
+    '''))
+
+    # ── Default settings ───────────────────────────────────────────────────────
     default_settings = [
         ('coop_name', 'OOU Acctg 2005 Alumni CMS', 'Cooperative name'),
         ('reg_number', 'CMS/2005/001', 'Registration number'),
@@ -352,7 +480,6 @@ def init_db():
         ('reentry_fee', '5000', 'Re-entry fee'),
         ('loan_application_fee', '1000', 'Loan application fee'),
         ('statement_fee', '500', 'Statement request fee'),
-        # ── Payment gateway settings (leave blank to disable online payments) ──
         ('active_gateway',          'paystack',  'Active payment gateway: paystack or flutterwave'),
         ('paystack_public_key',     '',          'Paystack publishable key (pk_...)'),
         ('paystack_secret_key',     '',          'Paystack secret key (sk_...)'),
@@ -360,10 +487,9 @@ def init_db():
         ('flutterwave_secret_key',  '',          'Flutterwave secret key (FLWSECK_...)'),
         ('flutterwave_webhook_hash','',          'Flutterwave webhook verification hash'),
     ]
-    
+
     for key, value, desc in default_settings:
         try:
-            # Works on both SQLite (3.24+) and PostgreSQL
             db.execute('''
                 INSERT INTO settings (key, value, description)
                 VALUES (?, ?, ?)
@@ -371,16 +497,13 @@ def init_db():
             ''', (key, value, desc))
         except Exception as e:
             print(f"Error inserting setting {key}: {e}")
-    
-    # Seed / update default staff accounts.
-    # If the env var is set AND the user already exists → update their password.
-    # If the user does not exist → create them.
-    # If no env var and user does not exist → generate a random password (printed once).
-    existing_users = {row[0] for row in db.execute('SELECT username FROM users').fetchall()}
 
-    # Default fallback passwords — used ONLY when env vars are not set.
-    # Set ADMIN_PASSWORD / TREASURER_PASSWORD / SECRETARY_PASSWORD in your
-    # environment (Railway Variables) to override these defaults.
+    # ── Seed / refresh default staff accounts ─────────────────────────────────
+    existing_users = {
+        row['username']
+        for row in db.execute('SELECT username FROM users').fetchall()
+    }
+
     _DEFAULT_ADMIN_PW = 'OOU2005admin'
 
     seed_users = [
@@ -391,7 +514,6 @@ def init_db():
 
     for username, password, role in seed_users:
         if username in existing_users:
-            # Always update password — picks up env var changes on redeploy
             db.execute(
                 'UPDATE users SET password_hash = ? WHERE username = ?',
                 (generate_password_hash(password), username)
@@ -399,7 +521,6 @@ def init_db():
             print(f"  [auth] Password refreshed for '{username}'.")
             continue
 
-        # User does not exist — create them
         try:
             db.execute(
                 'INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, ?, ?)',
@@ -409,16 +530,18 @@ def init_db():
         except Exception as e:
             print(f"Error creating user {username}: {e}")
 
-    print("\n" + "=" * 60)
-    print("  LOGIN CREDENTIALS (set env vars to change)")
-    print(f"  admin      {os.environ.get('ADMIN_PASSWORD') or _DEFAULT_ADMIN_PW}")
-    print(f"  treasurer  {os.environ.get('TREASURER_PASSWORD') or 'treasurer2005'}")
-    print(f"  secretary  {os.environ.get('SECRETARY_PASSWORD') or 'secretary2005'}")
-    print("=" * 60 + "\n")
-    
+    backend = 'PostgreSQL' if USE_POSTGRES else 'SQLite'
+    print(f"\n{'=' * 60}")
+    print(f"  Backend    : {backend}")
+    print(f"  admin      : {os.environ.get('ADMIN_PASSWORD') or _DEFAULT_ADMIN_PW}")
+    print(f"  treasurer  : {os.environ.get('TREASURER_PASSWORD') or 'treasurer2005'}")
+    print(f"  secretary  : {os.environ.get('SECRETARY_PASSWORD') or 'secretary2005'}")
+    print(f"{'=' * 60}\n")
+
     db.commit()
     db.close()
-    print("Database initialized successfully with all tables!")
+    print(f"Database ({backend}) initialised successfully!")
+
 
 if __name__ == '__main__':
     init_db()
