@@ -93,6 +93,7 @@ from blueprints.portal      import portal
 from blueprints.cards       import cards
 from blueprints.migration   import migration
 from blueprints.payments_bp import payments_bp
+from blueprints.help_bp     import help_bp
 from mobile_api             import mobile_api
 
 app.register_blueprint(auth)
@@ -107,6 +108,7 @@ app.register_blueprint(portal)
 app.register_blueprint(cards)
 app.register_blueprint(migration)
 app.register_blueprint(payments_bp)
+app.register_blueprint(help_bp)
 app.register_blueprint(mobile_api)
 
 # ── Context processor ─────────────────────────────────────────────────────────
@@ -180,6 +182,9 @@ _BILLING_EXEMPT = {
     'auth.login', 'auth.logout', 'static',
     'admin_panel.subscription_page',
     'admin_panel.subscription_callback',
+    'help_bp.knowledge_base',
+    'help_bp.article',
+    'help_bp.panel_api',
 }
 
 

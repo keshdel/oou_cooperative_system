@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% block title %}Help Centre{% endblock %}
+
+{% block extra_css %}
+<style>
+.help-hero {
+    background: linear-gradient(135deg, #0f2a5c 0%, #1e4d8c 100%);
+    border-radius: 16px;
+    padding: 40px 32px 32px;
+    color: #fff;
+    margin-bottom: 32px;
+}
+.help-search-wrap { max-width: 540px; }
+.help-search-wrap .form-control {
+    border-radius: 10px 0 0 10px;
+    border: none;
+    font-size: 15px;
+    padding: 12px 18px;
+}
+.help-search-wrap .btn { border-radius: 0 10px 10px 0; border: none; }
+
+.cat-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+}
+.cat-icon {
+    width: 36px; height: 36px;
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff;
+    font-size: 15px;
+    flex-shrink: 0;
+}
+.cat-label { font-size: 17px; font-weight: 700; color: #1e293b; }
+
+.article-card {
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 16px 18px;
+    background: #fff;
+    cursor: pointer;
+    transition: box-shadow .15s, border-color .15s;
+    text-decoration: none;
+    color: inherit;
+    display: block;
+    margin-bottom: 10px;
+}
+.article-card:hover {
+    box-shadow: 0 4px 16px rgba(0,0,0,.09);
+    border-color: #1a3a6c;
+    color: inherit;
+    text-decoration: none;
+}
+.article-card .art-title { font-weight: 600; font-size: 14px; color: #1e293b; margin-bottom: 3px; }
+.article-card .art-summary { font-size: 12.5px; color: #6b7280; }
+.article-card .art-arrow { color: #9ca3af; transition: transform .15s; }
+.article-card:hover .art-arrow { transform: translateX(3px); color: #1a3a6c; }
+
+.no-results { display: none; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+
+    <!-- Hero search -->
+    <div class="help-hero">
+        <h2 class="fw-bold mb-1"><i class="fas fa-life-ring me-2"></i>Help Centre</h2>
+        <p class="mb-4 opacity-75">{{ total }} guides covering every feature. Search or browse by category.</p>
+        <div class="help-search-wrap">
+            <div class="input-group">
+                <input type="text" id="helpSearch" class="form-control"
+                       placeholder="Search guides… e.g. "loan approval", "import members""
+                       autocomplete="off">
+                <button class="btn btn-warning px-4">
+                    <i class="fas fa-search"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Articles by category -->
+    <div id="articlesWrap">
+        {% for cat, articles in grouped.items() %}
+        {% set meta = categories[cat] %}
+        <div class="mb-4 cat-section">
+            <div class="cat-header">
+                <div class="cat-icon" style="background:{{ meta.color }};">
+                    <i class="{{ meta.icon }}"></i>
+                </div>
+                <span class="cat-label">{{ cat }}</span>
+            </div>
+            <div class="row g-2">
+                {% for art in articles %}
+                <div class="col-lg-6 article-item"
+                     data-title="{{ art.title | lower }}"
+                     data-summary="{{ art.summary | lower }}">
+                    <a href="{{ url_for('help_bp.article', slug=art.slug) }}" class="article-card">
+                        <div class="d-flex align-items-start justify-content-between gap-2">
+                            <div>
+                                <div class="art-title">{{ art.title }}</div>
+                                <div class="art-summary">{{ art.summary }}</div>
+                            </div>
+                            <i class="fas fa-chevron-right art-arrow mt-1 flex-shrink-0"></i>
+                        </div>
+                    </a>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+
+        <div class="no-results text-center py-5 text-muted" id="noResults">
+            <i class="fas fa-search fa-2x mb-3 d-block opacity-25"></i>
+            No guides match your search. Try different keywords.
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const searchInput = document.getElementById('helpSearch');
+const items       = document.querySelectorAll('.article-item');
+const noResults   = document.getElementById('noResults');
+const sections    = document.querySelectorAll('.cat-section');
+
+searchInput.addEventListener('input', function () {
+    const q = this.value.trim().toLowerCase();
+    let visible = 0;
+
+    items.forEach(item => {
+        const match = !q ||
+            item.dataset.title.includes(q) ||
+            item.dataset.summary.includes(q);
+        item.style.display = match ? '' : 'none';
+        if (match) visible++;
+    });
+
+    // Hide section headers with no visible children
+    sections.forEach(sec => {
+        const anyVisible = [...sec.querySelectorAll('.article-item')]
+            .some(i => i.style.display !== 'none');
+        sec.style.display = anyVisible ? '' : 'none';
+    });
+
+    noResults.style.display = visible === 0 ? 'block' : 'none';
+});
+</script>
+{% endblock %}

@@ -59,6 +59,10 @@
                        class="{% if request.endpoint == 'portal.support' %}active{% endif %}">
                         <i class="fas fa-headset"></i> Support
                     </a>
+                    <a href="{{ url_for('help_bp.knowledge_base') }}"
+                       class="{% if request.blueprint == 'help_bp' %}active{% endif %}">
+                        <i class="fas fa-question-circle"></i> Help
+                    </a>
                     <a href="{{ url_for('auth.logout') }}">
                         <i class="fas fa-sign-out-alt"></i> Logout
                     </a>
@@ -111,6 +115,10 @@
                         <i class="fas fa-credit-card"></i> Subscription
                     </a>
                     {% endif %}
+                    <a href="{{ url_for('help_bp.knowledge_base') }}"
+                       class="{% if request.blueprint == 'help_bp' %}active{% endif %}">
+                        <i class="fas fa-question-circle"></i> Help
+                    </a>
                     <a href="{{ url_for('auth.logout') }}">
                         <i class="fas fa-sign-out-alt"></i> Logout
                     </a>
@@ -222,5 +230,203 @@
     </script>
 
     {% block extra_js %}{% endblock %}
+
+    {% if current_user.is_authenticated %}
+    <!-- ── Floating Help Button ──────────────────────────────────────────── -->
+    <style>
+    #helpFab {
+        position: fixed; bottom: 28px; right: 28px; z-index: 1050;
+        width: 48px; height: 48px;
+        background: linear-gradient(135deg, #1a3a6c, #1e4d8c);
+        color: #fff; border: none; border-radius: 50%;
+        box-shadow: 0 4px 16px rgba(26,58,108,.45);
+        font-size: 20px; cursor: pointer;
+        display: flex; align-items: center; justify-content: center;
+        transition: transform .2s, box-shadow .2s;
+    }
+    #helpFab:hover { transform: scale(1.1); box-shadow: 0 6px 22px rgba(26,58,108,.55); }
+
+    #helpDrawer {
+        position: fixed; bottom: 88px; right: 28px; z-index: 1049;
+        width: 340px; max-height: 72vh;
+        background: #fff; border-radius: 14px;
+        box-shadow: 0 8px 40px rgba(0,0,0,.18);
+        display: flex; flex-direction: column;
+        transform: translateY(12px) scale(.97);
+        opacity: 0; pointer-events: none;
+        transition: transform .22s ease, opacity .22s ease;
+    }
+    #helpDrawer.open {
+        transform: translateY(0) scale(1);
+        opacity: 1; pointer-events: all;
+    }
+    .hd-head {
+        background: linear-gradient(135deg, #0f2a5c, #1e4d8c);
+        color: #fff; border-radius: 14px 14px 0 0;
+        padding: 14px 16px 12px;
+        display: flex; align-items: flex-start; gap: 10px;
+    }
+    .hd-head-icon { font-size: 22px; margin-top: 2px; flex-shrink: 0; }
+    .hd-head-text { flex: 1; min-width: 0; }
+    .hd-title { font-weight: 700; font-size: 14px; margin-bottom: 2px; }
+    .hd-subtitle { font-size: 12px; opacity: .75; line-height: 1.4; }
+    .hd-close {
+        background: none; border: none; color: rgba(255,255,255,.7);
+        font-size: 18px; cursor: pointer; padding: 0; flex-shrink: 0;
+        line-height: 1;
+    }
+    .hd-close:hover { color: #fff; }
+    .hd-body { flex: 1; overflow-y: auto; padding: 14px 16px; }
+    .hd-section { margin-bottom: 14px; }
+    .hd-section-head {
+        font-size: 12px; font-weight: 700; color: #1a3a6c;
+        text-transform: uppercase; letter-spacing: .5px;
+        margin-bottom: 6px; display: flex; align-items: center; gap: 5px;
+    }
+    .hd-section-head::after {
+        content: ''; flex: 1; height: 1px; background: #e5e7eb;
+    }
+    .hd-text { font-size: 13px; color: #374151; line-height: 1.6; }
+    .hd-steps { list-style: none; padding: 0; margin: 0; }
+    .hd-steps li {
+        display: flex; gap: 8px; align-items: flex-start;
+        font-size: 12.5px; color: #374151; padding: 4px 0;
+        border-bottom: 1px solid #f3f4f6; line-height: 1.5;
+    }
+    .hd-steps li:last-child { border-bottom: none; }
+    .hd-step-n {
+        width: 18px; height: 18px; background: #1a3a6c; color: #fff;
+        border-radius: 50%; display: flex; align-items: center; justify-content: center;
+        font-size: 10px; font-weight: 700; flex-shrink: 0; margin-top: 1px;
+    }
+    .hd-tips { list-style: none; padding: 0; margin: 0; }
+    .hd-tips li {
+        font-size: 12.5px; color: #374151; padding: 3px 0;
+        padding-left: 18px; position: relative; line-height: 1.5;
+    }
+    .hd-tips li::before {
+        content: '\f0eb'; font-family: 'Font Awesome 6 Free'; font-weight: 900;
+        color: #f0a500; position: absolute; left: 0; font-size: 11px;
+    }
+    .hd-foot {
+        border-top: 1px solid #f3f4f6;
+        padding: 10px 16px;
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 8px;
+    }
+    .hd-foot a { font-size: 12.5px; font-weight: 600; color: #1a3a6c; text-decoration: none; }
+    .hd-foot a:hover { text-decoration: underline; }
+    .hd-no-article { text-align: center; padding: 20px 0; color: #9ca3af; font-size: 13px; }
+    </style>
+
+    <!-- FAB button -->
+    <button id="helpFab" title="Help" onclick="toggleHelp()">
+        <i class="fas fa-question"></i>
+    </button>
+
+    <!-- Drawer -->
+    <div id="helpDrawer">
+        <div class="hd-head">
+            <div class="hd-head-icon"><i class="fas fa-life-ring"></i></div>
+            <div class="hd-head-text">
+                <div class="hd-title" id="hdTitle">Loading…</div>
+                <div class="hd-subtitle" id="hdSubtitle"></div>
+            </div>
+            <button class="hd-close" onclick="toggleHelp()" title="Close">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="hd-body" id="hdBody">
+            <div class="hd-no-article">
+                <i class="fas fa-spinner fa-spin fa-lg mb-2 d-block"></i>
+                Loading help…
+            </div>
+        </div>
+        <div class="hd-foot">
+            <a href="{{ url_for('help_bp.knowledge_base') }}">
+                <i class="fas fa-book-open me-1"></i>Browse all guides
+            </a>
+            <a id="hdFullLink" href="{{ url_for('help_bp.knowledge_base') }}" style="display:none;">
+                Full article <i class="fas fa-external-link-alt ms-1"></i>
+            </a>
+        </div>
+    </div>
+
+    <script>
+    let _helpOpen = false;
+    let _helpLoaded = false;
+
+    function toggleHelp() {
+        _helpOpen = !_helpOpen;
+        document.getElementById('helpDrawer').classList.toggle('open', _helpOpen);
+        if (_helpOpen && !_helpLoaded) loadHelp();
+    }
+
+    function loadHelp() {
+        const endpoint = {{ request.endpoint | tojson }};
+        fetch('/help/api/panel?endpoint=' + encodeURIComponent(endpoint || ''))
+            .then(r => r.json())
+            .then(data => {
+                _helpLoaded = true;
+                document.getElementById('hdTitle').textContent    = data.title;
+                document.getElementById('hdSubtitle').textContent = data.summary;
+
+                const fullLink = document.getElementById('hdFullLink');
+                if (data.slug) {
+                    fullLink.href = '/help/article/' + data.slug;
+                    fullLink.style.display = '';
+                } else {
+                    fullLink.style.display = 'none';
+                }
+
+                const body = document.getElementById('hdBody');
+                if (!data.found || !data.body.length) {
+                    body.innerHTML = `<div class="hd-no-article">
+                        <i class="fas fa-book-open fa-2x mb-3 d-block opacity-25"></i>
+                        No specific guide for this page yet.<br>
+                        <a href="/help" class="mt-2 d-inline-block">Browse the Help Centre</a>
+                    </div>`;
+                    return;
+                }
+
+                let html = '';
+                data.body.forEach(sec => {
+                    html += `<div class="hd-section"><div class="hd-section-head">${sec.head}</div>`;
+                    if (sec.text) {
+                        html += `<div class="hd-text">${sec.text}</div>`;
+                    }
+                    if (sec.steps) {
+                        html += '<ol class="hd-steps">';
+                        sec.steps.forEach((s, i) => {
+                            html += `<li><span class="hd-step-n">${i+1}</span><span>${s}</span></li>`;
+                        });
+                        html += '</ol>';
+                    }
+                    if (sec.tips) {
+                        html += '<ul class="hd-tips">';
+                        sec.tips.forEach(t => { html += `<li>${t}</li>`; });
+                        html += '</ul>';
+                    }
+                    html += '</div>';
+                });
+                body.innerHTML = html;
+            })
+            .catch(() => {
+                document.getElementById('hdTitle').textContent = 'Help Centre';
+                document.getElementById('hdBody').innerHTML =
+                    '<div class="hd-no-article">Could not load help. <a href="/help">Visit Help Centre</a></div>';
+            });
+    }
+
+    // Close drawer when clicking outside
+    document.addEventListener('click', function(e) {
+        if (_helpOpen &&
+            !e.target.closest('#helpDrawer') &&
+            !e.target.closest('#helpFab')) {
+            toggleHelp();
+        }
+    });
+    </script>
+    {% endif %}
 </body>
 </html>

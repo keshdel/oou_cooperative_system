@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+{% block title %}{{ article.title }} — Help{% endblock %}
+
+{% block extra_css %}
+<style>
+.article-hero {
+    background: linear-gradient(135deg, #0f2a5c 0%, #1e4d8c 100%);
+    border-radius: 14px;
+    padding: 28px 28px 24px;
+    color: #fff;
+    margin-bottom: 28px;
+}
+.article-hero .cat-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255,255,255,.15);
+    border-radius: 20px;
+    padding: 3px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    margin-bottom: 10px;
+}
+.article-body {
+    max-width: 780px;
+}
+.section-block {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 16px;
+}
+.section-block h6 {
+    font-weight: 700;
+    color: #1e293b;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.section-block h6::before {
+    content: '';
+    display: inline-block;
+    width: 4px;
+    height: 18px;
+    background: #1a3a6c;
+    border-radius: 2px;
+}
+.section-block p { font-size: 14px; color: #374151; line-height: 1.7; margin: 0; }
+
+/* Steps */
+.step-list { list-style: none; padding: 0; margin: 0; }
+.step-list li {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    font-size: 14px;
+    color: #374151;
+    padding: 6px 0;
+    border-bottom: 1px solid #f3f4f6;
+    line-height: 1.5;
+}
+.step-list li:last-child { border-bottom: none; }
+.step-num {
+    width: 22px; height: 22px;
+    background: #1a3a6c;
+    color: #fff;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+    flex-shrink: 0;
+    margin-top: 1px;
+}
+
+/* Tips */
+.tip-list { list-style: none; padding: 0; margin: 0; }
+.tip-list li {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    font-size: 13.5px;
+    color: #374151;
+    padding: 5px 0;
+    line-height: 1.5;
+}
+.tip-list li::before {
+    content: '\f0eb';
+    font-family: 'Font Awesome 6 Free';
+    font-weight: 900;
+    color: #f0a500;
+    margin-top: 1px;
+    flex-shrink: 0;
+}
+
+.back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: #1a3a6c;
+    font-size: 13px;
+    font-weight: 600;
+    text-decoration: none;
+    margin-bottom: 20px;
+}
+.back-link:hover { text-decoration: underline; }
+
+.related-card {
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 14px 16px;
+    background: #fff;
+    text-decoration: none;
+    color: inherit;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    transition: border-color .15s, box-shadow .15s;
+    margin-bottom: 8px;
+}
+.related-card:hover { border-color: #1a3a6c; box-shadow: 0 2px 8px rgba(0,0,0,.07); color: inherit; }
+.related-card .rt { font-weight: 600; font-size: 13px; color: #1e293b; }
+.related-card .rs { font-size: 12px; color: #6b7280; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+<div class="row">
+<div class="col-lg-8 article-body">
+
+    <a href="{{ url_for('help_bp.knowledge_base') }}" class="back-link">
+        <i class="fas fa-arrow-left"></i> Back to Help Centre
+    </a>
+
+    <!-- Hero -->
+    <div class="article-hero">
+        <div class="cat-pill">
+            <i class="{{ cat_meta.icon }}"></i>
+            {{ article.category }}
+        </div>
+        <h3 class="fw-bold mb-1">{{ article.title }}</h3>
+        <p class="mb-0 opacity-75">{{ article.summary }}</p>
+    </div>
+
+    <!-- Body sections -->
+    {% for section in article.body %}
+    <div class="section-block">
+        <h6>{{ section.head }}</h6>
+
+        {% if section.text is defined and section.text %}
+        <p>{{ section.text | safe }}</p>
+        {% endif %}
+
+        {% if section.steps is defined and section.steps %}
+        <ol class="step-list">
+            {% for step in section.steps %}
+            <li>
+                <span class="step-num">{{ loop.index }}</span>
+                <span>{{ step | safe }}</span>
+            </li>
+            {% endfor %}
+        </ol>
+        {% endif %}
+
+        {% if section.tips is defined and section.tips %}
+        <ul class="tip-list">
+            {% for tip in section.tips %}
+            <li>{{ tip | safe }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </div>
+    {% endfor %}
+
+</div>
+
+<!-- Sidebar: related articles -->
+<div class="col-lg-4 mt-4 mt-lg-0">
+    <div class="sticky-top" style="top: 20px;">
+        <div class="p-3 bg-white border rounded-3 mb-3">
+            <h6 class="fw-bold mb-3 text-muted small text-uppercase letter-spacing-1">
+                <i class="fas fa-book-open me-2"></i>More in {{ article.category }}
+            </h6>
+            {% for art in siblings %}
+            <a href="{{ url_for('help_bp.article', slug=art.slug) }}" class="related-card">
+                <div>
+                    <div class="rt">{{ art.title }}</div>
+                    <div class="rs">{{ art.summary[:70] }}…</div>
+                </div>
+                <i class="fas fa-chevron-right text-muted flex-shrink-0"></i>
+            </a>
+            {% else %}
+            <p class="text-muted small mb-0">No other articles in this category.</p>
+            {% endfor %}
+        </div>
+
+        <a href="{{ url_for('help_bp.knowledge_base') }}"
+           class="btn btn-outline-primary w-100">
+            <i class="fas fa-th-large me-2"></i>Browse All Guides
+        </a>
+    </div>
+</div>
+
+</div>
+</div>
+{% endblock %}
