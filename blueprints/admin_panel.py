@@ -336,6 +336,91 @@ def add_user():
     return redirect(url_for('admin_panel.settings'))
 
 
+@admin_panel.route('/api/edit_user/<int:user_id>', methods=['POST'])
+@login_required
+@role_required('admin')
+def edit_user(user_id):
+    db = get_db()
+    try:
+        full_name = request.form.get('full_name', '').strip()
+        email     = request.form.get('email', '').strip()
+        role      = request.form.get('role', '').strip()
+
+        if not role:
+            flash('Role is required.', 'danger')
+            return redirect(url_for('admin_panel.settings') + '#users')
+
+        # Prevent admin from removing their own admin role
+        if user_id == current_user.id and role != 'admin':
+            flash('You cannot change your own role.', 'danger')
+            return redirect(url_for('admin_panel.settings') + '#users')
+
+        db.execute(
+            'UPDATE users SET full_name = ?, email = ?, role = ? WHERE id = ?',
+            (full_name, email, role, user_id)
+        )
+        db.commit()
+        audit(db, 'UPDATE', 'users', f'Updated user id={user_id} role={role}')
+        flash('User updated successfully.', 'success')
+    except Exception as e:
+        db.rollback()
+        flash(f'Error updating user: {e}', 'danger')
+    return redirect(url_for('admin_panel.settings') + '#users')
+
+
+@admin_panel.route('/api/reset_user_password/<int:user_id>', methods=['POST'])
+@login_required
+@role_required('admin')
+def reset_user_password(user_id):
+    db = get_db()
+    try:
+        new_password = request.form.get('new_password', '').strip()
+        force_change  = request.form.get('force_change', '0') == '1'
+
+        if len(new_password) < 6:
+            flash('Password must be at least 6 characters.', 'danger')
+            return redirect(url_for('admin_panel.settings') + '#users')
+
+        db.execute(
+            'UPDATE users SET password_hash = ?, must_change_password = ? WHERE id = ?',
+            (generate_password_hash(new_password), 1 if force_change else 0, user_id)
+        )
+        db.commit()
+        user = db.execute('SELECT username FROM users WHERE id = ?', (user_id,)).fetchone()
+        uname = user['username'] if user else str(user_id)
+        audit(db, 'UPDATE', 'users', f'Admin reset password for user {uname}')
+        flash(f'Password for "{uname}" has been reset successfully.', 'success')
+    except Exception as e:
+        db.rollback()
+        flash(f'Error resetting password: {e}', 'danger')
+    return redirect(url_for('admin_panel.settings') + '#users')
+
+
+@admin_panel.route('/api/toggle_user/<int:user_id>', methods=['POST'])
+@login_required
+@role_required('admin')
+def toggle_user(user_id):
+    if user_id == current_user.id:
+        flash('You cannot disable your own account.', 'danger')
+        return redirect(url_for('admin_panel.settings') + '#users')
+    db = get_db()
+    try:
+        user = db.execute('SELECT username, is_active FROM users WHERE id = ?', (user_id,)).fetchone()
+        if not user:
+            flash('User not found.', 'danger')
+            return redirect(url_for('admin_panel.settings') + '#users')
+        new_status = 0 if user['is_active'] else 1
+        db.execute('UPDATE users SET is_active = ? WHERE id = ?', (new_status, user_id))
+        db.commit()
+        action = 'enabled' if new_status else 'disabled'
+        audit(db, 'UPDATE', 'users', f'Admin {action} user {user["username"]}')
+        flash(f'User "{user["username"]}" has been {action}.', 'success')
+    except Exception as e:
+        db.rollback()
+        flash(f'Error toggling user: {e}', 'danger')
+    return redirect(url_for('admin_panel.settings') + '#users')
+
+
 @admin_panel.route('/api/test_db')
 @login_required
 @role_required('admin')

@@ -784,22 +784,28 @@
                                     </td>
                                     <td>{{ user.last_login|default('Never') }}</td>
                                     <td>
-                                        {% if user.status == 'active' %}
+                                        {% if user.is_active %}
                                         <span class="badge bg-success">Active</span>
                                         {% else %}
                                         <span class="badge bg-secondary">Inactive</span>
                                         {% endif %}
                                     </td>
-                                    <td>
-                                        <button class="btn btn-sm btn-warning" title="Edit">
+                                    <td class="text-nowrap">
+                                        <button class="btn btn-sm btn-primary" title="Edit User"
+                                            onclick="openEditUser({{ user.id }}, {{ user.username|tojson }}, {{ (user.full_name or '')|tojson }}, {{ (user.email or '')|tojson }}, {{ user.role|tojson }})">
                                             <i class="fas fa-edit"></i>
                                         </button>
-                                        <button class="btn btn-sm btn-danger" title="Disable">
-                                            <i class="fas fa-ban"></i>
+                                        <button class="btn btn-sm btn-warning" title="Reset Password"
+                                            onclick="openResetPassword({{ user.id }}, {{ user.username|tojson }})">
+                                            <i class="fas fa-key"></i>
                                         </button>
-                                        <button class="btn btn-sm btn-info" title="Reset Password">
-											<i class="fas fa-key"></i>
-                                        </button>
+                                        <form method="POST" action="/api/toggle_user/{{ user.id }}" class="d-inline"
+                                              onsubmit="return confirm('Toggle active status for {{ user.username }}?')">
+                                            <button type="submit" class="btn btn-sm {{ 'btn-outline-danger' if user.is_active else 'btn-outline-success' }}"
+                                                    title="{{ 'Disable' if user.is_active else 'Enable' }} user">
+                                                <i class="fas {{ 'fa-ban' if user.is_active else 'fa-check' }}"></i>
+                                            </button>
+                                        </form>
                                     </td>
                                 </tr>
                                 {% endfor %}
@@ -1062,8 +1068,6 @@
                       </div>
                     </div>
 
-                    {% set base_url = request.host_url.rstrip('/') %}
-
                     <!-- Paystack panel -->
                     <div id="paystackPanel" class="border rounded p-3 mb-4">
                       <h6 class="text-success mb-3"><i class="fab fa-stripe me-2"></i>Paystack Credentials</h6>
@@ -1095,9 +1099,9 @@
                         <label class="form-label fw-semibold">Webhook URL <small class="text-muted">(add this in Paystack → Webhooks)</small></label>
                         <div class="input-group">
                           <input type="text" class="form-control font-monospace bg-light"
-                                 value="{{ base_url }}/webhooks/paystack" readonly>
+                                 value="{{ request.host_url.rstrip('/') }}/webhooks/paystack" readonly>
                           <button type="button" class="btn btn-outline-secondary"
-                                  onclick="navigator.clipboard.writeText('{{ base_url }}/webhooks/paystack')">
+                                  onclick="navigator.clipboard.writeText('{{ request.host_url.rstrip(\"/\") }}/webhooks/paystack')">
                             <i class="fas fa-copy"></i>
                           </button>
                         </div>
@@ -1146,9 +1150,9 @@
                         <label class="form-label fw-semibold">Webhook URL <small class="text-muted">(add this in Flutterwave → Webhooks)</small></label>
                         <div class="input-group">
                           <input type="text" class="form-control font-monospace bg-light"
-                                 value="{{ base_url }}/webhooks/flutterwave" readonly>
+                                 value="{{ request.host_url.rstrip('/') }}/webhooks/flutterwave" readonly>
                           <button type="button" class="btn btn-outline-secondary"
-                                  onclick="navigator.clipboard.writeText('{{ base_url }}/webhooks/flutterwave')">
+                                  onclick="navigator.clipboard.writeText('{{ request.host_url.rstrip(\"/\") }}/webhooks/flutterwave')">
                             <i class="fas fa-copy"></i>
                           </button>
                         </div>
@@ -1163,6 +1167,90 @@
                 <!-- end PAYMENTS TAB -->
 
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit User Modal -->
+<div class="modal fade" id="editUserModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><i class="fas fa-user-edit"></i> Edit User</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" id="editUserForm" action="">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Username</label>
+                        <input type="text" class="form-control bg-light" id="editUsername" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Full Name</label>
+                        <input type="text" class="form-control" name="full_name" id="editFullName">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Email Address</label>
+                        <input type="email" class="form-control" name="email" id="editEmail">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Role</label>
+                        <select class="form-select" name="role" id="editRole">
+                            <option value="admin">Admin</option>
+                            <option value="president">President</option>
+                            <option value="vice_president">Vice President</option>
+                            <option value="secretary">Secretary</option>
+                            <option value="treasurer">Treasurer</option>
+                            <option value="financial_secretary">Financial Secretary</option>
+                            <option value="member">Member</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-save me-1"></i> Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Reset Password Modal -->
+<div class="modal fade" id="resetPasswordModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title"><i class="fas fa-key"></i> Reset Password</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" id="resetPasswordForm" action="">
+                <div class="modal-body">
+                    <p class="text-muted mb-3">Resetting password for: <strong id="resetUsername"></strong></p>
+                    <div class="mb-3">
+                        <label class="form-label">New Password</label>
+                        <div class="input-group">
+                            <input type="password" class="form-control" name="new_password"
+                                   id="resetNewPassword" required minlength="6"
+                                   placeholder="Minimum 6 characters">
+                            <button class="btn btn-outline-secondary" type="button"
+                                    onclick="toggleResetPwd()" title="Show/hide">
+                                <i class="fas fa-eye" id="resetPwdIcon"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="force_change"
+                               id="forceChangeCheck" value="1" checked>
+                        <label class="form-check-label" for="forceChangeCheck">
+                            Require user to change password on next login
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-warning"><i class="fas fa-key me-1"></i> Reset Password</button>
+                </div>
+            </form>
         </div>
     </div>
 </div>
@@ -1364,6 +1452,31 @@ toggleGatewayPanels();
 if (window.location.hash === '#payments') {
     const paymentsTab = document.getElementById('payments-tab');
     if (paymentsTab) { new bootstrap.Tab(paymentsTab).show(); }
+}
+
+// ── User management helpers ───────────────────────────────────────────────────
+function openEditUser(id, username, fullName, email, role) {
+    document.getElementById('editUserForm').action = '/api/edit_user/' + id;
+    document.getElementById('editUsername').value  = username;
+    document.getElementById('editFullName').value  = fullName;
+    document.getElementById('editEmail').value     = email;
+    document.getElementById('editRole').value      = role;
+    new bootstrap.Modal(document.getElementById('editUserModal')).show();
+}
+
+function openResetPassword(id, username) {
+    document.getElementById('resetPasswordForm').action   = '/api/reset_user_password/' + id;
+    document.getElementById('resetUsername').textContent  = username;
+    document.getElementById('resetNewPassword').value     = '';
+    document.getElementById('forceChangeCheck').checked   = true;
+    new bootstrap.Modal(document.getElementById('resetPasswordModal')).show();
+}
+
+function toggleResetPwd() {
+    const f = document.getElementById('resetNewPassword');
+    const i = document.getElementById('resetPwdIcon');
+    if (f.type === 'password') { f.type = 'text';     i.className = 'fas fa-eye-slash'; }
+    else                       { f.type = 'password'; i.className = 'fas fa-eye'; }
 }
 </script>
 {% endblock %}
