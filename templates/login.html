@@ -4,38 +4,73 @@
 <div class="container">
     <div class="row justify-content-center align-items-center min-vh-100">
         <div class="col-md-5">
+
+            <!-- Flash messages — shown ABOVE the card -->
+            {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+              {% for category, message in messages %}
+                {% if category == 'lockout' %}
+                <div class="alert alert-warning d-flex align-items-start gap-2 mb-3 shadow-sm" role="alert">
+                    <i class="fas fa-clock fa-lg mt-1 text-warning"></i>
+                    <div>
+                        <strong>Account Temporarily Locked</strong><br>
+                        <span>{{ message | safe }}</span>
+                    </div>
+                </div>
+                {% elif category == 'danger' %}
+                <div class="alert alert-danger d-flex align-items-start gap-2 mb-3 shadow-sm" role="alert">
+                    <i class="fas fa-exclamation-circle fa-lg mt-1"></i>
+                    <div>{{ message | safe }}</div>
+                </div>
+                {% elif category == 'success' %}
+                <div class="alert alert-success mb-3" role="alert">{{ message }}</div>
+                {% else %}
+                <div class="alert alert-info mb-3" role="alert">{{ message }}</div>
+                {% endif %}
+              {% endfor %}
+            {% endif %}
+            {% endwith %}
+
             <div class="card shadow-lg border-0 rounded-lg">
                 <div class="card-header bg-primary text-white text-center py-4">
                     <i class="fas fa-hand-holding-usd fa-3x mb-3"></i>
                     <h3 class="mb-0">Cooperative Accounting System</h3>
                     <p class="mb-0">{{ coop_name }}</p>
                 </div>
-                
+
                 <div class="card-body p-4">
                     <form method="POST" action="{{ url_for('auth.login') }}">
                         <div class="mb-3">
                             <label for="username" class="form-label">
                                 <i class="fas fa-user"></i> Username
                             </label>
-                            <input type="text" class="form-control form-control-lg" 
-                                   id="username" name="username" required 
-                                   placeholder="Enter your username">
+                            <input type="text" class="form-control form-control-lg"
+                                   id="username" name="username" required
+                                   placeholder="Enter your username"
+                                   autocomplete="username">
                         </div>
-                        
+
                         <div class="mb-3">
                             <label for="password" class="form-label">
                                 <i class="fas fa-lock"></i> Password
                             </label>
-                            <input type="password" class="form-control form-control-lg" 
-                                   id="password" name="password" required 
-                                   placeholder="Enter your password">
+                            <div class="input-group">
+                                <input type="password" class="form-control form-control-lg"
+                                       id="password" name="password" required
+                                       placeholder="Enter your password"
+                                       autocomplete="current-password">
+                                <button class="btn btn-outline-secondary" type="button"
+                                        onclick="togglePwd()" title="Show/hide password">
+                                    <i class="fas fa-eye" id="pwdToggleIcon"></i>
+                                </button>
+                            </div>
                         </div>
-                        
+
                         <div class="mb-3 form-check">
                             <input type="checkbox" class="form-check-input" id="remember">
                             <label class="form-check-label" for="remember">Remember me</label>
                         </div>
-                        
+
                         <div class="d-grid gap-2">
                             <button type="submit" class="btn btn-primary btn-lg">
                                 <i class="fas fa-sign-in-alt"></i> Login
@@ -43,7 +78,7 @@
                         </div>
                     </form>
                 </div>
-                
+
                 <div class="card-footer text-center py-3">
                     <div class="small text-muted">
                         <i class="fas fa-info-circle me-1"></i>
@@ -51,7 +86,7 @@
                     </div>
                 </div>
             </div>
-            
+
             <div class="text-center mt-3">
                 <a href="{{ url_for('auth.index') }}" class="text-muted">
                     <i class="fas fa-arrow-left"></i> Back to Home
@@ -60,4 +95,13 @@
         </div>
     </div>
 </div>
+
+<script>
+function togglePwd() {
+    const f = document.getElementById('password');
+    const i = document.getElementById('pwdToggleIcon');
+    if (f.type === 'password') { f.type = 'text';     i.className = 'fas fa-eye-slash'; }
+    else                       { f.type = 'password'; i.className = 'fas fa-eye';       }
+}
+</script>
 {% endblock %}

@@ -378,45 +378,43 @@ def init_db():
     # If no env var and user does not exist → generate a random password (printed once).
     existing_users = {row[0] for row in db.execute('SELECT username FROM users').fetchall()}
 
+    # Default fallback passwords — used ONLY when env vars are not set.
+    # Set ADMIN_PASSWORD / TREASURER_PASSWORD / SECRETARY_PASSWORD in your
+    # environment (Railway Variables) to override these defaults.
+    _DEFAULT_ADMIN_PW = 'OOU2005admin'
+
     seed_users = [
-        ('admin',     os.environ.get('ADMIN_PASSWORD'),     'admin'),
-        ('treasurer', os.environ.get('TREASURER_PASSWORD'), 'treasurer'),
-        ('secretary', os.environ.get('SECRETARY_PASSWORD'), 'secretary'),
+        ('admin',     os.environ.get('ADMIN_PASSWORD')     or _DEFAULT_ADMIN_PW, 'admin'),
+        ('treasurer', os.environ.get('TREASURER_PASSWORD') or 'treasurer2005',   'treasurer'),
+        ('secretary', os.environ.get('SECRETARY_PASSWORD') or 'secretary2005',   'secretary'),
     ]
 
-    generated = []
     for username, password, role in seed_users:
         if username in existing_users:
-            # If a password env var is explicitly set, honour it and update immediately
-            if password:
-                db.execute(
-                    'UPDATE users SET password_hash = ? WHERE username = ?',
-                    (generate_password_hash(password), username)
-                )
-                print(f"  Password updated for existing user '{username}' from environment variable.")
-            # No env var → leave existing password unchanged
+            # Always update password — picks up env var changes on redeploy
+            db.execute(
+                'UPDATE users SET password_hash = ? WHERE username = ?',
+                (generate_password_hash(password), username)
+            )
+            print(f"  [auth] Password refreshed for '{username}'.")
             continue
 
         # User does not exist — create them
-        if not password:
-            password = secrets.token_urlsafe(12)
-            generated.append((username, password))
         try:
             db.execute(
                 'INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, ?, ?)',
                 (username, generate_password_hash(password), role, datetime.now())
             )
+            print(f"  [auth] Created user '{username}' with role '{role}'.")
         except Exception as e:
             print(f"Error creating user {username}: {e}")
 
-    if generated:
-        print("\n" + "=" * 60)
-        print("  FIRST-RUN CREDENTIALS — change these immediately!")
-        for username, password in generated:
-            print(f"  {username:12s}  {password}")
-        print("  Set ADMIN_PASSWORD / TREASURER_PASSWORD / SECRETARY_PASSWORD")
-        print("  environment variables to avoid seeing this message.")
-        print("=" * 60 + "\n")
+    print("\n" + "=" * 60)
+    print("  LOGIN CREDENTIALS (set env vars to change)")
+    print(f"  admin      {os.environ.get('ADMIN_PASSWORD') or _DEFAULT_ADMIN_PW}")
+    print(f"  treasurer  {os.environ.get('TREASURER_PASSWORD') or 'treasurer2005'}")
+    print(f"  secretary  {os.environ.get('SECRETARY_PASSWORD') or 'secretary2005'}")
+    print("=" * 60 + "\n")
     
     db.commit()
     db.close()

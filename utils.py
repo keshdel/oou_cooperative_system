@@ -46,16 +46,31 @@ def role_required(*roles):
 # ── Login rate limiting ───────────────────────────────────────────────────────
 
 _login_attempts: dict = defaultdict(list)
-_RATE_WINDOW = 300   # 5 minutes
+_RATE_WINDOW = 300   # 5 minutes sliding window
 _RATE_MAX    = 5     # failures before block
-_RATE_BLOCK  = 900   # block duration (seconds)
+_RATE_BLOCK  = 900   # block duration in seconds (15 min)
+
+
+def _recent_attempts(ip: str) -> list:
+    """Return timestamps of failed attempts still within the block window."""
+    now = time.time()
+    attempts = [t for t in _login_attempts[ip] if now - t < _RATE_BLOCK]
+    _login_attempts[ip] = attempts
+    return attempts
 
 
 def is_rate_limited(ip: str) -> bool:
-    now      = time.time()
-    attempts = [t for t in _login_attempts[ip] if now - t < _RATE_WINDOW]
-    _login_attempts[ip] = attempts
-    return len(attempts) >= _RATE_MAX
+    return len(_recent_attempts(ip)) >= _RATE_MAX
+
+
+def lockout_seconds_remaining(ip: str) -> int:
+    """Return seconds until the oldest blocking attempt expires (0 if not locked)."""
+    attempts = _recent_attempts(ip)
+    if len(attempts) < _RATE_MAX:
+        return 0
+    oldest = min(attempts)
+    remaining = int(_RATE_BLOCK - (time.time() - oldest))
+    return max(remaining, 0)
 
 
 def record_failed_login(ip: str) -> None:

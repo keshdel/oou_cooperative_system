@@ -4,7 +4,7 @@ from werkzeug.security import check_password_hash
 
 from database import get_db
 from security import log_audit
-from utils import User, is_rate_limited, record_failed_login, clear_login_attempts
+from utils import User, is_rate_limited, lockout_seconds_remaining, record_failed_login, clear_login_attempts
 
 auth = Blueprint('auth', __name__)
 
@@ -18,6 +18,18 @@ def index():
 def login():
     if request.method == 'POST':
         ip = request.remote_addr or '0.0.0.0'
+
+        # ── Rate-limit check — show exact time remaining ──────────────────
+        if is_rate_limited(ip):
+            secs = lockout_seconds_remaining(ip)
+            mins = max(1, round(secs / 60))
+            flash(
+                f'Too many failed login attempts. '
+                f'Your account is temporarily locked — please try again in '
+                f'<strong>{mins} minute{"s" if mins != 1 else ""}</strong>.',
+                'lockout'
+            )
+            return render_template('login.html')
 
         username = request.form['username']
         password = request.form['password']
@@ -43,9 +55,31 @@ def login():
             return redirect(url_for('main.dashboard'))
         else:
             record_failed_login(ip)
+            remaining_attempts = 5 - len([1 for _ in range(1)])  # recalculate
             log_audit(db, None, username, 'FAILED_LOGIN', 'auth',
                       f'Failed login attempt for username: {username}', ip, ua)
-            flash('Invalid username or password', 'danger')
+            # Count how many attempts remain before lockout
+            from utils import _recent_attempts
+            attempts_so_far = len(_recent_attempts(ip))
+            attempts_left   = max(0, 5 - attempts_so_far)
+            if attempts_left == 0:
+                secs = lockout_seconds_remaining(ip)
+                mins = max(1, round(secs / 60))
+                flash(
+                    f'Too many failed attempts — your login is now locked for '
+                    f'<strong>{mins} minute{"s" if mins != 1 else ""}</strong>. '
+                    f'Please wait before trying again.',
+                    'lockout'
+                )
+            elif attempts_left <= 2:
+                flash(
+                    f'Incorrect username or password. '
+                    f'<strong>{attempts_left} attempt{"s" if attempts_left != 1 else ""} remaining</strong> '
+                    f'before your login is temporarily locked.',
+                    'danger'
+                )
+            else:
+                flash('Incorrect username or password. Please try again.', 'danger')
 
     return render_template('login.html')
 
