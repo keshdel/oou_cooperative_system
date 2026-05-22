@@ -759,7 +759,7 @@
                     </div>
                     
                     <div class="table-responsive">
-                        <table class="table">
+                        <table class="table table-bordered table-hover align-middle">
                             <thead>
                                 <tr>
                                     <th>ID</th>
@@ -792,11 +792,18 @@
                                     </td>
                                     <td class="text-nowrap">
                                         <button class="btn btn-sm btn-primary" title="Edit User"
-                                            onclick="openEditUser({{ user.id }}, {{ user.username|tojson }}, {{ (user.full_name or '')|tojson }}, {{ (user.email or '')|tojson }}, {{ user.role|tojson }})">
+                                            data-uid="{{ user.id }}"
+                                            data-uname="{{ user.username }}"
+                                            data-fname="{{ user.full_name or '' }}"
+                                            data-email="{{ user.email or '' }}"
+                                            data-role="{{ user.role }}"
+                                            onclick="openEditUser(this)">
                                             <i class="fas fa-edit"></i>
                                         </button>
                                         <button class="btn btn-sm btn-warning" title="Reset Password"
-                                            onclick="openResetPassword({{ user.id }}, {{ user.username|tojson }})">
+                                            data-uid="{{ user.id }}"
+                                            data-uname="{{ user.username }}"
+                                            onclick="openResetPassword(this)">
                                             <i class="fas fa-key"></i>
                                         </button>
                                         <form method="POST" action="/api/toggle_user/{{ user.id }}" class="d-inline"
@@ -938,7 +945,7 @@
                                     <h5>Backup History</h5>
                                 </div>
                                 <div class="card-body">
-                                    <table class="table">
+                                    <table class="table table-bordered table-hover align-middle">
                                         <thead>
                                             <tr>
                                                 <th>Date/Time</th>
@@ -1455,7 +1462,12 @@ if (window.location.hash === '#payments') {
 }
 
 // ── User management helpers ───────────────────────────────────────────────────
-function openEditUser(id, username, fullName, email, role) {
+function openEditUser(btn) {
+    const id       = btn.dataset.uid;
+    const username = btn.dataset.uname;
+    const fullName = btn.dataset.fname;
+    const email    = btn.dataset.email;
+    const role     = btn.dataset.role;
     document.getElementById('editUserForm').action = '/api/edit_user/' + id;
     document.getElementById('editUsername').value  = username;
     document.getElementById('editFullName').value  = fullName;
@@ -1464,7 +1476,9 @@ function openEditUser(id, username, fullName, email, role) {
     new bootstrap.Modal(document.getElementById('editUserModal')).show();
 }
 
-function openResetPassword(id, username) {
+function openResetPassword(btn) {
+    const id       = btn.dataset.uid;
+    const username = btn.dataset.uname;
     document.getElementById('resetPasswordForm').action   = '/api/reset_user_password/' + id;
     document.getElementById('resetUsername').textContent  = username;
     document.getElementById('resetNewPassword').value     = '';
