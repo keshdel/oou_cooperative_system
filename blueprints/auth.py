@@ -18,9 +18,6 @@ def index():
 def login():
     if request.method == 'POST':
         ip = request.remote_addr or '0.0.0.0'
-        if is_rate_limited(ip):
-            flash('Too many failed attempts. Please wait 15 minutes before trying again.', 'danger')
-            return render_template('login.html')
 
         username = request.form['username']
         password = request.form['password']
