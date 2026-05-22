@@ -1062,6 +1062,8 @@
                       </div>
                     </div>
 
+                    {% set base_url = request.host_url.rstrip('/') %}
+
                     <!-- Paystack panel -->
                     <div id="paystackPanel" class="border rounded p-3 mb-4">
                       <h6 class="text-success mb-3"><i class="fab fa-stripe me-2"></i>Paystack Credentials</h6>
@@ -1093,9 +1095,9 @@
                         <label class="form-label fw-semibold">Webhook URL <small class="text-muted">(add this in Paystack → Webhooks)</small></label>
                         <div class="input-group">
                           <input type="text" class="form-control font-monospace bg-light"
-                                 value="{{ request.host_url.rstrip('/') }}/webhooks/paystack" readonly>
+                                 value="{{ base_url }}/webhooks/paystack" readonly>
                           <button type="button" class="btn btn-outline-secondary"
-                                  onclick="navigator.clipboard.writeText('{{ request.host_url.rstrip(\"/\") }}/webhooks/paystack')">
+                                  onclick="navigator.clipboard.writeText('{{ base_url }}/webhooks/paystack')">
                             <i class="fas fa-copy"></i>
                           </button>
                         </div>
@@ -1144,9 +1146,9 @@
                         <label class="form-label fw-semibold">Webhook URL <small class="text-muted">(add this in Flutterwave → Webhooks)</small></label>
                         <div class="input-group">
                           <input type="text" class="form-control font-monospace bg-light"
-                                 value="{{ request.host_url.rstrip('/') }}/webhooks/flutterwave" readonly>
+                                 value="{{ base_url }}/webhooks/flutterwave" readonly>
                           <button type="button" class="btn btn-outline-secondary"
-                                  onclick="navigator.clipboard.writeText('{{ request.host_url.rstrip(\"/\") }}/webhooks/flutterwave')">
+                                  onclick="navigator.clipboard.writeText('{{ base_url }}/webhooks/flutterwave')">
                             <i class="fas fa-copy"></i>
                           </button>
                         </div>
