@@ -519,6 +519,114 @@ def test_mail():
         return jsonify({'success': False, 'error': str(e)})
 
 
+# ── Subscription billing ──────────────────────────────────────────────────────
+
+@admin_panel.route('/subscription')
+@login_required
+@role_required('admin', 'treasurer')
+def subscription_page():
+    db = get_db()
+    rows = {r['key']: r['value'] for r in db.execute('SELECT key, value FROM settings').fetchall()}
+
+    expiry_str  = rows.get('subscription_expiry', '').strip()
+    fee         = int(rows.get('subscription_fee', '50000') or 50000)
+    coop_email  = rows.get('subscription_email') or rows.get('email', '')
+    coop_name   = rows.get('coop_name', 'Cooperative')
+    pk          = rows.get('paystack_public_key', '')
+
+    from datetime import datetime
+    expiry_date = None
+    days_left   = None
+    is_active   = False
+
+    if expiry_str:
+        try:
+            expiry_date = datetime.strptime(expiry_str, '%Y-%m-%d')
+            days_left   = (expiry_date - datetime.now()).days
+            is_active   = days_left > 0
+        except Exception:
+            pass
+    else:
+        is_active = True  # no billing configured
+
+    return render_template(
+        'subscription.html',
+        expiry_date=expiry_date,
+        days_left=days_left,
+        is_active=is_active,
+        fee=fee,
+        coop_email=coop_email,
+        coop_name=coop_name,
+        paystack_public_key=pk,
+    )
+
+
+@admin_panel.route('/subscription/callback')
+@login_required
+@role_required('admin', 'treasurer')
+def subscription_callback():
+    """Paystack redirects here after a subscription payment."""
+    reference = request.args.get('reference', '').strip()
+    if not reference:
+        flash('Invalid payment reference.', 'danger')
+        return redirect(url_for('admin_panel.subscription_page'))
+
+    # Verify with Paystack
+    db  = get_db()
+    sk  = (db.execute("SELECT value FROM settings WHERE key='paystack_secret_key'").fetchone() or {}).get('value', '')
+    if not sk:
+        sk = os.environ.get('PAYSTACK_SECRET_KEY', '')
+
+    verified = False
+    amount_paid = 0
+    try:
+        import urllib.request as _ur, json as _json, ssl as _ssl
+        req = _ur.Request(
+            f'https://api.paystack.co/transaction/verify/{reference}',
+            headers={'Authorization': f'Bearer {sk}', 'Accept': 'application/json'}
+        )
+        ctx = _ssl.create_default_context()
+        with _ur.urlopen(req, context=ctx, timeout=10) as resp:
+            data = _json.loads(resp.read())
+        if data.get('status') and data['data'].get('status') == 'success':
+            verified    = True
+            amount_paid = data['data']['amount'] // 100  # kobo → naira
+    except Exception as e:
+        flash(f'Could not verify payment with Paystack: {e}', 'danger')
+        return redirect(url_for('admin_panel.subscription_page'))
+
+    if not verified:
+        flash('Payment could not be verified. Please contact support.', 'danger')
+        return redirect(url_for('admin_panel.subscription_page'))
+
+    # Extend subscription by 1 year from today (or from current expiry if still active)
+    from datetime import datetime, timedelta
+    current_str = (db.execute("SELECT value FROM settings WHERE key='subscription_expiry'").fetchone() or {}).get('value', '')
+    try:
+        current_expiry = datetime.strptime(current_str, '%Y-%m-%d') if current_str else datetime.now()
+        base = max(current_expiry, datetime.now())
+    except Exception:
+        base = datetime.now()
+
+    new_expiry = (base + timedelta(days=365)).strftime('%Y-%m-%d')
+
+    db.execute(
+        "UPDATE settings SET value = ? WHERE key = 'subscription_expiry'",
+        (new_expiry,)
+    )
+    # Also log as revenue
+    from security import log_audit
+    log_audit(db, current_user.id, current_user.username,
+              'SUBSCRIPTION_RENEWED', 'billing',
+              f'Subscription renewed via Paystack ref {reference}. '
+              f'Amount: ₦{amount_paid:,}. New expiry: {new_expiry}',
+              request.remote_addr, '')
+    db.commit()
+
+    flash(f'✅ Subscription renewed successfully! Active until {new_expiry}.', 'success')
+    return redirect(url_for('admin_panel.subscription_page'))
+
+
 def _apply_mail_config(db, app):
     """Read mail settings from the DB and push them into app.config."""
     mappings = {

@@ -1,0 +1,235 @@
+{% extends "base.html" %}
+
+{% block title %}Subscription — {{ coop_name }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+<div class="row justify-content-center">
+<div class="col-lg-7 col-md-9">
+
+    <div class="mb-4">
+        <h2><i class="fas fa-credit-card me-2"></i>Subscription</h2>
+        <p class="text-muted">Manage your cooperative management system subscription.</p>
+    </div>
+
+    <!-- Status card -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body p-4">
+            <div class="row align-items-center">
+                <div class="col-auto">
+                    {% if is_active %}
+                        {% if days_left is none %}
+                        <div class="rounded-circle d-flex align-items-center justify-content-center bg-success bg-opacity-10"
+                             style="width:64px;height:64px;">
+                            <i class="fas fa-infinity text-success fa-2x"></i>
+                        </div>
+                        {% elif days_left > 30 %}
+                        <div class="rounded-circle d-flex align-items-center justify-content-center bg-success bg-opacity-10"
+                             style="width:64px;height:64px;">
+                            <i class="fas fa-check-circle text-success fa-2x"></i>
+                        </div>
+                        {% else %}
+                        <div class="rounded-circle d-flex align-items-center justify-content-center bg-warning bg-opacity-10"
+                             style="width:64px;height:64px;">
+                            <i class="fas fa-exclamation-circle text-warning fa-2x"></i>
+                        </div>
+                        {% endif %}
+                    {% else %}
+                        <div class="rounded-circle d-flex align-items-center justify-content-center bg-danger bg-opacity-10"
+                             style="width:64px;height:64px;">
+                            <i class="fas fa-times-circle text-danger fa-2x"></i>
+                        </div>
+                    {% endif %}
+                </div>
+                <div class="col">
+                    {% if is_active %}
+                        {% if days_left is none %}
+                        <h5 class="mb-1 text-success fw-bold">Active — No Expiry</h5>
+                        <p class="text-muted mb-0 small">No billing is configured. The app runs freely.</p>
+                        {% elif days_left > 30 %}
+                        <h5 class="mb-1 text-success fw-bold">Active</h5>
+                        <p class="text-muted mb-0 small">
+                            Expires <strong>{{ expiry_date.strftime('%d %B %Y') }}</strong>
+                            &nbsp;·&nbsp; <strong>{{ days_left }} days</strong> remaining
+                        </p>
+                        {% else %}
+                        <h5 class="mb-1 text-warning fw-bold">Expiring Soon</h5>
+                        <p class="text-muted mb-0 small">
+                            Expires <strong>{{ expiry_date.strftime('%d %B %Y') }}</strong>
+                            &nbsp;·&nbsp; Only <strong>{{ days_left }} days</strong> left — renew now
+                        </p>
+                        {% endif %}
+                    {% else %}
+                        <h5 class="mb-1 text-danger fw-bold">Subscription Expired</h5>
+                        <p class="text-muted mb-0 small">
+                            Expired on <strong>{{ expiry_date.strftime('%d %B %Y') if expiry_date else 'unknown' }}</strong>.
+                            Members cannot access the system until you renew.
+                        </p>
+                    {% endif %}
+                </div>
+                {% if days_left is not none %}
+                <div class="col-auto">
+                    <div class="text-center px-3 py-2 rounded-3"
+                         style="background:{% if not is_active %}#fef2f2{% elif days_left <= 30 %}#fffbeb{% else %}#f0fdf4{% endif %}">
+                        <div class="fw-bold fs-3"
+                             style="color:{% if not is_active %}#dc2626{% elif days_left <= 30 %}#d97706{% else %}#16a34a{% endif %}">
+                            {{ [days_left, 0]|max }}
+                        </div>
+                        <div class="text-muted small">days left</div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    {% if days_left is none %}
+    <!-- No billing configured — show setup instructions -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body p-4">
+            <h6 class="fw-semibold mb-3"><i class="fas fa-info-circle text-primary me-2"></i>Set Up Billing</h6>
+            <p class="text-muted small mb-2">To enable subscription billing:</p>
+            <ol class="text-muted small">
+                <li>Set a <strong>Paystack Secret Key</strong> in Settings → Payments</li>
+                <li>Set the <strong>Subscription Fee</strong> and <strong>Billing Email</strong> below</li>
+                <li>Set an initial expiry date to activate billing</li>
+            </ol>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if paystack_public_key and (days_left is none or days_left <= 60 or not is_active) %}
+    <!-- Renewal card -->
+    <div class="card border-0 shadow-sm mb-4"
+         style="border-left: 4px solid #1a3a6c !important;">
+        <div class="card-body p-4">
+            <h6 class="fw-bold mb-1">
+                <i class="fas fa-rotate me-2 text-primary"></i>
+                Renew Subscription — 1 Year
+            </h6>
+            <p class="text-muted small mb-3">
+                Payment extends your subscription by 365 days from
+                {% if is_active and expiry_date %}{{ expiry_date.strftime('%d %b %Y') }}{% else %}today{% endif %}.
+            </p>
+
+            <div class="d-flex align-items-center gap-3 mb-4">
+                <div>
+                    <div class="text-muted small">Amount Due</div>
+                    <div class="fw-bold fs-4" style="color:#1a3a6c;">
+                        ₦{{ '{:,.0f}'.format(fee) }}
+                    </div>
+                </div>
+                <div class="vr"></div>
+                <div>
+                    <div class="text-muted small">Billing Email</div>
+                    <div class="fw-semibold">{{ coop_email or '(set below)' }}</div>
+                </div>
+                <div class="vr"></div>
+                <div>
+                    <div class="text-muted small">New Expiry</div>
+                    <div class="fw-semibold">
+                        {% set base = expiry_date if (is_active and expiry_date) else now() %}
+                        {{ (base + timedelta(days=365)).strftime('%d %b %Y') if base else '1 year from today' }}
+                    </div>
+                </div>
+            </div>
+
+            {% if not coop_email %}
+            <div class="alert alert-warning py-2 small mb-3">
+                <i class="fas fa-exclamation-triangle me-1"></i>
+                Set a billing email below before paying so you receive a receipt.
+            </div>
+            {% endif %}
+
+            <!-- Paystack inline payment -->
+            <button type="button" class="btn btn-primary btn-lg px-5"
+                    id="payBtn" onclick="payNow()"
+                    {% if not coop_email %}disabled title="Set a billing email first"{% endif %}>
+                <i class="fas fa-credit-card me-2"></i>Pay ₦{{ '{:,.0f}'.format(fee) }} Now
+            </button>
+            <span class="text-muted small ms-3">
+                <i class="fas fa-lock me-1 text-success"></i>Secured by Paystack
+            </span>
+        </div>
+    </div>
+    {% elif not paystack_public_key %}
+    <div class="alert alert-info">
+        <i class="fas fa-info-circle me-2"></i>
+        Configure your <strong>Paystack Public Key</strong> in
+        <a href="{{ url_for('admin_panel.settings') }}#payments">Settings → Payments</a>
+        to enable online renewal.
+    </div>
+    {% endif %}
+
+    <!-- Billing Settings -->
+    <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white border-bottom">
+            <h6 class="mb-0 fw-semibold"><i class="fas fa-sliders-h me-2"></i>Billing Settings</h6>
+        </div>
+        <div class="card-body p-4">
+            <form method="POST" action="{{ url_for('admin_panel.update_settings') }}">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label fw-semibold">Annual Subscription Fee (₦)</label>
+                        <input type="number" class="form-control" name="subscription_fee"
+                               value="{{ fee }}" min="1000" step="1000">
+                        <small class="text-muted">Amount charged per year for system access.</small>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-semibold">Billing Contact Email</label>
+                        <input type="email" class="form-control" name="subscription_email"
+                               value="{{ coop_email }}"
+                               placeholder="treasurer@yourcooperative.com">
+                        <small class="text-muted">Used as the payer email on Paystack receipts.</small>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label fw-semibold">Current Expiry Date</label>
+                        <input type="date" class="form-control" name="subscription_expiry"
+                               value="{{ expiry_date.strftime('%Y-%m-%d') if expiry_date else '' }}">
+                        <small class="text-muted">Set manually if needed (auto-updated on payment).</small>
+                    </div>
+                    <div class="col-12 pt-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save me-1"></i>Save Billing Settings
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+</div>
+</div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{% if paystack_public_key %}
+<script src="https://js.paystack.co/v1/inline.js"></script>
+<script>
+function payNow() {
+    const btn = document.getElementById('payBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-circle-notch fa-spin me-2"></i>Opening payment…';
+
+    const handler = PaystackPop.setup({
+        key:       '{{ paystack_public_key }}',
+        email:     '{{ coop_email }}',
+        amount:    {{ fee * 100 }},
+        currency:  'NGN',
+        ref:       'SUB-' + Date.now(),
+        metadata:  { custom_fields: [{ display_name: 'Cooperative', variable_name: 'coop', value: '{{ coop_name }}' }] },
+        callback: function(response) {
+            // Verify server-side and extend subscription
+            window.location.href = '{{ url_for("admin_panel.subscription_callback") }}?reference=' + response.reference;
+        },
+        onClose: function() {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-credit-card me-2"></i>Pay ₦{{ "{:,.0f}".format(fee) }} Now';
+        }
+    });
+    handler.openIframe();
+}
+</script>
+{% endif %}
+{% endblock %}

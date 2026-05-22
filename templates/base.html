@@ -105,6 +105,12 @@
                         <i class="fas fa-database"></i> Data Migration
                     </a>
                     {% endif %}
+                    {% if current_user.role in ['admin', 'treasurer'] %}
+                    <a href="{{ url_for('admin_panel.subscription_page') }}"
+                       class="{% if request.endpoint == 'admin_panel.subscription_page' %}active{% endif %}">
+                        <i class="fas fa-credit-card"></i> Subscription
+                    </a>
+                    {% endif %}
                     <a href="{{ url_for('auth.logout') }}">
                         <i class="fas fa-sign-out-alt"></i> Logout
                     </a>

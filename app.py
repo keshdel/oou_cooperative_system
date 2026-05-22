@@ -140,17 +140,31 @@ def utility_processor():
 
 # ── Before-request hook ───────────────────────────────────────────────────────
 
+def _get_subscription_expiry():
+    """
+    Returns the subscription expiry date string (YYYY-MM-DD) or '' if not set.
+    Checks the database settings first, then falls back to SUBSCRIPTION_EXPIRY env var.
+    """
+    try:
+        from database import get_db
+        db = get_db()
+        row = db.execute(
+            "SELECT value FROM settings WHERE key = 'subscription_expiry'"
+        ).fetchone()
+        db.close()
+        if row and row['value']:
+            return row['value'].strip()
+    except Exception:
+        pass
+    return os.environ.get('SUBSCRIPTION_EXPIRY', '').strip()
+
+
 def _check_billing_status():
     """
-    Checks whether the cooperative's subscription is still active.
-
-    Set SUBSCRIPTION_EXPIRY=YYYY-MM-DD in Railway environment variables.
-    When the date passes, all non-admin users see the subscription_expired page.
-    Admin can still log in to review and export data.
-
-    If SUBSCRIPTION_EXPIRY is not set, the app runs freely (no billing enforced).
+    Returns True if subscription is active (or billing not configured).
+    Reads expiry from DB settings first, then SUBSCRIPTION_EXPIRY env var.
     """
-    expiry_str = os.environ.get('SUBSCRIPTION_EXPIRY', '').strip()
+    expiry_str = _get_subscription_expiry()
     if not expiry_str:
         return True  # no billing configured — allow access
     try:
@@ -161,18 +175,29 @@ def _check_billing_status():
         return True  # malformed date — fail open
 
 
+# Endpoints accessible even when subscription is expired
+_BILLING_EXEMPT = {
+    'auth.login', 'auth.logout', 'static',
+    'admin_panel.subscription_page',
+    'admin_panel.subscription_callback',
+}
+
+
 @app.before_request
 def check_maintenance():
     if current_user.is_authenticated and current_user.role == 'admin':
         return
-    maintenance = False  # fetch from settings when needed
+    maintenance = False
     if maintenance and request.endpoint not in ['auth.login', 'static']:
         return render_template('errors/maintenance.html'), 503
 
-    # Billing subscription check
-    if request.endpoint not in ['auth.login', 'auth.logout', 'static']:
+    # Billing subscription check — admin always gets through
+    if request.endpoint not in _BILLING_EXEMPT:
         if not _check_billing_status():
-            return render_template('errors/subscription_expired.html'), 402
+            return render_template(
+                'errors/subscription_expired.html',
+                expiry=_get_subscription_expiry()
+            ), 402
 
 
 # ── Forced password-change gate ───────────────────────────────────────────────
