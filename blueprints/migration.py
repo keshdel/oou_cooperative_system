@@ -217,6 +217,13 @@ def import_members():
                     monthly_savings_raw = row.get('monthly_savings', '').strip()
                     monthly_savings = float(monthly_savings_raw) if monthly_savings_raw else 5000.0
 
+                    # Auto-generate member_number BEFORE the INSERT so we never
+                    # need last_insert_rowid() (SQLite-only; breaks PostgreSQL).
+                    if not member_number:
+                        seq  = db.execute('SELECT COUNT(*) FROM members').fetchone()[0] + 1
+                        year = (date_joined or datetime.now()).year
+                        member_number = f"OOU/{year}/{seq:04d}"
+
                     db.execute('''
                         INSERT INTO members (
                             member_number, first_name, last_name, email, phone,
@@ -246,13 +253,6 @@ def import_members():
                         row.get('emergency_contact_name', '').strip() or None,
                         row.get('emergency_contact_phone', '').strip() or None,
                     ))
-
-                    # Auto-generate member_number if not supplied
-                    new_id = db.execute('SELECT last_insert_rowid()').fetchone()[0]
-                    if not member_number:
-                        member_number = f"OOU/{(date_joined or datetime.now()).year}/{new_id:04d}"
-                        db.execute('UPDATE members SET member_number = ? WHERE id = ?',
-                                   (member_number, new_id))
 
                     # Auto-create a member portal user account if email is available
                     if email:
