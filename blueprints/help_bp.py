@@ -38,7 +38,7 @@ ARTICLES = [
         'body': [
             {
                 'head':  'What you see here',
-                'text':  'The dashboard gives a real-time snapshot of your cooperative's financial health: total members, cumulative savings, active loan book, and investment portfolio — all updated live from the database.',
+                'text':  'The dashboard gives a real-time snapshot of your cooperative\'s financial health: total members, cumulative savings, active loan book, and investment portfolio - all updated live from the database.',
             },
             {
                 'head':  'Summary cards',
