@@ -14,12 +14,8 @@ admin_panel = Blueprint('admin_panel', __name__)
 
 _DEFAULT_SETTINGS = {
     'mail_enabled':  '0',
-    'mail_server':   '',
-    'mail_port':     '587',
-    'mail_use_tls':  '1',
-    'mail_username': '',
-    'mail_password': '',
-    'mail_sender':   '',
+    'resend_api_key': '',
+    'mail_from':     '',
     'coop_name': 'OOU Acctg 2005 Alumni CMS',
     'reg_number': 'CMS/2005/001',
     'address': '',
@@ -68,17 +64,21 @@ def settings():
             settings_dict.setdefault(key, default_value)
 
         users = db.execute(
-            'SELECT id, username, full_name, email, role, is_active, last_login FROM users ORDER BY id'
+            'SELECT id, username, full_name, email, role, is_active, last_login, is_super_admin FROM users ORDER BY id'
         ).fetchall()
+        # Check if the currently logged-in user is a super admin
+        me_row = db.execute('SELECT is_super_admin FROM users WHERE id = ?', (current_user.id,)).fetchone()
+        current_is_super = bool(me_row and me_row['is_super_admin'])
         user_list = [
             {
-                'id':        u['id'],
-                'username':  u['username'],
-                'full_name': u['full_name'] or u['username'],
-                'email':     u['email'] or '',
-                'role':      u['role'],
-                'is_active': u['is_active'] if u['is_active'] is not None else 1,
-                'last_login': u['last_login'] or 'Never',
+                'id':             u['id'],
+                'username':       u['username'],
+                'full_name':      u['full_name'] or u['username'],
+                'email':          u['email'] or '',
+                'role':           u['role'],
+                'is_active':      u['is_active'] if u['is_active'] is not None else 1,
+                'last_login':     u['last_login'] or 'Never',
+                'is_super_admin': bool(u['is_super_admin'] if 'is_super_admin' in u.keys() else 0),
             }
             for u in users
         ]
@@ -90,6 +90,7 @@ def settings():
         return render_template('admin/settings.html',
                                settings=settings_dict,
                                system_users=user_list,
+                               current_is_super=current_is_super,
                                audit_logs=audit_logs,
                                backup_history=[],
                                datetime=datetime)
@@ -98,6 +99,7 @@ def settings():
         return render_template('admin/settings.html',
                                settings=_DEFAULT_SETTINGS,
                                system_users=[],
+                               current_is_super=False,
                                audit_logs=[],
                                backup_history=[],
                                datetime=datetime)
@@ -360,6 +362,14 @@ def edit_user(user_id):
             flash('You cannot change your own role.', 'danger')
             return redirect(url_for('admin_panel.settings') + '#users')
 
+        # Super-admin protection: only a super admin can edit another super admin
+        target = db.execute('SELECT is_super_admin FROM users WHERE id = ?', (user_id,)).fetchone()
+        if target and target['is_super_admin']:
+            me = db.execute('SELECT is_super_admin FROM users WHERE id = ?', (current_user.id,)).fetchone()
+            if not (me and me['is_super_admin']):
+                flash('Only a super admin can modify a super admin account.', 'danger')
+                return redirect(url_for('admin_panel.settings') + '#users')
+
         db.execute(
             'UPDATE users SET full_name = ?, email = ?, role = ? WHERE id = ?',
             (full_name, email, role, user_id)
@@ -398,6 +408,36 @@ def reset_user_password(user_id):
     except Exception as e:
         db.rollback()
         flash(f'Error resetting password: {e}', 'danger')
+    return redirect(url_for('admin_panel.settings') + '#users')
+
+
+@admin_panel.route('/api/toggle_super_admin/<int:user_id>', methods=['POST'])
+@login_required
+@role_required('admin')
+def toggle_super_admin(user_id):
+    """Grant or revoke super-admin status.  Only a super admin can do this."""
+    db = get_db()
+    me = db.execute('SELECT is_super_admin FROM users WHERE id = ?', (current_user.id,)).fetchone()
+    if not (me and me['is_super_admin']):
+        flash('Only a super admin can grant or revoke super admin status.', 'danger')
+        return redirect(url_for('admin_panel.settings') + '#users')
+    if user_id == current_user.id:
+        flash('You cannot revoke your own super admin status.', 'danger')
+        return redirect(url_for('admin_panel.settings') + '#users')
+    try:
+        target = db.execute('SELECT username, is_super_admin FROM users WHERE id = ?', (user_id,)).fetchone()
+        if not target:
+            flash('User not found.', 'danger')
+            return redirect(url_for('admin_panel.settings') + '#users')
+        new_val = 0 if target['is_super_admin'] else 1
+        db.execute('UPDATE users SET is_super_admin = ? WHERE id = ?', (new_val, user_id))
+        db.commit()
+        status = 'granted' if new_val else 'revoked'
+        audit(db, 'UPDATE', 'users', f'Super admin status {status} for {target["username"]}')
+        flash(f'Super admin status {status} for "{target["username"]}".', 'success')
+    except Exception as e:
+        db.rollback()
+        flash(f'Error updating super admin: {e}', 'danger')
     return redirect(url_for('admin_panel.settings') + '#users')
 
 
@@ -443,45 +483,33 @@ def test_db():
 @login_required
 @role_required('admin')
 def update_mail_settings():
-    from flask import current_app
-    from extensions import mail as mail_ext
-
+    """Save Resend email settings to the DB."""
     db = get_db()
     try:
-        keys = ['mail_enabled', 'mail_server', 'mail_port', 'mail_use_tls',
-                'mail_username', 'mail_password', 'mail_sender']
+        # mail_enabled toggle
+        mail_enabled = '1' if request.form.get('mail_enabled') else '0'
+        # resend_api_key: blank → keep existing
+        resend_api_key = request.form.get('resend_api_key', '').strip()
+        mail_from      = request.form.get('mail_from', '').strip()
 
-        for key in keys:
-            if key == 'mail_password':
-                val = request.form.get(key, '').strip()
-                if not val:
-                    continue  # blank → keep existing password
-            elif key == 'mail_use_tls':
-                val = '1' if request.form.get(key) else '0'
-            elif key == 'mail_enabled':
-                val = '1' if request.form.get(key) else '0'
-            else:
-                val = request.form.get(key, '').strip()
+        updates = {'mail_enabled': mail_enabled, 'mail_from': mail_from}
+        if resend_api_key:
+            updates['resend_api_key'] = resend_api_key
 
+        for key, val in updates.items():
             existing = db.execute('SELECT id FROM settings WHERE key = ?', (key,)).fetchone()
             if existing:
                 db.execute('UPDATE settings SET value = ? WHERE key = ?', (val, key))
             else:
                 db.execute('INSERT INTO settings (key, value, description) VALUES (?, ?, ?)',
-                           (key, val, f'Mail setting: {key}'))
+                           (key, val, f'Email setting: {key}'))
 
         db.commit()
-
-        # Reconfigure Flask-Mail immediately so the test-mail button works without restart
-        _apply_mail_config(db, current_app._get_current_object())
-        mail_ext.init_app(current_app._get_current_object())
-
-        audit(db, 'UPDATE_MAIL_SETTINGS', 'settings', 'SMTP mail settings updated')
-        flash('Mail settings saved successfully!', 'success')
+        audit(db, 'UPDATE_MAIL_SETTINGS', 'settings', 'Email (Resend) settings updated')
+        flash('Email settings saved successfully!', 'success')
     except Exception as e:
         db.rollback()
-        flash(f'Error saving mail settings: {str(e)}', 'danger')
-
+        flash(f'Error saving email settings: {str(e)}', 'danger')
     return redirect(url_for('admin_panel.settings') + '#mail')
 
 
@@ -489,9 +517,8 @@ def update_mail_settings():
 @login_required
 @role_required('admin')
 def test_mail():
-    from flask import jsonify, current_app
-    from flask_mail import Message
-    from extensions import mail as mail_ext
+    from flask import jsonify
+    from email_service import send_email
 
     recipient = request.form.get('recipient', '').strip()
     if not recipient:
@@ -500,25 +527,21 @@ def test_mail():
     db = get_db()
     enabled = db.execute("SELECT value FROM settings WHERE key = 'mail_enabled'").fetchone()
     if not enabled or enabled['value'] != '1':
-        return jsonify({'success': False, 'error': 'Mail is disabled. Enable it first and save settings.'})
+        return jsonify({'success': False,
+                        'error': 'Email is disabled. Enable it and save first.'})
 
-    try:
-        msg = Message(
-            subject=f"Test Email from {current_app.config.get('MAIL_DEFAULT_SENDER', 'Cooperative System')}",
-            recipients=[recipient],
-            html=f"""
-            <h2>Test Email</h2>
-            <p>This is a test email from your cooperative management system.</p>
-            <p>If you received this, your SMTP settings are configured correctly.</p>
-            <hr>
-            <small>Sent at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</small>
-            """,
-        )
-        mail_ext.send(msg)
-        audit(db, 'TEST_MAIL', 'settings', f"Test email sent to {recipient}")
+    html = (
+        '<h2 style="color:#1a3a6c">Test Email</h2>'
+        '<p>This is a test email from your OOU Cooperative Management System.</p>'
+        '<p>If you received this, your Resend API key is configured correctly.</p>'
+        f'<hr><small>Sent at {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</small>'
+    )
+    ok = send_email(recipient, 'Test Email — OOU Cooperative', html)
+    if ok:
+        audit(db, 'TEST_MAIL', 'settings', f'Test email sent via Resend to {recipient}')
         return jsonify({'success': True, 'message': f'Test email sent to {recipient}'})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
+    return jsonify({'success': False,
+                    'error': 'Send failed. Check that RESEND_API_KEY is set and the From address uses a verified domain.'})
 
 
 # ── Subscription billing ──────────────────────────────────────────────────────
@@ -650,18 +673,3 @@ def subscription_callback():
     flash(f'✅ Subscription renewed successfully! Active until {new_expiry}.', 'success')
     return redirect(url_for('admin_panel.subscription_page'))
 
-
-def _apply_mail_config(db, app):
-    """Read mail settings from the DB and push them into app.config."""
-    mappings = {
-        'mail_server':   ('MAIL_SERVER',         str),
-        'mail_port':     ('MAIL_PORT',            int),
-        'mail_use_tls':  ('MAIL_USE_TLS',         lambda v: v == '1'),
-        'mail_username': ('MAIL_USERNAME',        str),
-        'mail_password': ('MAIL_PASSWORD',        str),
-        'mail_sender':   ('MAIL_DEFAULT_SENDER',  str),
-    }
-    for db_key, (cfg_key, cast) in mappings.items():
-        row = db.execute('SELECT value FROM settings WHERE key = ?', (db_key,)).fetchone()
-        if row and row['value']:
-            app.config[cfg_key] = cast(row['value'])

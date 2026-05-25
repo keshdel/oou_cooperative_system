@@ -184,6 +184,7 @@ def init_db():
         )
     '''))
     _add_col(db, 'users', 'must_change_password', 'INTEGER DEFAULT 0')
+    _add_col(db, 'users', 'is_super_admin',       'INTEGER DEFAULT 0')
 
     # Members table
     db.execute(_adapt('''
@@ -503,6 +504,10 @@ def init_db():
         ('subscription_expiry',       '',      'Subscription expiry date YYYY-MM-DD (blank = no billing)'),
         ('subscription_per_user_fee', '5000', 'Per-member annual subscription fee in Naira'),
         ('subscription_email',        '',      'Billing contact email for payment receipts'),
+        # ── Email (Resend) ────────────────────────────────────────────────────
+        ('mail_enabled',   '0',  'Enable outgoing email (1=yes, 0=no)'),
+        ('resend_api_key', '',   'Resend API key (re_...)'),
+        ('mail_from',      '',   'Sender address, e.g. "OOU Coop <noreply@yourdomain.com>"'),
     ]
 
     for key, value, desc in default_settings:

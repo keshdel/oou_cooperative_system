@@ -9,7 +9,6 @@ from flask import Flask, render_template, request
 from flask_login import LoginManager, current_user
 
 from database import init_db, get_db
-from extensions import mail
 from utils import User
 
 # ── App factory ──────────────────────────────────────────────────────────────
@@ -34,25 +33,6 @@ if not _secret_key or _secret_key in _KNOWN_BAD_KEYS:
     )
 app.config['SECRET_KEY'] = _secret_key
 app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10 MB
-
-# Mail
-app.config['MAIL_SERVER']         = os.environ.get('MAIL_SERVER', 'smtp.gmail.com')
-app.config['MAIL_PORT']           = int(os.environ.get('MAIL_PORT', 587))
-app.config['MAIL_USE_TLS']        = os.environ.get('MAIL_USE_TLS', 'True') == 'True'
-app.config['MAIL_USERNAME']       = os.environ.get('MAIL_USERNAME')
-app.config['MAIL_PASSWORD']       = os.environ.get('MAIL_PASSWORD')
-app.config['MAIL_DEFAULT_SENDER'] = os.environ.get('MAIL_DEFAULT_SENDER', 'noreply@cooperative.com')
-mail.init_app(app)
-
-# Override mail config from DB if the admin has saved settings via the UI
-with app.app_context():
-    try:
-        from blueprints.admin_panel import _apply_mail_config
-        _db = get_db()
-        _apply_mail_config(_db, app)
-        mail.init_app(app)
-    except Exception:
-        pass
 
 # ── Login manager ─────────────────────────────────────────────────────────────
 
