@@ -808,11 +808,9 @@
                             <select id="roleFilter" class="form-select" onchange="filterUsers()">
                                 <option value="">All Roles</option>
                                 <option value="admin">Admin</option>
-                                <option value="president">President</option>
-                                <option value="vice_president">Vice President</option>
                                 <option value="secretary">Secretary</option>
                                 <option value="treasurer">Treasurer</option>
-                                <option value="financial_secretary">Financial Secretary</option>
+                                <option value="exco">Exco</option>
                                 <option value="member">Member</option>
                             </select>
                         </div>
@@ -1279,11 +1277,9 @@
                         <label class="form-label">Role</label>
                         <select class="form-select" name="role" id="editRole">
                             <option value="admin">Admin</option>
-                            <option value="president">President</option>
-                            <option value="vice_president">Vice President</option>
                             <option value="secretary">Secretary</option>
                             <option value="treasurer">Treasurer</option>
-                            <option value="financial_secretary">Financial Secretary</option>
+                            <option value="exco">Exco (Committee Member)</option>
                             <option value="member">Member</option>
                         </select>
                     </div>
@@ -1371,11 +1367,9 @@
                         <label class="form-label">Role</label>
                         <select class="form-select" name="role" required>
                             <option value="admin">Admin</option>
-                            <option value="president">President</option>
-                            <option value="vice_president">Vice President</option>
                             <option value="secretary">Secretary</option>
                             <option value="treasurer">Treasurer</option>
-                            <option value="financial_secretary">Financial Secretary</option>
+                            <option value="exco">Exco (Committee Member)</option>
                             <option value="member">Member</option>
                         </select>
                     </div>
@@ -1506,11 +1500,23 @@ function fillProvider(server, port, tls) {
     document.querySelector('[name="mail_server"]').focus();
 }
 
-// Open the correct tab if URL ends with #mail
-if (window.location.hash === '#mail') {
-    const mailTab = document.getElementById('mail-tab');
-    if (mailTab) { new bootstrap.Tab(mailTab).show(); }
-}
+// Open the correct tab based on URL hash
+(function () {
+    const hashTabMap = {
+        '#mail':    'mail-tab',
+        '#payments':'payments-tab',
+        '#users':   'users-tab',
+        '#savings': 'savings-tab',
+        '#loans':   'loans-tab',
+        '#audit':   'audit-tab',
+        '#backup':  'backup-tab',
+    };
+    const tabId = hashTabMap[window.location.hash];
+    if (tabId) {
+        const tabEl = document.getElementById(tabId);
+        if (tabEl) { new bootstrap.Tab(tabEl).show(); }
+    }
+})();
 
 // ── Payments tab helpers ──────────────────────────────────────────────────────
 function toggleGatewayPanels() {
@@ -1530,11 +1536,6 @@ function toggleVis(inputId, btn) {
 }
 // Initialise panels on load
 toggleGatewayPanels();
-// Open payments tab if URL ends with #payments
-if (window.location.hash === '#payments') {
-    const paymentsTab = document.getElementById('payments-tab');
-    if (paymentsTab) { new bootstrap.Tab(paymentsTab).show(); }
-}
 
 // ── User management helpers ───────────────────────────────────────────────────
 function openEditUser(btn) {
