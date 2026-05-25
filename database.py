@@ -504,10 +504,14 @@ def init_db():
         ('subscription_expiry',       '',      'Subscription expiry date YYYY-MM-DD (blank = no billing)'),
         ('subscription_per_user_fee', '5000', 'Per-member annual subscription fee in Naira'),
         ('subscription_email',        '',      'Billing contact email for payment receipts'),
-        # ── Email (Resend) ────────────────────────────────────────────────────
+        # ── Email ─────────────────────────────────────────────────────────────
         ('mail_enabled',   '0',  'Enable outgoing email (1=yes, 0=no)'),
-        ('resend_api_key', '',   'Resend API key (re_...)'),
-        ('mail_from',      '',   'Sender address, e.g. "OOU Coop <noreply@yourdomain.com>"'),
+        ('resend_api_key', '',   'Resend API key (re_...) — leave blank to use SMTP instead'),
+        ('mail_from',      '',   'Sender address shown in inbox, e.g. "OOU Coop <noreply@yourdomain.com>"'),
+        ('smtp_host',      '',   'SMTP server hostname, e.g. smtp-relay.brevo.com or smtp.gmail.com'),
+        ('smtp_port',      '587','SMTP port (587 for TLS, 465 for SSL)'),
+        ('smtp_user',      '',   'SMTP login username (your email address)'),
+        ('smtp_pass',      '',   'SMTP login password or app password'),
     ]
 
     for key, value, desc in default_settings:

@@ -483,18 +483,28 @@ def test_db():
 @login_required
 @role_required('admin')
 def update_mail_settings():
-    """Save Resend email settings to the DB."""
+    """Save email settings (Resend API or SMTP) to the DB."""
     db = get_db()
     try:
-        # mail_enabled toggle
-        mail_enabled = '1' if request.form.get('mail_enabled') else '0'
-        # resend_api_key: blank → keep existing
-        resend_api_key = request.form.get('resend_api_key', '').strip()
+        mail_enabled   = '1' if request.form.get('mail_enabled') else '0'
         mail_from      = request.form.get('mail_from', '').strip()
+        resend_api_key = request.form.get('resend_api_key', '').strip()
+        smtp_host      = request.form.get('smtp_host', '').strip()
+        smtp_port      = request.form.get('smtp_port', '587').strip() or '587'
+        smtp_user      = request.form.get('smtp_user', '').strip()
+        smtp_pass      = request.form.get('smtp_pass', '').strip()
 
-        updates = {'mail_enabled': mail_enabled, 'mail_from': mail_from}
+        updates = {
+            'mail_enabled': mail_enabled,
+            'mail_from':    mail_from,
+            'smtp_host':    smtp_host,
+            'smtp_port':    smtp_port,
+            'smtp_user':    smtp_user,
+        }
         if resend_api_key:
             updates['resend_api_key'] = resend_api_key
+        if smtp_pass:
+            updates['smtp_pass'] = smtp_pass  # blank → keep existing
 
         for key, val in updates.items():
             existing = db.execute('SELECT id FROM settings WHERE key = ?', (key,)).fetchone()
@@ -505,7 +515,7 @@ def update_mail_settings():
                            (key, val, f'Email setting: {key}'))
 
         db.commit()
-        audit(db, 'UPDATE_MAIL_SETTINGS', 'settings', 'Email (Resend) settings updated')
+        audit(db, 'UPDATE_MAIL_SETTINGS', 'settings', 'Email settings updated')
         flash('Email settings saved successfully!', 'success')
     except Exception as e:
         db.rollback()
