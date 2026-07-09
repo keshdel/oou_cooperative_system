@@ -40,6 +40,90 @@ def trial_balance_view():
     return render_template('accounting/trial_balance.html', tb=tb, as_of=as_of)
 
 
+def _pct(source, name, default):
+    try:
+        return float(source.get(name, default))
+    except (TypeError, ValueError):
+        return default
+
+
+@accounting.route('/dividends')
+@login_required
+@role_required('admin', 'treasurer')
+def dividends():
+    from dividends import compute_dividend_schedule
+    db = get_db()
+    today = datetime.now()
+    from_date = request.args.get('from_date', today.replace(month=1, day=1).strftime('%Y-%m-%d'))
+    to_date   = request.args.get('to_date', today.strftime('%Y-%m-%d'))
+    rates = {
+        'dividend_pct':    _pct(request.args, 'dividend_pct', 50),
+        'reserve_pct':     _pct(request.args, 'reserve_pct', 25),
+        'honorarium_pct':  _pct(request.args, 'honorarium_pct', 10),
+        'other_pct':       _pct(request.args, 'other_pct', 15),
+        'patronage_split': _pct(request.args, 'patronage_split', 0),
+    }
+    sched = None
+    if request.args.get('preview'):
+        sched = compute_dividend_schedule(db, from_date, to_date, **rates)
+    declarations = db.execute(
+        'SELECT * FROM dividend_declarations ORDER BY declared_at DESC'
+    ).fetchall()
+    return render_template('accounting/dividends.html',
+                           from_date=from_date, to_date=to_date,
+                           sched=sched, declarations=declarations, **rates)
+
+
+@accounting.route('/dividends/declare', methods=['POST'])
+@login_required
+@role_required('admin')
+def declare_dividend():
+    from dividends import declare_dividends
+    db = get_db()
+    try:
+        from_date = request.form['from_date']
+        to_date   = request.form['to_date']
+        decl_id = declare_dividends(
+            db, from_date, to_date,
+            dividend_pct=_pct(request.form, 'dividend_pct', 50),
+            reserve_pct=_pct(request.form, 'reserve_pct', 25),
+            honorarium_pct=_pct(request.form, 'honorarium_pct', 10),
+            other_pct=_pct(request.form, 'other_pct', 15),
+            patronage_split=_pct(request.form, 'patronage_split', 0),
+            declared_by=current_user.id,
+        )
+        db.commit()
+        audit(db, 'DECLARE_DIVIDEND', 'accounting',
+              f'Declared dividend #{decl_id} for {from_date} to {to_date}')
+        flash('Dividend declared and credited to members\' savings.', 'success')
+        return redirect(url_for('accounting.dividend_detail', decl_id=decl_id))
+    except ValueError as e:
+        db.rollback()
+        flash(str(e), 'warning')
+        return redirect(url_for('accounting.dividends'))
+    except Exception as e:
+        db.rollback()
+        flash(f'Error declaring dividend: {e}', 'danger')
+        return redirect(url_for('accounting.dividends'))
+
+
+@accounting.route('/dividends/<int:decl_id>')
+@login_required
+@role_required('admin', 'treasurer')
+def dividend_detail(decl_id):
+    db = get_db()
+    decl = db.execute('SELECT * FROM dividend_declarations WHERE id = ?', (decl_id,)).fetchone()
+    if not decl:
+        flash('Dividend declaration not found.', 'danger')
+        return redirect(url_for('accounting.dividends'))
+    allocs = db.execute('''
+        SELECT da.*, m.member_number, m.first_name, m.last_name
+        FROM dividend_allocations da JOIN members m ON m.id = da.member_id
+        WHERE da.declaration_id = ? ORDER BY da.total DESC
+    ''', (decl_id,)).fetchall()
+    return render_template('accounting/dividend_detail.html', decl=decl, allocs=allocs)
+
+
 @accounting.route('/backfill', methods=['POST'])
 @login_required
 @role_required('admin')

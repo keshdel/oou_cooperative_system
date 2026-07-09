@@ -147,6 +147,10 @@ def backfill_from_transactions(db, created_by=None):
 
     # Savings deposits
     for s in db.execute('SELECT * FROM savings').fetchall():
+        # Dividend credits are posted as one aggregate entry by the dividend
+        # engine — don't double-post them here.
+        if (s['payment_type'] or '') == 'dividend':
+            continue
         ref = s['receipt_number'] or f"SAV-{s['id']}"
         if _je_exists_ref(db, ref):
             continue

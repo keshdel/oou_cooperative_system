@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}Dividends - OOU Cooperative{% endblock %}
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-3">
+        <div class="col-md-8">
+            <h2><i class="fas fa-coins"></i> Dividends &amp; Patronage</h2>
+            <p class="text-muted mb-0">Appropriate the net surplus and distribute dividends to members</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="{{ url_for('accounting.trial_balance_view') }}" class="btn btn-outline-secondary btn-sm">Trial Balance</a>
+        </div>
+    </div>
+
+    <!-- Parameters form -->
+    <div class="card mb-4">
+        <div class="card-header"><h6 class="mb-0"><i class="fas fa-sliders-h"></i> Compute Dividend</h6></div>
+        <div class="card-body">
+            <form method="get" class="row g-3 align-items-end">
+                <input type="hidden" name="preview" value="1">
+                <div class="col-md-2"><label class="form-label small mb-0">From</label>
+                    <input type="date" name="from_date" value="{{ from_date }}" class="form-control form-control-sm"></div>
+                <div class="col-md-2"><label class="form-label small mb-0">To</label>
+                    <input type="date" name="to_date" value="{{ to_date }}" class="form-control form-control-sm"></div>
+                <div class="col-md-2"><label class="form-label small mb-0">Dividend %</label>
+                    <input type="number" step="0.1" name="dividend_pct" value="{{ dividend_pct }}" class="form-control form-control-sm"></div>
+                <div class="col-md-2"><label class="form-label small mb-0">Reserve %</label>
+                    <input type="number" step="0.1" name="reserve_pct" value="{{ reserve_pct }}" class="form-control form-control-sm"></div>
+                <div class="col-md-2"><label class="form-label small mb-0">Honorarium %</label>
+                    <input type="number" step="0.1" name="honorarium_pct" value="{{ honorarium_pct }}" class="form-control form-control-sm"></div>
+                <div class="col-md-2"><label class="form-label small mb-0">Other %</label>
+                    <input type="number" step="0.1" name="other_pct" value="{{ other_pct }}" class="form-control form-control-sm"></div>
+                <div class="col-md-3"><label class="form-label small mb-0">Patronage split % <small class="text-muted">(of dividend, by loan interest)</small></label>
+                    <input type="number" step="0.1" name="patronage_split" value="{{ patronage_split }}" class="form-control form-control-sm"></div>
+                <div class="col-md-2"><button class="btn btn-primary btn-sm"><i class="fas fa-calculator"></i> Compute</button></div>
+            </form>
+        </div>
+    </div>
+
+    {% if sched %}
+        {% if not sched.distributable %}
+            <div class="alert alert-warning">No net surplus for {{ from_date }} to {{ to_date }} — nothing to distribute (net surplus ₦{{ "{:,.2f}".format(sched.net_surplus) }}).</div>
+        {% else %}
+        <div class="row">
+            <div class="col-lg-5">
+                <div class="card mb-4">
+                    <div class="card-header bg-success text-white"><h6 class="mb-0">Surplus Appropriation</h6></div>
+                    <div class="card-body">
+                        <table class="table mb-0">
+                            <tr><td>Net surplus</td><td class="text-end fw-semibold">₦{{ "{:,.2f}".format(sched.net_surplus) }}</td></tr>
+                            <tr><td class="ps-4">Statutory reserve</td><td class="text-end">₦{{ "{:,.2f}".format(sched.reserve) }}</td></tr>
+                            <tr><td class="ps-4">Honorarium</td><td class="text-end">₦{{ "{:,.2f}".format(sched.honorarium) }}</td></tr>
+                            <tr><td class="ps-4">Other</td><td class="text-end">₦{{ "{:,.2f}".format(sched.other) }}</td></tr>
+                            <tr class="table-primary"><td class="fw-bold">Dividend pool</td><td class="text-end fw-bold">₦{{ "{:,.2f}".format(sched.dividend_pool) }}</td></tr>
+                            <tr><td class="ps-4">— on savings</td><td class="text-end">₦{{ "{:,.2f}".format(sched.savings_pool) }}</td></tr>
+                            <tr><td class="ps-4">— patronage rebate</td><td class="text-end">₦{{ "{:,.2f}".format(sched.patronage_pool) }}</td></tr>
+                        </table>
+                    </div>
+                </div>
+                <form method="post" action="{{ url_for('accounting.declare_dividend') }}"
+                      onsubmit="return confirm('Declare this dividend and credit {{ sched.allocations|length }} members\' savings? This posts to the ledger and cannot be auto-undone.');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="from_date" value="{{ from_date }}">
+                    <input type="hidden" name="to_date" value="{{ to_date }}">
+                    <input type="hidden" name="dividend_pct" value="{{ dividend_pct }}">
+                    <input type="hidden" name="reserve_pct" value="{{ reserve_pct }}">
+                    <input type="hidden" name="honorarium_pct" value="{{ honorarium_pct }}">
+                    <input type="hidden" name="other_pct" value="{{ other_pct }}">
+                    <input type="hidden" name="patronage_split" value="{{ patronage_split }}">
+                    {% if current_user.role == 'admin' %}
+                    <button type="submit" class="btn btn-success">
+                        <i class="fas fa-check-circle"></i> Declare &amp; credit members (₦{{ "{:,.2f}".format(sched.allocated) }})
+                    </button>
+                    {% endif %}
+                </form>
+            </div>
+            <div class="col-lg-7">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between">
+                        <h6 class="mb-0">Member Dividend Schedule</h6>
+                        <span class="small text-muted">{{ sched.allocations|length }} members · ₦{{ "{:,.2f}".format(sched.allocated) }}</span>
+                    </div>
+                    <div class="card-body p-0" style="max-height:520px; overflow:auto;">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead class="table-light" style="position:sticky; top:0;">
+                                <tr><th>Member</th><th class="text-end">Savings</th><th class="text-end">On savings</th><th class="text-end">Patronage</th><th class="text-end">Total</th></tr>
+                            </thead>
+                            <tbody>
+                                {% for a in sched.allocations %}
+                                <tr>
+                                    <td><span class="text-muted small">{{ a.member_number }}</span><br>{{ a.name }}</td>
+                                    <td class="text-end">₦{{ "{:,.0f}".format(a.savings_base) }}</td>
+                                    <td class="text-end">₦{{ "{:,.2f}".format(a.dividend_savings) }}</td>
+                                    <td class="text-end">₦{{ "{:,.2f}".format(a.dividend_patronage) }}</td>
+                                    <td class="text-end fw-semibold">₦{{ "{:,.2f}".format(a.total) }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    {% endif %}
+
+    <!-- History -->
+    <div class="card mt-2">
+        <div class="card-header"><h6 class="mb-0"><i class="fas fa-history"></i> Declared Dividends</h6></div>
+        <div class="card-body p-0">
+            {% if declarations %}
+            <table class="table mb-0">
+                <thead class="table-light"><tr><th>Period</th><th class="text-end">Net surplus</th><th class="text-end">Dividend pool</th><th class="text-end">Reserve</th><th>Declared</th><th></th></tr></thead>
+                <tbody>
+                    {% for d in declarations %}
+                    <tr>
+                        <td>{{ d.period_from }} → {{ d.period_to }}</td>
+                        <td class="text-end">₦{{ "{:,.2f}".format(d.net_surplus) }}</td>
+                        <td class="text-end">₦{{ "{:,.2f}".format(d.dividend_pool) }}</td>
+                        <td class="text-end">₦{{ "{:,.2f}".format(d.reserve_amount) }}</td>
+                        <td class="small text-muted">{{ d.declared_at|string|truncate(19, True, '') }}</td>
+                        <td class="text-end"><a href="{{ url_for('accounting.dividend_detail', decl_id=d.id) }}" class="btn btn-sm btn-outline-primary">View</a></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <div class="p-3 text-muted">No dividends declared yet.</div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

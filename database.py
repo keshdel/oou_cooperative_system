@@ -558,6 +558,42 @@ def init_db():
     _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_journal_lines_account ON journal_lines(account_code)')
     _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_journal_entries_date ON journal_entries(date)')
 
+    # Dividend declarations (year-end surplus distribution)
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS dividend_declarations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            period_from TEXT NOT NULL,
+            period_to TEXT NOT NULL,
+            net_surplus REAL NOT NULL,
+            reserve_amount REAL DEFAULT 0,
+            honorarium_amount REAL DEFAULT 0,
+            other_amount REAL DEFAULT 0,
+            dividend_pool REAL DEFAULT 0,
+            patronage_split REAL DEFAULT 0,
+            status TEXT DEFAULT 'declared',
+            journal_entry_id INTEGER,
+            declared_by INTEGER,
+            declared_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    '''))
+    # Per-member dividend allocations for a declaration
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS dividend_allocations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            declaration_id INTEGER NOT NULL,
+            member_id INTEGER NOT NULL,
+            savings_base REAL DEFAULT 0,
+            patronage_base REAL DEFAULT 0,
+            dividend_savings REAL DEFAULT 0,
+            dividend_patronage REAL DEFAULT 0,
+            total REAL DEFAULT 0,
+            FOREIGN KEY (declaration_id) REFERENCES dividend_declarations (id),
+            FOREIGN KEY (member_id) REFERENCES members (id)
+        )
+    '''))
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_div_alloc_declaration ON dividend_allocations(declaration_id)')
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_div_alloc_member ON dividend_allocations(member_id)')
+
     # Seed the default cooperative chart of accounts (idempotent)
     default_accounts = [
         ('1000', 'Cash & Bank',                'asset',     'debit',  None),

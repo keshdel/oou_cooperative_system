@@ -102,8 +102,12 @@
                     {% endif %}
                     {% if current_user.role in ['admin', 'treasurer'] %}
                     <a href="{{ url_for('accounting.trial_balance_view') }}"
-                       class="{% if request.blueprint == 'accounting' %}active{% endif %}">
+                       class="{% if request.blueprint == 'accounting' and 'dividend' not in (request.endpoint or '') %}active{% endif %}">
                         <i class="fas fa-balance-scale"></i> Accounting
+                    </a>
+                    <a href="{{ url_for('accounting.dividends') }}"
+                       class="{% if 'dividend' in (request.endpoint or '') %}active{% endif %}">
+                        <i class="fas fa-coins"></i> Dividends
                     </a>
                     {% endif %}
                     {% if current_user.role == 'admin' %}

@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Dividend Declaration - OOU Cooperative{% endblock %}
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-3">
+        <div class="col-md-8">
+            <h2><i class="fas fa-coins"></i> Dividend Declaration</h2>
+            <p class="text-muted mb-0">{{ decl.period_from }} to {{ decl.period_to }} · declared {{ decl.declared_at|string|truncate(19, True, '') }}</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="{{ url_for('accounting.dividends') }}" class="btn btn-outline-secondary btn-sm"><i class="fas fa-arrow-left"></i> Back</a>
+            <button class="btn btn-primary btn-sm" onclick="window.print()"><i class="fas fa-print"></i> Print</button>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-4">
+            <div class="card mb-4">
+                <div class="card-header bg-success text-white"><h6 class="mb-0">Appropriation</h6></div>
+                <div class="card-body">
+                    <table class="table mb-0">
+                        <tr><td>Net surplus</td><td class="text-end fw-semibold">₦{{ "{:,.2f}".format(decl.net_surplus) }}</td></tr>
+                        <tr><td>Statutory reserve</td><td class="text-end">₦{{ "{:,.2f}".format(decl.reserve_amount) }}</td></tr>
+                        <tr><td>Honorarium</td><td class="text-end">₦{{ "{:,.2f}".format(decl.honorarium_amount) }}</td></tr>
+                        <tr><td>Other</td><td class="text-end">₦{{ "{:,.2f}".format(decl.other_amount) }}</td></tr>
+                        <tr class="table-primary"><td class="fw-bold">Dividend pool</td><td class="text-end fw-bold">₦{{ "{:,.2f}".format(decl.dividend_pool) }}</td></tr>
+                        <tr><td>Patronage split</td><td class="text-end">{{ "{:.0f}".format(decl.patronage_split) }}%</td></tr>
+                    </table>
+                    {% if decl.journal_entry_id %}
+                    <p class="small text-muted mt-2 mb-0"><i class="fas fa-check-circle text-success"></i> Posted to the general ledger.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between">
+                    <h6 class="mb-0">Member Allocations</h6>
+                    <span class="small text-muted">{{ allocs|length }} members</span>
+                </div>
+                <div class="card-body p-0">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead class="table-light">
+                            <tr><th>Member</th><th class="text-end">Savings</th><th class="text-end">On savings</th><th class="text-end">Patronage</th><th class="text-end">Total</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for a in allocs %}
+                            <tr>
+                                <td><span class="text-muted small">{{ a.member_number }}</span> {{ a.first_name }} {{ a.last_name }}</td>
+                                <td class="text-end">₦{{ "{:,.0f}".format(a.savings_base) }}</td>
+                                <td class="text-end">₦{{ "{:,.2f}".format(a.dividend_savings) }}</td>
+                                <td class="text-end">₦{{ "{:,.2f}".format(a.dividend_patronage) }}</td>
+                                <td class="text-end fw-semibold">₦{{ "{:,.2f}".format(a.total) }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
