@@ -8,7 +8,8 @@ from flask_login import login_required, current_user
 
 from database import get_db
 from email_service import send_loan_approval_email, send_loan_rejection_email
-from utils import role_required, audit, notify_member, compute_loan_schedule, PURPOSE_SETTING_KEY, METHOD_LABELS
+from utils import (role_required, audit, notify_member, compute_loan_schedule,
+                   PURPOSE_SETTING_KEY, METHOD_LABELS, record_revenue, split_repayment)
 
 loans = Blueprint('loans', __name__)
 
@@ -178,9 +179,9 @@ def approve_loan(loan_id):
     try:
         loan = db.execute('SELECT * FROM loans WHERE id = ?', (loan_id,)).fetchone()
         if loan and loan['status'] == 'pending':
-            insurance = loan['amount'] * 0.01
-            application_fee = loan['amount'] * 0.01
-            disbursed = loan['amount'] - insurance - application_fee
+            insurance = round(loan['amount'] * 0.01, 2)
+            application_fee = round(loan['amount'] * 0.01, 2)
+            disbursed = round(loan['amount'] - insurance - application_fee, 2)
 
             db.execute('''
                 UPDATE loans SET
@@ -197,6 +198,14 @@ def approve_loan(loan_id):
                 datetime.now(), current_user.id, insurance, application_fee,
                 disbursed, datetime.now(), datetime.now() + timedelta(days=30), loan_id
             ))
+
+            # Loan fees deducted at disbursement are cooperative income.
+            record_revenue(db, 'Loan Insurance', insurance,
+                           description=f"Insurance premium on loan {loan['loan_number']}",
+                           source=f"Loan {loan['loan_number']}", received_by=current_user.id)
+            record_revenue(db, 'Loan Application Fee', application_fee,
+                           description=f"Application fee on loan {loan['loan_number']}",
+                           source=f"Loan {loan['loan_number']}", received_by=current_user.id)
             db.commit()
             member = db.execute('SELECT * FROM members WHERE id = ?', (loan['member_id'],)).fetchone()
             if member and member['email']:
@@ -297,7 +306,7 @@ def bulk_loan_repayments():
                         continue
 
                     loan = db.execute(
-                        'SELECT id, member_id, balance, total_repayment FROM loans WHERE loan_number = ?',
+                        'SELECT id, member_id, amount, balance, total_repayment FROM loans WHERE loan_number = ?',
                         (loan_number,)
                     ).fetchone()
                     if not loan:
@@ -313,13 +322,16 @@ def bulk_loan_repayments():
                     if is_pre_liquidation:
                         repayment_notes = ('Pre-liquidation – loan settled in full. ' + (notes or '')).strip()
 
+                    principal_paid, interest_paid = split_repayment(
+                        settled_amount, loan['amount'], loan['total_repayment'])
+
                     db.execute('''
                         INSERT INTO repayments (
-                            repayment_number, loan_id, amount, payment_method,
-                            receipt_number, notes, date
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?)
-                    ''', (repayment_number, loan['id'], settled_amount, payment_method,
-                          receipt_number, repayment_notes, payment_date))
+                            repayment_number, loan_id, amount, principal_paid, interest_paid,
+                            payment_method, receipt_number, notes, date
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (repayment_number, loan['id'], settled_amount, principal_paid, interest_paid,
+                          payment_method, receipt_number, repayment_notes, payment_date))
 
                     new_balance = loan['balance'] - settled_amount
                     status = 'completed' if new_balance <= 0 else 'active'
@@ -415,11 +427,16 @@ def repay_loan(loan_id):
 
         repayment_number = f"REP/{datetime.now().strftime('%Y%m%d%H%M%S')}/{loan_id}"
         notes = 'Pre-liquidation – loan settled in full.' if is_pre_liq else ''
+        principal_paid, interest_paid = split_repayment(
+            settled, loan['amount'], loan['total_repayment'])
 
         db.execute('''
-            INSERT INTO repayments (repayment_number, loan_id, amount, payment_method, notes, date)
-            VALUES (?, ?, ?, ?, ?, ?)
-        ''', (repayment_number, loan_id, settled, method, notes, datetime.now()))
+            INSERT INTO repayments
+                (repayment_number, loan_id, amount, principal_paid, interest_paid,
+                 payment_method, notes, date)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (repayment_number, loan_id, settled, principal_paid, interest_paid,
+              method, notes, datetime.now()))
 
         new_balance = loan['balance'] - settled
         new_status  = 'completed' if new_balance <= 0 else 'active'

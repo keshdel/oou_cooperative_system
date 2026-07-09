@@ -4,11 +4,11 @@ from datetime import datetime
 from io import StringIO
 
 from flask import Blueprint, render_template, redirect, url_for, request, flash, make_response
-from flask_login import login_required
+from flask_login import login_required, current_user
 
 from database import get_db, last_insert_id
 from email_service import send_payment_confirmation_email
-from utils import role_required, audit, notify_member
+from utils import role_required, audit, notify_member, record_revenue
 
 savings = Blueprint('savings', __name__)
 
@@ -46,27 +46,41 @@ def add_saving():
     db = get_db()
     try:
         today = datetime.now()
-        # Late fee applies only to monthly/salary savings recorded after the 10th
+        # Late fee applies only to monthly/salary savings recorded after the 10th.
+        # The fee is cooperative INCOME — it is recorded separately and must NOT
+        # inflate the member's savings balance.
         if payment_type in ('monthly', 'salary') and today.day > 10:
-            late_fee    = amount * 0.10
-            total_amount = amount + late_fee
+            late_fee = round(amount * 0.10, 2)
             flash(f'Late payment: 10% fee of ₦{late_fee:,.2f} applied.', 'info')
         else:
-            late_fee    = 0
-            total_amount = amount
+            late_fee = 0
 
         receipt_number = f"RCPT/{today.strftime('%Y%m%d')}/{random.randint(1000, 9999)}"
 
+        # savings.amount is the member's contribution only (fee tracked separately)
         db.execute('''
             INSERT INTO savings
                 (member_id, amount, month, payment_type, late_fee,
                  payment_method, receipt_number, notes, date)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (member_id, total_amount, month, payment_type, late_fee,
+        ''', (member_id, amount, month, payment_type, late_fee,
               payment_method, receipt_number, notes, today))
 
+        # Member savings balance grows only by the contribution, not the fee.
         db.execute('UPDATE members SET total_savings = total_savings + ? WHERE id = ?',
-                   (total_amount, member_id))
+                   (amount, member_id))
+
+        # Book the late fee as cooperative income.
+        if late_fee:
+            member_row = db.execute('SELECT first_name, last_name FROM members WHERE id = ?',
+                                    (member_id,)).fetchone()
+            member_name = (f"{member_row['first_name']} {member_row['last_name']}"
+                           if member_row else f"member {member_id}")
+            record_revenue(db, 'Late Fee', late_fee,
+                           description=f'Late savings fee for {month}',
+                           source=member_name, received_by=current_user.id,
+                           notes=f'Receipt {receipt_number}')
+
         db.commit()
 
         saving_id = last_insert_id(db)
@@ -74,10 +88,11 @@ def add_saving():
         new_saving = db.execute('SELECT * FROM savings WHERE id = ?', (saving_id,)).fetchone()
         if member and member['email']:
             send_payment_confirmation_email(member['email'], member, new_saving)
+            fee_note = f" (plus ₦{late_fee:,.2f} late fee)" if late_fee else ""
             notify_member(db, member['email'],
                           'Savings Payment Confirmed',
-                          f"₦{total_amount:,.2f} {payment_type} savings recorded for "
-                          f"{month}. Receipt: {receipt_number}.",
+                          f"₦{amount:,.2f} {payment_type} savings recorded for "
+                          f"{month}{fee_note}. Receipt: {receipt_number}.",
                           notification_type='info',
                           action_url='/my-savings')
 

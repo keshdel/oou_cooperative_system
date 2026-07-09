@@ -18,7 +18,7 @@ from flask_login import current_user, login_required
 from database import get_db
 from payments import get_gateway, generate_reference
 from security import log_audit
-from utils import audit, member_for_user
+from utils import audit, member_for_user, split_repayment
 
 payments_bp = Blueprint('payments', __name__)
 
@@ -117,9 +117,9 @@ def _record_payment(db, reference: str) -> bool:
                 db.commit()
                 return False
 
-            principal_paid = min(amount, loan['balance'])
-            interest_paid  = max(amount - principal_paid, 0)
-            new_balance    = max(loan['balance'] - principal_paid, 0)
+            principal_paid, interest_paid = split_repayment(
+                amount, loan['amount'], loan['total_repayment'])
+            new_balance = max(loan['balance'] - amount, 0)
 
             rep_num = f"REP-{reference[-8:].upper()}"
             db.execute(

@@ -237,6 +237,65 @@ def compute_loan_schedule(principal, rate, tenure, method='reducing_annual'):
     return round(mp, 2), round(total_repayment, 2), schedule
 
 
+# ── Financial helpers ─────────────────────────────────────────────────────────
+
+def record_revenue(db, category, amount, description='', source='',
+                   received_by=None, notes=''):
+    """Insert a revenue (income) row, e.g. for late fees or loan fees.
+
+    Does NOT commit — it runs inside the caller's transaction so the income
+    is booked atomically with the operation that generated it. Skips zero /
+    non-positive amounts. Never raises (income logging must not break the
+    main flow).
+    """
+    try:
+        amount = float(amount or 0)
+    except (TypeError, ValueError):
+        return
+    if amount <= 0:
+        return
+    import random
+    from datetime import datetime
+    revenue_number = f"REV/{datetime.now().strftime('%Y%m%d')}/{random.randint(1000, 9999)}"
+    try:
+        db.execute(
+            '''INSERT INTO revenue
+               (revenue_number, category, amount, description, source, date, received_by, notes)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+            (revenue_number, category, amount, description, source,
+             datetime.now(), received_by, notes)
+        )
+    except Exception as exc:  # pragma: no cover - defensive
+        print(f"[revenue] failed to record {category} {amount}: {exc}")
+
+
+def split_repayment(amount, principal, total_repayment):
+    """Split a loan repayment into (principal_part, interest_part).
+
+    The loan's ``balance`` is stored as total_repayment (principal + all
+    interest combined), so a payment must be apportioned. We split each
+    payment in the loan's principal:interest ratio. This is a proportional
+    (not per-period amortising) allocation, but it reconciles exactly over the
+    life of the loan: the principal parts sum to the original principal and the
+    interest parts sum to the total interest.
+
+    Returns (principal_part, interest_part), each rounded to 2 dp.
+    """
+    try:
+        amount          = float(amount or 0)
+        principal       = float(principal or 0)
+        total_repayment = float(total_repayment or 0)
+    except (TypeError, ValueError):
+        return round(float(amount or 0), 2), 0.0
+    if total_repayment <= 0 or amount <= 0:
+        return round(amount, 2), 0.0
+    interest_total    = max(total_repayment - principal, 0.0)
+    interest_fraction = interest_total / total_repayment
+    interest_part     = round(amount * interest_fraction, 2)
+    principal_part    = round(amount - interest_part, 2)
+    return principal_part, interest_part
+
+
 # ── File upload validation ────────────────────────────────────────────────────
 
 _ALLOWED_IMAGE_EXTS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
