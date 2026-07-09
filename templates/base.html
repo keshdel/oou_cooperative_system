@@ -100,6 +100,12 @@
                         <i class="fas fa-file-alt"></i> Reports
                     </a>
                     {% endif %}
+                    {% if current_user.role in ['admin', 'treasurer'] %}
+                    <a href="{{ url_for('accounting.trial_balance_view') }}"
+                       class="{% if request.blueprint == 'accounting' %}active{% endif %}">
+                        <i class="fas fa-balance-scale"></i> Accounting
+                    </a>
+                    {% endif %}
                     {% if current_user.role == 'admin' %}
                     <a href="{{ url_for('admin_panel.settings') }}"
                        class="{% if request.blueprint == 'admin_panel' %}active{% endif %}">

@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Chart of Accounts - OOU Cooperative{% endblock %}
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-3">
+        <div class="col-md-8">
+            <h2><i class="fas fa-sitemap"></i> Chart of Accounts</h2>
+            <p class="text-muted mb-0">The general-ledger accounts every transaction posts to</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="{{ url_for('accounting.trial_balance_view') }}" class="btn btn-outline-secondary btn-sm">Trial Balance</a>
+            <a href="{{ url_for('accounting.journal_register') }}" class="btn btn-outline-secondary btn-sm">Journal</a>
+        </div>
+    </div>
+
+    {% for type, accounts in grouped %}
+    <div class="card mb-3">
+        <div class="card-header text-capitalize"><strong>{{ type }}</strong></div>
+        <div class="card-body p-0">
+            <table class="table mb-0">
+                <thead class="table-light">
+                    <tr><th style="width:120px">Code</th><th>Account</th><th style="width:140px">Normal balance</th></tr>
+                </thead>
+                <tbody>
+                    {% for a in accounts %}
+                    <tr>
+                        <td class="text-muted">{{ a.code }}</td>
+                        <td>{{ a.name }}</td>
+                        <td class="text-capitalize">{{ a.normal_balance }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Journal Register - OOU Cooperative{% endblock %}
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-3">
+        <div class="col-md-8">
+            <h2><i class="fas fa-book"></i> Journal Register</h2>
+            <p class="text-muted mb-0">Every posted double-entry journal (most recent first)</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="{{ url_for('accounting.trial_balance_view') }}" class="btn btn-outline-secondary btn-sm">Trial Balance</a>
+            <a href="{{ url_for('accounting.chart_of_accounts') }}" class="btn btn-outline-secondary btn-sm">Chart of Accounts</a>
+        </div>
+    </div>
+
+    {% if not entries %}
+        <div class="alert alert-info">No journal entries yet. They are created automatically as transactions are recorded.</div>
+    {% endif %}
+
+    {% for e in entries %}
+    <div class="card mb-2">
+        <div class="card-header py-2 d-flex justify-content-between align-items-center">
+            <div>
+                <span class="fw-semibold">{{ e.entry_number }}</span>
+                <span class="text-muted ms-2">{{ e.description }}</span>
+            </div>
+            <div class="small text-muted">
+                {% if e.source_module %}<span class="badge bg-light text-dark">{{ e.source_module }}</span>{% endif %}
+                {{ e.date|string|truncate(19, True, '') }}
+            </div>
+        </div>
+        <div class="card-body p-0">
+            <table class="table table-sm mb-0">
+                <tbody>
+                    {% for l in lines_by_entry[e.id] %}
+                    <tr>
+                        <td class="text-muted" style="width:90px">{{ l.account_code }}</td>
+                        <td>{{ l.account_name or '' }}{% if l.memo %}<span class="text-muted small"> — {{ l.memo }}</span>{% endif %}</td>
+                        <td class="text-end" style="width:140px">{% if l.debit %}₦{{ "{:,.2f}".format(l.debit) }}{% endif %}</td>
+                        <td class="text-end" style="width:140px">{% if l.credit %}₦{{ "{:,.2f}".format(l.credit) }}{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

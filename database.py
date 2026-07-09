@@ -514,6 +514,75 @@ def init_db():
         )
     '''))
 
+    # ── Double-entry general ledger ────────────────────────────────────────────
+    # Chart of accounts
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS accounts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT UNIQUE NOT NULL,
+            name TEXT NOT NULL,
+            type TEXT NOT NULL,             -- asset | liability | equity | income | expense
+            normal_balance TEXT NOT NULL,   -- debit | credit
+            parent_code TEXT,
+            is_active INTEGER DEFAULT 1,
+            description TEXT
+        )
+    '''))
+    # Journal entry headers
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS journal_entries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            entry_number TEXT UNIQUE,
+            date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            description TEXT,
+            reference TEXT,
+            source_module TEXT,
+            source_id INTEGER,
+            created_by INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    '''))
+    # Journal entry lines (debits and credits)
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS journal_lines (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            entry_id INTEGER NOT NULL,
+            account_code TEXT NOT NULL,
+            debit REAL DEFAULT 0,
+            credit REAL DEFAULT 0,
+            memo TEXT,
+            FOREIGN KEY (entry_id) REFERENCES journal_entries (id)
+        )
+    '''))
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_journal_lines_entry ON journal_lines(entry_id)')
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_journal_lines_account ON journal_lines(account_code)')
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_journal_entries_date ON journal_entries(date)')
+
+    # Seed the default cooperative chart of accounts (idempotent)
+    default_accounts = [
+        ('1000', 'Cash & Bank',                'asset',     'debit',  None),
+        ('1100', 'Loans Receivable',           'asset',     'debit',  None),
+        ('1200', 'Investments',                'asset',     'debit',  None),
+        ('2000', 'Member Deposits (Savings)',  'liability', 'credit', None),
+        ('3000', 'Accumulated Surplus',        'equity',    'credit', None),
+        ('3100', 'Statutory Reserve',          'equity',    'credit', None),
+        ('3200', 'Member Share Capital',       'equity',    'credit', None),
+        ('4000', 'Loan Interest Income',       'income',    'credit', None),
+        ('4100', 'Fee Income',                 'income',    'credit', None),
+        ('4200', 'Investment Income',          'income',    'credit', None),
+        ('5000', 'Operating Expenses',         'expense',   'debit',  None),
+        ('5100', 'Honorarium',                 'expense',   'debit',  None),
+    ]
+    for code, name, atype, normal, parent in default_accounts:
+        try:
+            db.execute('''
+                INSERT INTO accounts (code, name, type, normal_balance, parent_code)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(code) DO NOTHING
+            ''', (code, name, atype, normal, parent))
+        except Exception as e:
+            print(f"Error seeding account {code}: {e}")
+
     # Lookup indexes for the most frequent auth, member, ledger, and payment paths.
     _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)')
     _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_members_email ON members(email)')
