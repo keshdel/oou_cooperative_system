@@ -1,17 +1,17 @@
 {% extends "base.html" %}
 
-{% block title %}Financial Report - OOU Cooperative{% endblock %}
+{% block title %}Financial Statements - OOU Cooperative{% endblock %}
 
 {% block content %}
 <div class="container-fluid">
-    <div class="row mb-4">
+    <div class="row mb-3">
         <div class="col-md-8">
-            <h2><i class="fas fa-chart-pie"></i> Financial Report</h2>
-            <p class="text-muted">{{ from_date }} to {{ to_date }}</p>
+            <h2><i class="fas fa-chart-pie"></i> Financial Statements</h2>
+            <p class="text-muted mb-0">Income statement for {{ from_date }} to {{ to_date }} · Balance sheet as at {{ to_date }}</p>
         </div>
         <div class="col-md-4 text-end">
             <a href="{{ url_for('reports.reports_list') }}" class="btn btn-secondary">
-                <i class="fas fa-arrow-left"></i> Back to Reports
+                <i class="fas fa-arrow-left"></i> Back
             </a>
             <button class="btn btn-primary" onclick="window.print()">
                 <i class="fas fa-print"></i> Print
@@ -19,102 +19,132 @@
         </div>
     </div>
 
-    <div class="row">
-        <div class="col-md-6">
-            <div class="card mb-4">
-                <div class="card-header bg-success text-white">
-                    <h5 class="mb-0">Income</h5>
-                </div>
-                <div class="card-body">
-                    <table class="table">
-                        <tr>
-                            <td>Member Savings:</td>
-                            <td class="text-end">₦{{ "{:,.2f}".format(total_savings) }}</td>
-                        </tr>
-                        <tr>
-                            <td>Loan Interest:</td>
-                            <td class="text-end">₦{{ "{:,.2f}".format(loan_interest) }}</td>
-                        </tr>
-                        <tr>
-                            <td>Late Fees:</td>
-                            <td class="text-end">₦{{ "{:,.2f}".format(late_fees) }}</td>
-                        </tr>
-                        <tr class="table-primary">
-                            <th>Total Income:</th>
-                            <th class="text-end">₦{{ "{:,.2f}".format(total_income) }}</th>
-                        </tr>
-                    </table>
-                </div>
-            </div>
+    <form method="get" class="row g-2 align-items-end mb-4">
+        <div class="col-auto">
+            <label class="form-label small mb-0">From</label>
+            <input type="date" name="from_date" value="{{ from_date }}" class="form-control form-control-sm">
         </div>
+        <div class="col-auto">
+            <label class="form-label small mb-0">To</label>
+            <input type="date" name="to_date" value="{{ to_date }}" class="form-control form-control-sm">
+        </div>
+        <div class="col-auto">
+            <button class="btn btn-sm btn-primary"><i class="fas fa-filter"></i> Apply</button>
+        </div>
+    </form>
 
-        <div class="col-md-6">
-            <div class="card mb-4">
-                <div class="card-header bg-danger text-white">
-                    <h5 class="mb-0">Expenses</h5>
-                </div>
-                <div class="card-body">
-                    <table class="table">
-                        <tr>
-                            <td>Investments:</td>
-                            <td class="text-end">₦{{ "{:,.2f}".format(investments) }}</td>
-                        </tr>
-                        <tr>
-                            <td>Honorarium:</td>
-                            <td class="text-end">₦{{ "{:,.2f}".format(honorarium) }}</td>
-                        </tr>
-                        <tr class="table-primary">
-                            <th>Total Expenses:</th>
-                            <th class="text-end">₦{{ "{:,.2f}".format(total_expenses) }}</th>
-                        </tr>
-                    </table>
-                </div>
-            </div>
+    <!-- ── INCOME STATEMENT ─────────────────────────────────────────── -->
+    <div class="card mb-4">
+        <div class="card-header bg-success text-white">
+            <h5 class="mb-0">Income Statement</h5>
+        </div>
+        <div class="card-body">
+            <table class="table mb-0">
+                <tbody>
+                    <tr><th colspan="2" class="text-muted">Income</th></tr>
+                    <tr><td class="ps-4">Loan interest earned</td>
+                        <td class="text-end">₦{{ "{:,.2f}".format(inc.loan_interest) }}</td></tr>
+                    <tr><td class="ps-4">Fees &amp; other income</td>
+                        <td class="text-end">₦{{ "{:,.2f}".format(inc.fee_income) }}</td></tr>
+                    <tr><td class="ps-4">Investment returns</td>
+                        <td class="text-end">₦{{ "{:,.2f}".format(inc.investment_income) }}</td></tr>
+                    <tr class="fw-semibold border-top">
+                        <td>Total income</td>
+                        <td class="text-end">₦{{ "{:,.2f}".format(inc.total_income) }}</td></tr>
+
+                    <tr><th colspan="2" class="text-muted pt-3">Expenses</th></tr>
+                    <tr><td class="ps-4">Operating expenses</td>
+                        <td class="text-end">(₦{{ "{:,.2f}".format(inc.operating_expenses) }})</td></tr>
+                    <tr><td class="ps-4">Honorarium</td>
+                        <td class="text-end">(₦{{ "{:,.2f}".format(inc.honorarium) }})</td></tr>
+                    <tr class="fw-semibold border-top">
+                        <td>Total expenses</td>
+                        <td class="text-end">(₦{{ "{:,.2f}".format(inc.total_expenses) }})</td></tr>
+
+                    <tr class="table-info fw-bold border-top">
+                        <td>Net surplus / (deficit)</td>
+                        <td class="text-end {% if inc.net_surplus < 0 %}text-danger{% endif %}">
+                            ₦{{ "{:,.2f}".format(inc.net_surplus) }}</td></tr>
+                </tbody>
+            </table>
         </div>
     </div>
 
-    <div class="row">
-        <div class="col-md-12">
-            <div class="card">
-                <div class="card-header bg-info text-white">
-                    <h5 class="mb-0">Net Surplus</h5>
-                </div>
-                <div class="card-body text-center">
-                    <h2 class="{% if net_surplus >= 0 %}text-success{% else %}text-danger{% endif %}">
-                        ₦{{ "{:,.2f}".format(net_surplus) }}
-                    </h2>
-                </div>
-            </div>
+    <!-- ── BALANCE SHEET ────────────────────────────────────────────── -->
+    <div class="card mb-4">
+        <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">Balance Sheet <small class="fw-normal">as at {{ to_date }}</small></h5>
+            {% if bs.balances %}
+                <span class="badge bg-light text-success"><i class="fas fa-check"></i> Balanced</span>
+            {% else %}
+                <span class="badge bg-warning text-dark">Out of balance</span>
+            {% endif %}
         </div>
-    </div>
-
-    <div class="row mt-4">
-        <div class="col-md-12">
-            <div class="card">
-                <div class="card-header bg-warning">
-                    <h5 class="mb-0">Surplus Appropriation (Bye-laws Section 10)</h5>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <table class="table mb-0">
+                        <tbody>
+                            <tr><th colspan="2" class="text-muted">Assets</th></tr>
+                            <tr><td class="ps-4">Cash &amp; bank <small class="text-muted">(derived)</small></td>
+                                <td class="text-end">₦{{ "{:,.2f}".format(bs.cash) }}</td></tr>
+                            <tr><td class="ps-4">Investments</td>
+                                <td class="text-end">₦{{ "{:,.2f}".format(bs.investments) }}</td></tr>
+                            <tr><td class="ps-4">Loans receivable</td>
+                                <td class="text-end">₦{{ "{:,.2f}".format(bs.loans_receivable) }}</td></tr>
+                            <tr class="fw-bold border-top">
+                                <td>Total assets</td>
+                                <td class="text-end">₦{{ "{:,.2f}".format(bs.total_assets) }}</td></tr>
+                        </tbody>
+                    </table>
                 </div>
-                <div class="card-body">
-                    <table class="table">
-                        <tr>
-                            <td>Dividend (50%):</td>
-                            <td class="text-end">₦{{ "{:,.2f}".format(dividend) }}</td>
-                        </tr>
-                        <tr>
-                            <td>Reserve Fund (30%):</td>
-                            <td class="text-end">₦{{ "{:,.2f}".format(reserve) }}</td>
-                        </tr>
-                        <tr>
-                            <td>Honorarium (10%):</td>
-                            <td class="text-end">₦{{ "{:,.2f}".format(honorarium_pool) }}</td>
-                        </tr>
-                        <tr>
-                            <td>Other (10%):</td>
-                            <td class="text-end">₦{{ "{:,.2f}".format(other) }}</td>
-                        </tr>
+                <div class="col-md-6">
+                    <table class="table mb-0">
+                        <tbody>
+                            <tr><th colspan="2" class="text-muted">Liabilities</th></tr>
+                            <tr><td class="ps-4">Member deposits (savings)</td>
+                                <td class="text-end">₦{{ "{:,.2f}".format(bs.member_deposits) }}</td></tr>
+                            <tr><th colspan="2" class="text-muted pt-3">Equity</th></tr>
+                            <tr><td class="ps-4">Accumulated surplus</td>
+                                <td class="text-end">₦{{ "{:,.2f}".format(bs.accumulated_surplus) }}</td></tr>
+                            <tr class="fw-bold border-top">
+                                <td>Total liabilities &amp; equity</td>
+                                <td class="text-end">₦{{ "{:,.2f}".format(bs.total_liabilities + bs.total_equity) }}</td></tr>
+                        </tbody>
                     </table>
                 </div>
             </div>
+            <p class="small text-muted mt-2 mb-0">
+                <i class="fas fa-info-circle"></i>
+                Member savings are shown as a liability (deposits the cooperative owes members), not as income.
+                Cash is derived so that assets equal liabilities plus equity.
+            </p>
+        </div>
+    </div>
+
+    <!-- ── SURPLUS APPROPRIATION ────────────────────────────────────── -->
+    <div class="card">
+        <div class="card-header bg-warning">
+            <h5 class="mb-0">Surplus Appropriation (Bye-laws Section 10)</h5>
+        </div>
+        <div class="card-body">
+            {% if inc.net_surplus > 0 %}
+            <table class="table mb-0">
+                <tbody>
+                    <tr><td>Dividend to members (50%)</td>
+                        <td class="text-end">₦{{ "{:,.2f}".format(appr.dividend) }}</td></tr>
+                    <tr><td>Statutory reserve (30%)</td>
+                        <td class="text-end">₦{{ "{:,.2f}".format(appr.reserve) }}</td></tr>
+                    <tr><td>Honorarium (10%)</td>
+                        <td class="text-end">₦{{ "{:,.2f}".format(appr.honorarium) }}</td></tr>
+                    <tr><td>Other appropriations (10%)</td>
+                        <td class="text-end">₦{{ "{:,.2f}".format(appr.other) }}</td></tr>
+                </tbody>
+            </table>
+            <p class="small text-muted mt-2 mb-0">Projected appropriation of the period's net surplus per bye-law rates.</p>
+            {% else %}
+            <p class="text-muted mb-0">No net surplus in this period to appropriate.</p>
+            {% endif %}
         </div>
     </div>
 </div>

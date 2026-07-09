@@ -111,10 +111,17 @@ def reports_list():
         investment_type_labels = [t['name'] for t in investment_types]
         investment_type_data   = [t['amount'] for t in investment_types]
 
-        dividend_amount = total_savings_all * 0.05
-        reserve_amount = dividend_amount * 0.3
-        honorarium_amount = dividend_amount * 0.1
-        other_appropriations = dividend_amount * 0.1
+        # Real year-to-date income statement drives income/surplus/appropriation
+        # (member savings are a liability, never income).
+        from reports_engine import income_statement, surplus_appropriation
+        _year_from = datetime.now().replace(month=1, day=1).strftime('%Y-%m-%d')
+        _today     = datetime.now().strftime('%Y-%m-%d')
+        _inc  = income_statement(db, _year_from, _today)
+        _appr = surplus_appropriation(_inc['net_surplus'])
+        dividend_amount      = _appr['dividend']
+        reserve_amount       = _appr['reserve']
+        honorarium_amount    = _appr['honorarium']
+        other_appropriations = _appr['other']
 
         return render_template('admin/reports.html',
             total_members=total_members,
@@ -155,9 +162,9 @@ def reports_list():
             active_savings=total_savings_all,
             inactive_savings=0,
             loan_member_savings=total_savings_all * 0.6,
-            total_income_year=total_savings_all,
-            total_expenses_year=total_investments_value,
-            net_surplus_year=total_savings_all - total_investments_value,
+            total_income_year=_inc['total_income'],
+            total_expenses_year=_inc['total_expenses'],
+            net_surplus_year=_inc['net_surplus'],
             member_dividends=[],
             suspended_members=0,
         )
@@ -188,58 +195,18 @@ def reports_list():
 @reports.route('/reports/financial')
 @login_required
 def financial_report():
+    from reports_engine import income_statement, balance_sheet, surplus_appropriation
     db = get_db()
-    from_date = request.args.get('from_date', (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d'))
-    to_date = request.args.get('to_date', datetime.now().strftime('%Y-%m-%d'))
+    from_date = request.args.get('from_date', datetime.now().replace(month=1, day=1).strftime('%Y-%m-%d'))
+    to_date   = request.args.get('to_date', datetime.now().strftime('%Y-%m-%d'))
 
     try:
-        total_savings = db.execute(
-            'SELECT COALESCE(SUM(amount), 0) FROM savings WHERE date BETWEEN ? AND ?',
-            (from_date, to_date)
-        ).fetchone()[0]
-
-        loan_interest = db.execute(
-            "SELECT COALESCE(SUM(amount * ? / 100), 0) FROM loans "
-            "WHERE status = 'active' AND date_applied BETWEEN ? AND ?",
-            (11, from_date, to_date)
-        ).fetchone()[0]
-
-        late_fees = db.execute(
-            'SELECT COALESCE(SUM(late_fee), 0) FROM savings WHERE date BETWEEN ? AND ?',
-            (from_date, to_date)
-        ).fetchone()[0]
-
-        inv_total = db.execute(
-            'SELECT COALESCE(SUM(amount), 0) FROM investments WHERE date BETWEEN ? AND ?',
-            (from_date, to_date)
-        ).fetchone()[0]
-
-        honorarium = db.execute(
-            'SELECT COALESCE(SUM(amount), 0) FROM honorarium WHERE date BETWEEN ? AND ?',
-            (from_date, to_date)
-        ).fetchone()[0]
-
-        operating_expenses = db.execute(
-            'SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE date BETWEEN ? AND ?',
-            (from_date, to_date)
-        ).fetchone()[0]
-
-        total_income = total_savings + loan_interest + late_fees
-        total_expenses = inv_total + honorarium + operating_expenses
-        net_surplus = total_income - total_expenses
-
+        inc  = income_statement(db, from_date, to_date)
+        bs   = balance_sheet(db, as_of=to_date)
+        appr = surplus_appropriation(inc['net_surplus'])
         return render_template('admin/financial-report.html',
-                               from_date=from_date,
-                               to_date=to_date,
-                               total_savings=total_savings,
-                               loan_interest=loan_interest,
-                               late_fees=late_fees,
-                               total_income=total_income,
-                               investments=inv_total,
-                               honorarium=honorarium,
-                               operating_expenses=operating_expenses,
-                               total_expenses=total_expenses,
-                               net_surplus=net_surplus)
+                               from_date=from_date, to_date=to_date,
+                               inc=inc, bs=bs, appr=appr)
     except Exception as e:
         flash(f'Error generating financial report: {str(e)}', 'danger')
         return redirect(url_for('reports.reports_list'))
