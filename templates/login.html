@@ -494,6 +494,7 @@
             </div>
 
             <form method="POST" action="{{ url_for('auth.login') }}" id="loginForm" novalidate>
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
                 <!-- Username -->
                 <div class="field-group">

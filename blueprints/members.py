@@ -29,6 +29,7 @@ def members_list():
 
 @members.route('/members/<int:member_id>')
 @login_required
+@role_required('admin', 'secretary', 'treasurer', 'exco')
 def member_details(member_id):
     db     = get_db()
     member = db.execute('SELECT * FROM members WHERE id = ?', (member_id,)).fetchone()

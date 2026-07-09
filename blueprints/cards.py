@@ -2,11 +2,11 @@ import os
 import uuid
 
 from flask import Blueprint, render_template, redirect, url_for, request, flash, send_file
-from flask_login import login_required
+from flask_login import login_required, current_user
 
 from database import get_db
 from email_service import send_welcome_email
-from utils import role_required
+from utils import role_required, can_access_member
 
 cards = Blueprint('cards', __name__)
 
@@ -53,6 +53,10 @@ def generate_member_card(member_id):
 @login_required
 def view_member_card(member_id):
     db = get_db()
+    if not can_access_member(db, member_id):
+        flash('Access denied.', 'danger')
+        return redirect(url_for('main.dashboard'))
+
     member = db.execute('SELECT * FROM members WHERE id = ?', (member_id,)).fetchone()
     if not member:
         flash('Member not found', 'danger')
@@ -62,6 +66,9 @@ def view_member_card(member_id):
     full_card_path = os.path.join('static/cards', card_filename) if card_filename else None
 
     if not card_filename or not os.path.exists(full_card_path):
+        if current_user.role not in ('admin', 'secretary'):
+            flash('Your member card is not available yet. Please contact the administrator.', 'warning')
+            return redirect(url_for('portal.member_portal'))
         return redirect(url_for('cards.generate_member_card', member_id=member_id))
 
     return render_template('member/view-card.html', member=member)
@@ -71,14 +78,22 @@ def view_member_card(member_id):
 @login_required
 def download_member_card(member_id):
     db = get_db()
+    if not can_access_member(db, member_id):
+        flash('Access denied.', 'danger')
+        return redirect(url_for('main.dashboard'))
+
     member = db.execute('SELECT * FROM members WHERE id = ?', (member_id,)).fetchone()
     if not member or not member['card_path']:
         flash('Card not found', 'danger')
-        return redirect(url_for('members.member_details', member_id=member_id))
+        if current_user.role in ('admin', 'secretary', 'treasurer', 'exco'):
+            return redirect(url_for('members.member_details', member_id=member_id))
+        return redirect(url_for('portal.member_portal'))
 
     full_path = os.path.join('static/cards', member['card_path'])
     if not os.path.exists(full_path):
         flash('Card file missing. Please regenerate.', 'danger')
+        if current_user.role not in ('admin', 'secretary'):
+            return redirect(url_for('portal.member_portal'))
         return redirect(url_for('cards.generate_member_card', member_id=member_id))
 
     return send_file(full_path, as_attachment=True, download_name=member['card_path'])

@@ -1,4 +1,3 @@
-import random
 from datetime import datetime, timedelta
 
 from flask import Blueprint, render_template, redirect, url_for, request, flash
@@ -43,7 +42,9 @@ def reports_list():
             "SELECT COALESCE(SUM(amount), 0) FROM loans WHERE status IN ('active', 'completed')"
         )
         total_repaid = get_val('SELECT COALESCE(SUM(amount), 0) FROM repayments')
-        total_interest = total_disbursed * 0.11 if total_disbursed else 0
+        # Real interest income actually recorded against repayments — no estimate.
+        # (Will populate correctly once the principal/interest split is fixed in Phase 1.)
+        total_interest = get_val('SELECT COALESCE(SUM(interest_paid), 0) FROM repayments')
 
         active_loans_count = get_val("SELECT COUNT(*) FROM loans WHERE status = 'active'")
         completed_loans_count = get_val("SELECT COUNT(*) FROM loans WHERE status = 'completed'")
@@ -99,8 +100,16 @@ def reports_list():
             for ts in top_savers_rows
         ]
 
-        investment_type_labels = ['Fixed Deposit', 'Shares', 'Real Estate', 'Bonds', 'Other']
-        investment_type_data = [random.randint(100000, 1000000) for _ in range(5)]
+        # Real investment breakdown grouped by type — no fabricated figures.
+        inv_type_rows = db.execute(
+            "SELECT COALESCE(NULLIF(TRIM(type), ''), 'Other') AS name, "
+            "COALESCE(SUM(amount), 0) AS amount "
+            "FROM investments GROUP BY COALESCE(NULLIF(TRIM(type), ''), 'Other') "
+            "ORDER BY amount DESC"
+        ).fetchall()
+        investment_types      = [{'name': r['name'], 'amount': float(r['amount'])} for r in inv_type_rows]
+        investment_type_labels = [t['name'] for t in investment_types]
+        investment_type_data   = [t['amount'] for t in investment_types]
 
         dividend_amount = total_savings_all * 0.05
         reserve_amount = dividend_amount * 0.3
@@ -134,6 +143,7 @@ def reports_list():
             monthly_savings_data=monthly_savings_data,
             join_months=join_months,
             new_members_data=new_members_data,
+            investment_types=investment_types,
             investment_type_labels=investment_type_labels,
             investment_type_data=investment_type_data,
             dividend_amount=dividend_amount,
@@ -164,7 +174,8 @@ def reports_list():
             'pending_loans_count': 0, 'rejected_loans_count': 0, 'current_loans': 0,
             'days_30_loans': 0, 'days_60_loans': 0, 'days_90_loans': 0,
             'total_investments_value': 0, 'savings_months': [], 'monthly_savings_data': [],
-            'join_months': [], 'new_members_data': [], 'investment_type_labels': [],
+            'join_months': [], 'new_members_data': [], 'investment_types': [],
+            'investment_type_labels': [],
             'investment_type_data': [], 'dividend_amount': 0, 'reserve_amount': 0,
             'honorarium_amount': 0, 'other_appropriations': 0, 'top_savers': [],
             'delinquent_loans': [], 'active_savings': 0, 'inactive_savings': 0,

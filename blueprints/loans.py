@@ -185,7 +185,7 @@ def approve_loan(loan_id):
             db.execute('''
                 UPDATE loans SET
                     status = 'active',
-                    date_approved = ?,
+                    approved_at = ?,
                     approved_by = ?,
                     insurance_premium = ?,
                     application_fee = ?,

@@ -7,9 +7,9 @@ from flask import Blueprint, jsonify, request, current_app, g
 from functools import wraps
 from werkzeug.security import check_password_hash
 from database import get_db
+from utils import member_for_user
 import jwt
 import datetime
-import random
 
 mobile_api = Blueprint('mobile_api', __name__)
 
@@ -53,14 +53,6 @@ def jwt_required(f):
 
 
 # ── Data helpers ──────────────────────────────────────────────────────────────
-
-def _get_member(db, user_id):
-    """Find the member record linked to a system user via matching email."""
-    user = db.execute('SELECT email FROM users WHERE id = ?', (user_id,)).fetchone()
-    if not user or not user['email']:
-        return None
-    return db.execute('SELECT * FROM members WHERE email = ?', (user['email'],)).fetchone()
-
 
 def _get_savings(db, member_id):
     rows = db.execute(
@@ -163,7 +155,7 @@ def mobile_login():
 def mobile_dashboard():
     """Return savings, loans, recent transactions and notifications for the user."""
     db     = get_db()
-    member = _get_member(db, g.user_id)
+    member = member_for_user(db, g.user_id)
 
     if not member:
         return jsonify({
@@ -192,7 +184,7 @@ def mobile_dashboard():
 def mobile_card():
     """Return digital membership card data."""
     db     = get_db()
-    member = _get_member(db, g.user_id)
+    member = member_for_user(db, g.user_id)
 
     if not member:
         return jsonify({'success': False, 'error': 'Member profile not found'}), 404
@@ -203,57 +195,11 @@ def mobile_card():
 @mobile_api.route('/api/mobile/pay', methods=['POST'])
 @jwt_required
 def mobile_payment():
-    """Record a loan repayment made from the mobile app."""
-    data    = request.get_json(silent=True) or {}
-    loan_id = data.get('loan_id')
-    amount  = data.get('amount')
-
-    if not loan_id or amount is None:
-        return jsonify({'success': False, 'error': 'loan_id and amount are required'}), 400
-
-    try:
-        amount = float(amount)
-        if amount <= 0:
-            return jsonify({'success': False, 'error': 'amount must be greater than zero'}), 400
-    except (TypeError, ValueError):
-        return jsonify({'success': False, 'error': 'amount must be a number'}), 400
-
-    db     = get_db()
-    member = _get_member(db, g.user_id)
-    if not member:
-        return jsonify({'success': False, 'error': 'Member profile not found'}), 404
-
-    loan = db.execute(
-        'SELECT * FROM loans WHERE id = ? AND member_id = ? AND status = "active"',
-        (loan_id, member['id'])
-    ).fetchone()
-
-    if not loan:
-        return jsonify({'success': False, 'error': 'Active loan not found for this account'}), 404
-
-    try:
-        repayment_number = f"REP/{datetime.datetime.now().strftime('%Y%m%d')}/{random.randint(1000,9999)}"
-        new_balance      = max(0.0, float(loan['balance'] or 0) - amount)
-        new_status       = 'completed' if new_balance == 0 else 'active'
-
-        db.execute(
-            '''INSERT INTO repayments (repayment_number, loan_id, amount, payment_method, date)
-               VALUES (?, ?, ?, ?, ?)''',
-            (repayment_number, loan_id, amount, 'mobile', datetime.datetime.now())
+    """Mobile repayments must go through verified gateway flows."""
+    return jsonify({
+        'success': False,
+        'error': (
+            'Mobile repayments are temporarily disabled. '
+            'Please use the web payment flow or contact the cooperative office.'
         )
-        db.execute(
-            'UPDATE loans SET balance = ?, status = ? WHERE id = ?',
-            (new_balance, new_status, loan_id)
-        )
-        db.commit()
-
-        return jsonify({
-            'success':          True,
-            'repayment_number': repayment_number,
-            'amount_paid':      amount,
-            'new_balance':      new_balance,
-            'loan_status':      new_status,
-        })
-    except Exception as e:
-        db.rollback()
-        return jsonify({'success': False, 'error': str(e)}), 500
+    }), 503

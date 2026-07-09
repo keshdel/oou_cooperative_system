@@ -106,14 +106,50 @@ class _PGConn:
 
 # ── Public API ─────────────────────────────────────────────────────────────────
 
-def get_db():
-    """Return a database connection (PostgreSQL or SQLite depending on env)."""
+def _open_connection():
+    """Open a brand-new raw database connection."""
     if USE_POSTGRES:
-        conn = psycopg2.connect(DATABASE_URL)
-        return _PGConn(conn)
+        return _PGConn(psycopg2.connect(DATABASE_URL))
     db = sqlite3.connect(_SQLITE_DB)
     db.row_factory = sqlite3.Row
     return db
+
+
+def get_db():
+    """Return a database connection (PostgreSQL or SQLite depending on env).
+
+    Inside a Flask request/app context the connection is cached on ``flask.g``
+    and reused for the rest of the request, then closed by the
+    ``teardown_appcontext`` handler registered in app.py.  This prevents the
+    connection leak that occurred when every call opened a fresh connection
+    that was never closed (which exhausts PostgreSQL's connection pool).
+
+    Outside an app context (CLI scripts, ``init_db`` at import time) a plain
+    connection is returned; the caller is responsible for closing it.
+    """
+    try:
+        from flask import g, has_app_context
+        if has_app_context():
+            db = getattr(g, '_database', None)
+            if db is None:
+                db = g._database = _open_connection()
+            return db
+    except Exception:
+        pass
+    return _open_connection()
+
+
+def close_db(exception=None):
+    """Close the request-scoped connection, if any. Registered as a Flask
+    teardown_appcontext handler in app.py."""
+    try:
+        from flask import g
+        db = getattr(g, '_database', None)
+        if db is not None:
+            g._database = None
+            db.close()
+    except Exception:
+        pass
 
 
 def last_insert_id(db):
@@ -159,6 +195,14 @@ def _add_col(db, table, column, col_def):
             db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_def}")
         except Exception:
             pass  # column already exists
+
+
+def _exec_ignore(db, sql):
+    """Run best-effort DDL that is safe to skip on existing databases."""
+    try:
+        db.execute(_adapt(sql))
+    except Exception as exc:
+        print(f"[schema] skipped optional DDL: {exc}")
 
 
 # ── Schema ─────────────────────────────────────────────────────────────────────
@@ -226,6 +270,8 @@ def init_db():
             nin TEXT
         )
     '''))
+    _add_col(db, 'members', 'card_token', 'TEXT')
+    _add_col(db, 'members', 'card_path',  'TEXT')
 
     # Savings table
     db.execute(_adapt('''
@@ -451,6 +497,16 @@ def init_db():
         )
     '''))
 
+    # Lookup indexes for the most frequent auth, member, ledger, and payment paths.
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)')
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_members_email ON members(email)')
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_savings_member_month ON savings(member_id, month)')
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_loans_member_status ON loans(member_id, status)')
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_repayments_loan ON repayments(loan_id)')
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_repayments_reference ON repayments(reference)')
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_pending_payments_member_status ON pending_payments(member_id, status)')
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, is_read)')
+
     # ── Default settings ───────────────────────────────────────────────────────
     default_settings = [
         ('coop_name',       'OOU Acctg 2005 Alumni CMS', 'Cooperative full name'),
@@ -530,21 +586,17 @@ def init_db():
         for row in db.execute('SELECT username FROM users').fetchall()
     }
 
-    _DEFAULT_ADMIN_PW = 'OOU2005admin'
-
     seed_users = [
-        ('admin',     os.environ.get('ADMIN_PASSWORD')     or _DEFAULT_ADMIN_PW, 'admin'),
-        ('treasurer', os.environ.get('TREASURER_PASSWORD') or 'treasurer2005',   'treasurer'),
-        ('secretary', os.environ.get('SECRETARY_PASSWORD') or 'secretary2005',   'secretary'),
+        ('admin',     os.environ.get('ADMIN_PASSWORD'),     'admin'),
+        ('treasurer', os.environ.get('TREASURER_PASSWORD'), 'treasurer'),
+        ('secretary', os.environ.get('SECRETARY_PASSWORD'), 'secretary'),
     ]
 
     for username, password, role in seed_users:
         if username in existing_users:
-            db.execute(
-                'UPDATE users SET password_hash = ? WHERE username = ?',
-                (generate_password_hash(password), username)
-            )
-            print(f"  [auth] Password refreshed for '{username}'.")
+            continue
+        if not password:
+            print(f"  [auth] Skipped creating '{username}': {username.upper()}_PASSWORD is not set.")
             continue
 
         try:
@@ -559,9 +611,7 @@ def init_db():
     backend = 'PostgreSQL' if USE_POSTGRES else 'SQLite'
     print(f"\n{'=' * 60}")
     print(f"  Backend    : {backend}")
-    print(f"  admin      : {os.environ.get('ADMIN_PASSWORD') or _DEFAULT_ADMIN_PW}")
-    print(f"  treasurer  : {os.environ.get('TREASURER_PASSWORD') or 'treasurer2005'}")
-    print(f"  secretary  : {os.environ.get('SECRETARY_PASSWORD') or 'secretary2005'}")
+    print("  auth       : default users are create-only; passwords are never printed")
     print(f"{'=' * 60}\n")
 
     db.commit()

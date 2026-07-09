@@ -43,6 +43,46 @@ def role_required(*roles):
     return decorator
 
 
+STAFF_ROLES = {'admin', 'treasurer', 'secretary', 'exco'}
+
+
+def is_staff_user() -> bool:
+    return getattr(current_user, 'role', None) in STAFF_ROLES
+
+
+def member_for_user(db, user_id=None):
+    """Return the members row linked to a user by matching email, or None.
+
+    This is the single source of truth for the user↔member email link used by
+    the member portal, the online-payments blueprint, and the mobile API.
+
+    With no ``user_id`` it uses the current logged-in user's email; with a
+    ``user_id`` it looks up that user's email first.
+    """
+    if user_id is None:
+        email = getattr(current_user, 'email', '') or ''
+    else:
+        urow  = db.execute('SELECT email FROM users WHERE id = ?', (user_id,)).fetchone()
+        email = (urow['email'] if urow else '') or ''
+    if not email:
+        return None
+    return db.execute('SELECT * FROM members WHERE email = ?', (email,)).fetchone()
+
+
+def current_member_id(db):
+    """Return the member id linked to the logged-in user by email."""
+    member = member_for_user(db)
+    return member['id'] if member else None
+
+
+def can_access_member(db, member_id: int) -> bool:
+    """Staff can access any member; members can access only their own profile."""
+    if is_staff_user():
+        return True
+    own_id = current_member_id(db)
+    return own_id == member_id
+
+
 # ── Login rate limiting ───────────────────────────────────────────────────────
 
 _login_attempts: dict = defaultdict(list)

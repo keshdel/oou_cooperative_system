@@ -98,6 +98,9 @@ def logout():
 
 @auth.route('/setup')
 def setup():
+    import os
+    if os.environ.get('ENABLE_SUPPORT_ROUTES') != '1':
+        return '<h2>Not available</h2>', 404
     try:
         import subprocess
         subprocess.run(['python', 'init_settings.py'])
@@ -112,6 +115,8 @@ def debug_auth():
     """Temporary diagnostic endpoint — requires RESET_TOKEN."""
     import os
     from flask import request as req
+    if os.environ.get('ENABLE_SUPPORT_ROUTES') != '1':
+        return '<h2>Not available</h2>', 404
     expected_token = os.environ.get('RESET_TOKEN', '')
     provided_token = req.args.get('token', '')
     if not expected_token or provided_token != expected_token:
@@ -147,6 +152,9 @@ def emergency_reset():
     import os
     from flask import request as req
     from werkzeug.security import generate_password_hash
+
+    if os.environ.get('ENABLE_SUPPORT_ROUTES') != '1':
+        return '<h2>Not available</h2>', 404
 
     expected_token = os.environ.get('RESET_TOKEN', '')
     provided_token = req.args.get('token', '')

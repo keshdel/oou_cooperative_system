@@ -8,7 +8,8 @@ from datetime import datetime
 from flask import Flask, render_template, request
 from flask_login import LoginManager, current_user
 
-from database import init_db, get_db
+from database import init_db, get_db, close_db
+from extensions import csrf
 from utils import User
 
 # ── App factory ──────────────────────────────────────────────────────────────
@@ -33,6 +34,24 @@ if not _secret_key or _secret_key in _KNOWN_BAD_KEYS:
     )
 app.config['SECRET_KEY'] = _secret_key
 app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10 MB
+
+# ── Session / cookie hardening ────────────────────────────────────────────────
+# config.py is not loaded via from_object, so these must be set on the live app.
+# Secure cookies are enabled unless FLASK_DEBUG=1 (local http development).
+_is_debug = os.environ.get('FLASK_DEBUG') == '1'
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE='Lax',
+    SESSION_COOKIE_SECURE=not _is_debug,
+    REMEMBER_COOKIE_HTTPONLY=True,
+    REMEMBER_COOKIE_SAMESITE='Lax',
+    REMEMBER_COOKIE_SECURE=not _is_debug,
+)
+
+csrf.init_app(app)
+
+# Close the request-scoped DB connection at the end of every request.
+app.teardown_appcontext(close_db)
 
 # ── Login manager ─────────────────────────────────────────────────────────────
 
@@ -91,6 +110,10 @@ app.register_blueprint(payments_bp)
 app.register_blueprint(help_bp)
 app.register_blueprint(mobile_api)
 
+csrf.exempt(mobile_api)
+csrf.exempt(app.view_functions['payments.paystack_webhook'])
+csrf.exempt(app.view_functions['payments.flutterwave_webhook'])
+
 # ── Context processor ─────────────────────────────────────────────────────────
 
 @app.context_processor
@@ -133,7 +156,8 @@ def _get_subscription_expiry():
         row = db.execute(
             "SELECT value FROM settings WHERE key = 'subscription_expiry'"
         ).fetchone()
-        db.close()
+        # Do NOT close here — the connection is request-scoped and shared;
+        # teardown_appcontext(close_db) closes it at end of request.
         if row and row['value']:
             return row['value'].strip()
     except Exception:
@@ -235,4 +259,8 @@ def internal_error(error):
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(
+        debug=os.environ.get('FLASK_DEBUG') == '1',
+        host=os.environ.get('FLASK_HOST', '127.0.0.1'),
+        port=int(os.environ.get('PORT', 5000)),
+    )

@@ -8,18 +8,12 @@ from flask_login import login_required, current_user, logout_user
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from database import get_db
-from utils import audit, notify_member, compute_loan_schedule, METHOD_LABELS
+from utils import audit, notify_member, compute_loan_schedule, METHOD_LABELS, member_for_user
 
 portal = Blueprint('portal', __name__)
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────────
-
-def _get_member():
-    """Return the members row linked to the current logged-in user (matched by email)."""
-    db = get_db()
-    return db.execute('SELECT * FROM members WHERE email = ?', (current_user.email,)).fetchone()
-
 
 def _member_extras(member, db):
     """Augment a sqlite3.Row with computed fields the templates need."""
@@ -79,7 +73,7 @@ def _parse_dt(val):
 @login_required
 def member_portal():
     db     = get_db()
-    member = _get_member()
+    member = member_for_user(db)
     if not member:
         flash('Your account is not linked to a member profile. Please contact the administrator.', 'warning')
         return redirect(url_for('main.dashboard'))
@@ -132,7 +126,7 @@ def member_portal():
 def my_savings():
     from collections import defaultdict
     db     = get_db()
-    member = _get_member()
+    member = member_for_user(db)
     if not member:
         flash('Member profile not found.', 'warning')
         return redirect(url_for('main.dashboard'))
@@ -264,7 +258,7 @@ def my_savings():
 @login_required
 def saving_detail(saving_id):
     db      = get_db()
-    member  = _get_member()
+    member  = member_for_user(db)
     saving  = db.execute('SELECT * FROM savings WHERE id = ?', (saving_id,)).fetchone()
     if not saving or not member or saving['member_id'] != member['id']:
         flash('Record not found.', 'danger')
@@ -279,7 +273,7 @@ def saving_detail(saving_id):
 @login_required
 def my_loans():
     db     = get_db()
-    member = _get_member()
+    member = member_for_user(db)
     if not member:
         flash('Member profile not found.', 'warning')
         return redirect(url_for('main.dashboard'))
@@ -365,7 +359,7 @@ def my_loans():
 @login_required
 def loan_detail(loan_id):
     db     = get_db()
-    member = _get_member()
+    member = member_for_user(db)
     loan   = db.execute('SELECT * FROM loans WHERE id = ?', (loan_id,)).fetchone()
     if not loan or not member or loan['member_id'] != member['id']:
         flash('Loan not found.', 'danger')
@@ -446,7 +440,7 @@ def loan_detail(loan_id):
 @login_required
 def apply_loan_member():
     db     = get_db()
-    member = _get_member()
+    member = member_for_user(db)
     if not member:
         flash('Member profile not found. Please ensure your email is registered.', 'danger')
         return redirect(url_for('main.dashboard'))
@@ -543,7 +537,7 @@ def apply_loan_member():
 @login_required
 def change_savings_request():
     db     = get_db()
-    member = _get_member()
+    member = member_for_user(db)
     if not member:
         flash('Member profile not found.', 'warning')
         return redirect(url_for('main.dashboard'))
@@ -588,7 +582,7 @@ def change_savings_request():
 @login_required
 def loan_calculator():
     db     = get_db()
-    member = _get_member()
+    member = member_for_user(db)
     rates  = _interest_rates(db)
     return render_template('member/loan-calculator.html',
                            member=_member_extras(member, db) if member else None,
@@ -601,7 +595,7 @@ def loan_calculator():
 @login_required
 def my_cards():
     db     = get_db()
-    member = _get_member()
+    member = member_for_user(db)
     if not member:
         flash('Member profile not found.', 'warning')
         return redirect(url_for('main.dashboard'))
@@ -614,7 +608,7 @@ def my_cards():
 @login_required
 def profile():
     db     = get_db()
-    member = _get_member()
+    member = member_for_user(db)
     if not member:
         flash('Member profile not found.', 'warning')
         return redirect(url_for('main.dashboard'))
@@ -625,7 +619,7 @@ def profile():
 @login_required
 def edit_profile():
     db     = get_db()
-    member = _get_member()
+    member = member_for_user(db)
     if not member:
         flash('Member profile not found.', 'warning')
         return redirect(url_for('main.dashboard'))
@@ -694,7 +688,7 @@ def change_password():
 @login_required
 def nominee():
     db     = get_db()
-    member = _get_member()
+    member = member_for_user(db)
     if not member:
         return redirect(url_for('main.dashboard'))
     return render_template('member/nominee.html', member=_member_extras(member, db))
@@ -706,7 +700,7 @@ def nominee():
 @login_required
 def transactions():
     db     = get_db()
-    member = _get_member()
+    member = member_for_user(db)
     if not member:
         flash('Member profile not found.', 'warning')
         return redirect(url_for('main.dashboard'))
@@ -819,7 +813,7 @@ def transactions():
 @login_required
 def statements():
     db     = get_db()
-    member = _get_member()
+    member = member_for_user(db)
     if not member:
         flash('Member profile not found.', 'warning')
         return redirect(url_for('main.dashboard'))
@@ -1040,7 +1034,7 @@ def mark_all_notifications_read():
 @login_required
 def support():
     db     = get_db()
-    member = _get_member()
+    member = member_for_user(db)
     if request.method == 'POST':
         subject = request.form.get('subject', '').strip()
         message = request.form.get('message', '').strip()
@@ -1088,7 +1082,7 @@ def member_statement(member_id):
         return redirect(url_for('members.members_list'))
 
     if current_user.role == 'member':
-        self_member = _get_member()
+        self_member = member_for_user(db)
         if not self_member or self_member['id'] != member_id:
             flash('Access denied.', 'danger')
             return redirect(url_for('portal.statements'))

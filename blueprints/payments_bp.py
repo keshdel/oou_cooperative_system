@@ -18,7 +18,7 @@ from flask_login import current_user, login_required
 from database import get_db
 from payments import get_gateway, generate_reference
 from security import log_audit
-from utils import audit
+from utils import audit, member_for_user
 
 payments_bp = Blueprint('payments', __name__)
 
@@ -28,16 +28,6 @@ payments_bp = Blueprint('payments', __name__)
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
-
-def _member_for_user(db, user_id: int):
-    """Return the members row for the logged-in user, or None."""
-    return db.execute(
-        'SELECT m.* FROM members m '
-        'JOIN users u ON u.email = m.email '
-        'WHERE u.id = ?',
-        (user_id,)
-    ).fetchone()
-
 
 def _record_payment(db, reference: str) -> bool:
     """
@@ -115,9 +105,18 @@ def _record_payment(db, reference: str) -> bool:
 
     elif ptype == 'loan_repayment':
         loan_id = row['related_id']
-        loan    = db.execute('SELECT * FROM loans WHERE id = ?', (loan_id,)).fetchone()
+        loan    = db.execute(
+            'SELECT * FROM loans WHERE id = ? AND member_id = ?',
+            (loan_id, member_id)
+        ).fetchone()
         if loan:
-            import math
+            existing_repayment = db.execute(
+                'SELECT id FROM repayments WHERE reference = ?', (reference,)
+            ).fetchone()
+            if existing_repayment:
+                db.commit()
+                return False
+
             principal_paid = min(amount, loan['balance'])
             interest_paid  = max(amount - principal_paid, 0)
             new_balance    = max(loan['balance'] - principal_paid, 0)
@@ -153,7 +152,7 @@ def _record_payment(db, reference: str) -> bool:
 @login_required
 def initiate_savings():
     db     = get_db()
-    member = _member_for_user(db, current_user.id)
+    member = member_for_user(db, current_user.id)
     if not member:
         flash('Member record not found.', 'danger')
         return redirect(url_for('portal.my_savings'))
@@ -225,7 +224,7 @@ def initiate_savings():
 @login_required
 def initiate_loan_repayment(loan_id):
     db     = get_db()
-    member = _member_for_user(db, current_user.id)
+    member = member_for_user(db, current_user.id)
     if not member:
         flash('Member record not found.', 'danger')
         return redirect(url_for('portal.my_loans'))
@@ -300,6 +299,9 @@ def payment_callback(gateway):
     Paystack:     ?reference=...&trxref=...
     Flutterwave:  ?tx_ref=...&transaction_id=...&status=...
     """
+    if gateway not in {'paystack', 'flutterwave'}:
+        abort(404)
+
     db = get_db()
 
     if gateway == 'paystack':
@@ -307,13 +309,6 @@ def payment_callback(gateway):
     else:  # flutterwave
         reference      = request.args.get('tx_ref', '')
         transaction_id = request.args.get('transaction_id', '')
-        # store gateway's own id so verify() can use it
-        if reference and transaction_id:
-            db.execute(
-                'UPDATE pending_payments SET gateway_ref = ? WHERE reference = ?',
-                (transaction_id, reference)
-            )
-            db.commit()
 
     if not reference:
         flash('Payment reference missing. Contact support if your account was debited.', 'danger')
@@ -325,6 +320,17 @@ def payment_callback(gateway):
     if not row:
         flash('Unknown payment reference.', 'danger')
         return redirect(url_for('portal.my_savings'))
+
+    member = member_for_user(db, current_user.id)
+    if not member or row['member_id'] != member['id']:
+        abort(403)
+
+    if gateway == 'flutterwave' and transaction_id:
+        db.execute(
+            'UPDATE pending_payments SET gateway_ref = ? WHERE reference = ? AND member_id = ?',
+            (transaction_id, reference, member['id'])
+        )
+        db.commit()
 
     success = _record_payment(db, reference)
 

@@ -5,6 +5,10 @@ __pycache__/
 .Python
 env/
 venv/
+.test-venv/
+.test-*.db
+.test-*.log
+run_local_test_server.cmd
 .env
 *.egg-info/
 dist/

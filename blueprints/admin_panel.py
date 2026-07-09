@@ -51,6 +51,47 @@ _DEFAULT_SETTINGS = {
     'statement_fee': '500',
 }
 
+_EDITABLE_SETTING_KEYS = set(_DEFAULT_SETTINGS) | {
+    'coop_short_name',
+    'coop_logo',
+    'active_gateway',
+    'paystack_public_key',
+    'flutterwave_public_key',
+    'subscription_expiry',
+    'subscription_per_user_fee',
+    'subscription_email',
+    'interest_method_regular',
+    'interest_method_housing',
+    'interest_method_emergency',
+    'interest_method_asset',
+    'interest_method_school_fees',
+    'interest_school_fees',
+    'support_phone',
+    'support_email',
+    'office_address',
+    'whatsapp_number',
+}
+
+_PROTECTED_SETTING_KEYS = {
+    'csrf_token',
+    'paystack_secret_key',
+    'flutterwave_secret_key',
+    'flutterwave_webhook_hash',
+    'resend_api_key',
+    'smtp_pass',
+}
+
+
+def _upsert_setting(db, key, value, description=None):
+    existing = db.execute('SELECT id FROM settings WHERE key = ?', (key,)).fetchone()
+    if existing:
+        db.execute('UPDATE settings SET value = ? WHERE key = ?', (value, key))
+    else:
+        db.execute(
+            'INSERT INTO settings (key, value, description) VALUES (?, ?, ?)',
+            (key, value, description or f'Setting for {key}')
+        )
+
 
 @admin_panel.route('/settings')
 @login_required
@@ -136,19 +177,22 @@ def update_settings():
                 )
 
     try:
+        updated = 0
+        ignored = []
         for key, value in request.form.items():
+            if key in _PROTECTED_SETTING_KEYS:
+                continue
+            if key not in _EDITABLE_SETTING_KEYS:
+                ignored.append(key)
+                continue
             if not value:
                 continue
-            existing = db.execute('SELECT id FROM settings WHERE key = ?', (key,)).fetchone()
-            if existing:
-                db.execute('UPDATE settings SET value = ? WHERE key = ?', (value, key))
-            else:
-                db.execute(
-                    'INSERT INTO settings (key, value, description) VALUES (?, ?, ?)',
-                    (key, value, f'Setting for {key}')
-                )
+            _upsert_setting(db, key, value)
+            updated += 1
         db.commit()
-        audit(db, 'UPDATE_SETTINGS', 'settings', 'System settings updated')
+        audit(db, 'UPDATE_SETTINGS', 'settings', f'System settings updated ({updated} keys)')
+        if ignored:
+            flash(f'Ignored unsupported setting keys: {", ".join(sorted(set(ignored)))}', 'warning')
         flash('Settings saved successfully!', 'success')
     except Exception as e:
         db.rollback()
@@ -290,6 +334,7 @@ def add_honorarium():
 
 @admin_panel.route('/api/member/<int:member_id>')
 @login_required
+@role_required('admin', 'treasurer', 'secretary', 'exco')
 def get_member_api(member_id):
     from flask import jsonify
     db = get_db()
@@ -507,12 +552,7 @@ def update_mail_settings():
             updates['smtp_pass'] = smtp_pass  # blank → keep existing
 
         for key, val in updates.items():
-            existing = db.execute('SELECT id FROM settings WHERE key = ?', (key,)).fetchone()
-            if existing:
-                db.execute('UPDATE settings SET value = ? WHERE key = ?', (val, key))
-            else:
-                db.execute('INSERT INTO settings (key, value, description) VALUES (?, ?, ?)',
-                           (key, val, f'Email setting: {key}'))
+            _upsert_setting(db, key, val, f'Email setting: {key}')
 
         db.commit()
         audit(db, 'UPDATE_MAIL_SETTINGS', 'settings', 'Email settings updated')
@@ -654,6 +694,33 @@ def subscription_callback():
 
     if not verified:
         flash('Payment could not be verified. Please contact support.', 'danger')
+        return redirect(url_for('admin_panel.subscription_page'))
+
+    # ── Replay protection: each Paystack reference may only be applied once ──
+    already = db.execute(
+        "SELECT id FROM audit_log WHERE action = 'SUBSCRIPTION_RENEWED' AND data LIKE ?",
+        (f'%{reference}%',)
+    ).fetchone()
+    if already:
+        flash('This payment reference has already been applied to your subscription.', 'info')
+        return redirect(url_for('admin_panel.subscription_page'))
+
+    # ── Amount check: the payment must cover the fee actually due ──
+    _rows = {r['key']: r['value'] for r in db.execute('SELECT key, value FROM settings').fetchall()}
+    _per_user_fee = int(_rows.get('subscription_per_user_fee', '5000') or 5000)
+    try:
+        _member_count = db.execute(
+            "SELECT COUNT(*) FROM members WHERE status = 'active'"
+        ).fetchone()[0] or 0
+    except Exception:
+        _member_count = 0
+    _expected_fee = max(_member_count, 1) * _per_user_fee
+    if amount_paid < _expected_fee:
+        flash(
+            f'Payment of ₦{amount_paid:,} is less than the amount due '
+            f'(₦{_expected_fee:,}). Subscription was not extended — please contact support.',
+            'danger'
+        )
         return redirect(url_for('admin_panel.subscription_page'))
 
     # Extend subscription by 1 year from today (or from current expiry if still active)
