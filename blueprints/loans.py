@@ -9,7 +9,8 @@ from flask_login import login_required, current_user
 from database import get_db
 from email_service import send_loan_approval_email, send_loan_rejection_email
 from utils import (role_required, audit, notify_member, compute_loan_schedule,
-                   PURPOSE_SETTING_KEY, METHOD_LABELS, record_revenue, split_repayment)
+                   PURPOSE_SETTING_KEY, METHOD_LABELS, record_revenue, split_repayment,
+                   member_savings_balance)
 
 loans = Blueprint('loans', __name__)
 
@@ -118,8 +119,11 @@ def apply_loan():
                 flash('Member join date is missing. Please contact admin.', 'danger')
                 return redirect(url_for('members.member_details', member_id=member_id))
 
-            if member['total_savings'] < 50000:
-                flash(f'Minimum savings of ₦50,000 required (current: ₦{member["total_savings"]:,.2f}).', 'danger')
+            # Eligibility uses the savings ledger (source of truth), not the
+            # cached members.total_savings column, which can drift.
+            savings_balance = member_savings_balance(db, member_id)
+            if savings_balance < 50000:
+                flash(f'Minimum savings of ₦50,000 required (current: ₦{savings_balance:,.2f}).', 'danger')
                 return redirect(url_for('members.member_details', member_id=member_id))
 
             outstanding = db.execute(
@@ -129,7 +133,7 @@ def apply_loan():
                 flash('Member already has an active loan. Please complete it before applying for a new one.', 'danger')
                 return redirect(url_for('members.member_details', member_id=member_id))
 
-            max_loan = member['total_savings'] * 2
+            max_loan = savings_balance * 2
             if amount > max_loan:
                 flash(f'Maximum loan amount is ₦{max_loan:,.2f} (2x savings).', 'danger')
                 return redirect(url_for('members.member_details', member_id=member_id))

@@ -8,7 +8,8 @@ from werkzeug.security import generate_password_hash
 from werkzeug.utils import secure_filename
 
 from database import get_db
-from utils import role_required, audit, validate_image
+from utils import (role_required, audit, validate_image,
+                   member_savings_balance, reconcile_member_savings)
 
 admin_panel = Blueprint('admin_panel', __name__)
 
@@ -201,6 +202,27 @@ def update_settings():
     return redirect(url_for('admin_panel.settings'))
 
 
+@admin_panel.route('/settings/reconcile-savings', methods=['POST'])
+@login_required
+@role_required('admin')
+def reconcile_savings():
+    """Resync every member's cached total_savings with the savings ledger."""
+    db = get_db()
+    try:
+        corrected = reconcile_member_savings(db)
+        db.commit()
+        audit(db, 'RECONCILE_SAVINGS', 'members',
+              f'Reconciled member savings balances; {corrected} corrected')
+        if corrected:
+            flash(f'Savings balances reconciled — {corrected} member(s) corrected.', 'success')
+        else:
+            flash('Savings balances reconciled — all members were already in sync.', 'success')
+    except Exception as e:
+        db.rollback()
+        flash(f'Error reconciling savings: {e}', 'danger')
+    return redirect(url_for('admin_panel.settings') + '#system')
+
+
 @admin_panel.route('/expenses')
 @login_required
 @role_required('admin', 'treasurer')
@@ -339,17 +361,19 @@ def get_member_api(member_id):
     from flask import jsonify
     db = get_db()
     member = db.execute(
-        'SELECT id, first_name, last_name, member_number, total_savings FROM members WHERE id = ?',
+        'SELECT id, first_name, last_name, member_number FROM members WHERE id = ?',
         (member_id,)
     ).fetchone()
     if member:
+        # Use the savings ledger (source of truth) for the eligibility figures.
+        savings_balance = member_savings_balance(db, member_id)
         return jsonify({
             'id': member['id'],
             'first_name': member['first_name'],
             'last_name': member['last_name'],
             'member_number': member['member_number'],
-            'total_savings': float(member['total_savings'] or 0),
-            'max_loan': float(member['total_savings'] or 0) * 2,
+            'total_savings': savings_balance,
+            'max_loan': savings_balance * 2,
         })
     return jsonify({'error': 'Member not found'}), 404
 

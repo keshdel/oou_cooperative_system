@@ -1082,7 +1082,27 @@
                             </div>
                         </div>
                     </div>
-                    
+
+                    <div class="row mt-4">
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-header bg-info text-white">
+                                    <h5 class="mb-0"><i class="fas fa-balance-scale"></i> Reconcile Savings Balances</h5>
+                                </div>
+                                <div class="card-body text-center">
+                                    <i class="fas fa-sync-alt fa-4x text-info mb-3"></i>
+                                    <p>Recompute every member's total savings from their recorded payments (the savings ledger). Use this if a balance looks out of step with the payment history.</p>
+                                    <form method="POST" action="{{ url_for('admin_panel.reconcile_savings') }}">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <button type="submit" class="btn btn-info btn-lg">
+                                            <i class="fas fa-sync-alt"></i> Reconcile Now
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="row mt-4">
                         <div class="col-md-12">
                             <div class="card">

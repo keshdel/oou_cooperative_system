@@ -269,6 +269,41 @@ def record_revenue(db, category, amount, description='', source='',
         print(f"[revenue] failed to record {category} {amount}: {exc}")
 
 
+def member_savings_balance(db, member_id):
+    """Authoritative savings balance from the savings ledger (source of truth).
+
+    Use this for financial decisions such as loan eligibility rather than the
+    cached members.total_savings column, which can drift over time.
+    """
+    row = db.execute(
+        'SELECT COALESCE(SUM(amount), 0) FROM savings WHERE member_id = ?',
+        (member_id,)
+    ).fetchone()
+    return float(row[0] or 0) if row else 0.0
+
+
+def reconcile_member_savings(db, member_id=None):
+    """Recompute members.total_savings from the savings ledger.
+
+    Reconciles a single member when member_id is given, otherwise every member.
+    Does NOT commit — the caller owns the transaction. Returns the number of
+    members whose cached balance was corrected.
+    """
+    if member_id is not None:
+        ids = [member_id]
+    else:
+        ids = [r['id'] for r in db.execute('SELECT id FROM members').fetchall()]
+    corrected = 0
+    for mid in ids:
+        ledger = member_savings_balance(db, mid)
+        cur    = db.execute('SELECT total_savings FROM members WHERE id = ?', (mid,)).fetchone()
+        cur_val = float(cur['total_savings'] or 0) if cur else 0.0
+        if abs(cur_val - ledger) > 0.005:
+            db.execute('UPDATE members SET total_savings = ? WHERE id = ?', (ledger, mid))
+            corrected += 1
+    return corrected
+
+
 def split_repayment(amount, principal, total_repayment):
     """Split a loan repayment into (principal_part, interest_part).
 

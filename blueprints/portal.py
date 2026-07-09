@@ -8,7 +8,8 @@ from flask_login import login_required, current_user, logout_user
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from database import get_db
-from utils import audit, notify_member, compute_loan_schedule, METHOD_LABELS, member_for_user
+from utils import (audit, notify_member, compute_loan_schedule, METHOD_LABELS,
+                   member_for_user, member_savings_balance)
 
 portal = Blueprint('portal', __name__)
 
@@ -16,10 +17,14 @@ portal = Blueprint('portal', __name__)
 # ── Helpers ──────────────────────────────────────────────────────────────────────
 
 def _member_extras(member, db):
-    """Augment a sqlite3.Row with computed fields the templates need."""
+    """Augment a member row with computed fields the templates need."""
     d = dict(member)
-    d['full_name']               = f"{member['first_name']} {member['last_name']}"
-    d['loan_eligibility_amount'] = round((member['total_savings'] or 0) * 2, 2)
+    d['full_name'] = f"{member['first_name']} {member['last_name']}"
+    # Show the ledger balance (source of truth), not the cached column, so the
+    # member always sees a correct figure even if the cache has drifted.
+    ledger_balance     = member_savings_balance(db, member['id'])
+    d['total_savings'] = ledger_balance
+    d['loan_eligibility_amount'] = round(ledger_balance * 2, 2)
     keys = member.keys() if hasattr(member, 'keys') else d.keys()
     d['shares']      = d.get('shares') or 0
     d['shares_value'] = d['shares'] * 100   # ₦100 per share unit
@@ -473,8 +478,10 @@ def apply_loan_member():
                 flash('Your join date is missing. Please contact admin.', 'danger')
                 return redirect(url_for('portal.apply_loan_member'))
 
-            if (member['total_savings'] or 0) < 50000:
-                flash(f'Minimum savings of ₦50,000 required (yours: ₦{member["total_savings"]:,.2f}).', 'danger')
+            # Eligibility uses the savings ledger (source of truth).
+            savings_balance = member_savings_balance(db, member['id'])
+            if savings_balance < 50000:
+                flash(f'Minimum savings of ₦50,000 required (yours: ₦{savings_balance:,.2f}).', 'danger')
                 return redirect(url_for('portal.apply_loan_member'))
 
             existing = db.execute(
@@ -484,7 +491,7 @@ def apply_loan_member():
                 flash('You already have an active loan. Please complete it before applying for a new one.', 'danger')
                 return redirect(url_for('portal.my_loans'))
 
-            max_loan = (member['total_savings'] or 0) * 2
+            max_loan = savings_balance * 2
             if amount > max_loan:
                 flash(f'Maximum loan amount is ₦{max_loan:,.2f} (2× your savings).', 'danger')
                 return redirect(url_for('portal.apply_loan_member'))
