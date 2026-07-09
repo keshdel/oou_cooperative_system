@@ -136,6 +136,29 @@
     {% endfor %}
   </div>
 
+  <!-- General Ledger: Opening Balances -->
+  <div class="card border-primary mb-4">
+    <div class="card-header bg-primary bg-opacity-10">
+      <h6 class="mb-0 text-primary"><i class="fas fa-balance-scale"></i> General Ledger — Opening Balances</h6>
+    </div>
+    <div class="card-body">
+      <p class="small text-muted mb-3">
+        Post your cooperative's starting balances (opening cash, reserves, share capital, and any
+        balances the transaction imports above don't cover) as a single balanced opening journal
+        entry, so your opening balance sheet is exact rather than derived. Any imbalance is posted
+        to Accumulated Surplus.
+      </p>
+      <div class="d-flex gap-2 flex-wrap">
+        <a href="{{ url_for('migration.import_opening') }}" class="btn btn-sm btn-primary">
+          <i class="fas fa-upload"></i> Set Opening Balances
+        </a>
+        <a href="{{ url_for('migration.template_opening') }}" class="btn btn-sm btn-outline-secondary">
+          <i class="fas fa-download"></i> Template
+        </a>
+      </div>
+    </div>
+  </div>
+
   <!-- Danger Zone -->
   <div class="card border-danger mb-4">
     <div class="card-header bg-danger bg-opacity-10 d-flex justify-content-between align-items-center">

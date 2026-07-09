@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Opening Balances – OOU Cooperative{% endblock %}
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-3">
+        <div class="col-md-8">
+            <h2><i class="fas fa-balance-scale"></i> General Ledger — Opening Balances</h2>
+            <p class="text-muted mb-0">Set your cooperative's starting position as one balanced opening entry</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="{{ url_for('migration.index') }}" class="btn btn-outline-secondary btn-sm">
+                <i class="fas fa-arrow-left"></i> Back to Migration
+            </a>
+        </div>
+    </div>
+
+    {% if already_set %}
+    <div class="alert alert-info">
+        <i class="fas fa-info-circle"></i> Opening balances have already been posted.
+        Uploading again will <strong>replace</strong> the existing opening entry.
+    </div>
+    {% endif %}
+
+    <div class="row">
+        <div class="col-lg-5">
+            <div class="card mb-4">
+                <div class="card-header bg-primary text-white">
+                    <h6 class="mb-0"><i class="fas fa-upload"></i> Upload Opening Balances</h6>
+                </div>
+                <div class="card-body">
+                    <ol class="small text-muted">
+                        <li>Download the template — it lists every ledger account.</li>
+                        <li>Enter each account's starting amount in the <strong>debit</strong> or
+                            <strong>credit</strong> column (assets &amp; expenses are debits;
+                            liabilities, equity &amp; income are credits).</li>
+                        <li>Upload it below. If the totals don't quite balance, the difference is
+                            posted to <strong>Accumulated Surplus</strong>.</li>
+                    </ol>
+                    <form method="POST" enctype="multipart/form-data">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">As of date</label>
+                            <input type="date" name="as_of" value="{{ today }}" class="form-control">
+                            <small class="text-muted">The date your balances are effective from (migration cut-over).</small>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Opening balances CSV</label>
+                            <input type="file" name="file" accept=".csv" class="form-control" required>
+                        </div>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-check"></i> Post Opening Balances
+                        </button>
+                        <a href="{{ url_for('migration.template_opening') }}" class="btn btn-outline-secondary">
+                            <i class="fas fa-download"></i> Download Template
+                        </a>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-7">
+            <div class="card">
+                <div class="card-header"><h6 class="mb-0"><i class="fas fa-sitemap"></i> Your Ledger Accounts</h6></div>
+                <div class="card-body p-0">
+                    <table class="table table-sm mb-0">
+                        <thead class="table-light">
+                            <tr><th>Code</th><th>Account</th><th>Enter amount as</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for a in accounts %}
+                            <tr>
+                                <td class="text-muted">{{ a.code }}</td>
+                                <td>{{ a.name }}</td>
+                                <td class="text-capitalize">{{ a.normal_balance }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <p class="small text-muted mt-2">
+                <i class="fas fa-lightbulb"></i>
+                Tip: if you imported full savings, loan and repayment history above and ran
+                <strong>Backfill ledger</strong>, only enter balances the transactions don't
+                cover — typically opening <strong>cash</strong>, <strong>reserves</strong> and
+                <strong>share capital</strong>.
+            </p>
+        </div>
+    </div>
+</div>
+{% endblock %}

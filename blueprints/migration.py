@@ -10,11 +10,12 @@ from datetime import datetime
 from io import StringIO, TextIOWrapper
 
 from flask import Blueprint, render_template, redirect, url_for, request, flash, make_response, session
-from flask_login import login_required
+from flask_login import login_required, current_user
 from werkzeug.security import generate_password_hash
 
 from database import get_db
 from utils import role_required, audit
+from ledger import get_accounts, post_journal, account_exists, ACCUM_SURPLUS
 
 migration = Blueprint('migration', __name__, url_prefix='/migration')
 
@@ -133,6 +134,122 @@ def index():
     return render_template('admin/migration/index.html',
                            counts=counts,
                            new_credentials=new_credentials)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# OPENING BALANCES (general-ledger opening entry for migrations)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@migration.route('/opening-balances/template')
+@login_required
+@role_required('admin')
+def template_opening():
+    """CSV pre-listing every ledger account for the admin to fill with amounts."""
+    db = get_db()
+    out = StringIO()
+    w = csv.writer(out)
+    w.writerow(['account_code', 'account_name', 'normal_balance', 'debit', 'credit'])
+    for a in get_accounts(db, active_only=True):
+        w.writerow([a['code'], a['name'], a['normal_balance'], '', ''])
+    return _csv_response(out, 'opening_balances_template.csv')
+
+
+@migration.route('/opening-balances', methods=['GET', 'POST'])
+@login_required
+@role_required('admin')
+def import_opening():
+    """Post the cooperative's starting balances as one balanced opening journal
+    entry. Any imbalance is plugged into Accumulated Surplus. Re-importing
+    replaces the previous opening entry."""
+    db = get_db()
+
+    if request.method == 'POST':
+        as_of = (request.form.get('as_of') or datetime.now().strftime('%Y-%m-%d')).strip()
+        f = request.files.get('file')
+        if not f or not f.filename:
+            flash('Please choose a CSV file.', 'danger')
+            return redirect(request.url)
+
+        try:
+            stream = TextIOWrapper(f.stream, encoding='utf-8-sig')
+            reader = csv.DictReader(stream)
+            fieldnames = set(reader.fieldnames or [])
+            if 'account_code' not in fieldnames or not ({'debit', 'credit'} & fieldnames):
+                flash('Missing columns: need account_code plus debit and/or credit.', 'danger')
+                return redirect(request.url)
+
+            lines, errors, net = [], [], 0.0
+            for i, row in enumerate(reader, start=2):
+                code = (row.get('account_code') or '').strip()
+                if not code:
+                    continue
+                debit  = float((row.get('debit')  or '0').strip() or 0)
+                credit = float((row.get('credit') or '0').strip() or 0)
+                if debit == 0 and credit == 0:
+                    continue
+                if not account_exists(db, code):
+                    errors.append(f"Row {i}: unknown account code '{code}'")
+                    continue
+                if debit and credit:
+                    errors.append(f"Row {i}: account '{code}' has both a debit and a credit")
+                    continue
+                lines.append({'account': code, 'debit': debit, 'credit': credit,
+                              'memo': 'Opening balance'})
+                net += debit - credit
+
+            if errors:
+                for e in errors[:8]:
+                    flash(e, 'danger')
+                return redirect(request.url)
+            if not lines:
+                flash('No opening balances found in the file.', 'warning')
+                return redirect(request.url)
+
+            # Balance the entry: plug the difference into Accumulated Surplus,
+            # unless the admin supplied that account explicitly (then require exact).
+            if abs(net) > 0.01:
+                if any(l['account'] == ACCUM_SURPLUS for l in lines):
+                    flash(f'Opening balances are out of balance by ₦{abs(net):,.2f}. '
+                          f'Adjust the figures so total debits equal total credits.', 'danger')
+                    return redirect(request.url)
+                if net > 0:
+                    lines.append({'account': ACCUM_SURPLUS, 'credit': round(net, 2),
+                                  'memo': 'Opening balancing figure'})
+                else:
+                    lines.append({'account': ACCUM_SURPLUS, 'debit': round(-net, 2),
+                                  'memo': 'Opening balancing figure'})
+
+            # Replace any prior opening entry so re-imports correct rather than stack.
+            for e in db.execute("SELECT id FROM journal_entries WHERE source_module = 'opening'").fetchall():
+                db.execute('DELETE FROM journal_lines WHERE entry_id = ?', (e['id'],))
+                db.execute('DELETE FROM journal_entries WHERE id = ?', (e['id'],))
+
+            post_journal(db, 'Opening balances', lines, date=as_of,
+                         reference=f'OPENING-{as_of}', source_module='opening',
+                         created_by=current_user.id)
+            db.commit()
+            audit(db, 'IMPORT_OPENING', 'migration',
+                  f'Posted opening balances as of {as_of} ({len(lines)} lines)')
+            flash(f'Opening balances posted as of {as_of}. The ledger now reflects your '
+                  f'starting position.', 'success')
+            return redirect(url_for('accounting.trial_balance_view'))
+
+        except ValueError as e:
+            db.rollback()
+            flash(f'Could not post opening balances: {e}', 'danger')
+            return redirect(request.url)
+        except Exception as e:
+            db.rollback()
+            flash(f'File processing error: {e}', 'danger')
+            return redirect(request.url)
+
+    existing = db.execute(
+        "SELECT COUNT(*) FROM journal_entries WHERE source_module = 'opening'"
+    ).fetchone()[0]
+    return render_template('admin/migration/opening_balances.html',
+                           accounts=get_accounts(db, active_only=True),
+                           today=datetime.now().strftime('%Y-%m-%d'),
+                           already_set=bool(existing))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
