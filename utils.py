@@ -254,19 +254,34 @@ def record_revenue(db, category, amount, description='', source='',
         return
     if amount <= 0:
         return
-    import random
+    import secrets
     from datetime import datetime
-    revenue_number = f"REV/{datetime.now().strftime('%Y%m%d')}/{random.randint(1000, 9999)}"
-    try:
-        db.execute(
-            '''INSERT INTO revenue
-               (revenue_number, category, amount, description, source, date, received_by, notes)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
-            (revenue_number, category, amount, description, source,
-             datetime.now(), received_by, notes)
-        )
-    except Exception as exc:  # pragma: no cover - defensive
-        print(f"[revenue] failed to record {category} {amount}: {exc}")
+    from database import USE_POSTGRES
+    revenue_number = f"REV/{datetime.now().strftime('%Y%m%d%H%M%S')}/{secrets.token_hex(3).upper()}"
+    sql = ('''INSERT INTO revenue
+              (revenue_number, category, amount, description, source, date, received_by, notes)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?)''')
+    params = (revenue_number, category, amount, description, source,
+              datetime.now(), received_by, notes)
+    # On PostgreSQL a failed statement aborts the entire transaction, which would
+    # roll back the savings/loan record this revenue accompanies. Wrap the insert
+    # in a SAVEPOINT so a failure here can never poison the caller's transaction.
+    if USE_POSTGRES:
+        try:
+            db.execute('SAVEPOINT sp_revenue')
+            db.execute(sql, params)
+            db.execute('RELEASE SAVEPOINT sp_revenue')
+        except Exception as exc:
+            try:
+                db.execute('ROLLBACK TO SAVEPOINT sp_revenue')
+            except Exception:
+                pass
+            print(f"[revenue] failed to record {category} {amount}: {exc}")
+    else:
+        try:
+            db.execute(sql, params)
+        except Exception as exc:
+            print(f"[revenue] failed to record {category} {amount}: {exc}")
 
 
 def member_savings_balance(db, member_id):

@@ -362,6 +362,11 @@ def init_db():
             FOREIGN KEY (loan_id) REFERENCES loans (id)
         )
     '''))
+    # Ensure the principal/interest split columns exist on databases created
+    # from an older schema (safe no-op if they already exist).
+    _add_col(db, 'repayments', 'principal_paid', 'REAL DEFAULT 0')
+    _add_col(db, 'repayments', 'interest_paid',  'REAL DEFAULT 0')
+    _add_col(db, 'repayments', 'penalty_paid',   'REAL DEFAULT 0')
 
     # Investments table
     db.execute(_adapt('''

@@ -48,6 +48,14 @@ app.config.update(
     REMEMBER_COOKIE_SECURE=not _is_debug,
 )
 
+# Behind Railway's HTTPS proxy, honor X-Forwarded-Proto/Host so that
+# request.is_secure, Secure cookies, and url_for(_external=True) payment
+# callbacks all resolve to https (not the internal http the app sees).
+if not _is_debug:
+    from werkzeug.middleware.proxy_fix import ProxyFix
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+    app.config['PREFERRED_URL_SCHEME'] = 'https'
+
 csrf.init_app(app)
 
 # Close the request-scoped DB connection at the end of every request.
