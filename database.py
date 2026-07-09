@@ -106,12 +106,24 @@ class _PGConn:
 
 # ── Public API ─────────────────────────────────────────────────────────────────
 
+def _sqlite_row_factory(cursor, row):
+    """Return SQLite rows as _DictRow, matching the PostgreSQL backend exactly.
+
+    Using sqlite3.Row here caused SQLite-only crashes: sqlite3.Row supports
+    row['col'] and row[0] but NOT row.get(), while the PostgreSQL _DictRow
+    (a dict subclass) does — so code paths that call .get() on a row (e.g.
+    email_service) worked in production but raised on SQLite. Unifying the row
+    type removes that dev/prod drift.
+    """
+    return _DictRow({col[0]: row[idx] for idx, col in enumerate(cursor.description)})
+
+
 def _open_connection():
     """Open a brand-new raw database connection."""
     if USE_POSTGRES:
         return _PGConn(psycopg2.connect(DATABASE_URL))
     db = sqlite3.connect(_SQLITE_DB)
-    db.row_factory = sqlite3.Row
+    db.row_factory = _sqlite_row_factory
     return db
 
 
