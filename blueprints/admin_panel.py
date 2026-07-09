@@ -7,7 +7,7 @@ from flask_login import login_required, current_user
 from werkzeug.security import generate_password_hash
 from werkzeug.utils import secure_filename
 
-from database import get_db
+from database import get_db, last_insert_id
 from utils import (role_required, audit, validate_image,
                    member_savings_balance, reconcile_member_savings)
 from ledger import (post_journal_safe, CASH, OPERATING_EXPENSES, FEE_INCOME,
@@ -358,11 +358,12 @@ def add_honorarium():
             request.form['month'],
             current_user.id,
         ))
+        _hid = last_insert_id(db)
         post_journal_safe(db, f"Honorarium — {request.form.get('recipient_name', '')}", [
             {'account': HONORARIUM, 'debit': float(request.form['amount']),
              'memo': request.form.get('recipient_name', '')},
             {'account': CASH, 'credit': float(request.form['amount'])},
-        ], source_module='honorarium', created_by=current_user.id)
+        ], source_module='honorarium', source_id=_hid, created_by=current_user.id)
         db.commit()
         flash('Honorarium recorded successfully!', 'success')
     except Exception as e:

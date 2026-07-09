@@ -5,12 +5,12 @@ and the journal register. This is the auditable face of the double-entry ledger.
 
 from datetime import datetime
 
-from flask import Blueprint, render_template, request
-from flask_login import login_required
+from flask import Blueprint, render_template, request, redirect, url_for, flash
+from flask_login import login_required, current_user
 
 from database import get_db
-from utils import role_required
-from ledger import get_accounts, trial_balance
+from utils import role_required, audit
+from ledger import get_accounts, trial_balance, backfill_from_transactions
 
 accounting = Blueprint('accounting', __name__, url_prefix='/accounting')
 
@@ -38,6 +38,27 @@ def trial_balance_view():
     as_of = request.args.get('as_of', datetime.now().strftime('%Y-%m-%d'))
     tb = trial_balance(db, as_of=as_of)
     return render_template('accounting/trial_balance.html', tb=tb, as_of=as_of)
+
+
+@accounting.route('/backfill', methods=['POST'])
+@login_required
+@role_required('admin')
+def backfill():
+    """Post journal entries for existing transactions not yet in the ledger."""
+    db = get_db()
+    try:
+        n = backfill_from_transactions(db, created_by=current_user.id)
+        db.commit()
+        audit(db, 'GL_BACKFILL', 'accounting',
+              f'Backfilled {n} transactions into the general ledger')
+        if n:
+            flash(f'Posted {n} historical transaction(s) to the general ledger.', 'success')
+        else:
+            flash('The ledger is already up to date — nothing to backfill.', 'info')
+    except Exception as e:
+        db.rollback()
+        flash(f'Error backfilling ledger: {e}', 'danger')
+    return redirect(url_for('accounting.journal_register'))
 
 
 @accounting.route('/journal')

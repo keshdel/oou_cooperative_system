@@ -124,6 +124,153 @@ def post_journal_safe(db, *args, **kwargs):
             return None
 
 
+def _je_exists_ref(db, reference):
+    """True if a journal entry already exists for this (non-empty) reference."""
+    if not reference:
+        return False
+    return db.execute(
+        'SELECT 1 FROM journal_entries WHERE reference = ?', (reference,)
+    ).fetchone() is not None
+
+
+def backfill_from_transactions(db, created_by=None):
+    """Post journal entries for existing transactions that don't have one yet.
+
+    Idempotent: transactions already in the ledger (by their unique reference,
+    or by source for honorarium) are skipped, so this is safe to run more than
+    once and safe to run alongside live posting. Does NOT commit.
+
+    Returns the number of journal entries posted.
+    """
+    from utils import split_repayment
+    posted = 0
+
+    # Savings deposits
+    for s in db.execute('SELECT * FROM savings').fetchall():
+        ref = s['receipt_number'] or f"SAV-{s['id']}"
+        if _je_exists_ref(db, ref):
+            continue
+        amount = float(s['amount'] or 0)
+        late   = float(s['late_fee'] or 0)
+        if amount + late <= 0:
+            continue
+        lines = [
+            {'account': CASH, 'debit': amount + late, 'memo': f"Savings {s['month']}"},
+            {'account': MEMBER_DEPOSITS, 'credit': amount, 'memo': f"Member {s['member_id']}"},
+        ]
+        if late:
+            lines.append({'account': FEE_INCOME, 'credit': late, 'memo': 'Late fee'})
+        if post_journal_safe(db, f"Savings deposit — {s['month']}", lines,
+                             date=s['date'], reference=ref, source_module='savings',
+                             source_id=s['member_id'], created_by=created_by):
+            posted += 1
+
+    # Loan disbursements (active or completed loans)
+    for l in db.execute("SELECT * FROM loans WHERE status IN ('active','completed')").fetchall():
+        ref = l['loan_number']
+        if _je_exists_ref(db, ref):
+            continue
+        principal = float(l['amount'] or 0)
+        if principal <= 0:
+            continue
+        ins  = float(l['insurance_premium'] or 0)
+        appf = float(l['application_fee'] or 0)
+        fees = ins + appf
+        disbursed = l['disbursed_amount']
+        disbursed = float(disbursed) if disbursed is not None else (principal - fees)
+        lines = [{'account': LOANS_RECEIVABLE, 'debit': principal, 'memo': l['loan_number']}]
+        if disbursed:
+            lines.append({'account': CASH, 'credit': disbursed, 'memo': 'Net disbursed'})
+        if fees:
+            lines.append({'account': FEE_INCOME, 'credit': fees, 'memo': 'Loan fees'})
+        if post_journal_safe(db, f"Loan disbursement — {ref}", lines,
+                             date=l['disbursement_date'] or l['date_applied'], reference=ref,
+                             source_module='loans', source_id=l['id'], created_by=created_by):
+            posted += 1
+
+    # Loan repayments
+    for r in db.execute('''SELECT r.*, l.amount AS principal, l.total_repayment, l.loan_number
+                           FROM repayments r JOIN loans l ON l.id = r.loan_id''').fetchall():
+        ref = r['repayment_number'] or f"REP-{r['id']}"
+        if _je_exists_ref(db, ref):
+            continue
+        amount = float(r['amount'] or 0)
+        if amount <= 0:
+            continue
+        pp = float(r['principal_paid'] or 0)
+        ip = float(r['interest_paid'] or 0)
+        if pp == 0 and ip == 0:
+            pp, ip = split_repayment(amount, r['principal'], r['total_repayment'])
+        if post_journal_safe(db, f"Loan repayment — {r['loan_number']}", [
+            {'account': CASH, 'debit': amount, 'memo': 'Repayment'},
+            {'account': LOANS_RECEIVABLE, 'credit': pp, 'memo': r['loan_number']},
+            {'account': LOAN_INTEREST_INCOME, 'credit': ip, 'memo': 'Interest earned'},
+        ], date=r['date'], reference=ref, source_module='loans',
+           source_id=r['loan_id'], created_by=created_by):
+            posted += 1
+
+    # Expenses
+    for e in db.execute('SELECT * FROM expenses').fetchall():
+        ref = e['expense_number'] or f"EXP-{e['id']}"
+        if _je_exists_ref(db, ref):
+            continue
+        amt = float(e['amount'] or 0)
+        if amt <= 0:
+            continue
+        if post_journal_safe(db, f"Expense — {e['category']}", [
+            {'account': OPERATING_EXPENSES, 'debit': amt, 'memo': e['description'] or ''},
+            {'account': CASH, 'credit': amt},
+        ], date=e['date'], reference=ref, source_module='expenses', created_by=created_by):
+            posted += 1
+
+    # Revenue
+    for rv in db.execute('SELECT * FROM revenue').fetchall():
+        ref = rv['revenue_number'] or f"REV-{rv['id']}"
+        if _je_exists_ref(db, ref):
+            continue
+        amt = float(rv['amount'] or 0)
+        if amt <= 0:
+            continue
+        if post_journal_safe(db, f"Revenue — {rv['category']}", [
+            {'account': CASH, 'debit': amt},
+            {'account': FEE_INCOME, 'credit': amt, 'memo': rv['description'] or ''},
+        ], date=rv['date'], reference=ref, source_module='revenue', created_by=created_by):
+            posted += 1
+
+    # Honorarium (no unique reference — identify by source)
+    for h in db.execute('SELECT * FROM honorarium').fetchall():
+        exists = db.execute(
+            "SELECT 1 FROM journal_entries WHERE source_module = 'honorarium' AND source_id = ?",
+            (h['id'],)
+        ).fetchone()
+        if exists:
+            continue
+        amt = float(h['amount'] or 0)
+        if amt <= 0:
+            continue
+        if post_journal_safe(db, f"Honorarium — {h['recipient_name'] or ''}", [
+            {'account': HONORARIUM, 'debit': amt, 'memo': h['recipient_name'] or ''},
+            {'account': CASH, 'credit': amt},
+        ], date=h['date'], source_module='honorarium', source_id=h['id'], created_by=created_by):
+            posted += 1
+
+    # Investments
+    for iv in db.execute('SELECT * FROM investments').fetchall():
+        ref = iv['investment_number'] or f"INV-{iv['id']}"
+        if _je_exists_ref(db, ref):
+            continue
+        amt = float(iv['amount'] or 0)
+        if amt <= 0:
+            continue
+        if post_journal_safe(db, f"Investment — {iv['name']}", [
+            {'account': INVESTMENTS, 'debit': amt, 'memo': iv['name']},
+            {'account': CASH, 'credit': amt},
+        ], date=iv['date'], reference=ref, source_module='investments', created_by=created_by):
+            posted += 1
+
+    return posted
+
+
 def trial_balance(db, as_of=None):
     """Return the trial balance as of a date (or all-time).
 

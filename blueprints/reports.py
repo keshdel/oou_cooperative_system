@@ -195,7 +195,8 @@ def reports_list():
 @reports.route('/reports/financial')
 @login_required
 def financial_report():
-    from reports_engine import income_statement, balance_sheet, surplus_appropriation
+    from reports_engine import (income_statement, balance_sheet,
+                                surplus_appropriation, cash_flow)
     db = get_db()
     from_date = request.args.get('from_date', datetime.now().replace(month=1, day=1).strftime('%Y-%m-%d'))
     to_date   = request.args.get('to_date', datetime.now().strftime('%Y-%m-%d'))
@@ -204,9 +205,10 @@ def financial_report():
         inc  = income_statement(db, from_date, to_date)
         bs   = balance_sheet(db, as_of=to_date)
         appr = surplus_appropriation(inc['net_surplus'])
+        cf   = cash_flow(db, from_date, to_date)
         return render_template('admin/financial-report.html',
                                from_date=from_date, to_date=to_date,
-                               inc=inc, bs=bs, appr=appr)
+                               inc=inc, bs=bs, appr=appr, cf=cf)
     except Exception as e:
         flash(f'Error generating financial report: {str(e)}', 'danger')
         return redirect(url_for('reports.reports_list'))

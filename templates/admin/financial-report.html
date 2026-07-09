@@ -122,6 +122,37 @@
         </div>
     </div>
 
+    <!-- ── CASH FLOW ────────────────────────────────────────────────── -->
+    <div class="card mb-4">
+        <div class="card-header bg-info text-white">
+            <h5 class="mb-0">Cash Flow Statement <small class="fw-normal">{{ from_date }} to {{ to_date }}</small></h5>
+        </div>
+        <div class="card-body">
+            <table class="table mb-0">
+                <tbody>
+                    <tr><td>Opening cash</td>
+                        <td class="text-end">₦{{ "{:,.2f}".format(cf.opening) }}</td></tr>
+                    {% for cat in ['operating', 'investing', 'financing'] %}
+                        {% if cf.groups[cat] %}
+                        <tr><th colspan="2" class="text-muted pt-3 text-capitalize">{{ cat }} activities</th></tr>
+                            {% for it in cf.groups[cat] %}
+                            <tr><td class="ps-4">{{ it.name }}</td>
+                                <td class="text-end {% if it.amount < 0 %}text-danger{% endif %}">₦{{ "{:,.2f}".format(it.amount) }}</td></tr>
+                            {% endfor %}
+                        <tr class="fw-semibold border-top">
+                            <td class="ps-2">Net cash from {{ cat }}</td>
+                            <td class="text-end">₦{{ "{:,.2f}".format(cf.subtotals[cat]) }}</td></tr>
+                        {% endif %}
+                    {% endfor %}
+                    <tr class="fw-bold border-top"><td>Net change in cash</td>
+                        <td class="text-end {% if cf.net_change < 0 %}text-danger{% endif %}">₦{{ "{:,.2f}".format(cf.net_change) }}</td></tr>
+                    <tr class="table-info fw-bold"><td>Closing cash</td>
+                        <td class="text-end">₦{{ "{:,.2f}".format(cf.closing) }}</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
     <!-- ── SURPLUS APPROPRIATION ────────────────────────────────────── -->
     <div class="card">
         <div class="card-header bg-warning">
