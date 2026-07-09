@@ -19,6 +19,8 @@ from database import get_db
 from payments import get_gateway, generate_reference
 from security import log_audit
 from utils import audit, member_for_user, split_repayment
+from ledger import (post_journal_safe, CASH, MEMBER_DEPOSITS, LOANS_RECEIVABLE,
+                    LOAN_INTEREST_INCOME)
 
 payments_bp = Blueprint('payments', __name__)
 
@@ -102,6 +104,10 @@ def _record_payment(db, reference: str) -> bool:
                 'UPDATE members SET total_savings = total_savings + ? WHERE id = ?',
                 (amount, member_id)
             )
+            post_journal_safe(db, f'Online savings deposit — {month}', [
+                {'account': CASH, 'debit': amount, 'memo': 'Online payment'},
+                {'account': MEMBER_DEPOSITS, 'credit': amount, 'memo': f'Member {member_id}'},
+            ], reference=reference, source_module='payments', source_id=member_id)
 
     elif ptype == 'loan_repayment':
         loan_id = row['related_id']
@@ -141,6 +147,11 @@ def _record_payment(db, reference: str) -> bool:
                     'UPDATE loans SET balance = ? WHERE id = ?',
                     (new_balance, loan_id)
                 )
+            post_journal_safe(db, f"Online loan repayment — {loan['loan_number']}", [
+                {'account': CASH, 'debit': amount, 'memo': 'Online payment'},
+                {'account': LOANS_RECEIVABLE, 'credit': principal_paid, 'memo': loan['loan_number']},
+                {'account': LOAN_INTEREST_INCOME, 'credit': interest_paid, 'memo': 'Interest earned'},
+            ], reference=reference, source_module='payments', source_id=loan_id)
 
     db.commit()
     return True

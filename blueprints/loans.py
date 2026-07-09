@@ -11,6 +11,8 @@ from email_service import send_loan_approval_email, send_loan_rejection_email
 from utils import (role_required, audit, notify_member, compute_loan_schedule,
                    PURPOSE_SETTING_KEY, METHOD_LABELS, record_revenue, split_repayment,
                    member_savings_balance)
+from ledger import (post_journal_safe, CASH, LOANS_RECEIVABLE, FEE_INCOME,
+                    LOAN_INTEREST_INCOME)
 
 loans = Blueprint('loans', __name__)
 
@@ -210,6 +212,15 @@ def approve_loan(loan_id):
             record_revenue(db, 'Loan Application Fee', application_fee,
                            description=f"Application fee on loan {loan['loan_number']}",
                            source=f"Loan {loan['loan_number']}", received_by=current_user.id)
+
+            # Double-entry disbursement: principal becomes receivable; cash paid
+            # out (net of fees); the fees are income.
+            post_journal_safe(db, f"Loan disbursement — {loan['loan_number']}", [
+                {'account': LOANS_RECEIVABLE, 'debit': loan['amount'], 'memo': loan['loan_number']},
+                {'account': CASH, 'credit': disbursed, 'memo': 'Net disbursed'},
+                {'account': FEE_INCOME, 'credit': insurance + application_fee, 'memo': 'Loan fees'},
+            ], reference=loan['loan_number'], source_module='loans',
+               source_id=loan_id, created_by=current_user.id)
             db.commit()
             member = db.execute('SELECT * FROM members WHERE id = ?', (loan['member_id'],)).fetchone()
             if member and member['email']:
@@ -344,6 +355,12 @@ def bulk_loan_repayments():
                         'UPDATE loans SET balance = ?, status = ?, completed_at = ? WHERE id = ?',
                         (new_balance, status, completed_at, loan['id'])
                     )
+                    post_journal_safe(db, f"Loan repayment — {loan_number}", [
+                        {'account': CASH, 'debit': settled_amount, 'memo': 'Repayment'},
+                        {'account': LOANS_RECEIVABLE, 'credit': principal_paid, 'memo': loan_number},
+                        {'account': LOAN_INTEREST_INCOME, 'credit': interest_paid, 'memo': 'Interest earned'},
+                    ], date=payment_date, reference=repayment_number, source_module='loans',
+                       source_id=loan['id'], created_by=current_user.id)
                     if is_pre_liquidation:
                         errors.append(
                             f"Row {row_num}: Note — ₦{amount:,.2f} entered but only "
@@ -450,6 +467,14 @@ def repay_loan(loan_id):
             'UPDATE loans SET balance = ?, status = ?, completed_at = ? WHERE id = ?',
             (new_balance, new_status, completed_at, loan_id)
         )
+
+        # Double-entry: cash in; principal reduces the receivable; interest is income.
+        post_journal_safe(db, f"Loan repayment — {loan['loan_number']}", [
+            {'account': CASH, 'debit': settled, 'memo': 'Repayment'},
+            {'account': LOANS_RECEIVABLE, 'credit': principal_paid, 'memo': loan['loan_number']},
+            {'account': LOAN_INTEREST_INCOME, 'credit': interest_paid, 'memo': 'Interest earned'},
+        ], reference=repayment_number, source_module='loans',
+           source_id=loan_id, created_by=current_user.id)
         db.commit()
 
         member = db.execute('SELECT * FROM members WHERE id = ?', (loan['member_id'],)).fetchone()

@@ -10,6 +10,8 @@ from werkzeug.utils import secure_filename
 from database import get_db
 from utils import (role_required, audit, validate_image,
                    member_savings_balance, reconcile_member_savings)
+from ledger import (post_journal_safe, CASH, OPERATING_EXPENSES, FEE_INCOME,
+                    HONORARIUM)
 
 admin_panel = Blueprint('admin_panel', __name__)
 
@@ -259,6 +261,11 @@ def add_expense():
                 current_user.id,
                 request.form.get('notes', ''),
             ))
+            post_journal_safe(db, f"Expense — {request.form['category']}", [
+                {'account': OPERATING_EXPENSES, 'debit': float(request.form['amount']),
+                 'memo': request.form.get('description', '')},
+                {'account': CASH, 'credit': float(request.form['amount'])},
+            ], reference=expense_number, source_module='expenses', created_by=current_user.id)
             db.commit()
             audit(db, 'ADD_EXPENSE', 'expenses',
                   f"Recorded expense {expense_number} – ₦{float(request.form['amount']):,.2f}")
@@ -303,6 +310,11 @@ def add_revenue():
                 current_user.id,
                 request.form.get('notes', ''),
             ))
+            post_journal_safe(db, f"Revenue — {request.form['category']}", [
+                {'account': CASH, 'debit': float(request.form['amount'])},
+                {'account': FEE_INCOME, 'credit': float(request.form['amount']),
+                 'memo': request.form.get('description', '')},
+            ], reference=revenue_number, source_module='revenue', created_by=current_user.id)
             db.commit()
             audit(db, 'ADD_REVENUE', 'revenue',
                   f"Recorded revenue {revenue_number} – ₦{float(request.form['amount']):,.2f}")
@@ -346,6 +358,11 @@ def add_honorarium():
             request.form['month'],
             current_user.id,
         ))
+        post_journal_safe(db, f"Honorarium — {request.form.get('recipient_name', '')}", [
+            {'account': HONORARIUM, 'debit': float(request.form['amount']),
+             'memo': request.form.get('recipient_name', '')},
+            {'account': CASH, 'credit': float(request.form['amount'])},
+        ], source_module='honorarium', created_by=current_user.id)
         db.commit()
         flash('Honorarium recorded successfully!', 'success')
     except Exception as e:

@@ -9,6 +9,7 @@ from flask_login import login_required, current_user
 from database import get_db, last_insert_id
 from email_service import send_payment_confirmation_email
 from utils import role_required, audit, notify_member, record_revenue
+from ledger import post_journal_safe, CASH, MEMBER_DEPOSITS, FEE_INCOME
 
 savings = Blueprint('savings', __name__)
 
@@ -80,6 +81,17 @@ def add_saving():
                            description=f'Late savings fee for {month}',
                            source=member_name, received_by=current_user.id,
                            notes=f'Receipt {receipt_number}')
+
+        # Double-entry: cash in; member-deposit liability up; late fee is income.
+        _lines = [
+            {'account': CASH, 'debit': amount + late_fee, 'memo': f'Savings {month}'},
+            {'account': MEMBER_DEPOSITS, 'credit': amount, 'memo': f'Member {member_id}'},
+        ]
+        if late_fee:
+            _lines.append({'account': FEE_INCOME, 'credit': late_fee, 'memo': 'Late fee'})
+        post_journal_safe(db, f'Savings deposit — {month}', _lines,
+                          reference=receipt_number, source_module='savings',
+                          source_id=member_id, created_by=current_user.id)
 
         db.commit()
 

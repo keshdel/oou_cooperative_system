@@ -94,6 +94,36 @@ def post_journal(db, description, lines, date=None, reference='',
     return entry_id
 
 
+def post_journal_safe(db, *args, **kwargs):
+    """Best-effort post_journal that never raises and cannot poison the caller's
+    transaction. Use from within member-facing flows so a ledger problem can't
+    break recording a payment. Returns the entry id, or None on failure.
+
+    On PostgreSQL the work is wrapped in a SAVEPOINT so a failed insert does not
+    abort the outer transaction (mirrors utils.record_revenue).
+    """
+    from database import USE_POSTGRES
+    if USE_POSTGRES:
+        try:
+            db.execute('SAVEPOINT sp_journal')
+            entry_id = post_journal(db, *args, **kwargs)
+            db.execute('RELEASE SAVEPOINT sp_journal')
+            return entry_id
+        except Exception as exc:
+            try:
+                db.execute('ROLLBACK TO SAVEPOINT sp_journal')
+            except Exception:
+                pass
+            print(f"[ledger] failed to post journal: {exc}")
+            return None
+    else:
+        try:
+            return post_journal(db, *args, **kwargs)
+        except Exception as exc:
+            print(f"[ledger] failed to post journal: {exc}")
+            return None
+
+
 def trial_balance(db, as_of=None):
     """Return the trial balance as of a date (or all-time).
 
