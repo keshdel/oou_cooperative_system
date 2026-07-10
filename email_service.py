@@ -136,7 +136,9 @@ def send_email(to: str, subject: str, html: str, text: str = '') -> bool:
         return False
 
     if _cfg('RESEND_API_KEY', 'resend_api_key'):
-        return _send_via_resend(to, subject, html)
+        if _send_via_resend(to, subject, html):
+            return True
+        log.warning('Resend failed; trying SMTP fallback for "%s"', subject)
 
     if _cfg('SMTP_HOST', 'smtp_host', 'MAIL_SERVER'):
         return _send_via_smtp(to, subject, html, text)

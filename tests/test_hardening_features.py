@@ -210,6 +210,74 @@ class HardeningFeatureTests(unittest.TestCase):
             os.environ.update(original_env)
             email_service.smtplib.SMTP = original_smtp
 
+    def test_email_service_falls_back_to_smtp_when_resend_fails(self):
+        import email_service
+
+        original_env = os.environ.copy()
+        original_resend = email_service._send_via_resend
+        original_smtp = email_service.smtplib.SMTP
+
+        class FakeSMTP:
+            sent = []
+
+            def __init__(self, host, port, timeout=10):
+                self.host = host
+                self.port = port
+                self.timeout = timeout
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def ehlo(self):
+                pass
+
+            def starttls(self, context=None):
+                pass
+
+            def login(self, user, password):
+                self.user = user
+                self.password = password
+
+            def sendmail(self, from_addr, recipients, message):
+                FakeSMTP.sent.append((from_addr, recipients, message))
+
+        try:
+            for key in (
+                'MAIL_ENABLED', 'ENABLE_EMAIL_NOTIFICATIONS', 'SMTP_HOST',
+                'SMTP_PORT', 'SMTP_USER', 'SMTP_PASS', 'MAIL_FROM',
+                'RESEND_API_KEY',
+            ):
+                os.environ.pop(key, None)
+            os.environ.update({
+                'MAIL_ENABLED': '1',
+                'RESEND_API_KEY': 're_test_key',
+                'SMTP_HOST': 'smtp.example.test',
+                'SMTP_PORT': '587',
+                'SMTP_USER': 'coop@example.test',
+                'SMTP_PASS': 'app-password',
+                'MAIL_FROM': 'OOU Coop <coop@example.test>',
+                'SMTP_USE_TLS': 'true',
+            })
+            email_service._send_via_resend = lambda to, subject, html: False
+            email_service.smtplib.SMTP = FakeSMTP
+
+            ok = email_service.send_email(
+                'member@example.test',
+                'Fallback test',
+                '<p>Hello</p>',
+            )
+
+            self.assertTrue(ok)
+            self.assertEqual(len(FakeSMTP.sent), 1)
+        finally:
+            os.environ.clear()
+            os.environ.update(original_env)
+            email_service._send_via_resend = original_resend
+            email_service.smtplib.SMTP = original_smtp
+
 
 if __name__ == '__main__':
     unittest.main()
