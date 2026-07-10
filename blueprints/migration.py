@@ -1439,6 +1439,9 @@ def export_honorarium():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 _PURGEABLE_TABLES = [
+    # general ledger + dividends (children before parents for FK safety)
+    'dividend_allocations', 'dividend_declarations',
+    'journal_lines', 'journal_entries',
     'repayments', 'loans', 'savings',
     'honorarium', 'expenses', 'revenue', 'investments',
     'notifications', 'audit_log', 'members',
@@ -1457,8 +1460,11 @@ def purge_database():
     try:
         for table in _PURGEABLE_TABLES:
             db.execute(f'DELETE FROM {table}')
+        # Remove member portal logins created during import; keep staff accounts.
+        db.execute("DELETE FROM users WHERE role = 'member'")
         db.commit()
-        flash('All transactional data has been purged. Users and settings were kept.', 'success')
+        flash('All transactional data (including the ledger and dividends) has been '
+              'purged. Staff users and settings were kept.', 'success')
     except Exception as e:
         db.rollback()
         flash(f'Purge failed: {str(e)}', 'danger')
