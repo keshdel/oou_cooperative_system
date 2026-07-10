@@ -35,15 +35,34 @@ else:
 
 # ── Row wrapper ────────────────────────────────────────────────────────────────
 
+from datetime import date as _date, datetime as _datetime
+from decimal import Decimal as _Decimal
+
+
+def _coerce(v):
+    """Make PostgreSQL values match what SQLite (and the app) expect: dates as
+    'YYYY-MM-DD[ HH:MM:SS]' strings, and Decimal as float. No-op for values that
+    are already strings/floats (SQLite), so it is safe on both backends."""
+    if isinstance(v, _datetime):
+        return v.strftime('%Y-%m-%d %H:%M:%S')
+    if isinstance(v, _date):
+        return v.strftime('%Y-%m-%d')
+    if isinstance(v, _Decimal):
+        return float(v)
+    return v
+
+
 class _DictRow(dict):
     """
     Dict subclass that also supports integer index access (like sqlite3.Row).
     Allows row[0] and row['column'] to both work, so existing code needs
-    no changes when switching from SQLite.
+    no changes when switching from SQLite. Values are coerced so PostgreSQL
+    dates/decimals look like SQLite's strings/floats.
     """
     def __init__(self, mapping):
-        super().__init__(mapping)
-        self._vals = list(mapping.values())
+        coerced = {k: _coerce(v) for k, v in mapping.items()}
+        super().__init__(coerced)
+        self._vals = list(coerced.values())
 
     def __getitem__(self, key):
         if isinstance(key, int):
