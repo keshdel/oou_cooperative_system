@@ -2,6 +2,7 @@ import csv
 import os
 from datetime import datetime
 from io import StringIO, TextIOWrapper
+from types import SimpleNamespace
 
 from flask import Blueprint, render_template, redirect, url_for, request, flash, make_response
 from flask_login import login_required
@@ -45,6 +46,79 @@ def member_details(member_id):
     return render_template('admin/member-detail.html',
                            member=member, savings=savings, loans=loans,
                            total_savings=total_savings, total_loans=total_loans)
+
+
+@members.route('/members/<int:member_id>/savings-statement')
+@login_required
+@role_required('admin', 'secretary', 'treasurer', 'exco')
+def member_savings_statement(member_id):
+    db = get_db()
+    member = db.execute('SELECT * FROM members WHERE id = ?', (member_id,)).fetchone()
+    if not member:
+        flash('Member not found', 'danger')
+        return redirect(url_for('members.members_list'))
+
+    from_date_str = request.args.get('from_date', '')
+    to_date_str = request.args.get('to_date', '')
+    from_date = None
+    to_date = None
+    if from_date_str:
+        try:
+            from_date = datetime.strptime(from_date_str, '%Y-%m-%d')
+        except ValueError:
+            from_date_str = ''
+    if to_date_str:
+        try:
+            to_date = datetime.strptime(to_date_str, '%Y-%m-%d').replace(hour=23, minute=59, second=59)
+        except ValueError:
+            to_date_str = ''
+
+    rows = db.execute(
+        'SELECT * FROM savings WHERE member_id = ? ORDER BY date ASC, id ASC',
+        (member_id,)
+    ).fetchall()
+
+    running = 0.0
+    statement = []
+    opening_balance = 0.0
+    for row in rows:
+        amount = float(row['amount'] or 0)
+        running += amount
+        try:
+            row_date = datetime.fromisoformat(str(row['date']).split('.')[0].replace('T', ' '))
+        except Exception:
+            row_date = datetime.now()
+
+        if from_date and row_date < from_date:
+            opening_balance = running
+            continue
+        if to_date and row_date > to_date:
+            continue
+
+        d = dict(row)
+        d['date_parsed'] = row_date
+        d['principal_amount'] = amount - float(row['late_fee'] or 0)
+        d['running_balance'] = round(running, 2)
+        statement.append(SimpleNamespace(**d))
+
+    total_principal = sum(float(s.principal_amount or 0) for s in statement)
+    total_late_fees = sum(float(s.late_fee or 0) for s in statement)
+    total_paid = sum(float(s.amount or 0) for s in statement)
+    closing_balance = statement[-1].running_balance if statement else opening_balance
+
+    return render_template(
+        'admin/member-savings-statement.html',
+        member=member,
+        statement=statement,
+        from_date=from_date_str,
+        to_date=to_date_str,
+        opening_balance=opening_balance,
+        closing_balance=closing_balance,
+        total_principal=total_principal,
+        total_late_fees=total_late_fees,
+        total_paid=total_paid,
+        generated_on=datetime.now(),
+    )
 
 
 @members.route('/members/add', methods=['GET', 'POST'])

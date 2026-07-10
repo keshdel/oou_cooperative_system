@@ -49,6 +49,9 @@
             <button class="btn btn-primary" onclick="showSavingsModal()">
                 <i class="fas fa-piggy-bank"></i> Record Savings
             </button>
+            <a class="btn btn-outline-success" href="{{ url_for('members.member_savings_statement', member_id=member.id) }}">
+                <i class="fas fa-file-invoice-dollar"></i> Savings Statement
+            </a>
         </div>
     </div>
 
@@ -63,6 +66,8 @@
                     <tr>
                         <th>Date</th>
                         <th>Month</th>
+                        <th>Receipt / Reference</th>
+                        <th>Method</th>
                         <th>Amount</th>
                         <th>Late Fee</th>
                         <th>Total</th>
@@ -73,6 +78,8 @@
                     <tr>
                         <td>{{ s.date[:10] }}</td>
                         <td>{{ s.month }}</td>
+                        <td class="font-monospace small">{{ s.receipt_number or s.reference or ('SAV-%06d' % s.id) }}</td>
+                        <td>{{ (s.payment_method or 'cash')|replace('_', ' ')|title }}</td>
                         <td>₦{{ "{:,.2f}".format(s.amount - s.late_fee) }}</td>
                         <td>₦{{ "{:,.2f}".format(s.late_fee) }}</td>
                         <td>₦{{ "{:,.2f}".format(s.amount) }}</td>

@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+
+{% block title %}Savings Statement - {{ member.first_name }} {{ member.last_name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+@media print {
+  .no-print { display: none !important; }
+  .sidebar, nav.navbar, footer { display: none !important; }
+  .main-content { margin: 0 !important; padding: 0 !important; }
+  .card { border: 1px solid #999 !important; box-shadow: none !important; }
+  table { font-size: 10px; }
+  th, td { border: 1px solid #ccc; padding: 4px 6px !important; }
+}
+.statement-table thead th {
+  background: #1f2937;
+  color: #fff;
+  border-color: #1f2937;
+  vertical-align: middle;
+}
+.running-balance {
+  background: #f0fdf4;
+  color: #047857;
+  font-weight: 700;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+  <div class="row mb-3 no-print">
+    <div class="col-md-8">
+      <h2><i class="fas fa-piggy-bank me-2 text-success"></i>Savings Statement</h2>
+      <p class="text-muted mb-0">
+        Detailed savings ledger from inception for {{ member.first_name }} {{ member.last_name }}.
+      </p>
+    </div>
+    <div class="col-md-4 text-end">
+      <button class="btn btn-success" onclick="window.print()">
+        <i class="fas fa-print"></i> Print / Save PDF
+      </button>
+      <a href="{{ url_for('members.member_details', member_id=member.id) }}" class="btn btn-secondary">
+        <i class="fas fa-arrow-left"></i> Back
+      </a>
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-body">
+      <div class="row">
+        <div class="col-md-6">
+          <h5 class="mb-1">{{ member.first_name }} {{ member.last_name }}</h5>
+          <div class="text-muted">Member #: {{ member.member_number or member.id }}</div>
+          <div class="text-muted">Email: {{ member.email or 'Not provided' }}</div>
+        </div>
+        <div class="col-md-6 text-md-end">
+          <div><strong>Generated:</strong> {{ generated_on.strftime('%d %b %Y %H:%M') }}</div>
+          <div><strong>Period:</strong> {{ from_date or 'Inception' }} to {{ to_date or 'Today' }}</div>
+          <div><strong>Closing Balance:</strong> &#8358;{{ "{:,.2f}".format(closing_balance) }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <form method="get" class="row g-2 align-items-end mb-3 no-print">
+    <div class="col-md-3">
+      <label class="form-label small fw-semibold">From Date</label>
+      <input type="date" class="form-control form-control-sm" name="from_date" value="{{ from_date }}">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label small fw-semibold">To Date</label>
+      <input type="date" class="form-control form-control-sm" name="to_date" value="{{ to_date }}">
+    </div>
+    <div class="col-md-2">
+      <button class="btn btn-primary btn-sm w-100">
+        <i class="fas fa-filter"></i> Apply
+      </button>
+    </div>
+    <div class="col-md-2">
+      <a class="btn btn-outline-secondary btn-sm w-100"
+         href="{{ url_for('members.member_savings_statement', member_id=member.id) }}">
+        Clear
+      </a>
+    </div>
+  </form>
+
+  <div class="row g-3 mb-3">
+    <div class="col-md-3">
+      <div class="card"><div class="card-body">
+        <div class="small text-muted">Opening Balance</div>
+        <div class="h5 mb-0">&#8358;{{ "{:,.2f}".format(opening_balance) }}</div>
+      </div></div>
+    </div>
+    <div class="col-md-3">
+      <div class="card"><div class="card-body">
+        <div class="small text-muted">Savings Contributions</div>
+        <div class="h5 mb-0 text-success">&#8358;{{ "{:,.2f}".format(total_principal) }}</div>
+      </div></div>
+    </div>
+    <div class="col-md-3">
+      <div class="card"><div class="card-body">
+        <div class="small text-muted">Late Fees</div>
+        <div class="h5 mb-0 text-warning">&#8358;{{ "{:,.2f}".format(total_late_fees) }}</div>
+      </div></div>
+    </div>
+    <div class="col-md-3">
+      <div class="card"><div class="card-body">
+        <div class="small text-muted">Closing Balance</div>
+        <div class="h5 mb-0 text-success">&#8358;{{ "{:,.2f}".format(closing_balance) }}</div>
+      </div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header bg-light">
+      <h5 class="mb-0">Savings Ledger Detail</h5>
+    </div>
+    <div class="table-responsive">
+      <table class="table table-sm table-hover align-middle mb-0 statement-table">
+        <caption class="px-3 text-muted">Every savings transaction posted for this member, with running balance.</caption>
+        <thead>
+          <tr>
+            <th style="width:48px">#</th>
+            <th>Date</th>
+            <th>Period</th>
+            <th>Receipt / Reference</th>
+            <th>Type</th>
+            <th>Method</th>
+            <th class="text-end">Contribution</th>
+            <th class="text-end">Late Fee</th>
+            <th class="text-end">Total Paid</th>
+            <th class="text-end">Running Balance</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for s in statement %}
+          <tr>
+            <td>{{ loop.index }}</td>
+            <td>{{ s.date_parsed.strftime('%d %b %Y') }}</td>
+            <td>{{ s.month }}</td>
+            <td class="font-monospace small">{{ s.receipt_number or s.reference or ('SAV-%06d' % s.id) }}</td>
+            <td>{{ (s.payment_type or 'monthly')|replace('_', ' ')|title }}</td>
+            <td>{{ (s.payment_method or 'cash')|replace('_', ' ')|title }}</td>
+            <td class="text-end">&#8358;{{ "{:,.2f}".format(s.principal_amount) }}</td>
+            <td class="text-end">&#8358;{{ "{:,.2f}".format(s.late_fee or 0) }}</td>
+            <td class="text-end fw-semibold">&#8358;{{ "{:,.2f}".format(s.amount or 0) }}</td>
+            <td class="text-end running-balance">&#8358;{{ "{:,.2f}".format(s.running_balance) }}</td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="10" class="text-center text-muted py-4">No savings transactions found.</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot class="table-secondary fw-bold">
+          <tr>
+            <td colspan="6">Totals</td>
+            <td class="text-end">&#8358;{{ "{:,.2f}".format(total_principal) }}</td>
+            <td class="text-end">&#8358;{{ "{:,.2f}".format(total_late_fees) }}</td>
+            <td class="text-end">&#8358;{{ "{:,.2f}".format(total_paid) }}</td>
+            <td class="text-end">&#8358;{{ "{:,.2f}".format(closing_balance) }}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -10,7 +10,8 @@ from flask_login import login_required, current_user
 
 from database import get_db
 from utils import role_required, audit
-from ledger import get_accounts, trial_balance, backfill_from_transactions
+from ledger import (get_accounts, trial_balance, backfill_from_transactions,
+                    ledger_reconciliation)
 
 accounting = Blueprint('accounting', __name__, url_prefix='/accounting')
 
@@ -145,6 +146,15 @@ def trial_balance_view():
         return report_response(report, fmt,
                                redirect_url=url_for('accounting.trial_balance_view', as_of=as_of))
     return render_template('accounting/trial_balance.html', tb=tb, as_of=as_of)
+
+
+@accounting.route('/reconciliation')
+@login_required
+@role_required('admin', 'treasurer')
+def reconciliation():
+    db = get_db()
+    rec = ledger_reconciliation(db)
+    return render_template('accounting/reconciliation.html', rec=rec)
 
 
 def _pct(source, name, default):

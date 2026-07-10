@@ -8,6 +8,11 @@
             <p class="text-muted">Track all member savings and contributions</p>
         </div>
         <div class="col-md-4 text-end">
+            {% if current_user.role in ['admin', 'treasurer'] %}
+            <a href="{{ url_for('savings.salary_upload') }}" class="btn btn-primary">
+                <i class="fas fa-upload"></i> Salary Upload
+            </a>
+            {% endif %}
             <button class="btn btn-success" onclick="exportToCSV()">
                 <i class="fas fa-file-excel"></i> Export to CSV
             </button>
@@ -42,6 +47,44 @@
         </div>
     </div>
     
+    {% if batches %}
+    <div class="card mb-4">
+        <div class="card-header bg-light">
+            <h5 class="mb-0">Recent Salary Upload Batches</h5>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Batch Reference</th>
+                        <th>Source File</th>
+                        <th>Rows</th>
+                        <th class="text-end">Savings</th>
+                        <th class="text-end">Late Fees</th>
+                        <th>Last Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for batch in batches %}
+                    <tr>
+                        <td>
+                            <a class="font-monospace" href="{{ url_for('savings.salary_batch_detail', batch_ref=batch.import_batch) }}">
+                                {{ batch.import_batch }}
+                            </a>
+                        </td>
+                        <td>{{ batch.source_file or '-' }}</td>
+                        <td>{{ batch.row_count }}</td>
+                        <td class="text-end">â‚¦{{ "{:,.2f}".format(batch.total_amount) }}</td>
+                        <td class="text-end">â‚¦{{ "{:,.2f}".format(batch.total_late_fee) }}</td>
+                        <td>{{ batch.last_date|string|truncate(10, True, '') }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- Savings Table -->
     <div class="card">
         <div class="card-header">
@@ -62,6 +105,7 @@
                         <tr>
                             <th>ID</th>
                             <th>Member</th>
+                            <th>Batch</th>
                             <th>Amount</th>
                             <th>Month</th>
                             <th>Late Fee</th>
@@ -78,6 +122,15 @@
                                 <a href="{{ url_for('members.member_details', member_id=saving.member_id) }}">
                                     {{ saving.member_name }}
                                 </a>
+                            </td>
+                            <td class="small font-monospace">
+                                {% if saving.import_batch %}
+                                <a href="{{ url_for('savings.salary_batch_detail', batch_ref=saving.import_batch) }}">
+                                    {{ saving.import_batch }}
+                                </a>
+                                {% else %}
+                                -
+                                {% endif %}
                             </td>
                             <td>₦{{ "{:,.2f}".format(saving.amount - saving.late_fee) }}</td>
                             <td>{{ saving.month }}</td>
@@ -102,7 +155,7 @@
                     </tbody>
                     <tfoot>
                         <tr class="table-primary">
-                            <th colspan="2">Totals</th>
+                            <th colspan="3">Totals</th>
                             <th>₦{{ "{:,.2f}".format(savings|sum(attribute='amount') - savings|sum(attribute='late_fee')) }}</th>
                             <th></th>
                             <th>₦{{ "{:,.2f}".format(savings|sum(attribute='late_fee')) }}</th>

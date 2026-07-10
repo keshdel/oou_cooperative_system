@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+
+{% block title %}Savings Batch - {{ batch.batch_ref }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-3">
+        <div class="col-md-8">
+            <h2><i class="fas fa-clipboard-list text-success"></i> Salary Savings Batch</h2>
+            <p class="text-muted mb-0 font-monospace">{{ batch.batch_ref }}</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="{{ url_for('savings.salary_batch_export', batch_ref=batch.batch_ref) }}" class="btn btn-outline-success">
+                <i class="fas fa-file-excel"></i> Export
+            </a>
+            <a href="{{ url_for('savings.savings_list') }}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> Back
+            </a>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="card h-100"><div class="card-body">
+                <div class="small text-muted">Rows Imported</div>
+                <div class="h4 mb-0">{{ batch.row_count }}</div>
+            </div></div>
+        </div>
+        <div class="col-md-3">
+            <div class="card h-100"><div class="card-body">
+                <div class="small text-muted">Savings Amount</div>
+                <div class="h4 mb-0 text-success">&#8358;{{ "{:,.2f}".format(batch.total_amount) }}</div>
+            </div></div>
+        </div>
+        <div class="col-md-3">
+            <div class="card h-100"><div class="card-body">
+                <div class="small text-muted">Late Fees</div>
+                <div class="h4 mb-0 text-warning">&#8358;{{ "{:,.2f}".format(batch.total_late_fee) }}</div>
+            </div></div>
+        </div>
+        <div class="col-md-3">
+            <div class="card h-100"><div class="card-body">
+                <div class="small text-muted">Posted to GL</div>
+                <div class="h4 mb-0 {% if batch.posted_count == batch.row_count %}text-success{% else %}text-danger{% endif %}">
+                    {{ batch.posted_count }} / {{ batch.row_count }}
+                </div>
+            </div></div>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-4">
+                    <div class="small text-muted">Source File</div>
+                    <div>{{ batch.source_file or 'Not recorded' }}</div>
+                </div>
+                <div class="col-md-4">
+                    <div class="small text-muted">First Transaction Date</div>
+                    <div>{{ batch.first_date|string|truncate(19, True, '') }}</div>
+                </div>
+                <div class="col-md-4">
+                    <div class="small text-muted">Last Transaction Date</div>
+                    <div>{{ batch.last_date|string|truncate(19, True, '') }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header bg-light">
+            <h5 class="mb-0">Batch Rows</h5>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <caption class="px-3 text-muted">Imported payroll deduction rows with ledger posting status.</caption>
+                <thead class="table-light">
+                    <tr>
+                        <th>#</th>
+                        <th>Member</th>
+                        <th>Employee ID</th>
+                        <th>Month</th>
+                        <th>Date</th>
+                        <th>Receipt</th>
+                        <th class="text-end">Savings</th>
+                        <th class="text-end">Late Fee</th>
+                        <th class="text-end">Total Paid</th>
+                        <th>Journal</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in rows %}
+                    <tr>
+                        <td class="text-muted">{{ loop.index }}</td>
+                        <td>
+                            <a href="{{ url_for('members.member_details', member_id=r.member_id) }}">
+                                {{ r.member_name }}
+                            </a>
+                            <div class="small text-muted">{{ r.member_number or r.email or r.phone }}</div>
+                        </td>
+                        <td>{{ r.employee_id or '-' }}</td>
+                        <td>{{ r.month }}</td>
+                        <td>{{ r.date|string|truncate(10, True, '') }}</td>
+                        <td class="font-monospace small">{{ r.receipt_number }}</td>
+                        <td class="text-end">&#8358;{{ "{:,.2f}".format(r.amount or 0) }}</td>
+                        <td class="text-end">&#8358;{{ "{:,.2f}".format(r.late_fee or 0) }}</td>
+                        <td class="text-end fw-semibold">
+                            &#8358;{{ "{:,.2f}".format((r.amount or 0) + (r.late_fee or 0)) }}
+                        </td>
+                        <td>
+                            {% if r.posted_to_gl %}
+                                <span class="badge bg-success">{{ r.journal_entry_number }}</span>
+                            {% else %}
+                                <span class="badge bg-danger">Missing</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot class="table-secondary fw-bold">
+                    <tr>
+                        <td colspan="6">Totals</td>
+                        <td class="text-end">&#8358;{{ "{:,.2f}".format(batch.total_amount) }}</td>
+                        <td class="text-end">&#8358;{{ "{:,.2f}".format(batch.total_late_fee) }}</td>
+                        <td class="text-end">&#8358;{{ "{:,.2f}".format(batch.total_amount + batch.total_late_fee) }}</td>
+                        <td></td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

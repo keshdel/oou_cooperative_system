@@ -133,6 +133,124 @@ def _je_exists_ref(db, reference):
     ).fetchone() is not None
 
 
+def _sample_missing_by_ref(db, label, sql, sample_limit):
+    rows = db.execute(sql).fetchall()
+    missing = []
+    for r in rows:
+        ref = r['ref']
+        if not _je_exists_ref(db, ref):
+            missing.append(r)
+    return {
+        'label': label,
+        'total': len(rows),
+        'missing': len(missing),
+        'samples': missing[:sample_limit],
+    }
+
+
+def ledger_reconciliation(db, sample_limit=10):
+    """Return operational records that have not yet been posted to the ledger.
+
+    This is intentionally conservative: a record is considered posted when its
+    stable business reference appears on a journal entry. Honorarium has no
+    business reference, so it is matched by source_module/source_id.
+    """
+    sample_limit = max(1, int(sample_limit or 10))
+    sections = []
+
+    sections.append(_sample_missing_by_ref(db, 'Savings deposits', '''
+        SELECT s.id, s.member_id, m.member_number,
+               m.first_name || ' ' || m.last_name AS member_name,
+               COALESCE(NULLIF(s.receipt_number, ''), NULLIF(s.reference, ''), 'SAV-' || CAST(s.id AS TEXT)) AS ref,
+               s.date, s.amount, s.month
+        FROM savings s
+        JOIN members m ON m.id = s.member_id
+        WHERE COALESCE(s.payment_type, '') != 'dividend'
+        ORDER BY s.date DESC, s.id DESC
+    ''', sample_limit))
+
+    sections.append(_sample_missing_by_ref(db, 'Loan disbursements', '''
+        SELECT l.id, l.member_id, m.member_number,
+               m.first_name || ' ' || m.last_name AS member_name,
+               l.loan_number AS ref, COALESCE(l.disbursement_date, l.date_applied) AS date,
+               l.amount, l.purpose AS month
+        FROM loans l
+        JOIN members m ON m.id = l.member_id
+        WHERE l.status IN ('active', 'completed') AND l.loan_number IS NOT NULL
+        ORDER BY COALESCE(l.disbursement_date, l.date_applied) DESC, l.id DESC
+    ''', sample_limit))
+
+    sections.append(_sample_missing_by_ref(db, 'Loan repayments', '''
+        SELECT r.id, l.member_id, m.member_number,
+               m.first_name || ' ' || m.last_name AS member_name,
+               COALESCE(NULLIF(r.repayment_number, ''), NULLIF(r.reference, ''), 'REP-' || CAST(r.id AS TEXT)) AS ref,
+               r.date, r.amount, l.loan_number AS month
+        FROM repayments r
+        JOIN loans l ON l.id = r.loan_id
+        JOIN members m ON m.id = l.member_id
+        ORDER BY r.date DESC, r.id DESC
+    ''', sample_limit))
+
+    sections.append(_sample_missing_by_ref(db, 'Expenses', '''
+        SELECT id, NULL AS member_id, '' AS member_number, category AS member_name,
+               COALESCE(NULLIF(expense_number, ''), 'EXP-' || CAST(id AS TEXT)) AS ref,
+               date, amount, payment_method AS month
+        FROM expenses
+        ORDER BY date DESC, id DESC
+    ''', sample_limit))
+
+    sections.append(_sample_missing_by_ref(db, 'Revenue', '''
+        SELECT id, NULL AS member_id, '' AS member_number, category AS member_name,
+               COALESCE(NULLIF(revenue_number, ''), 'REV-' || CAST(id AS TEXT)) AS ref,
+               date, amount, source AS month
+        FROM revenue
+        ORDER BY date DESC, id DESC
+    ''', sample_limit))
+
+    sections.append(_sample_missing_by_ref(db, 'Investments', '''
+        SELECT id, NULL AS member_id, '' AS member_number, name AS member_name,
+               COALESCE(NULLIF(investment_number, ''), 'INV-' || CAST(id AS TEXT)) AS ref,
+               date, amount, type AS month
+        FROM investments
+        ORDER BY date DESC, id DESC
+    ''', sample_limit))
+
+    honorarium_rows = db.execute('''
+        SELECT id, NULL AS member_id, '' AS member_number,
+               COALESCE(recipient_name, '') AS member_name,
+               'HON-' || CAST(id AS TEXT) AS ref, date, amount, month
+        FROM honorarium
+        ORDER BY date DESC, id DESC
+    ''').fetchall()
+    honorarium_missing = []
+    for h in honorarium_rows:
+        exists = db.execute(
+            "SELECT 1 FROM journal_entries WHERE source_module = 'honorarium' AND source_id = ?",
+            (h['id'],)
+        ).fetchone()
+        if not exists:
+            honorarium_missing.append(h)
+    sections.append({
+        'label': 'Honorarium',
+        'total': len(honorarium_rows),
+        'missing': len(honorarium_missing),
+        'samples': honorarium_missing[:sample_limit],
+    })
+
+    total_records = sum(s['total'] for s in sections)
+    total_missing = sum(s['missing'] for s in sections)
+    posted_entries = db.execute('SELECT COUNT(*) FROM journal_entries').fetchone()[0] or 0
+    posted_lines = db.execute('SELECT COUNT(*) FROM journal_lines').fetchone()[0] or 0
+    return {
+        'sections': sections,
+        'total_records': total_records,
+        'total_missing': total_missing,
+        'posted_entries': posted_entries,
+        'posted_lines': posted_lines,
+        'complete': total_missing == 0,
+    }
+
+
 def backfill_from_transactions(db, created_by=None):
     """Post journal entries for existing transactions that don't have one yet.
 

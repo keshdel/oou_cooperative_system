@@ -625,15 +625,15 @@ def test_mail():
     html = (
         '<h2 style="color:#1a3a6c">Test Email</h2>'
         '<p>This is a test email from your OOU Cooperative Management System.</p>'
-        '<p>If you received this, your Resend API key is configured correctly.</p>'
+        '<p>If you received this, your outgoing email provider is configured correctly.</p>'
         f'<hr><small>Sent at {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</small>'
     )
     ok = send_email(recipient, 'Test Email — OOU Cooperative', html)
     if ok:
-        audit(db, 'TEST_MAIL', 'settings', f'Test email sent via Resend to {recipient}')
+        audit(db, 'TEST_MAIL', 'settings', f'Test email sent to {recipient}')
         return jsonify({'success': True, 'message': f'Test email sent to {recipient}'})
     return jsonify({'success': False,
-                    'error': 'Send failed. Check that RESEND_API_KEY is set and the From address uses a verified domain.'})
+                    'error': 'Send failed. Check Resend sender verification or SMTP host, username, password/app password, and TLS/SSL settings.'})
 
 
 # ── Subscription billing ──────────────────────────────────────────────────────

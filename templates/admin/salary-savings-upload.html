@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+
+{% block title %}Salary Savings Upload - OOU Cooperative{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-3">
+        <div class="col-md-8">
+            <h2><i class="fas fa-file-upload text-success"></i> Salary Savings Upload</h2>
+            <p class="text-muted mb-0">Upload the monthly payroll deduction list from the staff cooperative back office.</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="{{ url_for('savings.download_salary_template') }}" class="btn btn-outline-success">
+                <i class="fas fa-download"></i> Template
+            </a>
+            <a href="{{ url_for('savings.savings_list') }}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> Back
+            </a>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header bg-success text-white">
+            <h5 class="mb-0">Upload Payroll Deduction CSV</h5>
+        </div>
+        <div class="card-body">
+            <form method="post" enctype="multipart/form-data" class="row g-3">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="col-md-4">
+                    <label class="form-label fw-semibold">Payroll Month</label>
+                    <input type="month" class="form-control" name="month" value="{{ default_month }}" required>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label fw-semibold">Batch Reference</label>
+                    <input type="text" class="form-control" name="batch_ref" value="{{ default_batch }}" required>
+                    <div class="form-text">Stored on each row for audit tracing.</div>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label fw-semibold">CSV File</label>
+                    <input type="file" class="form-control" name="file" accept=".csv" required>
+                </div>
+                <div class="col-12">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" name="apply_late_fee" id="applyLateFee">
+                        <label class="form-check-label" for="applyLateFee">
+                            Apply 10% late fee to rows dated after the 10th
+                        </label>
+                    </div>
+                </div>
+                <div class="col-12">
+                    <button class="btn btn-success">
+                        <i class="fas fa-upload"></i> Upload Salary Deductions
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header bg-light">
+            <h5 class="mb-0">Expected Columns</h5>
+        </div>
+        <div class="card-body">
+            <table class="table table-sm mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Column</th>
+                        <th>Required</th>
+                        <th>Purpose</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td><code>amount</code></td><td>Yes</td><td>Salary deduction savings amount.</td></tr>
+                    <tr><td><code>member_number</code></td><td>One identifier required</td><td>Preferred member lookup.</td></tr>
+                    <tr><td><code>employee_id</code></td><td>One identifier required</td><td>Useful when payroll uses staff IDs.</td></tr>
+                    <tr><td><code>email</code></td><td>One identifier required</td><td>Fallback member lookup.</td></tr>
+                    <tr><td><code>phone</code></td><td>One identifier required</td><td>Fallback member lookup.</td></tr>
+                    <tr><td><code>month</code></td><td>No</td><td>Overrides payroll month for that row.</td></tr>
+                    <tr><td><code>date</code></td><td>No</td><td>Payment date. Defaults to upload date.</td></tr>
+                    <tr><td><code>receipt_number</code></td><td>No</td><td>Generated when blank.</td></tr>
+                    <tr><td><code>notes</code></td><td>No</td><td>Payroll reference or comments.</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

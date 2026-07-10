@@ -41,6 +41,13 @@
         </div>
         <div class="card-body">
             <table class="table mb-0">
+                <caption class="text-muted">Ledger-derived income and expense accounts for the selected period.</caption>
+                <thead class="table-light">
+                    <tr>
+                        <th>Account</th>
+                        <th class="text-end">Amount</th>
+                    </tr>
+                </thead>
                 <tbody>
                     <tr><th colspan="2" class="text-muted">Income</th></tr>
                     {% for l in inc.income_lines %}
@@ -83,6 +90,13 @@
             <div class="row">
                 <div class="col-md-6">
                     <table class="table mb-0">
+                        <caption class="text-muted">Assets as at {{ to_date }}.</caption>
+                        <thead class="table-light">
+                            <tr>
+                                <th>Asset Account</th>
+                                <th class="text-end">Amount</th>
+                            </tr>
+                        </thead>
                         <tbody>
                             <tr><th colspan="2" class="text-muted">Assets</th></tr>
                             {% for l in bs.asset_lines %}
@@ -97,6 +111,13 @@
                 </div>
                 <div class="col-md-6">
                     <table class="table mb-0">
+                        <caption class="text-muted">Liability and equity accounts as at {{ to_date }}.</caption>
+                        <thead class="table-light">
+                            <tr>
+                                <th>Account</th>
+                                <th class="text-end">Amount</th>
+                            </tr>
+                        </thead>
                         <tbody>
                             <tr><th colspan="2" class="text-muted">Liabilities</th></tr>
                             {% for l in bs.liability_lines %}
@@ -120,7 +141,7 @@
             <p class="small text-muted mt-2 mb-0">
                 <i class="fas fa-info-circle"></i>
                 Member savings are shown as a liability (deposits the cooperative owes members), not as income.
-                Cash is derived so that assets equal liabilities plus equity.
+                Cash and account balances are read from posted ledger lines.
             </p>
         </div>
     </div>
@@ -132,6 +153,13 @@
         </div>
         <div class="card-body">
             <table class="table mb-0">
+                <caption class="text-muted">Cash movements grouped by operating, investing, and financing activities.</caption>
+                <thead class="table-light">
+                    <tr>
+                        <th>Cash Flow Line</th>
+                        <th class="text-end">Amount</th>
+                    </tr>
+                </thead>
                 <tbody>
                     <tr><td>Opening cash</td>
                         <td class="text-end">₦{{ "{:,.2f}".format(cf.opening) }}</td></tr>
@@ -164,6 +192,13 @@
         <div class="card-body">
             {% if inc.net_surplus > 0 %}
             <table class="table mb-0">
+                <caption class="text-muted">Projected use of the selected period's net surplus.</caption>
+                <thead class="table-light">
+                    <tr>
+                        <th>Appropriation</th>
+                        <th class="text-end">Amount</th>
+                    </tr>
+                </thead>
                 <tbody>
                     <tr><td>Dividend to members (50%)</td>
                         <td class="text-end">₦{{ "{:,.2f}".format(appr.dividend) }}</td></tr>

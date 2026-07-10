@@ -35,13 +35,27 @@ def _db_setting(key: str) -> str:
         return ''
 
 
-def _cfg(env_var: str, db_key: str) -> str:
+def _env_first(*names: str) -> str:
+    """Return the first non-empty environment value from a list of aliases."""
+    for name in names:
+        value = os.environ.get(name, '').strip()
+        if value:
+            return value
+    return ''
+
+
+def _cfg(env_var: str, db_key: str, *aliases: str) -> str:
     """Env var takes precedence; falls back to DB setting."""
-    return os.environ.get(env_var, '').strip() or _db_setting(db_key)
+    return _env_first(env_var, *aliases) or _db_setting(db_key)
+
+
+def _truthy(value: str) -> bool:
+    return value.strip().lower() in {'1', 'true', 'yes', 'on'}
 
 
 def _is_enabled() -> bool:
-    return _cfg('MAIL_ENABLED', 'mail_enabled') == '1'
+    configured = _cfg('MAIL_ENABLED', 'mail_enabled', 'ENABLE_EMAIL_NOTIFICATIONS')
+    return _truthy(configured)
 
 
 # ── Resend back-end ────────────────────────────────────────────────────────────
@@ -70,11 +84,16 @@ def _send_via_resend(to: str, subject: str, html: str) -> bool:
 # ── SMTP back-end (Gmail, Brevo, Outlook, any provider) ───────────────────────
 
 def _send_via_smtp(to: str, subject: str, html: str, text: str = '') -> bool:
-    host     = _cfg('SMTP_HOST',     'smtp_host')
-    port_str = _cfg('SMTP_PORT',     'smtp_port') or '587'
-    user     = _cfg('SMTP_USER',     'smtp_user')
-    password = _cfg('SMTP_PASS',     'smtp_pass')
-    from_addr = _cfg('MAIL_FROM',    'mail_from') or user
+    host     = _cfg('SMTP_HOST',     'smtp_host', 'MAIL_SERVER')
+    port_str = _cfg('SMTP_PORT',     'smtp_port', 'MAIL_PORT') or '587'
+    user     = _cfg('SMTP_USER',     'smtp_user', 'MAIL_USERNAME')
+    password = _cfg('SMTP_PASS',     'smtp_pass', 'MAIL_PASSWORD')
+    from_addr = (
+        _cfg('MAIL_FROM', 'mail_from', 'MAIL_DEFAULT_SENDER', 'COOP_EMAIL')
+        or user
+    )
+    use_ssl = _truthy(_env_first('SMTP_USE_SSL', 'MAIL_USE_SSL'))
+    use_tls = _truthy(_env_first('SMTP_USE_TLS', 'MAIL_USE_TLS'))
 
     if not (host and user and password):
         return False
@@ -90,9 +109,11 @@ def _send_via_smtp(to: str, subject: str, html: str, text: str = '') -> bool:
         msg.attach(MIMEText(html, 'html'))
 
         ctx = ssl.create_default_context()
-        with smtplib.SMTP(host, port, timeout=10) as server:
+        smtp_cls = smtplib.SMTP_SSL if use_ssl else smtplib.SMTP
+        with smtp_cls(host, port, timeout=10) as server:
             server.ehlo()
-            server.starttls(context=ctx)
+            if use_tls and not use_ssl:
+                server.starttls(context=ctx)
             server.login(user, password)
             server.sendmail(from_addr, [to], msg.as_string())
         log.info('SMTP OK: "%s" → %s', subject, to)
@@ -115,9 +136,11 @@ def send_email(to: str, subject: str, html: str, text: str = '') -> bool:
         return False
 
     if _cfg('RESEND_API_KEY', 'resend_api_key'):
-        return _send_via_resend(to, subject, html)
+        if _send_via_resend(to, subject, html):
+            return True
+        log.warning('Resend failed; trying SMTP fallback for "%s"', subject)
 
-    if _cfg('SMTP_HOST', 'smtp_host'):
+    if _cfg('SMTP_HOST', 'smtp_host', 'MAIL_SERVER'):
         return _send_via_smtp(to, subject, html, text)
 
     log.warning('No email provider configured — skipped: "%s"', subject)
@@ -196,6 +219,47 @@ def send_payment_confirmation_email(recipient: str, member: dict,
             f'<p>Log in to your portal to view your updated balance.</p>'
         )
     send_email(recipient, 'Payment Confirmation - OOU Cooperative', html)
+
+
+def send_loan_repayment_email(recipient: str, member: dict, loan: dict,
+                               repayment: dict, repayment_url: str = '') -> None:
+    """Notify a member that a loan repayment was recorded."""
+    full_name = member.get('full_name') or (
+        f"{member.get('first_name', '')} {member.get('last_name', '')}".strip()
+    ) or 'Member'
+    amount = float(repayment.get('amount') or 0)
+    balance = float(repayment.get('balance') or repayment.get('new_balance') or 0)
+    principal = float(repayment.get('principal_paid') or 0)
+    interest = float(repayment.get('interest_paid') or 0)
+    date = repayment.get('date') or ''
+    reference = repayment.get('repayment_number') or repayment.get('reference') or ''
+    loan_number = loan.get('loan_number') or ''
+
+    html = (
+        f'<p>Dear {full_name},</p>'
+        f'<p>A loan repayment has been recorded on your cooperative account.</p>'
+        f'<table cellpadding="6" cellspacing="0" style="border-collapse:collapse">'
+        f'<tr><td><strong>Loan number</strong></td><td>{loan_number}</td></tr>'
+        f'<tr><td><strong>Repayment reference</strong></td><td>{reference}</td></tr>'
+        f'<tr><td><strong>Date</strong></td><td>{date}</td></tr>'
+        f'<tr><td><strong>Amount paid</strong></td><td>&#8358;{amount:,.2f}</td></tr>'
+        f'<tr><td><strong>Principal portion</strong></td><td>&#8358;{principal:,.2f}</td></tr>'
+        f'<tr><td><strong>Interest portion</strong></td><td>&#8358;{interest:,.2f}</td></tr>'
+        f'<tr><td><strong>Outstanding balance</strong></td><td>&#8358;{balance:,.2f}</td></tr>'
+        f'</table>'
+    )
+    if repayment_url:
+        html += f'<p><a href="{repayment_url}">View your loan details</a></p>'
+    html += '<p>Please contact the cooperative office if this entry does not match your records.</p>'
+
+    text = (
+        f'Dear {full_name},\n\n'
+        f'Loan repayment recorded.\n'
+        f'Loan: {loan_number}\nReference: {reference}\nDate: {date}\n'
+        f'Amount paid: NGN {amount:,.2f}\nPrincipal: NGN {principal:,.2f}\n'
+        f'Interest: NGN {interest:,.2f}\nOutstanding balance: NGN {balance:,.2f}\n'
+    )
+    send_email(recipient, 'Loan Repayment Recorded - OOU Cooperative', html, text)
 
 
 def send_password_reset_email(recipient: str, user: dict, reset_url: str) -> None:
