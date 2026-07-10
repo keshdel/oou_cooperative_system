@@ -212,25 +212,17 @@ def financial_report():
             from report_export import report_response
             def _r(label, val, bold=False):
                 return {'cells': [label, val], 'bold': bold}
-            inc_rows = [
-                _r('Loan interest earned', inc['loan_interest']),
-                _r('Fees & other income', inc['fee_income']),
-                _r('Investment returns', inc['investment_income']),
-                _r('Total income', inc['total_income'], True),
-                _r('Operating expenses', -inc['operating_expenses']),
-                _r('Honorarium', -inc['honorarium']),
-                _r('Total expenses', -inc['total_expenses'], True),
-                _r('Net surplus / (deficit)', inc['net_surplus'], True),
-            ]
-            bs_rows = [
-                _r('Cash & bank', bs['cash']),
-                _r('Investments', bs['investments']),
-                _r('Loans receivable', bs['loans_receivable']),
-                _r('Total assets', bs['total_assets'], True),
-                _r('Member deposits (liability)', bs['member_deposits']),
-                _r('Accumulated surplus (equity)', bs['accumulated_surplus']),
-                _r('Total liabilities & equity', bs['total_liabilities'] + bs['total_equity'], True),
-            ]
+            inc_rows = [_r(l['name'], l['amount']) for l in inc['income_lines']]
+            inc_rows.append(_r('Total income', inc['total_income'], True))
+            inc_rows += [_r(l['name'], -l['amount']) for l in inc['expense_lines']]
+            inc_rows.append(_r('Total expenses', -inc['total_expenses'], True))
+            inc_rows.append(_r('Net surplus / (deficit)', inc['net_surplus'], True))
+
+            bs_rows = [_r(l['name'], l['amount']) for l in bs['asset_lines']]
+            bs_rows.append(_r('Total assets', bs['total_assets'], True))
+            bs_rows += [_r(l['name'], l['amount']) for l in bs['liability_lines']]
+            bs_rows += [_r(l['name'], l['amount']) for l in bs['equity_lines']]
+            bs_rows.append(_r('Total liabilities & equity', bs['total_liabilities'] + bs['total_equity'], True))
             cf_rows = [_r('Opening cash', cf['opening'])]
             for cat in ('operating', 'investing', 'financing'):
                 for it in cf['groups'][cat]:

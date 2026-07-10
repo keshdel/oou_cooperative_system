@@ -3,15 +3,54 @@
 {% block content %}
 <div class="container-fluid">
     <div class="row mb-3">
-        <div class="col-md-8">
+        <div class="col-md-7">
             <h2><i class="fas fa-sitemap"></i> Chart of Accounts</h2>
-            <p class="text-muted mb-0">The general-ledger accounts every transaction posts to</p>
+            <p class="text-muted mb-0">The general-ledger accounts every transaction posts to. Add your own — statements group by type automatically and always balance.</p>
         </div>
-        <div class="col-md-4 text-end">
+        <div class="col-md-5 text-end">
             <a href="{{ url_for('accounting.trial_balance_view') }}" class="btn btn-outline-secondary btn-sm">Trial Balance</a>
             <a href="{{ url_for('accounting.journal_register') }}" class="btn btn-outline-secondary btn-sm">Journal</a>
+            <a href="{{ url_for('accounting.new_journal') }}" class="btn btn-primary btn-sm"><i class="fas fa-plus"></i> New Journal Entry</a>
         </div>
     </div>
+
+    {% if current_user.role == 'admin' %}
+    <div class="card mb-4">
+        <div class="card-header"><h6 class="mb-0"><i class="fas fa-plus-circle"></i> Add Account</h6></div>
+        <div class="card-body">
+            <form method="post" action="{{ url_for('accounting.add_account') }}" class="row g-2 align-items-end">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="col-md-2"><label class="form-label small mb-0">Code</label>
+                    <input name="code" class="form-control form-control-sm" placeholder="e.g. 1010" required></div>
+                <div class="col-md-3"><label class="form-label small mb-0">Name</label>
+                    <input name="name" class="form-control form-control-sm" placeholder="e.g. Bank — Access" required></div>
+                <div class="col-md-2"><label class="form-label small mb-0">Type</label>
+                    <select name="type" class="form-select form-select-sm" required>
+                        <option value="asset">Asset</option>
+                        <option value="liability">Liability</option>
+                        <option value="equity">Equity</option>
+                        <option value="income">Income</option>
+                        <option value="expense">Expense</option>
+                    </select></div>
+                <div class="col-md-2"><label class="form-label small mb-0">Normal balance</label>
+                    <select name="normal_balance" class="form-select form-select-sm">
+                        <option value="">Auto (from type)</option>
+                        <option value="debit">Debit</option>
+                        <option value="credit">Credit</option>
+                    </select></div>
+                <div class="col-md-2"><label class="form-label small mb-0">Parent (optional)</label>
+                    <select name="parent_code" class="form-select form-select-sm">
+                        <option value="">— none —</option>
+                        {% for a in all_accounts %}
+                        <option value="{{ a.code }}">{{ a.code }} · {{ a.name }}</option>
+                        {% endfor %}
+                    </select></div>
+                <div class="col-md-1"><button class="btn btn-sm btn-primary w-100">Add</button></div>
+            </form>
+            <p class="small text-muted mt-2 mb-0">Tip: a sub-account (with a Parent) still posts on its own but rolls up under its parent's type. Transactions should post to detail accounts, not header/parent accounts.</p>
+        </div>
+    </div>
+    {% endif %}
 
     {% for type, accounts in grouped %}
     <div class="card mb-3">
@@ -19,14 +58,25 @@
         <div class="card-body p-0">
             <table class="table mb-0">
                 <thead class="table-light">
-                    <tr><th style="width:120px">Code</th><th>Account</th><th style="width:140px">Normal balance</th></tr>
+                    <tr><th style="width:110px">Code</th><th>Account</th><th style="width:130px">Normal</th><th style="width:120px">Status</th>{% if current_user.role == 'admin' %}<th style="width:120px"></th>{% endif %}</tr>
                 </thead>
                 <tbody>
                     {% for a in accounts %}
-                    <tr>
-                        <td class="text-muted">{{ a.code }}</td>
+                    <tr class="{% if not a.is_active %}text-muted{% endif %}">
+                        <td>{{ a.code }}{% if a.parent_code %}<br><small class="text-muted">↳ {{ a.parent_code }}</small>{% endif %}</td>
                         <td>{{ a.name }}</td>
                         <td class="text-capitalize">{{ a.normal_balance }}</td>
+                        <td>{% if a.is_active %}<span class="badge bg-success">Active</span>{% else %}<span class="badge bg-secondary">Inactive</span>{% endif %}</td>
+                        {% if current_user.role == 'admin' %}
+                        <td>
+                            <form method="post" action="{{ url_for('accounting.toggle_account', code=a.code) }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button class="btn btn-sm btn-outline-{{ 'secondary' if a.is_active else 'success' }}">
+                                    {{ 'Deactivate' if a.is_active else 'Reactivate' }}
+                                </button>
+                            </form>
+                        </td>
+                        {% endif %}
                     </tr>
                     {% endfor %}
                 </tbody>

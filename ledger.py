@@ -29,7 +29,7 @@ HONORARIUM      = '5100'
 
 
 def get_accounts(db, active_only=True):
-    sql = 'SELECT code, name, type, normal_balance FROM accounts'
+    sql = 'SELECT code, name, type, normal_balance, parent_code, is_active FROM accounts'
     if active_only:
         sql += ' WHERE is_active = 1'
     sql += " ORDER BY code"

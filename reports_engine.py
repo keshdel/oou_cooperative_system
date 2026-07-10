@@ -51,69 +51,81 @@ def _balance(db, code, hi=None):
     return float(row[0] or 0)
 
 
+def _type_accounts(db, atype):
+    return db.execute(
+        "SELECT code, name FROM accounts WHERE type = ? AND is_active = 1 ORDER BY code",
+        (atype,)
+    ).fetchall()
+
+
 def income_statement(db, from_date, to_date):
-    """Income statement for [from_date, to_date], from the ledger."""
+    """Income statement for [from_date, to_date], aggregated by account type so
+    every income/expense account (including ones added later) is included."""
     lo, hi = _period_bounds(from_date, to_date)
-    # Income accounts have a credit normal balance: income = credits - debits = -movement
-    loan_interest     = -_movement(db, LOAN_INTEREST_INCOME, lo, hi)
-    fee_income        = -_movement(db, FEE_INCOME, lo, hi)
-    investment_income = -_movement(db, INVESTMENT_INCOME, lo, hi)
-    total_income = loan_interest + fee_income + investment_income
 
-    operating_expenses = _movement(db, OPERATING_EXPENSES, lo, hi)
-    honorarium         = _movement(db, HONORARIUM, lo, hi)
-    total_expenses = operating_expenses + honorarium
+    income_lines, total_income = [], 0.0
+    for a in _type_accounts(db, 'income'):           # income = credits - debits
+        amt = round(-_movement(db, a['code'], lo, hi), 2)
+        income_lines.append({'code': a['code'], 'name': a['name'], 'amount': amt})
+        total_income += amt
 
-    net_surplus = total_income - total_expenses
+    expense_lines, total_expenses = [], 0.0
+    for a in _type_accounts(db, 'expense'):          # expense = debits - credits
+        amt = round(_movement(db, a['code'], lo, hi), 2)
+        expense_lines.append({'code': a['code'], 'name': a['name'], 'amount': amt})
+        total_expenses += amt
+
+    net_surplus = round(total_income - total_expenses, 2)
     return {
         'from_date': from_date, 'to_date': to_date,
-        'loan_interest': loan_interest,
-        'fee_income': fee_income,
-        'investment_income': investment_income,
-        'total_income': total_income,
-        'operating_expenses': operating_expenses,
-        'honorarium': honorarium,
-        'total_expenses': total_expenses,
+        'income_lines': income_lines,
+        'total_income': round(total_income, 2),
+        'expense_lines': expense_lines,
+        'total_expenses': round(total_expenses, 2),
         'net_surplus': net_surplus,
     }
 
 
 def balance_sheet(db, as_of=None):
-    """Balance sheet as of a date, from the ledger. Balances by construction."""
+    """Balance sheet as of a date, aggregated by account type. Balances by
+    construction (assets == liabilities + equity) for any set of accounts."""
     _, hi = _period_bounds(as_of, as_of) if as_of else (None, None)
 
-    cash             = _balance(db, CASH, hi)
-    loans_receivable = _balance(db, LOANS_RECEIVABLE, hi)
-    investments      = _balance(db, INVESTMENTS, hi)
-    total_assets = cash + loans_receivable + investments
+    asset_lines, total_assets = [], 0.0
+    for a in _type_accounts(db, 'asset'):            # asset = debits - credits
+        bal = round(_balance(db, a['code'], hi), 2)
+        asset_lines.append({'code': a['code'], 'name': a['name'], 'amount': bal})
+        total_assets += bal
 
-    member_deposits = -_balance(db, MEMBER_DEPOSITS, hi)   # liability (credit)
-    total_liabilities = member_deposits
+    liability_lines, total_liabilities = [], 0.0
+    for a in _type_accounts(db, 'liability'):        # liability = credits - debits
+        bal = round(-_balance(db, a['code'], hi), 2)
+        liability_lines.append({'code': a['code'], 'name': a['name'], 'amount': bal})
+        total_liabilities += bal
 
-    share_capital     = -_balance(db, SHARE_CAPITAL, hi)
-    statutory_reserve = -_balance(db, STATUTORY_RESERVE, hi)
-    posted_surplus    = -_balance(db, ACCUM_SURPLUS, hi)
-    # Income/expense accounts are not closed to equity until period end, so
-    # current retained surplus = posted surplus + (income - expenses) to date.
-    income_to_date  = -(_balance(db, LOAN_INTEREST_INCOME, hi)
-                        + _balance(db, FEE_INCOME, hi)
-                        + _balance(db, INVESTMENT_INCOME, hi))
-    expense_to_date = _balance(db, OPERATING_EXPENSES, hi) + _balance(db, HONORARIUM, hi)
-    accumulated_surplus = posted_surplus + income_to_date - expense_to_date
+    equity_lines, equity_accounts = [], 0.0
+    for a in _type_accounts(db, 'equity'):
+        bal = round(-_balance(db, a['code'], hi), 2)
+        equity_lines.append({'code': a['code'], 'name': a['name'], 'amount': bal})
+        equity_accounts += bal
 
-    total_equity = share_capital + statutory_reserve + accumulated_surplus
+    # Income/expense accounts aren't closed to equity until period end, so the
+    # current retained surplus is shown as its own equity line.
+    income_td  = -sum(_balance(db, a['code'], hi) for a in _type_accounts(db, 'income'))
+    expense_td =  sum(_balance(db, a['code'], hi) for a in _type_accounts(db, 'expense'))
+    retained = round(income_td - expense_td, 2)
+    equity_lines.append({'code': '', 'name': 'Retained surplus (current)', 'amount': retained})
+
+    total_equity = round(equity_accounts + retained, 2)
     return {
         'as_of': as_of,
-        'cash': cash,
-        'investments': investments,
-        'loans_receivable': loans_receivable,
-        'total_assets': total_assets,
-        'member_deposits': member_deposits,
-        'total_liabilities': total_liabilities,
-        'share_capital': share_capital,
-        'statutory_reserve': statutory_reserve,
-        'accumulated_surplus': accumulated_surplus,
+        'asset_lines': asset_lines,
+        'total_assets': round(total_assets, 2),
+        'liability_lines': liability_lines,
+        'total_liabilities': round(total_liabilities, 2),
+        'equity_lines': equity_lines,
         'total_equity': total_equity,
+        'accumulated_surplus': retained,
         'balances': abs(total_assets - (total_liabilities + total_equity)) < 0.01,
     }
 

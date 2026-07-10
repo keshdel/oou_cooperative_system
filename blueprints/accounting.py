@@ -27,7 +27,104 @@ def chart_of_accounts():
         groups.setdefault(a['type'], []).append(a)
     order = ['asset', 'liability', 'equity', 'income', 'expense']
     grouped = [(t, groups[t]) for t in order if t in groups]
-    return render_template('accounting/chart.html', grouped=grouped)
+    return render_template('accounting/chart.html', grouped=grouped, all_accounts=accounts)
+
+
+ACCOUNT_TYPES = ('asset', 'liability', 'equity', 'income', 'expense')
+
+
+@accounting.route('/accounts/add', methods=['POST'])
+@login_required
+@role_required('admin')
+def add_account():
+    db = get_db()
+    code   = request.form.get('code', '').strip()
+    name   = request.form.get('name', '').strip()
+    atype  = request.form.get('type', '').strip().lower()
+    normal = request.form.get('normal_balance', '').strip().lower()
+    parent = request.form.get('parent_code', '').strip() or None
+    if not code or not name or atype not in ACCOUNT_TYPES:
+        flash('Account code, name, and a valid type are required.', 'danger')
+        return redirect(url_for('accounting.chart_of_accounts'))
+    # Normal balance defaults from type if not specified
+    if normal not in ('debit', 'credit'):
+        normal = 'debit' if atype in ('asset', 'expense') else 'credit'
+    try:
+        db.execute(
+            'INSERT INTO accounts (code, name, type, normal_balance, parent_code, is_active) '
+            'VALUES (?, ?, ?, ?, ?, 1)', (code, name, atype, normal, parent))
+        db.commit()
+        audit(db, 'ADD_ACCOUNT', 'accounting', f'Added account {code} — {name} ({atype})')
+        flash(f'Account {code} — {name} added.', 'success')
+    except Exception as e:
+        db.rollback()
+        flash(f'Could not add account (the code may already exist): {e}', 'danger')
+    return redirect(url_for('accounting.chart_of_accounts'))
+
+
+@accounting.route('/accounts/<code>/toggle', methods=['POST'])
+@login_required
+@role_required('admin')
+def toggle_account(code):
+    db = get_db()
+    a = db.execute('SELECT is_active FROM accounts WHERE code = ?', (code,)).fetchone()
+    if not a:
+        flash('Account not found.', 'danger')
+        return redirect(url_for('accounting.chart_of_accounts'))
+    new_val = 0 if a['is_active'] else 1
+    db.execute('UPDATE accounts SET is_active = ? WHERE code = ?', (new_val, code))
+    db.commit()
+    audit(db, 'TOGGLE_ACCOUNT', 'accounting',
+          f'Account {code} {"reactivated" if new_val else "deactivated"}')
+    flash(f'Account {code} {"reactivated" if new_val else "deactivated"}.', 'success')
+    return redirect(url_for('accounting.chart_of_accounts'))
+
+
+@accounting.route('/journal/new', methods=['GET', 'POST'])
+@login_required
+@role_required('admin', 'treasurer')
+def new_journal():
+    db = get_db()
+    if request.method == 'POST':
+        from ledger import post_journal
+        desc = request.form.get('description', '').strip()
+        date = request.form.get('date') or None
+        ref  = request.form.get('reference', '').strip()
+        codes   = request.form.getlist('account')
+        debits  = request.form.getlist('debit')
+        credits = request.form.getlist('credit')
+        lines = []
+        for c, d, cr in zip(codes, debits, credits):
+            c = (c or '').strip()
+            if not c:
+                continue
+            try:
+                d_v = float(d or 0); c_v = float(cr or 0)
+            except ValueError:
+                continue
+            if d_v == 0 and c_v == 0:
+                continue
+            lines.append({'account': c, 'debit': d_v, 'credit': c_v})
+        try:
+            if not desc:
+                raise ValueError('A description is required.')
+            eid = post_journal(db, desc, lines, date=date, reference=ref,
+                               source_module='manual', created_by=current_user.id)
+            if eid is None:
+                raise ValueError('Enter at least one debit and one credit line.')
+            db.commit()
+            audit(db, 'MANUAL_JOURNAL', 'accounting', f'Posted manual journal: {desc}')
+            flash('Journal entry posted.', 'success')
+            return redirect(url_for('accounting.journal_register'))
+        except ValueError as e:
+            db.rollback()
+            flash(str(e), 'danger')
+        except Exception as e:
+            db.rollback()
+            flash(f'Error posting entry: {e}', 'danger')
+    return render_template('accounting/journal_new.html',
+                           accounts=get_accounts(db, active_only=True),
+                           today=datetime.now().strftime('%Y-%m-%d'))
 
 
 @accounting.route('/trial-balance')

@@ -43,21 +43,19 @@
             <table class="table mb-0">
                 <tbody>
                     <tr><th colspan="2" class="text-muted">Income</th></tr>
-                    <tr><td class="ps-4">Loan interest earned</td>
-                        <td class="text-end">₦{{ "{:,.2f}".format(inc.loan_interest) }}</td></tr>
-                    <tr><td class="ps-4">Fees &amp; other income</td>
-                        <td class="text-end">₦{{ "{:,.2f}".format(inc.fee_income) }}</td></tr>
-                    <tr><td class="ps-4">Investment returns</td>
-                        <td class="text-end">₦{{ "{:,.2f}".format(inc.investment_income) }}</td></tr>
+                    {% for l in inc.income_lines %}
+                    <tr><td class="ps-4">{{ l.name }}</td>
+                        <td class="text-end">₦{{ "{:,.2f}".format(l.amount) }}</td></tr>
+                    {% endfor %}
                     <tr class="fw-semibold border-top">
                         <td>Total income</td>
                         <td class="text-end">₦{{ "{:,.2f}".format(inc.total_income) }}</td></tr>
 
                     <tr><th colspan="2" class="text-muted pt-3">Expenses</th></tr>
-                    <tr><td class="ps-4">Operating expenses</td>
-                        <td class="text-end">(₦{{ "{:,.2f}".format(inc.operating_expenses) }})</td></tr>
-                    <tr><td class="ps-4">Honorarium</td>
-                        <td class="text-end">(₦{{ "{:,.2f}".format(inc.honorarium) }})</td></tr>
+                    {% for l in inc.expense_lines %}
+                    <tr><td class="ps-4">{{ l.name }}</td>
+                        <td class="text-end">(₦{{ "{:,.2f}".format(l.amount) }})</td></tr>
+                    {% endfor %}
                     <tr class="fw-semibold border-top">
                         <td>Total expenses</td>
                         <td class="text-end">(₦{{ "{:,.2f}".format(inc.total_expenses) }})</td></tr>
@@ -87,12 +85,10 @@
                     <table class="table mb-0">
                         <tbody>
                             <tr><th colspan="2" class="text-muted">Assets</th></tr>
-                            <tr><td class="ps-4">Cash &amp; bank <small class="text-muted">(derived)</small></td>
-                                <td class="text-end">₦{{ "{:,.2f}".format(bs.cash) }}</td></tr>
-                            <tr><td class="ps-4">Investments</td>
-                                <td class="text-end">₦{{ "{:,.2f}".format(bs.investments) }}</td></tr>
-                            <tr><td class="ps-4">Loans receivable</td>
-                                <td class="text-end">₦{{ "{:,.2f}".format(bs.loans_receivable) }}</td></tr>
+                            {% for l in bs.asset_lines %}
+                            <tr><td class="ps-4">{{ l.name }}</td>
+                                <td class="text-end">₦{{ "{:,.2f}".format(l.amount) }}</td></tr>
+                            {% endfor %}
                             <tr class="fw-bold border-top">
                                 <td>Total assets</td>
                                 <td class="text-end">₦{{ "{:,.2f}".format(bs.total_assets) }}</td></tr>
@@ -103,11 +99,17 @@
                     <table class="table mb-0">
                         <tbody>
                             <tr><th colspan="2" class="text-muted">Liabilities</th></tr>
-                            <tr><td class="ps-4">Member deposits (savings)</td>
-                                <td class="text-end">₦{{ "{:,.2f}".format(bs.member_deposits) }}</td></tr>
+                            {% for l in bs.liability_lines %}
+                            <tr><td class="ps-4">{{ l.name }}</td>
+                                <td class="text-end">₦{{ "{:,.2f}".format(l.amount) }}</td></tr>
+                            {% endfor %}
+                            <tr class="fw-semibold"><td>Total liabilities</td>
+                                <td class="text-end">₦{{ "{:,.2f}".format(bs.total_liabilities) }}</td></tr>
                             <tr><th colspan="2" class="text-muted pt-3">Equity</th></tr>
-                            <tr><td class="ps-4">Accumulated surplus</td>
-                                <td class="text-end">₦{{ "{:,.2f}".format(bs.accumulated_surplus) }}</td></tr>
+                            {% for l in bs.equity_lines %}
+                            <tr><td class="ps-4">{{ l.name }}</td>
+                                <td class="text-end">₦{{ "{:,.2f}".format(l.amount) }}</td></tr>
+                            {% endfor %}
                             <tr class="fw-bold border-top">
                                 <td>Total liabilities &amp; equity</td>
                                 <td class="text-end">₦{{ "{:,.2f}".format(bs.total_liabilities + bs.total_equity) }}</td></tr>
