@@ -1447,6 +1447,32 @@ _PURGEABLE_TABLES = [
     'notifications', 'audit_log', 'members',
 ]
 
+@migration.route('/load-demo', methods=['POST'])
+@login_required
+@role_required('admin')
+def load_demo():
+    """Load a coherent demo dataset and post it to the ledger (for evaluation)."""
+    from demo_data import load_demo_data
+    db = get_db()
+    try:
+        result = load_demo_data(db, created_by=current_user.id)
+        if result.get('skipped'):
+            db.rollback()
+            flash('Demo data is already loaded. Purge first if you want to reload it.', 'info')
+        else:
+            db.commit()
+            audit(db, 'LOAD_DEMO', 'migration',
+                  f"Loaded demo data: {result['members']} members, "
+                  f"{result['journal_entries']} journal entries")
+            flash(f"Demo data loaded — {result['members']} members, {result['loans']} loans, "
+                  f"and {result['journal_entries']} ledger entries posted. Explore Accounting, "
+                  f"Reports and Dividends, then purge when finished.", 'success')
+    except Exception as e:
+        db.rollback()
+        flash(f'Error loading demo data: {e}', 'danger')
+    return redirect(url_for('migration.index'))
+
+
 @migration.route('/purge', methods=['POST'])
 @login_required
 @role_required('admin')

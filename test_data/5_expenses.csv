@@ -1,0 +1,7 @@
+category,amount,description,vendor,payment_method,date,notes
+Stationery,12000,Office supplies,Balogun Market,cash,2024-02-05,
+Utilities,18000,Electricity,IBEDC,transfer,2024-03-10,
+Bank Charges,6500,Account maintenance,GTBank,transfer,2024-04-01,
+AGM Expenses,45000,Annual general meeting,Venue Ltd,transfer,2024-06-15,
+Transport,9000,Committee travel,,cash,2024-07-20,
+Printing,15000,Passbooks & receipts,QuickPrint,cash,2024-08-12,

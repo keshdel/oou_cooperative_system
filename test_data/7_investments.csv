@@ -1,0 +1,4 @@
+name,type,amount,institution,interest_rate,risk_level,start_date,maturity_date,description,notes
+GTBank Fixed Deposit,Fixed Deposit,500000,GTBank,12,low,2024-01-15,2025-01-15,12-month FD,
+FGN Savings Bond,Government Bond,300000,DMO,14,low,2024-03-01,2026-03-01,2-year bond,
+Shop Rental,Real Estate,250000,Coop Plaza,0,medium,2024-02-01,,Rental unit,
