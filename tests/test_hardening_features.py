@@ -142,6 +142,74 @@ class HardeningFeatureTests(unittest.TestCase):
             self.assertEqual(inc['total_expenses'], 700.0)
             self.assertEqual(inc['net_surplus'], 1800.0)
 
+    def test_email_service_accepts_flask_mail_env_names(self):
+        import email_service
+
+        original_env = os.environ.copy()
+        original_smtp = email_service.smtplib.SMTP
+
+        class FakeSMTP:
+            sent = []
+            started_tls = False
+
+            def __init__(self, host, port, timeout=10):
+                self.host = host
+                self.port = port
+                self.timeout = timeout
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def ehlo(self):
+                pass
+
+            def starttls(self, context=None):
+                FakeSMTP.started_tls = True
+
+            def login(self, user, password):
+                self.user = user
+                self.password = password
+
+            def sendmail(self, from_addr, recipients, message):
+                FakeSMTP.sent.append((from_addr, recipients, message))
+
+        try:
+            for key in (
+                'MAIL_ENABLED', 'SMTP_HOST', 'SMTP_PORT', 'SMTP_USER',
+                'SMTP_PASS', 'MAIL_FROM', 'RESEND_API_KEY',
+            ):
+                os.environ.pop(key, None)
+            os.environ.update({
+                'ENABLE_EMAIL_NOTIFICATIONS': 'true',
+                'MAIL_SERVER': 'smtp.example.test',
+                'MAIL_PORT': '587',
+                'MAIL_USERNAME': 'coop@example.test',
+                'MAIL_PASSWORD': 'app-password',
+                'MAIL_DEFAULT_SENDER': 'OOU Coop <coop@example.test>',
+                'MAIL_USE_TLS': 'true',
+            })
+            email_service.smtplib.SMTP = FakeSMTP
+
+            ok = email_service.send_email(
+                'member@example.test',
+                'SMTP compatibility test',
+                '<p>Hello</p>',
+                'Hello',
+            )
+
+            self.assertTrue(ok)
+            self.assertTrue(FakeSMTP.started_tls)
+            self.assertEqual(len(FakeSMTP.sent), 1)
+            self.assertEqual(FakeSMTP.sent[0][0], 'OOU Coop <coop@example.test>')
+            self.assertEqual(FakeSMTP.sent[0][1], ['member@example.test'])
+        finally:
+            os.environ.clear()
+            os.environ.update(original_env)
+            email_service.smtplib.SMTP = original_smtp
+
 
 if __name__ == '__main__':
     unittest.main()

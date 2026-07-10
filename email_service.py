@@ -35,13 +35,27 @@ def _db_setting(key: str) -> str:
         return ''
 
 
-def _cfg(env_var: str, db_key: str) -> str:
+def _env_first(*names: str) -> str:
+    """Return the first non-empty environment value from a list of aliases."""
+    for name in names:
+        value = os.environ.get(name, '').strip()
+        if value:
+            return value
+    return ''
+
+
+def _cfg(env_var: str, db_key: str, *aliases: str) -> str:
     """Env var takes precedence; falls back to DB setting."""
-    return os.environ.get(env_var, '').strip() or _db_setting(db_key)
+    return _env_first(env_var, *aliases) or _db_setting(db_key)
+
+
+def _truthy(value: str) -> bool:
+    return value.strip().lower() in {'1', 'true', 'yes', 'on'}
 
 
 def _is_enabled() -> bool:
-    return _cfg('MAIL_ENABLED', 'mail_enabled') == '1'
+    configured = _cfg('MAIL_ENABLED', 'mail_enabled', 'ENABLE_EMAIL_NOTIFICATIONS')
+    return _truthy(configured)
 
 
 # ── Resend back-end ────────────────────────────────────────────────────────────
@@ -70,11 +84,16 @@ def _send_via_resend(to: str, subject: str, html: str) -> bool:
 # ── SMTP back-end (Gmail, Brevo, Outlook, any provider) ───────────────────────
 
 def _send_via_smtp(to: str, subject: str, html: str, text: str = '') -> bool:
-    host     = _cfg('SMTP_HOST',     'smtp_host')
-    port_str = _cfg('SMTP_PORT',     'smtp_port') or '587'
-    user     = _cfg('SMTP_USER',     'smtp_user')
-    password = _cfg('SMTP_PASS',     'smtp_pass')
-    from_addr = _cfg('MAIL_FROM',    'mail_from') or user
+    host     = _cfg('SMTP_HOST',     'smtp_host', 'MAIL_SERVER')
+    port_str = _cfg('SMTP_PORT',     'smtp_port', 'MAIL_PORT') or '587'
+    user     = _cfg('SMTP_USER',     'smtp_user', 'MAIL_USERNAME')
+    password = _cfg('SMTP_PASS',     'smtp_pass', 'MAIL_PASSWORD')
+    from_addr = (
+        _cfg('MAIL_FROM', 'mail_from', 'MAIL_DEFAULT_SENDER', 'COOP_EMAIL')
+        or user
+    )
+    use_ssl = _truthy(_env_first('SMTP_USE_SSL', 'MAIL_USE_SSL'))
+    use_tls = _truthy(_env_first('SMTP_USE_TLS', 'MAIL_USE_TLS'))
 
     if not (host and user and password):
         return False
@@ -90,9 +109,11 @@ def _send_via_smtp(to: str, subject: str, html: str, text: str = '') -> bool:
         msg.attach(MIMEText(html, 'html'))
 
         ctx = ssl.create_default_context()
-        with smtplib.SMTP(host, port, timeout=10) as server:
+        smtp_cls = smtplib.SMTP_SSL if use_ssl else smtplib.SMTP
+        with smtp_cls(host, port, timeout=10) as server:
             server.ehlo()
-            server.starttls(context=ctx)
+            if use_tls and not use_ssl:
+                server.starttls(context=ctx)
             server.login(user, password)
             server.sendmail(from_addr, [to], msg.as_string())
         log.info('SMTP OK: "%s" → %s', subject, to)
@@ -117,7 +138,7 @@ def send_email(to: str, subject: str, html: str, text: str = '') -> bool:
     if _cfg('RESEND_API_KEY', 'resend_api_key'):
         return _send_via_resend(to, subject, html)
 
-    if _cfg('SMTP_HOST', 'smtp_host'):
+    if _cfg('SMTP_HOST', 'smtp_host', 'MAIL_SERVER'):
         return _send_via_smtp(to, subject, html, text)
 
     log.warning('No email provider configured — skipped: "%s"', subject)
