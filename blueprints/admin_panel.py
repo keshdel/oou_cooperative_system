@@ -31,6 +31,7 @@ _DEFAULT_SETTINGS = {
     'session_timeout': '30',
     'maintenance_mode': '0',
     'min_savings': '5000',
+    'share_capital_pct': '0',
     'savings_due_day': '10',
     'late_fee_percent': '10',
     'min_deposit_period': '90',

@@ -34,6 +34,14 @@
             </div>
         </div>
         <div class="col-md-3">
+            <div class="card bg-info text-white">
+                <div class="card-body">
+                    <h6>Share Capital</h6>
+                    <h3>₦{{ "{:,.2f}".format(member.shares_value or 0) }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
             <div class="card bg-success text-white">
                 <div class="card-body">
                     <h6>Active Loans</h6>

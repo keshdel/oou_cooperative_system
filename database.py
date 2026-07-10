@@ -326,6 +326,8 @@ def init_db():
         )
     '''))
     _add_col(db, 'savings', 'payment_type', "TEXT DEFAULT 'monthly'")
+    # Portion of a contribution allocated to share capital (audit trail per row)
+    _add_col(db, 'savings', 'share_capital', 'REAL DEFAULT 0')
     _add_col(db, 'savings', 'reference', 'TEXT')
     _add_col(db, 'savings', 'receipt_number', 'TEXT')
     _add_col(db, 'savings', 'notes', 'TEXT')
@@ -696,6 +698,7 @@ def init_db():
         ('session_timeout', '30', 'Session timeout in minutes'),
         ('maintenance_mode', '0', 'Maintenance mode'),
         ('min_savings', '5000', 'Minimum monthly savings'),
+        ('share_capital_pct', '0', 'Percent of each savings contribution allocated to member share capital (0 = off)'),
         ('savings_due_day', '10', 'Savings due day of month'),
         ('late_fee_percent', '10', 'Late fee percentage'),
         ('min_deposit_period', '90', 'Minimum deposit period in days'),

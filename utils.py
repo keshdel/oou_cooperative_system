@@ -319,6 +319,24 @@ def reconcile_member_savings(db, member_id=None):
     return corrected
 
 
+def share_capital_split(db, amount):
+    """Split a savings contribution into (deposit_portion, share_capital_portion)
+    per the 'share_capital_pct' setting. With the setting at 0 (default) the whole
+    amount stays as a deposit and the share portion is 0, so behaviour is
+    unchanged unless a cooperative opts in."""
+    try:
+        row = db.execute("SELECT value FROM settings WHERE key = 'share_capital_pct'").fetchone()
+        pct = float(row['value']) if row and row['value'] else 0.0
+    except Exception:
+        pct = 0.0
+    pct = max(0.0, min(pct, 100.0))
+    amount = float(amount or 0)
+    if pct <= 0 or amount <= 0:
+        return round(amount, 2), 0.0
+    share = round(amount * pct / 100.0, 2)
+    return round(amount - share, 2), share
+
+
 def split_repayment(amount, principal, total_repayment):
     """Split a loan repayment into (principal_part, interest_part).
 

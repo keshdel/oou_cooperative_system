@@ -8,8 +8,8 @@ from flask_login import login_required, current_user
 
 from database import get_db, last_insert_id
 from email_service import send_payment_confirmation_email
-from utils import role_required, audit, notify_member, record_revenue
-from ledger import post_journal_safe, CASH, MEMBER_DEPOSITS, FEE_INCOME
+from utils import role_required, audit, notify_member, record_revenue, share_capital_split
+from ledger import post_journal_safe, CASH, MEMBER_DEPOSITS, FEE_INCOME, SHARE_CAPITAL
 
 savings = Blueprint('savings', __name__)
 
@@ -245,21 +245,24 @@ def salary_upload():
                     if apply_late_fee and payment_date.day > 10:
                         late_fee = round(amount * 0.10, 2)
 
+                    deposit_amount, share_amount = share_capital_split(db, amount)
+
                     db.execute('''
                         INSERT INTO savings
-                            (member_id, amount, month, payment_type, late_fee,
+                            (member_id, amount, share_capital, month, payment_type, late_fee,
                              payment_method, receipt_number, notes, date,
                              created_by, import_batch, source_file)
-                        VALUES (?, ?, ?, 'salary', ?, 'salary_deduction',
+                        VALUES (?, ?, ?, ?, 'salary', ?, 'salary_deduction',
                                 ?, ?, ?, ?, ?, ?)
                     ''', (
-                        member['id'], amount, row_month, late_fee,
+                        member['id'], deposit_amount, share_amount, row_month, late_fee,
                         receipt_number, notes, payment_date, current_user.id,
                         batch_ref, file.filename,
                     ))
                     db.execute(
-                        'UPDATE members SET total_savings = total_savings + ? WHERE id = ?',
-                        (amount, member['id']),
+                        'UPDATE members SET total_savings = total_savings + ?, '
+                        'shares_value = COALESCE(shares_value, 0) + ? WHERE id = ?',
+                        (deposit_amount, share_amount, member['id']),
                     )
 
                     if late_fee:
@@ -273,8 +276,10 @@ def salary_upload():
 
                     lines = [
                         {'account': CASH, 'debit': amount + late_fee, 'memo': f'Salary savings {row_month}'},
-                        {'account': MEMBER_DEPOSITS, 'credit': amount, 'memo': f"Member {member['id']}"},
+                        {'account': MEMBER_DEPOSITS, 'credit': deposit_amount, 'memo': f"Member {member['id']}"},
                     ]
+                    if share_amount:
+                        lines.append({'account': SHARE_CAPITAL, 'credit': share_amount, 'memo': 'Share capital'})
                     if late_fee:
                         lines.append({'account': FEE_INCOME, 'credit': late_fee, 'memo': 'Late fee'})
                     post_journal_safe(
@@ -343,18 +348,23 @@ def add_saving():
 
         receipt_number = f"RCPT/{today.strftime('%Y%m%d')}/{random.randint(1000, 9999)}"
 
-        # savings.amount is the member's contribution only (fee tracked separately)
+        # Allocate a configurable portion of the contribution to share capital.
+        deposit_amount, share_amount = share_capital_split(db, amount)
+
+        # savings.amount is the deposit portion; share_capital records the split.
         db.execute('''
             INSERT INTO savings
-                (member_id, amount, month, payment_type, late_fee,
+                (member_id, amount, share_capital, month, payment_type, late_fee,
                  payment_method, receipt_number, notes, date)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', (member_id, amount, month, payment_type, late_fee,
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (member_id, deposit_amount, share_amount, month, payment_type, late_fee,
               payment_method, receipt_number, notes, today))
 
-        # Member savings balance grows only by the contribution, not the fee.
-        db.execute('UPDATE members SET total_savings = total_savings + ? WHERE id = ?',
-                   (amount, member_id))
+        # Deposits grow by the deposit portion; share capital by the share portion.
+        db.execute(
+            'UPDATE members SET total_savings = total_savings + ?, '
+            'shares_value = COALESCE(shares_value, 0) + ? WHERE id = ?',
+            (deposit_amount, share_amount, member_id))
 
         # Book the late fee as cooperative income.
         if late_fee:
@@ -367,11 +377,13 @@ def add_saving():
                            source=member_name, received_by=current_user.id,
                            notes=f'Receipt {receipt_number}')
 
-        # Double-entry: cash in; member-deposit liability up; late fee is income.
+        # Double-entry: cash in; deposit liability + share capital up; fee is income.
         _lines = [
             {'account': CASH, 'debit': amount + late_fee, 'memo': f'Savings {month}'},
-            {'account': MEMBER_DEPOSITS, 'credit': amount, 'memo': f'Member {member_id}'},
+            {'account': MEMBER_DEPOSITS, 'credit': deposit_amount, 'memo': f'Member {member_id}'},
         ]
+        if share_amount:
+            _lines.append({'account': SHARE_CAPITAL, 'credit': share_amount, 'memo': 'Share capital'})
         if late_fee:
             _lines.append({'account': FEE_INCOME, 'credit': late_fee, 'memo': 'Late fee'})
         post_journal_safe(db, f'Savings deposit — {month}', _lines,
@@ -383,20 +395,21 @@ def add_saving():
         saving_id = last_insert_id(db)
         member    = db.execute('SELECT * FROM members WHERE id = ?', (member_id,)).fetchone()
         new_saving = db.execute('SELECT * FROM savings WHERE id = ?', (saving_id,)).fetchone()
+        share_note = f" (₦{deposit_amount:,.2f} to savings, ₦{share_amount:,.2f} to share capital)" if share_amount else ""
         if member and member['email']:
             send_payment_confirmation_email(member['email'], member, new_saving)
             fee_note = f" (plus ₦{late_fee:,.2f} late fee)" if late_fee else ""
             notify_member(db, member['email'],
                           'Savings Payment Confirmed',
-                          f"₦{amount:,.2f} {payment_type} savings recorded for "
-                          f"{month}{fee_note}. Receipt: {receipt_number}.",
+                          f"₦{amount:,.2f} {payment_type} contribution recorded for "
+                          f"{month}{share_note}{fee_note}. Receipt: {receipt_number}.",
                           notification_type='info',
                           action_url='/my-savings')
 
         audit(db, 'ADD_SAVING', 'savings',
-              f"Recorded ₦{amount:,.2f} {payment_type} savings for member ID {member_id}, "
-              f"receipt {receipt_number}")
-        flash(f'Savings of ₦{amount:,.2f} recorded. Receipt: {receipt_number}', 'success')
+              f"Recorded ₦{amount:,.2f} {payment_type} contribution for member ID {member_id}, "
+              f"receipt {receipt_number}{share_note}")
+        flash(f'Contribution of ₦{amount:,.2f} recorded{share_note}. Receipt: {receipt_number}', 'success')
 
     except Exception as e:
         db.rollback()
