@@ -16,6 +16,7 @@ from flask import (Blueprint, abort, current_app, flash, jsonify,
 from flask_login import current_user, login_required
 
 from database import get_db
+from email_service import send_loan_repayment_email
 from payments import get_gateway, generate_reference
 from security import log_audit
 from utils import audit, member_for_user, split_repayment
@@ -152,6 +153,23 @@ def _record_payment(db, reference: str) -> bool:
                 {'account': LOANS_RECEIVABLE, 'credit': principal_paid, 'memo': loan['loan_number']},
                 {'account': LOAN_INTEREST_INCOME, 'credit': interest_paid, 'memo': 'Interest earned'},
             ], reference=reference, source_module='payments', source_id=loan_id)
+            member = db.execute('SELECT * FROM members WHERE id = ?', (member_id,)).fetchone()
+            if member and member['email']:
+                send_loan_repayment_email(
+                    member['email'],
+                    member,
+                    loan,
+                    {
+                        'repayment_number': rep_num,
+                        'reference': reference,
+                        'amount': amount,
+                        'principal_paid': principal_paid,
+                        'interest_paid': interest_paid,
+                        'balance': new_balance,
+                        'date': datetime.now().strftime('%Y-%m-%d'),
+                    },
+                    url_for('portal.my_loans', _external=True),
+                )
 
     db.commit()
     return True

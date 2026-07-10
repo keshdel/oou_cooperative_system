@@ -7,7 +7,8 @@ from flask import Blueprint, render_template, redirect, url_for, request, flash,
 from flask_login import login_required, current_user
 
 from database import get_db
-from email_service import send_loan_approval_email, send_loan_rejection_email
+from email_service import (send_loan_approval_email, send_loan_rejection_email,
+                           send_loan_repayment_email)
 from utils import (role_required, audit, notify_member, compute_loan_schedule,
                    PURPOSE_SETTING_KEY, METHOD_LABELS, record_revenue, split_repayment,
                    member_savings_balance)
@@ -320,10 +321,12 @@ def bulk_loan_repayments():
                         errors.append(f"Row {row_num}: Invalid date format (use YYYY-MM-DD)")
                         continue
 
-                    loan = db.execute(
-                        'SELECT id, member_id, amount, balance, total_repayment FROM loans WHERE loan_number = ?',
-                        (loan_number,)
-                    ).fetchone()
+                    loan = db.execute('''
+                        SELECT l.*, m.first_name, m.last_name, m.email
+                        FROM loans l
+                        JOIN members m ON m.id = l.member_id
+                        WHERE l.loan_number = ?
+                    ''', (loan_number,)).fetchone()
                     if not loan:
                         errors.append(f"Row {row_num}: Loan number {loan_number} not found")
                         continue
@@ -361,6 +364,21 @@ def bulk_loan_repayments():
                         {'account': LOAN_INTEREST_INCOME, 'credit': interest_paid, 'memo': 'Interest earned'},
                     ], date=payment_date, reference=repayment_number, source_module='loans',
                        source_id=loan['id'], created_by=current_user.id)
+                    if loan['email']:
+                        send_loan_repayment_email(
+                            loan['email'],
+                            {'first_name': loan['first_name'], 'last_name': loan['last_name']},
+                            loan,
+                            {
+                                'repayment_number': repayment_number,
+                                'amount': settled_amount,
+                                'principal_paid': principal_paid,
+                                'interest_paid': interest_paid,
+                                'balance': max(new_balance, 0),
+                                'date': payment_date.strftime('%Y-%m-%d'),
+                            },
+                            url_for('portal.my_loans', _external=True),
+                        )
                     if is_pre_liquidation:
                         errors.append(
                             f"Row {row_num}: Note — ₦{amount:,.2f} entered but only "
@@ -479,6 +497,20 @@ def repay_loan(loan_id):
 
         member = db.execute('SELECT * FROM members WHERE id = ?', (loan['member_id'],)).fetchone()
         if member and member['email']:
+            send_loan_repayment_email(
+                member['email'],
+                member,
+                loan,
+                {
+                    'repayment_number': repayment_number,
+                    'amount': settled,
+                    'principal_paid': principal_paid,
+                    'interest_paid': interest_paid,
+                    'balance': max(new_balance, 0),
+                    'date': datetime.now().strftime('%Y-%m-%d'),
+                },
+                url_for('portal.my_loans', _external=True),
+            )
             notify_member(db, member['email'],
                           'Loan Repayment Recorded',
                           f"A repayment of ₦{settled:,.2f} has been recorded on your loan. "

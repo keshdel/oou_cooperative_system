@@ -198,6 +198,47 @@ def send_payment_confirmation_email(recipient: str, member: dict,
     send_email(recipient, 'Payment Confirmation - OOU Cooperative', html)
 
 
+def send_loan_repayment_email(recipient: str, member: dict, loan: dict,
+                               repayment: dict, repayment_url: str = '') -> None:
+    """Notify a member that a loan repayment was recorded."""
+    full_name = member.get('full_name') or (
+        f"{member.get('first_name', '')} {member.get('last_name', '')}".strip()
+    ) or 'Member'
+    amount = float(repayment.get('amount') or 0)
+    balance = float(repayment.get('balance') or repayment.get('new_balance') or 0)
+    principal = float(repayment.get('principal_paid') or 0)
+    interest = float(repayment.get('interest_paid') or 0)
+    date = repayment.get('date') or ''
+    reference = repayment.get('repayment_number') or repayment.get('reference') or ''
+    loan_number = loan.get('loan_number') or ''
+
+    html = (
+        f'<p>Dear {full_name},</p>'
+        f'<p>A loan repayment has been recorded on your cooperative account.</p>'
+        f'<table cellpadding="6" cellspacing="0" style="border-collapse:collapse">'
+        f'<tr><td><strong>Loan number</strong></td><td>{loan_number}</td></tr>'
+        f'<tr><td><strong>Repayment reference</strong></td><td>{reference}</td></tr>'
+        f'<tr><td><strong>Date</strong></td><td>{date}</td></tr>'
+        f'<tr><td><strong>Amount paid</strong></td><td>&#8358;{amount:,.2f}</td></tr>'
+        f'<tr><td><strong>Principal portion</strong></td><td>&#8358;{principal:,.2f}</td></tr>'
+        f'<tr><td><strong>Interest portion</strong></td><td>&#8358;{interest:,.2f}</td></tr>'
+        f'<tr><td><strong>Outstanding balance</strong></td><td>&#8358;{balance:,.2f}</td></tr>'
+        f'</table>'
+    )
+    if repayment_url:
+        html += f'<p><a href="{repayment_url}">View your loan details</a></p>'
+    html += '<p>Please contact the cooperative office if this entry does not match your records.</p>'
+
+    text = (
+        f'Dear {full_name},\n\n'
+        f'Loan repayment recorded.\n'
+        f'Loan: {loan_number}\nReference: {reference}\nDate: {date}\n'
+        f'Amount paid: NGN {amount:,.2f}\nPrincipal: NGN {principal:,.2f}\n'
+        f'Interest: NGN {interest:,.2f}\nOutstanding balance: NGN {balance:,.2f}\n'
+    )
+    send_email(recipient, 'Loan Repayment Recorded - OOU Cooperative', html, text)
+
+
 def send_password_reset_email(recipient: str, user: dict, reset_url: str) -> None:
     try:
         from flask import render_template

@@ -303,6 +303,7 @@ def init_db():
     '''))
     _add_col(db, 'members', 'card_token', 'TEXT')
     _add_col(db, 'members', 'card_path',  'TEXT')
+    _add_col(db, 'members', 'employee_id', 'TEXT')
 
     # Savings table
     db.execute(_adapt('''
@@ -325,6 +326,14 @@ def init_db():
         )
     '''))
     _add_col(db, 'savings', 'payment_type', "TEXT DEFAULT 'monthly'")
+    _add_col(db, 'savings', 'reference', 'TEXT')
+    _add_col(db, 'savings', 'receipt_number', 'TEXT')
+    _add_col(db, 'savings', 'notes', 'TEXT')
+    _add_col(db, 'savings', 'created_by', 'INTEGER')
+    _add_col(db, 'savings', 'verified_by', 'INTEGER')
+    _add_col(db, 'savings', 'verified_at', 'TIMESTAMP')
+    _add_col(db, 'savings', 'import_batch', 'TEXT')
+    _add_col(db, 'savings', 'source_file', 'TEXT')
 
     # Loans table
     db.execute(_adapt('''
@@ -357,7 +366,18 @@ def init_db():
             FOREIGN KEY (member_id) REFERENCES members (id)
         )
     '''))
+    _add_col(db, 'loans', 'loan_number', 'TEXT')
     _add_col(db, 'loans', 'interest_method', "TEXT DEFAULT 'reducing_annual'")
+    _add_col(db, 'loans', 'disbursed_amount', 'REAL')
+    _add_col(db, 'loans', 'disbursement_date', 'TIMESTAMP')
+    _add_col(db, 'loans', 'first_payment_date', 'TIMESTAMP')
+    _add_col(db, 'loans', 'next_payment_date', 'TIMESTAMP')
+    _add_col(db, 'loans', 'approved_by', 'INTEGER')
+    _add_col(db, 'loans', 'approved_at', 'TIMESTAMP')
+    _add_col(db, 'loans', 'rejection_reason', 'TEXT')
+    _add_col(db, 'loans', 'completed_at', 'TIMESTAMP')
+    _add_col(db, 'loans', 'defaulted', 'INTEGER DEFAULT 0')
+    _add_col(db, 'loans', 'notes', 'TEXT')
 
     # Repayments table
     db.execute(_adapt('''
@@ -383,9 +403,17 @@ def init_db():
     '''))
     # Ensure the principal/interest split columns exist on databases created
     # from an older schema (safe no-op if they already exist).
+    _add_col(db, 'repayments', 'repayment_number', 'TEXT')
     _add_col(db, 'repayments', 'principal_paid', 'REAL DEFAULT 0')
     _add_col(db, 'repayments', 'interest_paid',  'REAL DEFAULT 0')
     _add_col(db, 'repayments', 'penalty_paid',   'REAL DEFAULT 0')
+    _add_col(db, 'repayments', 'reference', 'TEXT')
+    _add_col(db, 'repayments', 'receipt_number', 'TEXT')
+    _add_col(db, 'repayments', 'transaction_id', 'TEXT')
+    _add_col(db, 'repayments', 'notes', 'TEXT')
+    _add_col(db, 'repayments', 'received_by', 'INTEGER')
+    _add_col(db, 'repayments', 'verified_by', 'INTEGER')
+    _add_col(db, 'repayments', 'verified_at', 'TIMESTAMP')
 
     # Investments table
     db.execute(_adapt('''
@@ -433,6 +461,11 @@ def init_db():
             FOREIGN KEY (paid_by) REFERENCES users (id)
         )
     '''))
+    _add_col(db, 'honorarium', 'recipient_id', 'INTEGER')
+    _add_col(db, 'honorarium', 'recipient_name', 'TEXT')
+    _add_col(db, 'honorarium', 'description', 'TEXT')
+    _add_col(db, 'honorarium', 'month', 'TEXT')
+    _add_col(db, 'honorarium', 'paid_by', 'INTEGER')
 
     # Expenses table
     db.execute(_adapt('''

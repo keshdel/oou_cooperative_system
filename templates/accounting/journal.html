@@ -10,6 +10,7 @@
         <div class="col-md-4 text-end">
             <a href="{{ url_for('accounting.trial_balance_view') }}" class="btn btn-outline-secondary btn-sm">Trial Balance</a>
             <a href="{{ url_for('accounting.chart_of_accounts') }}" class="btn btn-outline-secondary btn-sm">Chart of Accounts</a>
+            <a href="{{ url_for('accounting.reconciliation') }}" class="btn btn-outline-secondary btn-sm">Reconciliation</a>
             <a href="{{ url_for('accounting.new_journal') }}" class="btn btn-primary btn-sm"><i class="fas fa-plus"></i> New Entry</a>
             {% if current_user.role == 'admin' %}
             <form method="post" action="{{ url_for('accounting.backfill') }}" class="d-inline"

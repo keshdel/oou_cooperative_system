@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% block title %}Ledger Reconciliation - OOU Cooperative{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-3">
+        <div class="col-md-8">
+            <h2><i class="fas fa-clipboard-check"></i> Ledger Reconciliation</h2>
+            <p class="text-muted mb-0">Checks operational records against posted journal entries.</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="{{ url_for('accounting.trial_balance_view') }}" class="btn btn-outline-secondary btn-sm">Trial Balance</a>
+            <a href="{{ url_for('accounting.journal_register') }}" class="btn btn-outline-secondary btn-sm">Journal</a>
+            {% if current_user.role == 'admin' %}
+            <form method="post" action="{{ url_for('accounting.backfill') }}" class="d-inline"
+                  onsubmit="return confirm('Post all existing transactions that are not yet in the ledger? This is safe to run more than once.');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-primary btn-sm">
+                    <i class="fas fa-sync-alt"></i> Backfill ledger
+                </button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="card h-100">
+                <div class="card-body">
+                    <div class="small text-muted">Operational Records</div>
+                    <div class="h4 mb-0">{{ rec.total_records }}</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card h-100">
+                <div class="card-body">
+                    <div class="small text-muted">Missing Journal Entries</div>
+                    <div class="h4 mb-0 {% if rec.total_missing %}text-danger{% else %}text-success{% endif %}">
+                        {{ rec.total_missing }}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card h-100">
+                <div class="card-body">
+                    <div class="small text-muted">Journal Entries Posted</div>
+                    <div class="h4 mb-0">{{ rec.posted_entries }}</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card h-100">
+                <div class="card-body">
+                    <div class="small text-muted">Journal Lines Posted</div>
+                    <div class="h4 mb-0">{{ rec.posted_lines }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if rec.complete %}
+    <div class="alert alert-success">
+        <i class="fas fa-check-circle"></i>
+        All checked operational records have matching journal entries.
+    </div>
+    {% else %}
+    <div class="alert alert-warning">
+        <i class="fas fa-exclamation-triangle"></i>
+        Some operational records are not yet posted to the general ledger. Run the backfill, then review this page again.
+    </div>
+    {% endif %}
+
+    {% for section in rec.sections %}
+    <div class="card mb-3">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">{{ section.label }}</h5>
+            <div>
+                <span class="badge bg-light text-dark">{{ section.total }} record(s)</span>
+                {% if section.missing %}
+                    <span class="badge bg-danger">{{ section.missing }} missing</span>
+                {% else %}
+                    <span class="badge bg-success">Complete</span>
+                {% endif %}
+            </div>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0">
+                <caption class="px-3 text-muted">Sample records without a matching journal entry.</caption>
+                <thead class="table-light">
+                    <tr>
+                        <th>Date</th>
+                        <th>Reference</th>
+                        <th>Member / Source</th>
+                        <th>Period / Type</th>
+                        <th class="text-end">Amount</th>
+                        <th class="text-end">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in section.samples %}
+                    <tr>
+                        <td>{{ item.date|string|truncate(19, True, '') }}</td>
+                        <td class="font-monospace small">{{ item.ref }}</td>
+                        <td>
+                            {% if item.member_id %}
+                                <a href="{{ url_for('members.member_details', member_id=item.member_id) }}">
+                                    {{ item.member_name }}
+                                </a>
+                                <div class="small text-muted">{{ item.member_number }}</div>
+                            {% else %}
+                                {{ item.member_name or section.label }}
+                            {% endif %}
+                        </td>
+                        <td>{{ item.month or '' }}</td>
+                        <td class="text-end">&#8358;{{ "{:,.2f}".format(item.amount or 0) }}</td>
+                        <td class="text-end">
+                            {% if item.member_id %}
+                            <a class="btn btn-outline-secondary btn-sm"
+                               href="{{ url_for('members.member_savings_statement', member_id=item.member_id) }}">
+                                Statement
+                            </a>
+                            {% else %}
+                            <span class="text-muted small">Backfill</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="6" class="text-center text-muted py-3">No missing records in this section.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

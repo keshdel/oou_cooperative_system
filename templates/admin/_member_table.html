@@ -6,7 +6,7 @@
 
 <div class="table-responsive">
     <table class="table table-hover align-middle" id="memberTable">
-        <thead class="table-light">
+        <thead class="member-table-head">
             <tr>
                 <th>#</th>
                 <th>Member #</th>
@@ -67,6 +67,10 @@
                            class="btn btn-outline-primary" title="Full Details">
                             <i class="fas fa-address-card"></i>
                         </a>
+                        <a href="{{ url_for('members.member_savings_statement', member_id=member.id) }}"
+                           class="btn btn-outline-secondary" title="Savings Statement">
+                            <i class="fas fa-file-invoice-dollar"></i>
+                        </a>
                         <a href="{{ url_for('members.edit_member', member_id=member.id) }}" 
                            class="btn btn-outline-warning" title="Edit">
                             <i class="fas fa-edit"></i>
@@ -109,5 +113,13 @@
     justify-content: center;
     font-weight: bold;
     font-size: 16px;
+}
+.member-table-head th {
+    background: #f8fafc !important;
+    color: #0f172a !important;
+    border-bottom: 2px solid #334155 !important;
+    font-size: .78rem;
+    letter-spacing: 0;
+    text-transform: uppercase;
 }
 </style>

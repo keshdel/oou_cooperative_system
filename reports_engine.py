@@ -76,6 +76,10 @@ def income_statement(db, from_date, to_date):
         total_expenses += amt
 
     net_surplus = round(total_income - total_expenses, 2)
+    if abs(total_income) < 0.005 and abs(total_expenses) < 0.005:
+        legacy = _legacy_income_statement(db, from_date, to_date)
+        if legacy:
+            return legacy
     return {
         'from_date': from_date, 'to_date': to_date,
         'income_lines': income_lines,
@@ -83,6 +87,67 @@ def income_statement(db, from_date, to_date):
         'expense_lines': expense_lines,
         'total_expenses': round(total_expenses, 2),
         'net_surplus': net_surplus,
+    }
+
+
+def _legacy_income_statement(db, from_date, to_date):
+    """Temporary bridge for pre-ledger transactions.
+
+    Phase 3 reports use journal lines. Existing deployments may already contain
+    savings fees, loan repayments, revenue, and expenses that were created before
+    ledger posting was introduced. Until a backfill is run, show those operational
+    totals only when the ledger has no income/expense activity for the period.
+    """
+    lo, hi = _period_bounds(from_date, to_date)
+
+    def val(sql, params=()):
+        row = db.execute(sql, params).fetchone()
+        return float(row[0] or 0) if row else 0.0
+
+    loan_interest = val(
+        'SELECT COALESCE(SUM(interest_paid), 0) FROM repayments WHERE date BETWEEN ? AND ?',
+        (lo, hi),
+    )
+    fee_income = val(
+        'SELECT COALESCE(SUM(late_fee), 0) FROM savings WHERE date BETWEEN ? AND ?',
+        (lo, hi),
+    ) + val(
+        'SELECT COALESCE(SUM(amount), 0) FROM revenue WHERE date BETWEEN ? AND ?',
+        (lo, hi),
+    )
+    investment_income = val(
+        'SELECT COALESCE(SUM(actual_return), 0) FROM investments WHERE date BETWEEN ? AND ?',
+        (lo, hi),
+    )
+    operating_expenses = val(
+        'SELECT COALESCE(SUM(amount), 0) FROM expenses WHERE date BETWEEN ? AND ?',
+        (lo, hi),
+    )
+    honorarium = val(
+        'SELECT COALESCE(SUM(amount), 0) FROM honorarium WHERE date BETWEEN ? AND ?',
+        (lo, hi),
+    )
+
+    total_income = round(loan_interest + fee_income + investment_income, 2)
+    total_expenses = round(operating_expenses + honorarium, 2)
+    if abs(total_income) < 0.005 and abs(total_expenses) < 0.005:
+        return None
+
+    return {
+        'from_date': from_date,
+        'to_date': to_date,
+        'income_lines': [
+            {'code': LOAN_INTEREST_INCOME, 'name': 'Loan Interest Income (legacy unposted)', 'amount': round(loan_interest, 2)},
+            {'code': FEE_INCOME, 'name': 'Fee / Other Income (legacy unposted)', 'amount': round(fee_income, 2)},
+            {'code': INVESTMENT_INCOME, 'name': 'Investment Income (legacy unposted)', 'amount': round(investment_income, 2)},
+        ],
+        'total_income': total_income,
+        'expense_lines': [
+            {'code': OPERATING_EXPENSES, 'name': 'Operating Expenses (legacy unposted)', 'amount': round(operating_expenses, 2)},
+            {'code': HONORARIUM, 'name': 'Honorarium (legacy unposted)', 'amount': round(honorarium, 2)},
+        ],
+        'total_expenses': total_expenses,
+        'net_surplus': round(total_income - total_expenses, 2),
     }
 
 

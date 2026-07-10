@@ -1,7 +1,7 @@
 import csv
 import random
 from datetime import datetime
-from io import StringIO
+from io import StringIO, TextIOWrapper
 
 from flask import Blueprint, render_template, redirect, url_for, request, flash, make_response
 from flask_login import login_required, current_user
@@ -12,6 +12,48 @@ from utils import role_required, audit, notify_member, record_revenue
 from ledger import post_journal_safe, CASH, MEMBER_DEPOSITS, FEE_INCOME
 
 savings = Blueprint('savings', __name__)
+
+
+def _parse_date(raw):
+    raw = (raw or '').strip()
+    if not raw:
+        return datetime.now()
+    for fmt in ('%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y'):
+        try:
+            return datetime.strptime(raw, fmt)
+        except ValueError:
+            pass
+    try:
+        return datetime.fromisoformat(raw.split('.')[0].replace('T', ' '))
+    except ValueError:
+        return None
+
+
+def _resolve_member(db, row):
+    member_number = (row.get('member_number') or row.get('member_no') or '').strip()
+    email = (row.get('email') or '').strip()
+    employee_id = (row.get('employee_id') or '').strip()
+    phone = (row.get('phone') or '').strip()
+    if member_number:
+        found = db.execute('SELECT * FROM members WHERE member_number = ?', (member_number,)).fetchone()
+        if found:
+            return found
+    if employee_id:
+        found = db.execute('SELECT * FROM members WHERE employee_id = ?', (employee_id,)).fetchone()
+        if found:
+            return found
+    if email:
+        found = db.execute('SELECT * FROM members WHERE email = ?', (email,)).fetchone()
+        if found:
+            return found
+    if phone:
+        return db.execute('SELECT * FROM members WHERE phone = ?', (phone,)).fetchone()
+    return None
+
+
+def _batch_ref(month):
+    suffix = random.randint(1000, 9999)
+    return f"SAL-SAV/{month.replace('-', '')}/{datetime.now().strftime('%H%M%S')}/{suffix}"
 
 
 @savings.route('/savings')
@@ -26,7 +68,250 @@ def savings_list():
         ORDER BY s.date DESC
     ''').fetchall()
     total_savings = db.execute('SELECT SUM(amount) FROM savings').fetchone()[0] or 0
-    return render_template('admin/savings.html', savings=all_savings, total_savings=total_savings)
+    batches = db.execute('''
+        SELECT import_batch, source_file, MIN(date) AS first_date, MAX(date) AS last_date,
+               COUNT(*) AS row_count,
+               COALESCE(SUM(amount), 0) AS total_amount,
+               COALESCE(SUM(late_fee), 0) AS total_late_fee
+        FROM savings
+        WHERE import_batch IS NOT NULL AND import_batch != ''
+        GROUP BY import_batch, source_file
+        ORDER BY MAX(date) DESC, import_batch DESC
+        LIMIT 10
+    ''').fetchall()
+    return render_template('admin/savings.html',
+                           savings=all_savings,
+                           total_savings=total_savings,
+                           batches=batches)
+
+
+def _batch_rows(db, batch_ref):
+    return db.execute('''
+        SELECT s.*, m.member_number, m.employee_id,
+               m.first_name || ' ' || m.last_name AS member_name,
+               m.email, m.phone,
+               CASE WHEN je.id IS NULL THEN 0 ELSE 1 END AS posted_to_gl,
+               je.entry_number AS journal_entry_number,
+               je.id AS journal_entry_id
+        FROM savings s
+        JOIN members m ON m.id = s.member_id
+        LEFT JOIN journal_entries je ON je.reference = s.receipt_number
+        WHERE s.import_batch = ?
+        ORDER BY s.date ASC, s.id ASC
+    ''', (batch_ref,)).fetchall()
+
+
+@savings.route('/savings/batch/<path:batch_ref>')
+@login_required
+@role_required('admin', 'treasurer', 'secretary', 'exco')
+def salary_batch_detail(batch_ref):
+    db = get_db()
+    rows = _batch_rows(db, batch_ref)
+    if not rows:
+        flash('Savings batch not found.', 'warning')
+        return redirect(url_for('savings.savings_list'))
+
+    summary = {
+        'batch_ref': batch_ref,
+        'source_file': rows[0]['source_file'] or '',
+        'row_count': len(rows),
+        'total_amount': sum(float(r['amount'] or 0) for r in rows),
+        'total_late_fee': sum(float(r['late_fee'] or 0) for r in rows),
+        'posted_count': sum(1 for r in rows if r['posted_to_gl']),
+        'first_date': rows[0]['date'],
+        'last_date': rows[-1]['date'],
+    }
+    return render_template('admin/salary-savings-batch.html',
+                           batch=summary,
+                           rows=rows)
+
+
+@savings.route('/savings/batch/<path:batch_ref>/export')
+@login_required
+@role_required('admin', 'treasurer', 'secretary', 'exco')
+def salary_batch_export(batch_ref):
+    db = get_db()
+    rows = _batch_rows(db, batch_ref)
+    if not rows:
+        flash('Savings batch not found.', 'warning')
+        return redirect(url_for('savings.savings_list'))
+
+    out = StringIO()
+    writer = csv.writer(out)
+    writer.writerow([
+        'batch_ref', 'member_number', 'employee_id', 'name', 'email',
+        'month', 'date', 'receipt_number', 'amount', 'late_fee',
+        'total_paid', 'posted_to_gl', 'journal_entry',
+    ])
+    for r in rows:
+        writer.writerow([
+            batch_ref, r['member_number'], r['employee_id'], r['member_name'],
+            r['email'], r['month'], str(r['date'])[:10], r['receipt_number'],
+            f"{float(r['amount'] or 0):.2f}", f"{float(r['late_fee'] or 0):.2f}",
+            f"{float(r['amount'] or 0) + float(r['late_fee'] or 0):.2f}",
+            'yes' if r['posted_to_gl'] else 'no', r['journal_entry_number'] or '',
+        ])
+    response = make_response(out.getvalue())
+    response.headers['Content-Type'] = 'text/csv'
+    safe_name = batch_ref.replace('/', '_').replace('\\', '_')
+    response.headers['Content-Disposition'] = f'attachment; filename=savings_batch_{safe_name}.csv'
+    return response
+
+
+@savings.route('/savings/salary-template')
+@login_required
+@role_required('admin', 'treasurer')
+def download_salary_template():
+    out = StringIO()
+    writer = csv.writer(out)
+    writer.writerow([
+        'member_number', 'employee_id', 'email', 'phone', 'amount',
+        'month', 'date', 'receipt_number', 'notes',
+    ])
+    writer.writerow([
+        'OOU/2025/0001', 'EMP001', 'member@example.com', '08012345678',
+        '15000', datetime.now().strftime('%Y-%m'), datetime.now().strftime('%Y-%m-%d'),
+        '', 'July payroll deduction',
+    ])
+    response = make_response(out.getvalue())
+    response.headers['Content-Type'] = 'text/csv'
+    response.headers['Content-Disposition'] = 'attachment; filename=salary_savings_template.csv'
+    return response
+
+
+@savings.route('/savings/salary-upload', methods=['GET', 'POST'])
+@login_required
+@role_required('admin', 'treasurer')
+def salary_upload():
+    if request.method == 'POST':
+        file = request.files.get('file')
+        month = request.form.get('month', '').strip()
+        batch_ref = request.form.get('batch_ref', '').strip() or _batch_ref(month or datetime.now().strftime('%Y-%m'))
+        apply_late_fee = bool(request.form.get('apply_late_fee'))
+
+        if not month:
+            flash('Payroll month is required.', 'danger')
+            return redirect(request.url)
+        if not file or not file.filename:
+            flash('No CSV file selected.', 'danger')
+            return redirect(request.url)
+        if not file.filename.lower().endswith('.csv'):
+            flash('Please upload a CSV file.', 'danger')
+            return redirect(request.url)
+
+        db = get_db()
+        success = 0
+        skipped = 0
+        errors = []
+        try:
+            stream = TextIOWrapper(file.stream, encoding='utf-8-sig')
+            reader = csv.DictReader(stream)
+            fields = set(reader.fieldnames or [])
+            if 'amount' not in fields:
+                flash('CSV must include an amount column.', 'danger')
+                return redirect(request.url)
+            if not fields.intersection({'member_number', 'employee_id', 'email', 'phone'}):
+                flash('CSV must include at least one member identifier: member_number, employee_id, email, or phone.', 'danger')
+                return redirect(request.url)
+
+            for row_num, row in enumerate(reader, start=2):
+                try:
+                    member = _resolve_member(db, row)
+                    if not member:
+                        errors.append(f"Row {row_num}: member not found.")
+                        continue
+
+                    amount = float((row.get('amount') or '').replace(',', '').strip())
+                    if amount <= 0:
+                        errors.append(f"Row {row_num}: amount must be greater than zero.")
+                        continue
+
+                    payment_date = _parse_date(row.get('date', '')) or datetime.now()
+                    row_month = (row.get('month') or month).strip() or month
+                    notes = (row.get('notes') or '').strip() or f'Salary deduction batch {batch_ref}'
+                    receipt_number = (row.get('receipt_number') or '').strip()
+                    if not receipt_number:
+                        receipt_number = f"PAYROLL/{row_month.replace('-', '')}/{batch_ref.split('/')[-1]}/{row_num:04d}"
+
+                    exists = db.execute(
+                        'SELECT id FROM savings WHERE receipt_number = ? OR (import_batch = ? AND member_id = ? AND month = ?)',
+                        (receipt_number, batch_ref, member['id'], row_month),
+                    ).fetchone()
+                    if exists:
+                        skipped += 1
+                        continue
+
+                    late_fee = 0.0
+                    if apply_late_fee and payment_date.day > 10:
+                        late_fee = round(amount * 0.10, 2)
+
+                    db.execute('''
+                        INSERT INTO savings
+                            (member_id, amount, month, payment_type, late_fee,
+                             payment_method, receipt_number, notes, date,
+                             created_by, import_batch, source_file)
+                        VALUES (?, ?, ?, 'salary', ?, 'salary_deduction',
+                                ?, ?, ?, ?, ?, ?)
+                    ''', (
+                        member['id'], amount, row_month, late_fee,
+                        receipt_number, notes, payment_date, current_user.id,
+                        batch_ref, file.filename,
+                    ))
+                    db.execute(
+                        'UPDATE members SET total_savings = total_savings + ? WHERE id = ?',
+                        (amount, member['id']),
+                    )
+
+                    if late_fee:
+                        record_revenue(
+                            db, 'Late Fee', late_fee,
+                            description=f'Late salary deduction fee for {row_month}',
+                            source=f"{member['first_name']} {member['last_name']}",
+                            received_by=current_user.id,
+                            notes=f'Receipt {receipt_number}; batch {batch_ref}',
+                        )
+
+                    lines = [
+                        {'account': CASH, 'debit': amount + late_fee, 'memo': f'Salary savings {row_month}'},
+                        {'account': MEMBER_DEPOSITS, 'credit': amount, 'memo': f"Member {member['id']}"},
+                    ]
+                    if late_fee:
+                        lines.append({'account': FEE_INCOME, 'credit': late_fee, 'memo': 'Late fee'})
+                    post_journal_safe(
+                        db, f'Salary savings deduction - {row_month}', lines,
+                        date=payment_date, reference=receipt_number,
+                        source_module='savings', source_id=member['id'],
+                        created_by=current_user.id,
+                    )
+
+                    if member['email']:
+                        notify_member(
+                            db, member['email'], 'Salary Savings Recorded',
+                            f"Salary savings of ₦{amount:,.2f} was recorded for {row_month}. "
+                            f"Receipt: {receipt_number}.",
+                            notification_type='info', action_url='/my-savings',
+                        )
+                    success += 1
+                except Exception as row_error:
+                    errors.append(f"Row {row_num}: {row_error}")
+
+            db.commit()
+            audit(db, 'IMPORT_SALARY_SAVINGS', 'savings',
+                  f"Batch {batch_ref}: imported {success}, skipped {skipped}, errors {len(errors)}")
+            flash(f'Batch {batch_ref}: imported {success} salary savings record(s), skipped {skipped}.', 'success')
+            for error in errors[:8]:
+                flash(error, 'warning')
+            if len(errors) > 8:
+                flash(f'{len(errors) - 8} additional row error(s) not shown.', 'warning')
+            return redirect(url_for('savings.salary_batch_detail', batch_ref=batch_ref))
+        except Exception as e:
+            db.rollback()
+            flash(f'Error processing salary deduction file: {e}', 'danger')
+            return redirect(request.url)
+
+    return render_template('admin/salary-savings-upload.html',
+                           default_month=datetime.now().strftime('%Y-%m'),
+                           default_batch=_batch_ref(datetime.now().strftime('%Y-%m')))
 
 
 @savings.route('/savings/add', methods=['POST'])
