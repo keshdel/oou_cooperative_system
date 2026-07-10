@@ -25,6 +25,12 @@ def _num(prefix, i):
     return f"{prefix}/DEMO/{i:04d}"
 
 
+def _d(v):
+    """Empty/blank date -> None (NULL). PostgreSQL rejects '' in timestamp columns."""
+    v = (v or '').strip() if isinstance(v, str) else v
+    return v or None
+
+
 def demo_is_loaded(db):
     return db.execute(
         "SELECT 1 FROM members WHERE member_number = 'OOU/2025/0001'"
@@ -52,7 +58,7 @@ def load_demo_data(db, created_by=None):
         ''', (r['member_number'], r['first_name'], r['last_name'], r['email'],
               r['phone'], r.get('address'), r.get('occupation'),
               float(r.get('monthly_savings') or 0), r.get('status') or 'active',
-              r['date_joined'], r.get('nominee_name'), r.get('nominee_relationship'),
+              _d(r.get('date_joined')), r.get('nominee_name'), r.get('nominee_relationship'),
               r.get('nominee_phone'), r.get('bank_name'), r.get('account_number'),
               r.get('account_name')))
         mid = last_insert_id(db)
@@ -77,7 +83,7 @@ def load_demo_data(db, created_by=None):
             (member_id, amount, month, payment_type, late_fee, payment_method, receipt_number, date)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
             (mid, amt, r['month'], r.get('payment_type') or 'monthly', late,
-             r.get('payment_method') or 'cash', r.get('receipt_number'), r.get('date')))
+             r.get('payment_method') or 'cash', r.get('receipt_number'), _d(r.get('date'))))
         db.execute('UPDATE members SET total_savings = total_savings + ? WHERE id = ?', (amt, mid))
 
     loanmap = {}
@@ -93,8 +99,8 @@ def load_demo_data(db, created_by=None):
             (r['loan_number'], mid, float(r['amount']), r['purpose'],
              int(r.get('tenure') or 12), float(r.get('interest_rate') or 0),
              float(r.get('total_repayment') or 0), float(r.get('balance') or 0),
-             r.get('status') or 'active', r.get('date_applied'), r.get('date_approved'),
-             r.get('disbursement_date'), float(r.get('disbursed_amount') or 0)))
+             r.get('status') or 'active', _d(r.get('date_applied')), _d(r.get('date_approved')),
+             _d(r.get('disbursement_date')), float(r.get('disbursed_amount') or 0)))
         loanmap[r['loan_number']] = last_insert_id(db)
 
     for r in _read('4_repayments.csv'):
@@ -107,21 +113,21 @@ def load_demo_data(db, created_by=None):
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
             (lid, float(r['amount']), float(r.get('principal_paid') or 0),
              float(r.get('interest_paid') or 0), float(r.get('penalty_paid') or 0),
-             r.get('payment_method') or 'cash', r.get('receipt_number'), r.get('date')))
+             r.get('payment_method') or 'cash', r.get('receipt_number'), _d(r.get('date'))))
 
     for i, r in enumerate(_read('5_expenses.csv'), 1):
         db.execute('''INSERT INTO expenses
             (expense_number, category, amount, description, vendor, payment_method, date)
             VALUES (?, ?, ?, ?, ?, ?, ?)''',
             (_num('EXP', i), r['category'], float(r['amount']), r.get('description'),
-             r.get('vendor'), r.get('payment_method') or 'cash', r.get('date')))
+             r.get('vendor'), r.get('payment_method') or 'cash', _d(r.get('date'))))
 
     for i, r in enumerate(_read('6_revenue.csv'), 1):
         db.execute('''INSERT INTO revenue
             (revenue_number, category, amount, description, source, date)
             VALUES (?, ?, ?, ?, ?, ?)''',
             (_num('REV', i), r['category'], float(r['amount']), r.get('description'),
-             r.get('source'), r.get('date')))
+             r.get('source'), _d(r.get('date'))))
 
     for i, r in enumerate(_read('7_investments.csv'), 1):
         db.execute('''INSERT INTO investments
@@ -130,15 +136,15 @@ def load_demo_data(db, created_by=None):
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'approved', ?)''',
             (_num('INV', i), r['name'], r['type'], float(r['amount']), r.get('institution'),
              float(r.get('interest_rate') or 0), r.get('risk_level') or 'medium',
-             r.get('start_date'), r.get('maturity_date'), r.get('description'),
-             r.get('start_date') or datetime.now()))
+             _d(r.get('start_date')), _d(r.get('maturity_date')), r.get('description'),
+             _d(r.get('start_date')) or datetime.now()))
 
     for r in _read('8_honorarium.csv'):
         db.execute('''INSERT INTO honorarium
             (recipient_name, amount, description, month, date)
             VALUES (?, ?, ?, ?, ?)''',
             (r['recipient_name'], float(r['amount']), r.get('description'),
-             r.get('month'), r.get('date')))
+             r.get('month'), _d(r.get('date'))))
 
     posted = ledger.backfill_from_transactions(db, created_by=created_by)
     return {
