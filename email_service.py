@@ -13,9 +13,13 @@ All send_* helpers are fire-and-forget: they log failures but never raise,
 so an email error never crashes the main request.
 """
 import os
+import json
 import logging
 import smtplib
 import ssl
+import urllib.error
+import urllib.request
+from email.utils import parseaddr
 from email.mime.multipart import MIMEMultipart
 from email.mime.text      import MIMEText
 
@@ -83,6 +87,66 @@ def _send_via_resend(to: str, subject: str, html: str) -> bool:
 
 # ── SMTP back-end (Gmail, Brevo, Outlook, any provider) ───────────────────────
 
+def _sender_from_address(from_addr: str) -> dict:
+    """Convert 'Name <email@example.com>' into Brevo's sender object."""
+    name, email = parseaddr(from_addr)
+    sender = {'email': email or from_addr}
+    if name:
+        sender['name'] = name
+    return sender
+
+
+def _recipient_list(to) -> list:
+    recipients = [to] if isinstance(to, str) else list(to)
+    return [{'email': parseaddr(recipient)[1] or recipient} for recipient in recipients]
+
+
+def _send_via_brevo(to: str, subject: str, html: str, text: str = '') -> bool:
+    api_key = _cfg('BREVO_API_KEY', 'brevo_api_key', 'SENDINBLUE_API_KEY')
+    from_addr = (
+        _cfg('MAIL_FROM', 'mail_from', 'MAIL_DEFAULT_SENDER', 'COOP_EMAIL')
+        or 'OOU Cooperative <noreply@cooperative.com>'
+    )
+    if not api_key:
+        return False
+
+    payload = {
+        'sender': _sender_from_address(from_addr),
+        'to': _recipient_list(to),
+        'subject': subject,
+        'htmlContent': html,
+    }
+    if text:
+        payload['textContent'] = text
+
+    request = urllib.request.Request(
+        'https://api.brevo.com/v3/smtp/email',
+        data=json.dumps(payload).encode('utf-8'),
+        headers={
+            'accept': 'application/json',
+            'api-key': api_key,
+            'content-type': 'application/json',
+        },
+        method='POST',
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=15) as response:
+            if 200 <= response.status < 300:
+                log.info('Brevo API OK: "%s" â†’ %s', subject, to)
+                return True
+            log.error('Brevo API failed ("%s" â†’ %s): HTTP %s',
+                      subject, to, response.status)
+            return False
+    except urllib.error.HTTPError as exc:
+        body = exc.read(500).decode('utf-8', errors='replace')
+        log.error('Brevo API failed ("%s" â†’ %s): HTTP %s %s',
+                  subject, to, exc.code, body)
+        return False
+    except Exception as exc:
+        log.error('Brevo API failed ("%s" â†’ %s): %s', subject, to, exc)
+        return False
+
+
 def _send_via_smtp(to: str, subject: str, html: str, text: str = '') -> bool:
     host     = _cfg('SMTP_HOST',     'smtp_host', 'MAIL_SERVER')
     port_str = _cfg('SMTP_PORT',     'smtp_port', 'MAIL_PORT') or '587'
@@ -138,7 +202,12 @@ def send_email(to: str, subject: str, html: str, text: str = '') -> bool:
     if _cfg('RESEND_API_KEY', 'resend_api_key'):
         if _send_via_resend(to, subject, html):
             return True
-        log.warning('Resend failed; trying SMTP fallback for "%s"', subject)
+        log.warning('Resend failed; trying next email provider for "%s"', subject)
+
+    if _cfg('BREVO_API_KEY', 'brevo_api_key', 'SENDINBLUE_API_KEY'):
+        if _send_via_brevo(to, subject, html, text):
+            return True
+        log.warning('Brevo API failed; trying SMTP fallback for "%s"', subject)
 
     if _cfg('SMTP_HOST', 'smtp_host', 'MAIL_SERVER'):
         return _send_via_smtp(to, subject, html, text)

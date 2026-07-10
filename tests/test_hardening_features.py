@@ -278,6 +278,65 @@ class HardeningFeatureTests(unittest.TestCase):
             email_service._send_via_resend = original_resend
             email_service.smtplib.SMTP = original_smtp
 
+    def test_email_service_sends_via_brevo_api(self):
+        import json
+        import email_service
+
+        original_env = os.environ.copy()
+        original_urlopen = email_service.urllib.request.urlopen
+        captured = {}
+
+        class FakeResponse:
+            status = 201
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+        def fake_urlopen(request, timeout=15):
+            captured['url'] = request.full_url
+            captured['timeout'] = timeout
+            captured['headers'] = dict(request.header_items())
+            captured['payload'] = json.loads(request.data.decode('utf-8'))
+            return FakeResponse()
+
+        try:
+            for key in (
+                'MAIL_ENABLED', 'ENABLE_EMAIL_NOTIFICATIONS', 'RESEND_API_KEY',
+                'BREVO_API_KEY', 'SENDINBLUE_API_KEY', 'MAIL_FROM',
+                'SMTP_HOST', 'MAIL_SERVER',
+            ):
+                os.environ.pop(key, None)
+            os.environ.update({
+                'MAIL_ENABLED': '1',
+                'BREVO_API_KEY': 'xkeysib-test',
+                'MAIL_FROM': 'OOU Coop <coop@example.test>',
+            })
+            email_service.urllib.request.urlopen = fake_urlopen
+
+            ok = email_service.send_email(
+                'member@example.test',
+                'Brevo API test',
+                '<p>Hello</p>',
+                'Hello',
+            )
+
+            self.assertTrue(ok)
+            self.assertEqual(captured['url'], 'https://api.brevo.com/v3/smtp/email')
+            self.assertEqual(captured['timeout'], 15)
+            self.assertEqual(captured['headers']['Api-key'], 'xkeysib-test')
+            self.assertEqual(captured['payload']['sender']['email'], 'coop@example.test')
+            self.assertEqual(captured['payload']['sender']['name'], 'OOU Coop')
+            self.assertEqual(captured['payload']['to'], [{'email': 'member@example.test'}])
+            self.assertEqual(captured['payload']['subject'], 'Brevo API test')
+            self.assertEqual(captured['payload']['textContent'], 'Hello')
+        finally:
+            os.environ.clear()
+            os.environ.update(original_env)
+            email_service.urllib.request.urlopen = original_urlopen
+
 
 if __name__ == '__main__':
     unittest.main()

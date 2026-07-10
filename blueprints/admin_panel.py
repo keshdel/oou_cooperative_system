@@ -18,6 +18,7 @@ admin_panel = Blueprint('admin_panel', __name__)
 _DEFAULT_SETTINGS = {
     'mail_enabled':  '0',
     'resend_api_key': '',
+    'brevo_api_key': '',
     'mail_from':     '',
     'coop_name': 'OOU Acctg 2005 Alumni CMS',
     'reg_number': 'CMS/2005/001',
@@ -81,6 +82,7 @@ _PROTECTED_SETTING_KEYS = {
     'flutterwave_secret_key',
     'flutterwave_webhook_hash',
     'resend_api_key',
+    'brevo_api_key',
     'smtp_pass',
 }
 
@@ -576,6 +578,7 @@ def update_mail_settings():
         mail_enabled   = '1' if request.form.get('mail_enabled') else '0'
         mail_from      = request.form.get('mail_from', '').strip()
         resend_api_key = request.form.get('resend_api_key', '').strip()
+        brevo_api_key  = request.form.get('brevo_api_key', '').strip()
         smtp_host      = request.form.get('smtp_host', '').strip()
         smtp_port      = request.form.get('smtp_port', '587').strip() or '587'
         smtp_user      = request.form.get('smtp_user', '').strip()
@@ -590,6 +593,8 @@ def update_mail_settings():
         }
         if resend_api_key:
             updates['resend_api_key'] = resend_api_key
+        if brevo_api_key:
+            updates['brevo_api_key'] = brevo_api_key
         if smtp_pass:
             updates['smtp_pass'] = smtp_pass  # blank → keep existing
 
