@@ -19,3 +19,4 @@ python-barcode==0.14.0
 cryptography==41.0.7
 pyotp==2.9.0
 PyJWT==2.8.0
+openpyxl==3.1.2

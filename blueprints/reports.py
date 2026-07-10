@@ -206,6 +206,50 @@ def financial_report():
         bs   = balance_sheet(db, as_of=to_date)
         appr = surplus_appropriation(inc['net_surplus'])
         cf   = cash_flow(db, from_date, to_date)
+
+        fmt = request.args.get('format')
+        if fmt:
+            from report_export import report_response
+            def _r(label, val, bold=False):
+                return {'cells': [label, val], 'bold': bold}
+            inc_rows = [
+                _r('Loan interest earned', inc['loan_interest']),
+                _r('Fees & other income', inc['fee_income']),
+                _r('Investment returns', inc['investment_income']),
+                _r('Total income', inc['total_income'], True),
+                _r('Operating expenses', -inc['operating_expenses']),
+                _r('Honorarium', -inc['honorarium']),
+                _r('Total expenses', -inc['total_expenses'], True),
+                _r('Net surplus / (deficit)', inc['net_surplus'], True),
+            ]
+            bs_rows = [
+                _r('Cash & bank', bs['cash']),
+                _r('Investments', bs['investments']),
+                _r('Loans receivable', bs['loans_receivable']),
+                _r('Total assets', bs['total_assets'], True),
+                _r('Member deposits (liability)', bs['member_deposits']),
+                _r('Accumulated surplus (equity)', bs['accumulated_surplus']),
+                _r('Total liabilities & equity', bs['total_liabilities'] + bs['total_equity'], True),
+            ]
+            cf_rows = [_r('Opening cash', cf['opening'])]
+            for cat in ('operating', 'investing', 'financing'):
+                for it in cf['groups'][cat]:
+                    cf_rows.append(_r(f"{cat.title()}: {it['name']}", it['amount']))
+            cf_rows += [_r('Net change in cash', cf['net_change'], True),
+                        _r('Closing cash', cf['closing'], True)]
+            report = {
+                'title': 'Financial Statements',
+                'subtitle': f'{from_date} to {to_date}',
+                'sections': [
+                    {'heading': 'Income Statement', 'columns': ['', 'Amount'], 'rows': inc_rows},
+                    {'heading': f'Balance Sheet (as at {to_date})', 'columns': ['', 'Amount'], 'rows': bs_rows},
+                    {'heading': 'Cash Flow Statement', 'columns': ['', 'Amount'], 'rows': cf_rows},
+                ],
+            }
+            return report_response(report, fmt,
+                                   redirect_url=url_for('reports.financial_report',
+                                                        from_date=from_date, to_date=to_date))
+
         return render_template('admin/financial-report.html',
                                from_date=from_date, to_date=to_date,
                                inc=inc, bs=bs, appr=appr, cf=cf)

@@ -37,6 +37,16 @@ def trial_balance_view():
     db = get_db()
     as_of = request.args.get('as_of', datetime.now().strftime('%Y-%m-%d'))
     tb = trial_balance(db, as_of=as_of)
+    fmt = request.args.get('format')
+    if fmt:
+        from report_export import report_response
+        rows = [{'cells': [r['code'], r['name'], r['type'].title(), r['debit'], r['credit']]}
+                for r in tb['rows']]
+        rows.append({'cells': ['', 'Totals', '', tb['total_debit'], tb['total_credit']], 'bold': True})
+        report = {'title': 'Trial Balance', 'subtitle': f'As at {as_of}',
+                  'sections': [{'columns': ['Code', 'Account', 'Type', 'Debit', 'Credit'], 'rows': rows}]}
+        return report_response(report, fmt,
+                               redirect_url=url_for('accounting.trial_balance_view', as_of=as_of))
     return render_template('accounting/trial_balance.html', tb=tb, as_of=as_of)
 
 
@@ -121,6 +131,31 @@ def dividend_detail(decl_id):
         FROM dividend_allocations da JOIN members m ON m.id = da.member_id
         WHERE da.declaration_id = ? ORDER BY da.total DESC
     ''', (decl_id,)).fetchall()
+    fmt = request.args.get('format')
+    if fmt:
+        from report_export import report_response
+        appro = [
+            {'cells': ['Net surplus', decl['net_surplus']], 'bold': True},
+            {'cells': ['Statutory reserve', decl['reserve_amount']]},
+            {'cells': ['Honorarium', decl['honorarium_amount']]},
+            {'cells': ['Other', decl['other_amount']]},
+            {'cells': ['Dividend pool', decl['dividend_pool']], 'bold': True},
+        ]
+        alloc_rows = [{'cells': [a['member_number'], f"{a['first_name']} {a['last_name']}",
+                                 a['savings_base'], a['dividend_savings'],
+                                 a['dividend_patronage'], a['total']]} for a in allocs]
+        report = {
+            'title': 'Dividend Declaration',
+            'subtitle': f"{decl['period_from']} to {decl['period_to']}",
+            'sections': [
+                {'heading': 'Appropriation', 'columns': ['', 'Amount'], 'rows': appro},
+                {'heading': 'Member Allocations',
+                 'columns': ['Member No', 'Name', 'Savings', 'On savings', 'Patronage', 'Total'],
+                 'rows': alloc_rows},
+            ],
+        }
+        return report_response(report, fmt,
+                               redirect_url=url_for('accounting.dividend_detail', decl_id=decl_id))
     return render_template('accounting/dividend_detail.html', decl=decl, allocs=allocs)
 
 

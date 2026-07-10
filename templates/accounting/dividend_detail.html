@@ -9,7 +9,8 @@
         </div>
         <div class="col-md-4 text-end">
             <a href="{{ url_for('accounting.dividends') }}" class="btn btn-outline-secondary btn-sm"><i class="fas fa-arrow-left"></i> Back</a>
-            <button class="btn btn-primary btn-sm" onclick="window.print()"><i class="fas fa-print"></i> Print</button>
+            <a href="{{ url_for('accounting.dividend_detail', decl_id=decl.id, format='pdf') }}" class="btn btn-outline-danger btn-sm"><i class="fas fa-file-pdf"></i> PDF</a>
+            <a href="{{ url_for('accounting.dividend_detail', decl_id=decl.id, format='xlsx') }}" class="btn btn-outline-success btn-sm"><i class="fas fa-file-excel"></i> Excel</a>
         </div>
     </div>
 

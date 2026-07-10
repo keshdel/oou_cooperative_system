@@ -13,9 +13,10 @@
             <a href="{{ url_for('reports.reports_list') }}" class="btn btn-secondary">
                 <i class="fas fa-arrow-left"></i> Back
             </a>
-            <button class="btn btn-primary" onclick="window.print()">
-                <i class="fas fa-print"></i> Print
-            </button>
+            <a href="{{ url_for('reports.financial_report', from_date=from_date, to_date=to_date, format='pdf') }}"
+               class="btn btn-outline-danger"><i class="fas fa-file-pdf"></i> PDF</a>
+            <a href="{{ url_for('reports.financial_report', from_date=from_date, to_date=to_date, format='xlsx') }}"
+               class="btn btn-outline-success"><i class="fas fa-file-excel"></i> Excel</a>
         </div>
     </div>
 

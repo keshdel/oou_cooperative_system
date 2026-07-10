@@ -10,7 +10,8 @@
         <div class="col-md-4 text-end">
             <a href="{{ url_for('accounting.chart_of_accounts') }}" class="btn btn-outline-secondary btn-sm">Chart of Accounts</a>
             <a href="{{ url_for('accounting.journal_register') }}" class="btn btn-outline-secondary btn-sm">Journal</a>
-            <button class="btn btn-primary btn-sm" onclick="window.print()"><i class="fas fa-print"></i> Print</button>
+            <a href="{{ url_for('accounting.trial_balance_view', as_of=as_of, format='pdf') }}" class="btn btn-outline-danger btn-sm"><i class="fas fa-file-pdf"></i> PDF</a>
+            <a href="{{ url_for('accounting.trial_balance_view', as_of=as_of, format='xlsx') }}" class="btn btn-outline-success btn-sm"><i class="fas fa-file-excel"></i> Excel</a>
         </div>
     </div>
 
