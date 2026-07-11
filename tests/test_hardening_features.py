@@ -404,6 +404,62 @@ class HardeningFeatureTests(unittest.TestCase):
         self.assertTrue(db.executed)
         self.assertFalse(db.committed)
 
+    def test_financial_references_are_unique_when_present(self):
+        member_id = self.create_member()
+        with self.app.app_context():
+            db = get_db()
+
+            db.execute('''
+                INSERT INTO savings
+                    (member_id, amount, month, payment_type, payment_method,
+                     receipt_number, date)
+                VALUES (?, 1000, '2026-08', 'monthly', 'cash', 'RCPT/UNIQUE/1', '2026-08-01')
+            ''', (member_id,))
+            with self.assertRaises(Exception):
+                db.execute('''
+                    INSERT INTO savings
+                        (member_id, amount, month, payment_type, payment_method,
+                         receipt_number, date)
+                    VALUES (?, 1000, '2026-08', 'monthly', 'cash', 'RCPT/UNIQUE/1', '2026-08-01')
+                ''', (member_id,))
+            db.rollback()
+
+            loan_number = 'LOAN/UNIQUE/1'
+            db.execute('''
+                INSERT INTO loans
+                    (loan_number, member_id, amount, purpose, tenure, interest_rate,
+                     total_repayment, balance, status, date_applied)
+                VALUES (?, ?, 10000, 'Regular', 6, 10, 10500, 10500, 'active', '2026-08-01')
+            ''', (loan_number, member_id))
+            loan_id = db.execute(
+                'SELECT id FROM loans WHERE loan_number = ?', (loan_number,)
+            ).fetchone()['id']
+            db.execute('''
+                INSERT INTO repayments
+                    (repayment_number, loan_id, amount, reference, date)
+                VALUES ('REP/UNIQUE/1', ?, 1000, 'PAY-UNIQUE-1', '2026-08-02')
+            ''', (loan_id,))
+            with self.assertRaises(Exception):
+                db.execute('''
+                    INSERT INTO repayments
+                        (repayment_number, loan_id, amount, reference, date)
+                    VALUES ('REP/UNIQUE/2', ?, 1000, 'PAY-UNIQUE-1', '2026-08-02')
+                ''', (loan_id,))
+            db.rollback()
+
+            db.execute('''
+                INSERT INTO journal_entries
+                    (entry_number, date, description, reference)
+                VALUES ('JE-UNIQUE-1', '2026-08-03', 'Unique ref test', 'JREF-UNIQUE-1')
+            ''')
+            with self.assertRaises(Exception):
+                db.execute('''
+                    INSERT INTO journal_entries
+                        (entry_number, date, description, reference)
+                    VALUES ('JE-UNIQUE-2', '2026-08-03', 'Unique ref duplicate', 'JREF-UNIQUE-1')
+                ''')
+            db.rollback()
+
 
 if __name__ == '__main__':
     unittest.main()

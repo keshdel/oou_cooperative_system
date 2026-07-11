@@ -776,6 +776,13 @@ def init_db():
     _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_repayments_reference ON repayments(reference)')
     _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_pending_payments_member_status ON pending_payments(member_id, status)')
     _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, is_read)')
+    # Idempotency guards for financial document references. Blank/NULL values
+    # remain allowed for legacy rows, but any real business reference can only
+    # appear once.
+    _exec_ignore(db, "CREATE UNIQUE INDEX IF NOT EXISTS uq_savings_receipt_number ON savings(receipt_number) WHERE receipt_number IS NOT NULL AND receipt_number != ''")
+    _exec_ignore(db, "CREATE UNIQUE INDEX IF NOT EXISTS uq_savings_reference ON savings(reference) WHERE reference IS NOT NULL AND reference != ''")
+    _exec_ignore(db, "CREATE UNIQUE INDEX IF NOT EXISTS uq_repayments_reference ON repayments(reference) WHERE reference IS NOT NULL AND reference != ''")
+    _exec_ignore(db, "CREATE UNIQUE INDEX IF NOT EXISTS uq_journal_entries_reference ON journal_entries(reference) WHERE reference IS NOT NULL AND reference != ''")
 
     # ── Default settings ───────────────────────────────────────────────────────
     default_settings = [
