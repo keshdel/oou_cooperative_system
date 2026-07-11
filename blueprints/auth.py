@@ -1,12 +1,25 @@
+import hmac
+import os
+
 from flask import Blueprint, render_template, redirect, url_for, request, flash
 from flask_login import login_user, login_required, logout_user
-from werkzeug.security import check_password_hash
+from werkzeug.security import check_password_hash, generate_password_hash
 
 from database import get_db
 from security import log_audit
 from utils import User, is_rate_limited, lockout_seconds_remaining, record_failed_login, clear_login_attempts
 
 auth = Blueprint('auth', __name__)
+
+
+def _support_routes_enabled():
+    return os.environ.get('ENABLE_SUPPORT_ROUTES') == '1'
+
+
+def _reset_token_is_valid():
+    expected_token = os.environ.get('RESET_TOKEN', '')
+    provided_token = request.form.get('token') or request.headers.get('X-Reset-Token', '')
+    return bool(expected_token and provided_token and hmac.compare_digest(provided_token, expected_token))
 
 
 @auth.route('/')
@@ -101,76 +114,33 @@ def logout():
 
 @auth.route('/setup')
 def setup():
-    import os
-    if os.environ.get('ENABLE_SUPPORT_ROUTES') != '1':
-        return '<h2>Not available</h2>', 404
-    try:
-        import subprocess
-        subprocess.run(['python', 'init_settings.py'])
-        flash('Setup completed!', 'success')
-    except Exception as e:
-        flash(f'Setup error: {str(e)}', 'danger')
-    return redirect(url_for('main.dashboard'))
+    return '<h2>Not available</h2>', 404
 
 
 @auth.route('/debug-auth')
 def debug_auth():
-    """Temporary diagnostic endpoint — requires RESET_TOKEN."""
-    import os
-    from flask import request as req
-    if os.environ.get('ENABLE_SUPPORT_ROUTES') != '1':
-        return '<h2>Not available</h2>', 404
-    expected_token = os.environ.get('RESET_TOKEN', '')
-    provided_token = req.args.get('token', '')
-    if not expected_token or provided_token != expected_token:
-        return '<h2>Not available</h2>', 403
-
-    db   = get_db()
-    rows = db.execute('SELECT id, username, role, must_change_password, created_at FROM users').fetchall()
-    db_path = os.environ.get('SQLITE_DB_PATH', 'cooperative.db (default)')
-    admin_pw = os.environ.get('ADMIN_PASSWORD', '')
-    pw_hint  = (admin_pw[:3] + '***') if admin_pw else 'NOT SET'
-
-    lines = [f'<p><b>DB path:</b> {db_path}</p>']
-    lines.append(f'<p><b>ADMIN_PASSWORD hint:</b> {pw_hint}</p>')
-    lines.append(f'<p><b>Users in DB ({len(rows)}):</b></p><ul>')
-    for r in rows:
-        lines.append(f'<li>id={r["id"]} username=<b>{r["username"]}</b> role={r["role"]} must_change={r["must_change_password"]} created={r["created_at"]}</li>')
-    lines.append('</ul>')
-    return ''.join(lines), 200
+    return '<h2>Not available</h2>', 404
 
 
-@auth.route('/emergency-reset')
+@auth.route('/emergency-reset', methods=['GET', 'POST'])
 def emergency_reset():
     """
     Emergency admin password reset.
-    Requires ?token=<RESET_TOKEN> in the URL where RESET_TOKEN is an env var
-    you set in Railway. After resetting, delete the RESET_TOKEN variable.
-
-    Example:
-      Set RESET_TOKEN=my-secret-reset-key in Railway variables
-      Visit /emergency-reset?token=my-secret-reset-key
-      Admin password is reset to whatever ADMIN_PASSWORD is set to
+    Enable with ENABLE_SUPPORT_ROUTES=1, then send RESET_TOKEN by POST body or
+    X-Reset-Token header. After resetting, delete the support variables.
     """
-    import os
-    from flask import request as req
-    from werkzeug.security import generate_password_hash
-
-    if os.environ.get('ENABLE_SUPPORT_ROUTES') != '1':
+    if not _support_routes_enabled():
         return '<h2>Not available</h2>', 404
 
-    expected_token = os.environ.get('RESET_TOKEN', '')
-    provided_token = req.args.get('token', '')
+    if request.method != 'POST':
+        return '<h2>Reset requires POST.</h2>', 405
 
-    if not expected_token:
-        return '<h2>Reset not available.</h2><p>RESET_TOKEN environment variable is not set.</p>', 403
-
-    if not provided_token or provided_token != expected_token:
+    if not _reset_token_is_valid():
         return '<h2>Invalid token.</h2>', 403
 
     new_password = os.environ.get('ADMIN_PASSWORD', '')
     if not new_password:
-        return '<h2>ADMIN_PASSWORD is not set.</h2><p>Set it in Railway variables first.</p>', 400
+        return '<h2>Reset not available.</h2>', 400
 
     try:
         db = get_db()
@@ -181,15 +151,14 @@ def emergency_reset():
         db.commit()
         rows = db.execute('SELECT id, username, role FROM users WHERE username = ?', ('admin',)).fetchone()
         if rows:
-            return f'''
+            return '''
             <h2 style="color:green">&#10003; Admin password reset successfully.</h2>
             <p>Username: <strong>admin</strong></p>
-            <p>Password: <strong>the value you set in ADMIN_PASSWORD</strong></p>
             <p><a href="/login">Go to Login</a></p>
             <hr>
-            <p style="color:red"><strong>Security:</strong> Remove RESET_TOKEN from your Railway variables now.</p>
+            <p style="color:red"><strong>Security:</strong> Remove support reset variables now.</p>
             ''', 200
         else:
             return '<h2>Admin user not found.</h2><p>No user with username "admin" exists in the database.</p>', 404
-    except Exception as e:
-        return f'<h2>Error</h2><pre>{e}</pre>', 500
+    except Exception:
+        return '<h2>Reset failed.</h2>', 500

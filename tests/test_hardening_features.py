@@ -1,6 +1,7 @@
 import os
 import unittest
 from io import BytesIO
+from unittest.mock import patch
 
 
 TEST_DB = os.path.abspath('.test-hardening-features.db')
@@ -64,6 +65,32 @@ class HardeningFeatureTests(unittest.TestCase):
         for path in ('/setup', '/debug-auth', '/emergency-reset'):
             response = self.client.get(path)
             self.assertEqual(response.status_code, 404, path)
+
+    def test_support_diagnostics_remain_disabled_when_flag_enabled(self):
+        with patch.dict(os.environ, {'ENABLE_SUPPORT_ROUTES': '1', 'RESET_TOKEN': 'test-reset-token'}):
+            for path in ('/setup', '/debug-auth'):
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, 404, path)
+
+    def test_emergency_reset_requires_post_and_non_url_token(self):
+        support_env = {
+            'ENABLE_SUPPORT_ROUTES': '1',
+            'RESET_TOKEN': 'test-reset-token',
+            'ADMIN_PASSWORD': 'TestAdmin123',
+        }
+        with patch.dict(os.environ, support_env):
+            get_response = self.client.get('/emergency-reset?token=test-reset-token')
+            self.assertEqual(get_response.status_code, 405)
+
+            query_token_response = self.client.post('/emergency-reset?token=test-reset-token')
+            self.assertEqual(query_token_response.status_code, 403)
+
+            form_token_response = self.client.post(
+                '/emergency-reset',
+                data={'token': 'test-reset-token'},
+            )
+            self.assertEqual(form_token_response.status_code, 200)
+            self.assertNotIn(b'TestAdmin123', form_token_response.data)
 
     def test_mobile_repayment_is_fail_closed(self):
         login = self.client.post(
