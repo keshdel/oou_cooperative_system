@@ -99,11 +99,17 @@ def add_event():
     if not title:
         flash('Event title is required.', 'danger')
         return redirect(url_for('governance.manage'))
-    db.execute('''INSERT INTO events (title, event_type, event_date, location, description, created_by)
-                  VALUES (?, ?, ?, ?, ?, ?)''',
+    # Meeting link (virtual AGM/meeting) — only accept http(s) URLs.
+    link = request.form.get('meeting_link', '').strip()
+    if link and not link.lower().startswith(('http://', 'https://')):
+        link = 'https://' + link
+    if link and not link.lower().startswith(('http://', 'https://')):
+        link = ''
+    db.execute('''INSERT INTO events (title, event_type, event_date, location, meeting_link, description, created_by)
+                  VALUES (?, ?, ?, ?, ?, ?, ?)''',
                (title, request.form.get('event_type', 'announcement'),
                 request.form.get('event_date') or None,
-                request.form.get('location', '').strip(),
+                request.form.get('location', '').strip(), link or None,
                 request.form.get('description', '').strip(), current_user.id))
     db.commit()
     audit(db, 'ADD_EVENT', 'governance', f'Added event: {title}')

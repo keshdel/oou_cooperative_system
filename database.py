@@ -616,12 +616,15 @@ def init_db():
             event_type TEXT DEFAULT 'announcement',
             event_date TIMESTAMP,
             location TEXT,
+            meeting_link TEXT,
             description TEXT,
             is_active INTEGER DEFAULT 1,
             created_by INTEGER,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     '''))
+    # Virtual-meeting link (guard for databases created before this column existed)
+    _add_col(db, 'events', 'meeting_link', 'TEXT')
     # Minutes of meeting repository — file stored in the DB so it survives
     # redeploys on platforms with an ephemeral filesystem (e.g. Railway).
     db.execute(_adapt('''

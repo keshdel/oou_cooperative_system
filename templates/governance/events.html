@@ -18,11 +18,17 @@
             <div class="card h-100 border-primary">
                 <div class="card-body">
                     <span class="badge bg-primary text-uppercase mb-2">{{ e.event_type }}</span>
+                    {% if e.meeting_link %}<span class="badge bg-danger mb-2"><i class="fas fa-video"></i> Virtual</span>{% endif %}
                     <h5 class="card-title">{{ e.title }}</h5>
                     <p class="mb-1"><i class="fas fa-calendar text-muted"></i>
                         {{ (e.event_date|string)[:16] if e.event_date else 'Date to be announced' }}</p>
                     {% if e.location %}<p class="mb-1"><i class="fas fa-map-marker-alt text-muted"></i> {{ e.location }}</p>{% endif %}
-                    {% if e.description %}<p class="small text-muted mb-0">{{ e.description }}</p>{% endif %}
+                    {% if e.description %}<p class="small text-muted mb-2">{{ e.description }}</p>{% endif %}
+                    {% if e.meeting_link %}
+                    <a href="{{ e.meeting_link }}" target="_blank" rel="noopener noreferrer" class="btn btn-danger btn-sm">
+                        <i class="fas fa-video"></i> Join Meeting
+                    </a>
+                    {% endif %}
                 </div>
             </div>
         </div>

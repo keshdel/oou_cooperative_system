@@ -8,15 +8,24 @@
     {% if events %}
     <div class="mb-4">
         {% for e in events %}
-        <div class="alert {{ 'alert-warning' if e.event_type in ['agm','meeting'] else 'alert-info' }} d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2 p-3 rounded text-white"
+             style="background: linear-gradient(90deg,#c0392b,#e74c3c);">
             <div>
-                <span class="badge bg-{{ 'dark' if e.event_type in ['agm','meeting'] else 'secondary' }} text-uppercase me-2">{{ e.event_type }}</span>
+                <span class="badge bg-light text-danger text-uppercase me-2">{{ e.event_type }}</span>
                 <strong>{{ e.title }}</strong>
                 {% if e.event_date %}<span class="ms-2"><i class="fas fa-calendar"></i> {{ (e.event_date|string)[:16] }}</span>{% endif %}
                 {% if e.location %}<span class="ms-2"><i class="fas fa-map-marker-alt"></i> {{ e.location }}</span>{% endif %}
+                {% if e.meeting_link %}<span class="badge bg-light text-danger ms-2"><i class="fas fa-video"></i> Virtual</span>{% endif %}
                 {% if e.description %}<div class="small mt-1">{{ e.description }}</div>{% endif %}
             </div>
-            <a href="{{ url_for('governance.events_list') }}" class="btn btn-sm btn-outline-dark">All events</a>
+            <div class="d-flex gap-2">
+                {% if e.meeting_link %}
+                <a href="{{ e.meeting_link }}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-light fw-semibold text-danger">
+                    <i class="fas fa-video"></i> Join Meeting
+                </a>
+                {% endif %}
+                <a href="{{ url_for('governance.events_list') }}" class="btn btn-sm btn-outline-light">All events</a>
+            </div>
         </div>
         {% endfor %}
     </div>
