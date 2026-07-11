@@ -20,7 +20,6 @@ def log_audit(db, user_id, username, action, module, description,
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
             (user_id, username, action, module, description, ip_address, user_agent, data)
         )
-        db.commit()
     except Exception as exc:
         print(f"[audit] failed to write log: {exc}")
 

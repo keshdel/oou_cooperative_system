@@ -386,6 +386,24 @@ class HardeningFeatureTests(unittest.TestCase):
         self.assertFalse(processed)
         self.assertTrue(db.rolled_back)
 
+    def test_audit_log_does_not_commit_caller_transaction(self):
+        from security import log_audit
+
+        class FakeDb:
+            committed = False
+            executed = False
+
+            def execute(self, sql, params=()):
+                self.executed = True
+
+            def commit(self):
+                self.committed = True
+
+        db = FakeDb()
+        log_audit(db, 1, 'admin', 'TEST', 'security', 'audit test')
+        self.assertTrue(db.executed)
+        self.assertFalse(db.committed)
+
 
 if __name__ == '__main__':
     unittest.main()

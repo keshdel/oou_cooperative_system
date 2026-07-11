@@ -48,6 +48,7 @@ def login():
             )
             login_user(user_obj)
             log_audit(db, user['id'], user['username'], 'LOGIN', 'auth', 'User logged in', ip, ua)
+            db.commit()
             if user_obj.must_change_password:
                 flash('Welcome! You must set a new password before you can continue.', 'warning')
                 return redirect(url_for('portal.change_password'))
@@ -58,6 +59,7 @@ def login():
             remaining_attempts = 5 - len([1 for _ in range(1)])  # recalculate
             log_audit(db, None, username, 'FAILED_LOGIN', 'auth',
                       f'Failed login attempt for username: {username}', ip, ua)
+            db.commit()
             # Count how many attempts remain before lockout
             from utils import _recent_attempts
             attempts_so_far = len(_recent_attempts(ip))
@@ -91,6 +93,7 @@ def logout():
     db = get_db()
     from utils import audit
     audit(db, 'LOGOUT', 'auth', 'User logged out')
+    db.commit()
     logout_user()
     flash('You have been logged out', 'info')
     return redirect(url_for('auth.index'))
