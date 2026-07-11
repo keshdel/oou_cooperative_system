@@ -27,6 +27,12 @@ INVESTMENT_INCOME = '4200'
 OPERATING_EXPENSES = '5000'
 HONORARIUM      = '5100'
 
+OPERATIONAL_REVENUE_CATEGORIES = {
+    'Late Fee',
+    'Loan Insurance',
+    'Loan Application Fee',
+}
+
 
 def get_accounts(db, active_only=True):
     sql = 'SELECT code, name, type, normal_balance, parent_code, is_active FROM accounts'
@@ -204,6 +210,7 @@ def ledger_reconciliation(db, sample_limit=10):
                COALESCE(NULLIF(revenue_number, ''), 'REV-' || CAST(id AS TEXT)) AS ref,
                date, amount, source AS month
         FROM revenue
+        WHERE COALESCE(category, '') NOT IN ('Late Fee', 'Loan Insurance', 'Loan Application Fee')
         ORDER BY date DESC, id DESC
     ''', sample_limit))
 
@@ -347,6 +354,8 @@ def backfill_from_transactions(db, created_by=None):
 
     # Revenue
     for rv in db.execute('SELECT * FROM revenue').fetchall():
+        if rv['category'] in OPERATIONAL_REVENUE_CATEGORIES:
+            continue
         ref = rv['revenue_number'] or f"REV-{rv['id']}"
         if _je_exists_ref(db, ref):
             continue

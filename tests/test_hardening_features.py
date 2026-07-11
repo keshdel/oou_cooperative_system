@@ -17,7 +17,7 @@ except FileNotFoundError:
 
 import app as app_module  # noqa: E402
 from database import get_db  # noqa: E402
-from ledger import ledger_reconciliation  # noqa: E402
+from ledger import backfill_from_transactions, ledger_reconciliation  # noqa: E402
 from reports_engine import income_statement  # noqa: E402
 
 
@@ -457,7 +457,31 @@ class HardeningFeatureTests(unittest.TestCase):
                     INSERT INTO journal_entries
                         (entry_number, date, description, reference)
                     VALUES ('JE-UNIQUE-2', '2026-08-03', 'Unique ref duplicate', 'JREF-UNIQUE-1')
-                ''')
+            ''')
+            db.rollback()
+
+    def test_operational_fee_revenue_is_not_backfilled_twice(self):
+        with self.app.app_context():
+            db = get_db()
+            db.execute('''
+                INSERT INTO revenue
+                    (revenue_number, category, amount, description, source, date)
+                VALUES
+                    ('REV/OPERATIONAL/MEMO/1', 'Late Fee', 500,
+                     'Late fee already posted with savings journal', 'Savings', '2026-09-01')
+            ''')
+
+            posted = backfill_from_transactions(db, created_by=1)
+            duplicate = db.execute(
+                "SELECT id FROM journal_entries WHERE reference = 'REV/OPERATIONAL/MEMO/1'"
+            ).fetchone()
+            rec = ledger_reconciliation(db, sample_limit=1000)
+            revenue_section = next(s for s in rec['sections'] if s['label'] == 'Revenue')
+            sample_refs = {r['ref'] for r in revenue_section['samples']}
+
+            self.assertIsNone(duplicate)
+            self.assertNotIn('REV/OPERATIONAL/MEMO/1', sample_refs)
+            self.assertGreaterEqual(posted, 0)
             db.rollback()
 
 
