@@ -136,6 +136,7 @@ def utility_processor():
     coop_short = db.execute("SELECT value FROM settings WHERE key = 'coop_short_name'").fetchone()
 
     unread_count = 0
+    pending_savings_requests = 0
     if current_user.is_authenticated:
         try:
             row = db.execute(
@@ -145,6 +146,14 @@ def utility_processor():
             unread_count = row[0] if row else 0
         except Exception:
             pass
+        if getattr(current_user, 'role', '') in ('admin', 'secretary', 'treasurer'):
+            try:
+                row = db.execute(
+                    "SELECT COUNT(*) FROM savings_change_requests WHERE status = 'pending'"
+                ).fetchone()
+                pending_savings_requests = row[0] if row else 0
+            except Exception:
+                pass
 
     return {
         'now':                      datetime.now,
@@ -152,6 +161,7 @@ def utility_processor():
         'coop_logo':                coop_logo['value']  if coop_logo  else '',
         'coop_short_name':          coop_short['value'] if coop_short else 'Coop',
         'unread_notifications_count': unread_count,
+        'pending_savings_requests': pending_savings_requests,
     }
 
 

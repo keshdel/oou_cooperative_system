@@ -9,7 +9,7 @@ from flask_login import login_required
 from werkzeug.utils import secure_filename
 
 from database import get_db, last_insert_id
-from email_service import send_welcome_email
+from email_service import send_welcome_email, send_email
 from utils import role_required, validate_image, audit, notify_member
 
 members = Blueprint('members', __name__)
@@ -433,3 +433,95 @@ def member_card(member_id):
                            member=member,
                            photo_static=photo_static,
                            coop=coop)
+
+
+# ── Savings-amendment approval workflow ──────────────────────────────────────
+
+@members.route('/savings-requests')
+@login_required
+@role_required('admin', 'secretary', 'treasurer')
+def savings_requests():
+    """Staff queue of member requests to change their monthly savings amount."""
+    db = get_db()
+    rows = db.execute('''
+        SELECT r.*, m.first_name, m.last_name, m.member_number, m.email
+        FROM savings_change_requests r
+        JOIN members m ON m.id = r.member_id
+        ORDER BY CASE WHEN r.status = 'pending' THEN 0 ELSE 1 END,
+                 r.requested_at DESC, r.id DESC
+    ''').fetchall()
+    pending = [r for r in rows if r['status'] == 'pending']
+    history = [r for r in rows if r['status'] != 'pending']
+    return render_template('admin/savings-requests.html',
+                           pending=pending, history=history)
+
+
+@members.route('/savings-requests/<int:req_id>/act', methods=['POST'])
+@login_required
+@role_required('admin', 'secretary', 'treasurer')
+def savings_request_act(req_id):
+    from flask_login import current_user
+    db = get_db()
+    action = request.form.get('action', '')
+    comment = request.form.get('comment', '').strip()
+
+    req = db.execute('''
+        SELECT r.*, m.first_name, m.last_name, m.member_number, m.email
+        FROM savings_change_requests r
+        JOIN members m ON m.id = r.member_id
+        WHERE r.id = ?''', (req_id,)).fetchone()
+    if not req:
+        flash('Request not found.', 'danger')
+        return redirect(url_for('members.savings_requests'))
+    if req['status'] != 'pending':
+        flash('This request has already been reviewed.', 'warning')
+        return redirect(url_for('members.savings_requests'))
+
+    reviewer = getattr(current_user, 'full_name', None) or getattr(current_user, 'username', 'Staff')
+    now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+    if action == 'approve':
+        # Apply the new monthly savings amount to the member record.
+        db.execute("UPDATE members SET monthly_savings = ? WHERE id = ?",
+                   (req['requested_amount'], req['member_id']))
+        db.execute('''UPDATE savings_change_requests
+                      SET status = 'approved', reviewed_by = ?, reviewed_by_name = ?,
+                          reviewed_at = ?, review_comment = ? WHERE id = ?''',
+                   (getattr(current_user, 'id', None), reviewer, now, comment, req_id))
+        db.commit()
+        audit(db, 'SAVINGS_CHANGE_APPROVED', 'members',
+              f"Member {req['member_id']} monthly savings set to ₦{req['requested_amount']:,.2f}")
+        msg = (f"Your request to change your monthly savings to "
+               f"₦{req['requested_amount']:,.2f} has been approved and now takes effect.")
+        notify_member(db, req['email'], 'Savings Change Approved', msg,
+                      notification_type='success', action_url=url_for('portal.member_portal'))
+        if req['email']:
+            send_email(req['email'], 'Savings Change Approved',
+                       f"<p>Dear {req['first_name']},</p><p>{msg}</p>"
+                       + (f"<p><em>Note from the office:</em> {comment}</p>" if comment else "")
+                       + "<p>OOU Cooperative</p>")
+        flash('Request approved — the member\'s monthly savings has been updated.', 'success')
+
+    elif action == 'reject':
+        db.execute('''UPDATE savings_change_requests
+                      SET status = 'rejected', reviewed_by = ?, reviewed_by_name = ?,
+                          reviewed_at = ?, review_comment = ? WHERE id = ?''',
+                   (getattr(current_user, 'id', None), reviewer, now, comment, req_id))
+        db.commit()
+        audit(db, 'SAVINGS_CHANGE_REJECTED', 'members',
+              f"Member {req['member_id']} savings-change request rejected")
+        msg = (f"Your request to change your monthly savings to "
+               f"₦{req['requested_amount']:,.2f} was not approved.")
+        notify_member(db, req['email'], 'Savings Change Not Approved',
+                      msg + (f" Reason: {comment}" if comment else ""),
+                      notification_type='warning', action_url=url_for('portal.member_portal'))
+        if req['email']:
+            send_email(req['email'], 'Savings Change Not Approved',
+                       f"<p>Dear {req['first_name']},</p><p>{msg}</p>"
+                       + (f"<p><em>Reason:</em> {comment}</p>" if comment else "")
+                       + "<p>OOU Cooperative</p>")
+        flash('Request rejected and the member notified.', 'info')
+    else:
+        flash('Unknown action.', 'danger')
+
+    return redirect(url_for('members.savings_requests'))

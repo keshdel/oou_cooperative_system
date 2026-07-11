@@ -106,6 +106,13 @@
                        class="{% if request.blueprint == 'savings' %}active{% endif %}">
                         <i class="fas fa-piggy-bank"></i> Savings
                     </a>
+                    {% if current_user.role in ['admin', 'secretary', 'treasurer'] %}
+                    <a href="{{ url_for('members.savings_requests') }}"
+                       class="{% if request.endpoint and 'savings_request' in request.endpoint %}active{% endif %}">
+                        <i class="fas fa-hand-holding-usd"></i> Savings Requests
+                        {% if pending_savings_requests %}<span class="badge bg-warning text-dark ms-1">{{ pending_savings_requests }}</span>{% endif %}
+                    </a>
+                    {% endif %}
                     <a href="{{ url_for('loans.loans_list') }}"
                        class="{% if request.blueprint == 'loans' %}active{% endif %}">
                         <i class="fas fa-hand-holding-usd"></i> Loans

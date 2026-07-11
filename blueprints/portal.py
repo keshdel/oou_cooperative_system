@@ -683,21 +683,39 @@ def change_savings_request():
                 flash('Minimum monthly savings is ₦5,000 (bye-laws 8.2.2).', 'danger')
                 return redirect(url_for('portal.change_savings_request'))
 
-            # Notify admin of the request
-            admin_users = db.execute("SELECT email FROM users WHERE role = 'admin'").fetchall()
-            for admin in admin_users:
-                notify_member(db, admin['email'],
+            current_amt = float(member['monthly_savings'] or 0)
+
+            # Block a duplicate request while one is still pending.
+            pending = db.execute(
+                "SELECT id FROM savings_change_requests WHERE member_id = ? AND status = 'pending'",
+                (member['id'],)).fetchone()
+            if pending:
+                flash('You already have a pending savings-change request awaiting review.', 'warning')
+                return redirect(url_for('portal.change_savings_request'))
+
+            # Record a formal request for staff to approve/reject.
+            db.execute('''INSERT INTO savings_change_requests
+                          (member_id, current_amount, requested_amount, reason, status)
+                          VALUES (?, ?, ?, ?, 'pending')''',
+                       (member['id'], current_amt, new_amount_val, reason))
+            db.commit()
+
+            # Notify staff who can act on it.
+            staff = db.execute(
+                "SELECT email FROM users WHERE role IN ('admin', 'treasurer', 'secretary')").fetchall()
+            for s in staff:
+                notify_member(db, s['email'],
                               'Savings Amount Change Request',
                               f"{member['first_name']} {member['last_name']} (#{member['member_number']}) "
                               f"requests to change monthly savings from "
-                              f"₦{member['monthly_savings'] or 0:,.2f} to ₦{new_amount_val:,.2f}. "
-                              f"Reason: {reason}",
+                              f"₦{current_amt:,.2f} to ₦{new_amount_val:,.2f}. "
+                              f"Reason: {reason or '—'}",
                               notification_type='info',
-                              action_url=f"/members/{member['id']}")
+                              action_url=url_for('members.savings_requests'))
 
             audit(db, 'SAVINGS_CHANGE_REQUEST', 'members',
                   f"Member {member['id']} requested savings change to ₦{new_amount_val:,.2f}")
-            flash('Your request has been submitted and will be reviewed by the administrator.', 'success')
+            flash('Your request has been submitted and will be reviewed by the cooperative office.', 'success')
             return redirect(url_for('portal.member_portal'))
 
         except ValueError:

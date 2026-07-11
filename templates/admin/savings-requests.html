@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Savings Change Requests - OOU Cooperative{% endblock %}
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-3">
+        <div class="col">
+            <h2><i class="fas fa-hand-holding-usd"></i> Savings Change Requests</h2>
+            <p class="text-muted mb-0">Members' requests to change their monthly savings amount. Approving one updates the member's monthly savings immediately.</p>
+        </div>
+    </div>
+
+    <!-- Pending -->
+    <div class="card mb-4">
+        <div class="card-header bg-warning-subtle d-flex justify-content-between align-items-center">
+            <h6 class="mb-0"><i class="fas fa-clock text-warning"></i> Pending review</h6>
+            <span class="badge bg-warning text-dark">{{ pending|length }}</span>
+        </div>
+        <div class="card-body p-0">
+            {% if pending %}
+            <div class="table-responsive">
+            <table class="table table-hover mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Member</th><th>Requested</th><th class="text-end">Current</th>
+                        <th class="text-end">New amount</th><th>Reason</th><th class="text-end">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for r in pending %}
+                    <tr>
+                        <td><strong>{{ r.first_name }} {{ r.last_name }}</strong><br>
+                            <span class="text-muted small">#{{ r.member_number }}</span></td>
+                        <td class="small">{{ (r.requested_at|string)[:16] }}</td>
+                        <td class="text-end">₦{{ '{:,.2f}'.format(r.current_amount or 0) }}</td>
+                        <td class="text-end fw-bold text-success">₦{{ '{:,.2f}'.format(r.requested_amount or 0) }}</td>
+                        <td class="small">{{ r.reason or '—' }}</td>
+                        <td class="text-end" style="min-width:230px">
+                            <form method="post" action="{{ url_for('members.savings_request_act', req_id=r.id) }}" class="d-flex gap-1">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input name="comment" class="form-control form-control-sm" placeholder="Note (optional)">
+                                <button name="action" value="approve" class="btn btn-sm btn-success"
+                                        onclick="return confirm('Approve and set monthly savings to ₦{{ '{:,.2f}'.format(r.requested_amount or 0) }}?');">
+                                    <i class="fas fa-check"></i></button>
+                                <button name="action" value="reject" class="btn btn-sm btn-outline-danger"
+                                        onclick="return confirm('Reject this request?');">
+                                    <i class="fas fa-times"></i></button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            </div>
+            {% else %}<div class="p-3 text-muted">No pending requests.</div>{% endif %}
+        </div>
+    </div>
+
+    <!-- History -->
+    <div class="card">
+        <div class="card-header"><h6 class="mb-0"><i class="fas fa-history"></i> History</h6></div>
+        <div class="card-body p-0">
+            {% if history %}
+            <div class="table-responsive">
+            <table class="table table-sm mb-0 align-middle">
+                <thead class="table-light">
+                    <tr><th>Member</th><th>Requested</th><th class="text-end">From</th><th class="text-end">To</th>
+                        <th>Status</th><th>Reviewed by</th><th>Note</th></tr>
+                </thead>
+                <tbody>
+                    {% for r in history %}
+                    <tr>
+                        <td>{{ r.first_name }} {{ r.last_name }} <span class="text-muted small">#{{ r.member_number }}</span></td>
+                        <td class="small">{{ (r.requested_at|string)[:16] }}</td>
+                        <td class="text-end">₦{{ '{:,.2f}'.format(r.current_amount or 0) }}</td>
+                        <td class="text-end">₦{{ '{:,.2f}'.format(r.requested_amount or 0) }}</td>
+                        <td>{% if r.status == 'approved' %}<span class="badge bg-success">Approved</span>
+                            {% else %}<span class="badge bg-secondary">Rejected</span>{% endif %}</td>
+                        <td class="small">{{ r.reviewed_by_name or '—' }}<br>
+                            <span class="text-muted">{{ (r.reviewed_at|string)[:16] if r.reviewed_at else '' }}</span></td>
+                        <td class="small">{{ r.review_comment or '' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            </div>
+            {% else %}<div class="p-3 text-muted">No reviewed requests yet.</div>{% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

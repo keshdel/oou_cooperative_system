@@ -643,6 +643,25 @@ def init_db():
     '''))
     _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_events_date ON events(event_date)')
 
+    # Member requests to change their monthly savings amount (staff-approved)
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS savings_change_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            member_id INTEGER NOT NULL,
+            current_amount REAL DEFAULT 0,
+            requested_amount REAL NOT NULL,
+            reason TEXT,
+            status TEXT DEFAULT 'pending',
+            requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            reviewed_by INTEGER,
+            reviewed_by_name TEXT,
+            reviewed_at TIMESTAMP,
+            review_comment TEXT,
+            FOREIGN KEY (member_id) REFERENCES members (id)
+        )
+    '''))
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_savings_change_status ON savings_change_requests(status)')
+
     # ── Double-entry general ledger ────────────────────────────────────────────
     # Chart of accounts
     db.execute(_adapt('''
