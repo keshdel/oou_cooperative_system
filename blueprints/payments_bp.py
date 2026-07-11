@@ -15,7 +15,7 @@ from flask import (Blueprint, abort, current_app, flash, jsonify,
                    redirect, render_template, request, url_for)
 from flask_login import current_user, login_required
 
-from database import get_db
+from database import USE_POSTGRES, get_db
 from email_service import send_loan_repayment_email
 from payments import get_gateway, generate_reference
 from security import log_audit
@@ -32,6 +32,14 @@ payments_bp = Blueprint('payments', __name__)
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
 
+def _select_pending_payment_for_processing(db, reference: str):
+    """Fetch and lock one pending payment row for processing."""
+    sql = 'SELECT * FROM pending_payments WHERE reference = ?'
+    if USE_POSTGRES:
+        sql += ' FOR UPDATE'
+    return db.execute(sql, (reference,)).fetchone()
+
+
 def _record_payment(db, reference: str) -> bool:
     """
     Idempotent: look up the pending_payments row for *reference*, verify with
@@ -39,12 +47,12 @@ def _record_payment(db, reference: str) -> bool:
 
     Returns True if payment was newly committed, False if already done or failed.
     """
-    row = db.execute(
-        'SELECT * FROM pending_payments WHERE reference = ?', (reference,)
-    ).fetchone()
+    row = _select_pending_payment_for_processing(db, reference)
     if row is None:
+        db.rollback()
         return False
     if row['status'] == 'completed':
+        db.rollback()
         return False  # already processed (webhook beat the callback, or duplicate call)
 
     gateway_name = row['gateway']
@@ -65,6 +73,7 @@ def _record_payment(db, reference: str) -> bool:
             gw_ref = resp.get('data', {}).get('id', gw_ref)
     except Exception as exc:
         current_app.logger.error('Payment verify error ref=%s: %s', reference, exc)
+        db.rollback()
         return False
 
     if not ok:

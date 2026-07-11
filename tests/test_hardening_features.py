@@ -337,6 +337,55 @@ class HardeningFeatureTests(unittest.TestCase):
             os.environ.update(original_env)
             email_service.urllib.request.urlopen = original_urlopen
 
+    def test_payment_processing_uses_postgres_row_lock(self):
+        from blueprints import payments_bp as payments_module
+
+        original_flag = payments_module.USE_POSTGRES
+
+        class FakeCursor:
+            def fetchone(self):
+                return {'reference': 'PAY-LOCK', 'status': 'pending'}
+
+        class FakeDb:
+            sql = ''
+            params = ()
+
+            def execute(self, sql, params=()):
+                self.sql = sql
+                self.params = params
+                return FakeCursor()
+
+        try:
+            payments_module.USE_POSTGRES = True
+            db = FakeDb()
+            row = payments_module._select_pending_payment_for_processing(db, 'PAY-LOCK')
+            self.assertEqual(row['reference'], 'PAY-LOCK')
+            self.assertIn('FOR UPDATE', db.sql)
+            self.assertEqual(db.params, ('PAY-LOCK',))
+        finally:
+            payments_module.USE_POSTGRES = original_flag
+
+    def test_completed_payment_releases_lock_without_reposting(self):
+        from blueprints import payments_bp as payments_module
+
+        class FakeCursor:
+            def fetchone(self):
+                return {'reference': 'PAY-DONE', 'status': 'completed'}
+
+        class FakeDb:
+            rolled_back = False
+
+            def execute(self, sql, params=()):
+                return FakeCursor()
+
+            def rollback(self):
+                self.rolled_back = True
+
+        db = FakeDb()
+        processed = payments_module._record_payment(db, 'PAY-DONE')
+        self.assertFalse(processed)
+        self.assertTrue(db.rolled_back)
+
 
 if __name__ == '__main__':
     unittest.main()
