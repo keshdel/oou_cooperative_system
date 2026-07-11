@@ -1,0 +1,90 @@
+"""
+loan_workflow.py — multi-level loan approval per the bye-laws.
+
+Chain:  guarantors → secretary → treasurer → president → approved (disbursed)
+Any stage can reject (with a reason). Guarantor consent must be complete before
+the Secretary can review.
+"""
+
+from datetime import datetime
+
+STAGE_GUARANTORS = 'guarantors'
+STAGE_SECRETARY  = 'secretary'
+STAGE_TREASURER  = 'treasurer'
+STAGE_PRESIDENT  = 'president'
+STAGE_APPROVED   = 'approved'
+STAGE_REJECTED   = 'rejected'
+
+STAGE_LABELS = {
+    STAGE_GUARANTORS: 'Awaiting guarantor consent',
+    STAGE_SECRETARY:  'Awaiting Secretary review',
+    STAGE_TREASURER:  'Awaiting Treasurer verification',
+    STAGE_PRESIDENT:  'Awaiting President approval',
+    STAGE_APPROVED:   'Approved & disbursed',
+    STAGE_REJECTED:   'Rejected',
+}
+
+# Role that acts at each staff stage (admin may act at any stage)
+STAGE_ROLE = {
+    STAGE_SECRETARY: 'secretary',
+    STAGE_TREASURER: 'treasurer',
+    STAGE_PRESIDENT: 'admin',      # President = top authority (admin)
+}
+STAGE_ACTOR_LABEL = {
+    STAGE_SECRETARY: 'Secretary',
+    STAGE_TREASURER: 'Treasurer',
+    STAGE_PRESIDENT: 'President',
+}
+NEXT_STAGE = {
+    STAGE_GUARANTORS: STAGE_SECRETARY,
+    STAGE_SECRETARY:  STAGE_TREASURER,
+    STAGE_TREASURER:  STAGE_PRESIDENT,
+    STAGE_PRESIDENT:  STAGE_APPROVED,
+}
+
+
+def can_act(role, stage):
+    """True if a user with `role` may approve/reject a loan at `stage`."""
+    if stage not in STAGE_ROLE:
+        return False
+    return role == 'admin' or role == STAGE_ROLE[stage]
+
+
+def guarantors_required(db):
+    row = db.execute("SELECT value FROM settings WHERE key = 'guarantors_required'").fetchone()
+    try:
+        return int(row['value']) if row and row['value'] else 2
+    except (TypeError, ValueError):
+        return 2
+
+
+def record_action(db, loan_id, stage, action, acted_by=None, acted_by_name='', comment=''):
+    """Append an entry to the loan's approval audit trail."""
+    db.execute(
+        '''INSERT INTO loan_approvals
+           (loan_id, stage, action, acted_by, acted_by_name, acted_at, comment)
+           VALUES (?, ?, ?, ?, ?, ?, ?)''',
+        (loan_id, stage, action, acted_by, acted_by_name, datetime.now(), comment or '')
+    )
+
+
+def guarantor_progress(db, loan_id):
+    """Return (accepted_count, required) for a loan's guarantors."""
+    accepted = db.execute(
+        "SELECT COUNT(*) FROM loan_guarantors WHERE loan_id = ? AND status = 'accepted'",
+        (loan_id,)
+    ).fetchone()[0]
+    return accepted, guarantors_required(db)
+
+
+def maybe_advance_from_guarantors(db, loan_id):
+    """If enough guarantors have accepted, move the loan to Secretary review.
+    Returns True if it advanced."""
+    loan = db.execute('SELECT approval_stage FROM loans WHERE id = ?', (loan_id,)).fetchone()
+    if not loan or loan['approval_stage'] != STAGE_GUARANTORS:
+        return False
+    accepted, required = guarantor_progress(db, loan_id)
+    if accepted >= required:
+        db.execute("UPDATE loans SET approval_stage = ? WHERE id = ?", (STAGE_SECRETARY, loan_id))
+        return True
+    return False

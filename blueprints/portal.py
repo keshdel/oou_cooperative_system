@@ -7,9 +7,10 @@ from flask import Blueprint, render_template, redirect, url_for, request, flash,
 from flask_login import login_required, current_user, logout_user
 from werkzeug.security import check_password_hash, generate_password_hash
 
-from database import get_db
-from utils import (audit, notify_member, compute_loan_schedule, METHOD_LABELS,
+from database import get_db, last_insert_id
+from utils import (audit, notify_member, notify, compute_loan_schedule, METHOD_LABELS,
                    member_for_user, member_savings_balance)
+import loan_workflow as lw
 
 portal = Blueprint('portal', __name__)
 
@@ -439,7 +440,92 @@ def loan_detail(loan_id):
                            member=_member_extras(member, db))
 
 
+# ── Guarantor Requests ────────────────────────────────────────────────────────────
+
+@portal.route('/my-guarantor-requests')
+@login_required
+def my_guarantor_requests():
+    db = get_db()
+    member = member_for_user(db)
+    if not member:
+        flash('Member profile not found.', 'warning')
+        return redirect(url_for('main.dashboard'))
+    reqs = db.execute('''
+        SELECT lg.id AS gid, lg.status, lg.requested_at, lg.responded_at,
+               l.id AS loan_id, l.loan_number, l.amount, l.purpose, l.status AS loan_status,
+               am.first_name AS app_first, am.last_name AS app_last, am.member_number AS app_number
+        FROM loan_guarantors lg
+        JOIN loans l ON l.id = lg.loan_id
+        JOIN members am ON am.id = l.member_id
+        WHERE lg.member_id = ? ORDER BY lg.id DESC
+    ''', (member['id'],)).fetchall()
+    return render_template('member/guarantor-requests.html', requests=reqs)
+
+
+@portal.route('/my-guarantor-requests/<int:gid>/<action>', methods=['POST'])
+@login_required
+def respond_guarantor(gid, action):
+    db = get_db()
+    member = member_for_user(db)
+    if not member:
+        return redirect(url_for('main.dashboard'))
+    g = db.execute('SELECT * FROM loan_guarantors WHERE id = ? AND member_id = ?',
+                   (gid, member['id'])).fetchone()
+    if not g or g['status'] != 'pending':
+        flash('Request not found or already answered.', 'warning')
+        return redirect(url_for('portal.my_guarantor_requests'))
+    new_status = 'accepted' if action == 'accept' else 'declined'
+    db.execute("UPDATE loan_guarantors SET status = ?, responded_at = ? WHERE id = ?",
+               (new_status, datetime.now(), gid))
+    loan = db.execute('SELECT * FROM loans WHERE id = ?', (g['loan_id'],)).fetchone()
+    applicant = db.execute('SELECT * FROM members WHERE id = ?', (loan['member_id'],)).fetchone()
+    if new_status == 'accepted':
+        if lw.maybe_advance_from_guarantors(db, g['loan_id']):
+            if applicant and applicant['email']:
+                notify_member(db, applicant['email'], 'Guarantors Complete',
+                              f"All guarantors accepted for loan {loan['loan_number']}. "
+                              f"It is now awaiting Secretary review.", 'success', '/my-loans')
+            for u in db.execute("SELECT id FROM users WHERE role = 'secretary'").fetchall():
+                notify(db, u['id'], 'Loan Awaiting Review',
+                       f"Loan {loan['loan_number']} guarantors complete — awaiting Secretary review.",
+                       'info', '/loans')
+    else:
+        if applicant and applicant['email']:
+            notify_member(db, applicant['email'], 'Guarantor Declined',
+                          f"A guarantor declined your loan {loan['loan_number']}. "
+                          f"Please arrange another guarantor or contact the office.", 'warning', '/my-loans')
+    audit(db, 'GUARANTOR_RESPONSE', 'loans', f"Member {member['id']} {new_status} guarantor request {gid}")
+    db.commit()
+    flash(f'You have {new_status} the guarantor request.', 'success')
+    return redirect(url_for('portal.my_guarantor_requests'))
+
+
 # ── Loan Application ──────────────────────────────────────────────────────────────
+
+@portal.route('/loan-schedule-preview')
+@login_required
+def loan_schedule_preview():
+    """Live repayment schedule so a member can compare options before applying."""
+    db = get_db()
+    try:
+        amount  = float(request.args.get('amount', 0))
+        tenure  = int(request.args.get('tenure', 0))
+        purpose = request.args.get('purpose', 'Regular')
+    except (TypeError, ValueError):
+        return jsonify({'ok': False, 'error': 'Invalid input'})
+    if amount <= 0 or tenure <= 0:
+        return jsonify({'ok': False, 'error': 'Enter an amount and tenure.'})
+    rates   = _interest_rates(db)
+    methods = _interest_methods(db)
+    rate    = rates.get(purpose, rates['Regular'])
+    method  = methods.get(purpose, 'reducing_annual')
+    mp, total, schedule = compute_loan_schedule(amount, rate, tenure, method)
+    return jsonify({
+        'ok': True, 'monthly_payment': mp, 'total_repayment': total,
+        'total_interest': round(total - amount, 2), 'rate': rate,
+        'method': METHOD_LABELS.get(method, method), 'schedule': schedule,
+    })
+
 
 @portal.route('/apply-loan-member', methods=['GET', 'POST'])
 @login_required
@@ -462,6 +548,11 @@ def apply_loan_member():
 
         if amount <= 0 or not purpose or tenure <= 0:
             flash('All fields are required and must be valid.', 'danger')
+            return redirect(url_for('portal.apply_loan_member'))
+
+        signature = request.form.get('signature_name', '').strip()
+        if not request.form.get('accept_terms') or not signature:
+            flash('You must accept the terms & conditions and sign with your full name to proceed.', 'danger')
             return redirect(url_for('portal.apply_loan_member'))
 
         try:
@@ -500,28 +591,47 @@ def apply_loan_member():
             method = methods.get(purpose, 'reducing_annual')
             mp, total_repayment, _ = compute_loan_schedule(amount, rate, tenure, method)
 
+            guarantor_ids = [g for g in request.form.getlist('guarantors')
+                             if g and g != str(member['id'])]
+            required_g = lw.guarantors_required(db)
+            initial_stage = lw.STAGE_GUARANTORS if required_g > 0 else lw.STAGE_SECRETARY
+
             loan_number = f"LOAN/{datetime.now().strftime('%Y%m%d')}/{random.randint(1000, 9999)}"
             db.execute('''
                 INSERT INTO loans (loan_number, member_id, amount, purpose, tenure, interest_rate,
-                                   interest_method, total_repayment, balance, status, date_applied)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
+                                   interest_method, total_repayment, balance, status, approval_stage,
+                                   terms_accepted, signature_name, signed_at, date_applied)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, 1, ?, ?, ?)
             ''', (loan_number, member['id'], amount, purpose, tenure, rate,
-                  method, total_repayment, total_repayment, datetime.now()))
+                  method, total_repayment, total_repayment, initial_stage,
+                  signature, datetime.now(), datetime.now()))
+            loan_id = last_insert_id(db)
+            lw.record_action(db, loan_id, 'submitted', 'submitted', acted_by=current_user.id,
+                             acted_by_name=current_user.username, comment='Member self-application')
+
+            from email_service import send_guarantor_request_email
+            for gid in guarantor_ids:
+                g = db.execute('SELECT * FROM members WHERE id = ?', (gid,)).fetchone()
+                if not g:
+                    continue
+                db.execute("INSERT INTO loan_guarantors (loan_id, member_id, status) VALUES (?, ?, 'pending')",
+                           (loan_id, gid))
+                if g['email']:
+                    notify_member(db, g['email'], 'Guarantor Request',
+                                  f"{member['first_name']} {member['last_name']} asked you to guarantee "
+                                  f"a ₦{amount:,.2f} loan. Please review and respond.",
+                                  'warning', '/my-guarantor-requests')
+                    send_guarantor_request_email(g['email'], g, member, loan_number, amount)
+
+            if initial_stage == lw.STAGE_SECRETARY:
+                for u in db.execute("SELECT id FROM users WHERE role = 'secretary'").fetchall():
+                    notify(db, u['id'], 'Loan Awaiting Review',
+                           f"Loan {loan_number} (₦{amount:,.2f}) awaits Secretary review.", 'info', '/loans')
+
             db.commit()
-
-            # Notify admin
-            admin_users = db.execute("SELECT email FROM users WHERE role = 'admin'").fetchall()
-            for admin in admin_users:
-                notify_member(db, admin['email'],
-                              'New Loan Application',
-                              f"{member['first_name']} {member['last_name']} applied for a "
-                              f"₦{amount:,.2f} {purpose} loan (ref: {loan_number}).",
-                              notification_type='info',
-                              action_url='/loans')
-
             audit(db, 'MEMBER_LOAN_APPLICATION', 'loans',
                   f"Member {member['id']} applied for ₦{amount:,.2f} {purpose} loan – {loan_number}")
-            flash(f'Loan application submitted! Reference: {loan_number}. Pending approval.', 'success')
+            flash(f'Loan application submitted! Reference: {loan_number}. The approval workflow has started.', 'success')
             return redirect(url_for('portal.my_loans'))
 
         except Exception as e:
@@ -529,13 +639,18 @@ def apply_loan_member():
             flash(f'Error submitting application: {str(e)}', 'danger')
             return redirect(url_for('portal.apply_loan_member'))
 
+    all_members = db.execute(
+        "SELECT id, first_name, last_name, member_number FROM members "
+        "WHERE status = 'active' AND id != ? ORDER BY first_name", (member['id'],)
+    ).fetchall()
     return render_template('member/apply_loan.html',
                            member=_member_extras(member, db),
                            max_tenure=max_tenure,
                            interest_rates=rates,
                            interest_methods=methods,
                            method_labels=METHOD_LABELS,
-                           loan_types=list(rates.keys()))
+                           loan_types=list(rates.keys()),
+                           all_members=all_members)
 
 
 # ── Change Savings Amount Request ─────────────────────────────────────────────────

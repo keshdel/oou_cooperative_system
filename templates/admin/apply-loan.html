@@ -64,6 +64,25 @@
                             <label class="form-label fw-bold">Description (optional)</label>
                             <textarea class="form-control" name="description" rows="3"></textarea>
                         </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Guarantor 1</label>
+                            <select class="form-select" name="guarantors">
+                                <option value="">-- Choose guarantor --</option>
+                                {% for member in members %}
+                                <option value="{{ member.id }}">{{ member.first_name }} {{ member.last_name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Guarantor 2</label>
+                            <select class="form-select" name="guarantors">
+                                <option value="">-- Choose guarantor --</option>
+                                {% for member in members %}
+                                <option value="{{ member.id }}">{{ member.first_name }} {{ member.last_name }}</option>
+                                {% endfor %}
+                            </select>
+                            <small class="text-muted">Guarantors are notified to accept before the loan proceeds to review.</small>
+                        </div>
                     </div>
                 </div>
 

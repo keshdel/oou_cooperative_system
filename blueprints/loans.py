@@ -6,16 +6,66 @@ from io import StringIO, TextIOWrapper
 from flask import Blueprint, render_template, redirect, url_for, request, flash, make_response
 from flask_login import login_required, current_user
 
-from database import get_db
+from database import get_db, last_insert_id
 from email_service import (send_loan_approval_email, send_loan_rejection_email,
-                           send_loan_repayment_email)
-from utils import (role_required, audit, notify_member, compute_loan_schedule,
+                           send_loan_repayment_email, send_loan_stage_email,
+                           send_guarantor_request_email)
+from utils import (role_required, audit, notify_member, notify, compute_loan_schedule,
                    PURPOSE_SETTING_KEY, METHOD_LABELS, record_revenue, split_repayment,
                    member_savings_balance)
 from ledger import (post_journal_safe, CASH, LOANS_RECEIVABLE, FEE_INCOME,
                     LOAN_INTEREST_INCOME)
+import loan_workflow as lw
 
 loans = Blueprint('loans', __name__)
+
+
+def _notify_role(db, role, title, message, action_url='/loans'):
+    """In-app + email notification to every active staff user of a role."""
+    try:
+        users = db.execute(
+            "SELECT id, email FROM users WHERE role = ? AND COALESCE(is_active, 1) = 1", (role,)
+        ).fetchall()
+        for u in users:
+            notify(db, u['id'], title, message, 'info', action_url)
+            if u['email']:
+                from email_service import send_email
+                send_email(u['email'], title, f'<p>{message}</p>')
+    except Exception:
+        pass
+
+
+def _disburse_loan(db, loan):
+    """Final approval: book fees, disburse, post the GL entry, notify the member.
+    Expects `loan` row; assumes caller commits."""
+    insurance = round(loan['amount'] * 0.01, 2)
+    application_fee = round(loan['amount'] * 0.01, 2)
+    disbursed = round(loan['amount'] - insurance - application_fee, 2)
+    db.execute('''
+        UPDATE loans SET status = 'active', approval_stage = 'approved',
+            approved_at = ?, approved_by = ?, insurance_premium = ?, application_fee = ?,
+            disbursed_amount = ?, disbursement_date = ?, first_payment_date = ?
+        WHERE id = ?
+    ''', (datetime.now(), current_user.id, insurance, application_fee, disbursed,
+          datetime.now(), datetime.now() + timedelta(days=30), loan['id']))
+    record_revenue(db, 'Loan Insurance', insurance,
+                   description=f"Insurance premium on loan {loan['loan_number']}",
+                   source=f"Loan {loan['loan_number']}", received_by=current_user.id)
+    record_revenue(db, 'Loan Application Fee', application_fee,
+                   description=f"Application fee on loan {loan['loan_number']}",
+                   source=f"Loan {loan['loan_number']}", received_by=current_user.id)
+    post_journal_safe(db, f"Loan disbursement — {loan['loan_number']}", [
+        {'account': LOANS_RECEIVABLE, 'debit': loan['amount'], 'memo': loan['loan_number']},
+        {'account': CASH, 'credit': disbursed, 'memo': 'Net disbursed'},
+        {'account': FEE_INCOME, 'credit': insurance + application_fee, 'memo': 'Loan fees'},
+    ], reference=loan['loan_number'], source_module='loans',
+       source_id=loan['id'], created_by=current_user.id)
+    member = db.execute('SELECT * FROM members WHERE id = ?', (loan['member_id'],)).fetchone()
+    if member and member['email']:
+        send_loan_approval_email(member['email'], member, loan)
+        notify_member(db, member['email'], 'Loan Approved',
+                      f"Your loan of ₦{loan['amount']:,.2f} has been fully approved and "
+                      f"₦{disbursed:,.2f} will be disbursed.", 'success', '/my-loans')
 
 
 @loans.route('/loans/download-repayment-template')
@@ -151,16 +201,45 @@ def apply_loan():
 
             loan_number = f"LOAN/{datetime.now().strftime('%Y%m%d')}/{random.randint(1000, 9999)}"
 
+            guarantor_ids = [g for g in request.form.getlist('guarantors')
+                             if g and g != str(member_id)]
+            required_g = lw.guarantors_required(db)
+            initial_stage = lw.STAGE_GUARANTORS if required_g > 0 else lw.STAGE_SECRETARY
+
             db.execute('''
                 INSERT INTO loans (
                     loan_number, member_id, amount, purpose, tenure, interest_rate,
-                    interest_method, total_repayment, balance, status, date_applied
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    interest_method, total_repayment, balance, status, approval_stage, date_applied
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
             ''', (loan_number, member_id, amount, purpose, tenure, interest_rate,
-                  interest_method, total_repayment, total_repayment, 'pending', datetime.now()))
+                  interest_method, total_repayment, total_repayment, initial_stage, datetime.now()))
+            loan_id = last_insert_id(db)
+            lw.record_action(db, loan_id, 'submitted', 'submitted',
+                             acted_by=current_user.id, acted_by_name=current_user.username,
+                             comment=f'Application submitted (min {required_g} guarantor(s))')
+
+            for gid in guarantor_ids:
+                g = db.execute('SELECT * FROM members WHERE id = ?', (gid,)).fetchone()
+                if not g:
+                    continue
+                db.execute("INSERT INTO loan_guarantors (loan_id, member_id, status) VALUES (?, ?, 'pending')",
+                           (loan_id, gid))
+                if g['email']:
+                    notify_member(db, g['email'], 'Guarantor Request',
+                                  f"{member['first_name']} {member['last_name']} asked you to guarantee "
+                                  f"a ₦{amount:,.2f} loan. Please review and respond.",
+                                  'warning', '/my-guarantor-requests')
+                    send_guarantor_request_email(g['email'], g, member, loan_number, amount)
+
+            if initial_stage == lw.STAGE_SECRETARY:
+                _notify_role(db, 'secretary', 'Loan Awaiting Review',
+                             f"Loan {loan_number} (₦{amount:,.2f}) awaits Secretary review.")
+
             db.commit()
-            flash('Loan application submitted successfully! Pending approval.', 'success')
-            return redirect(url_for('members.member_details', member_id=member_id))
+            audit(db, 'APPLY_LOAN', 'loans', f"Loan {loan_number} applied for member {member_id}")
+            g_msg = f" {len(guarantor_ids)} guarantor(s) notified." if guarantor_ids else ""
+            flash(f'Loan application submitted!{g_msg} The approval workflow has started.', 'success')
+            return redirect(url_for('loans.loan_detail', loan_id=loan_id))
 
         except Exception as e:
             db.rollback()
@@ -178,100 +257,96 @@ def apply_loan():
                            method_labels=METHOD_LABELS)
 
 
-@loans.route('/loans/approve/<int:loan_id>', methods=['POST'])
+@loans.route('/loans/<int:loan_id>')
 @login_required
-@role_required('admin', 'treasurer')
-def approve_loan(loan_id):
+@role_required('admin', 'treasurer', 'secretary', 'exco')
+def loan_detail(loan_id):
     db = get_db()
+    loan = db.execute('''
+        SELECT l.*, m.first_name, m.last_name, m.member_number, m.email
+        FROM loans l JOIN members m ON m.id = l.member_id WHERE l.id = ?
+    ''', (loan_id,)).fetchone()
+    if not loan:
+        flash('Loan not found.', 'danger')
+        return redirect(url_for('loans.loans_list'))
+    guarantors = db.execute('''
+        SELECT lg.*, m.first_name, m.last_name, m.member_number
+        FROM loan_guarantors lg JOIN members m ON m.id = lg.member_id
+        WHERE lg.loan_id = ? ORDER BY lg.id
+    ''', (loan_id,)).fetchall()
+    history = db.execute('SELECT * FROM loan_approvals WHERE loan_id = ? ORDER BY id', (loan_id,)).fetchall()
+    accepted, required = lw.guarantor_progress(db, loan_id)
+    stage = loan['approval_stage'] or 'secretary'
+    can_act = lw.can_act(current_user.role, stage) and loan['status'] == 'pending'
+    return render_template('admin/loan-detail.html',
+                           loan=loan, guarantors=guarantors, history=history,
+                           stage=stage, stage_label=lw.STAGE_LABELS.get(stage, stage),
+                           accepted=accepted, required=required, can_act=can_act,
+                           stage_actor=lw.STAGE_ACTOR_LABEL.get(stage, ''),
+                           stage_labels=lw.STAGE_LABELS)
+
+
+@loans.route('/loans/<int:loan_id>/act', methods=['POST'])
+@login_required
+@role_required('admin', 'treasurer', 'secretary')
+def loan_act(loan_id):
+    db = get_db()
+    action  = request.form.get('action', '')
+    comment = request.form.get('comment', '').strip()
     try:
         loan = db.execute('SELECT * FROM loans WHERE id = ?', (loan_id,)).fetchone()
-        if loan and loan['status'] == 'pending':
-            insurance = round(loan['amount'] * 0.01, 2)
-            application_fee = round(loan['amount'] * 0.01, 2)
-            disbursed = round(loan['amount'] - insurance - application_fee, 2)
-
-            db.execute('''
-                UPDATE loans SET
-                    status = 'active',
-                    approved_at = ?,
-                    approved_by = ?,
-                    insurance_premium = ?,
-                    application_fee = ?,
-                    disbursed_amount = ?,
-                    disbursement_date = ?,
-                    first_payment_date = ?
-                WHERE id = ?
-            ''', (
-                datetime.now(), current_user.id, insurance, application_fee,
-                disbursed, datetime.now(), datetime.now() + timedelta(days=30), loan_id
-            ))
-
-            # Loan fees deducted at disbursement are cooperative income.
-            record_revenue(db, 'Loan Insurance', insurance,
-                           description=f"Insurance premium on loan {loan['loan_number']}",
-                           source=f"Loan {loan['loan_number']}", received_by=current_user.id)
-            record_revenue(db, 'Loan Application Fee', application_fee,
-                           description=f"Application fee on loan {loan['loan_number']}",
-                           source=f"Loan {loan['loan_number']}", received_by=current_user.id)
-
-            # Double-entry disbursement: principal becomes receivable; cash paid
-            # out (net of fees); the fees are income.
-            post_journal_safe(db, f"Loan disbursement — {loan['loan_number']}", [
-                {'account': LOANS_RECEIVABLE, 'debit': loan['amount'], 'memo': loan['loan_number']},
-                {'account': CASH, 'credit': disbursed, 'memo': 'Net disbursed'},
-                {'account': FEE_INCOME, 'credit': insurance + application_fee, 'memo': 'Loan fees'},
-            ], reference=loan['loan_number'], source_module='loans',
-               source_id=loan_id, created_by=current_user.id)
-            db.commit()
-            member = db.execute('SELECT * FROM members WHERE id = ?', (loan['member_id'],)).fetchone()
-            if member and member['email']:
-                send_loan_approval_email(member['email'], member, loan)
-                notify_member(db, member['email'],
-                              'Loan Approved',
-                              f"Your loan of ₦{loan['amount']:,.2f} has been approved and will be disbursed shortly.",
-                              notification_type='success',
-                              action_url='/my-loans')
-            audit(db, 'APPROVE_LOAN', 'loans',
-                  f"Approved loan ID {loan_id} – ₦{loan['amount']:,.2f} for member ID {loan['member_id']}")
-            flash('Loan approved successfully!', 'success')
-        else:
-            flash('Loan not found or already processed', 'danger')
-    except Exception as e:
-        db.rollback()
-        flash(f'Error approving loan: {str(e)}', 'danger')
-    return redirect(url_for('loans.loans_list'))
-
-
-@loans.route('/loans/reject/<int:loan_id>', methods=['POST'])
-@login_required
-@role_required('admin', 'treasurer')
-def reject_loan(loan_id):
-    db = get_db()
-    try:
-        loan = db.execute('SELECT * FROM loans WHERE id = ?', (loan_id,)).fetchone()
-        if not loan:
-            flash('Loan not found', 'danger')
+        if not loan or loan['status'] != 'pending':
+            flash('Loan not found or already processed.', 'danger')
             return redirect(url_for('loans.loans_list'))
-
-        db.execute("UPDATE loans SET status = 'rejected' WHERE id = ?", (loan_id,))
-        db.commit()
-
+        stage = loan['approval_stage'] or 'secretary'
+        if not lw.can_act(current_user.role, stage):
+            flash(f'Only the {lw.STAGE_ACTOR_LABEL.get(stage, "authorised approver")} '
+                  f'(or an admin) can act at this stage.', 'danger')
+            return redirect(url_for('loans.loan_detail', loan_id=loan_id))
         member = db.execute('SELECT * FROM members WHERE id = ?', (loan['member_id'],)).fetchone()
-        reason = request.form.get('reason', 'Does not meet our lending criteria.')
-        if member and member['email']:
-            send_loan_rejection_email(member['email'], member, reason)
-            notify_member(db, member['email'],
-                          'Loan Application Update',
-                          f"Your loan application could not be approved at this time. "
-                          f"Reason: {reason}",
-                          notification_type='warning',
-                          action_url='/my-loans')
-        audit(db, 'REJECT_LOAN', 'loans', f"Rejected loan ID {loan_id} – reason: {reason}")
-        flash('Loan application rejected', 'info')
+
+        if action == 'reject':
+            lw.record_action(db, loan_id, stage, 'rejected', current_user.id, current_user.username, comment)
+            db.execute("UPDATE loans SET status='rejected', approval_stage='rejected', "
+                       "rejection_reason=? WHERE id=?", (comment or 'Rejected', loan_id))
+            if member and member['email']:
+                send_loan_rejection_email(member['email'], member, comment or 'Not stated')
+                notify_member(db, member['email'], 'Loan Application Update',
+                              f"Your loan was declined at the {lw.STAGE_ACTOR_LABEL.get(stage,'')} "
+                              f"stage. Reason: {comment or 'Not stated'}.", 'warning', '/my-loans')
+            audit(db, 'LOAN_REJECT', 'loans', f"Loan {loan['loan_number']} rejected at {stage}: {comment}")
+            db.commit()
+            flash('Loan rejected. The member has been notified.', 'info')
+            return redirect(url_for('loans.loan_detail', loan_id=loan_id))
+
+        # ── approve ──
+        lw.record_action(db, loan_id, stage, 'approved', current_user.id, current_user.username, comment)
+        nxt = lw.NEXT_STAGE.get(stage)
+        if nxt == lw.STAGE_APPROVED:
+            _disburse_loan(db, loan)
+            audit(db, 'LOAN_APPROVE_FINAL', 'loans', f"Loan {loan['loan_number']} approved & disbursed")
+            db.commit()
+            flash('Loan fully approved and disbursed. The member has been notified.', 'success')
+        else:
+            db.execute('UPDATE loans SET approval_stage = ? WHERE id = ?', (nxt, loan_id))
+            if member and member['email']:
+                notify_member(db, member['email'], 'Loan Application Progress',
+                              f"Your loan passed the {lw.STAGE_ACTOR_LABEL.get(stage,'')} stage — "
+                              f"now {lw.STAGE_LABELS.get(nxt,'')}.", 'info', '/my-loans')
+            next_role = lw.STAGE_ROLE.get(nxt)
+            if next_role:
+                _notify_role(db, next_role, 'Loan Awaiting Your Action',
+                             f"Loan {loan['loan_number']} (₦{loan['amount']:,.2f}) is now "
+                             f"{lw.STAGE_LABELS.get(nxt,'')}.",
+                             action_url=url_for('loans.loan_detail', loan_id=loan_id))
+            audit(db, 'LOAN_APPROVE_STAGE', 'loans', f"Loan {loan['loan_number']} {stage} -> {nxt}")
+            db.commit()
+            flash(f'Approved at {lw.STAGE_ACTOR_LABEL.get(stage,"")} stage. '
+                  f'Now {lw.STAGE_LABELS.get(nxt,"")}.', 'success')
     except Exception as e:
         db.rollback()
-        flash(f'Error rejecting loan: {str(e)}', 'danger')
-    return redirect(url_for('loans.loans_list'))
+        flash(f'Error processing loan action: {e}', 'danger')
+    return redirect(url_for('loans.loan_detail', loan_id=loan_id))
 
 
 @loans.route('/loans/bulk-repayments', methods=['GET', 'POST'])

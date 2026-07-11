@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Guarantor Requests - OOU Cooperative{% endblock %}
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-3">
+        <div class="col">
+            <h2><i class="fas fa-user-shield"></i> Guarantor Requests</h2>
+            <p class="text-muted mb-0">Loans that members have asked you to guarantee. Accept only if you agree to stand as surety.</p>
+        </div>
+    </div>
+
+    {% if not requests %}
+    <div class="alert alert-info">You have no guarantor requests.</div>
+    {% endif %}
+
+    {% for r in requests %}
+    <div class="card mb-2">
+        <div class="card-body d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div>
+                <div class="fw-semibold">{{ r.app_first }} {{ r.app_last }} <span class="text-muted small">{{ r.app_number }}</span></div>
+                <div class="small text-muted">Loan {{ r.loan_number }} · {{ r.purpose }} · ₦{{ "{:,.2f}".format(r.amount or 0) }}</div>
+            </div>
+            <div class="text-end">
+                {% if r.status == 'pending' %}
+                <form method="post" action="{{ url_for('portal.respond_guarantor', gid=r.gid, action='accept') }}" class="d-inline"
+                      onsubmit="return confirm('Accept and stand as guarantor for this loan?');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="btn btn-success btn-sm"><i class="fas fa-check"></i> Accept</button>
+                </form>
+                <form method="post" action="{{ url_for('portal.respond_guarantor', gid=r.gid, action='decline') }}" class="d-inline"
+                      onsubmit="return confirm('Decline this guarantor request?');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="btn btn-outline-danger btn-sm"><i class="fas fa-times"></i> Decline</button>
+                </form>
+                {% else %}
+                <span class="badge bg-{{ 'success' if r.status=='accepted' else 'danger' }}">{{ r.status|title }}</span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+{% block title %}Loan {{ loan.loan_number }} - OOU Cooperative{% endblock %}
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-3">
+        <div class="col-md-8">
+            <h2><i class="fas fa-hand-holding-usd"></i> Loan {{ loan.loan_number }}</h2>
+            <p class="text-muted mb-0">
+                {{ loan.first_name }} {{ loan.last_name }} · {{ loan.member_number }} ·
+                <span class="badge bg-{{ 'success' if loan.status=='active' else ('danger' if loan.status=='rejected' else ('secondary' if loan.status=='completed' else 'warning text-dark')) }}">{{ loan.status|title }}</span>
+            </p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="{{ url_for('loans.loans_list') }}" class="btn btn-outline-secondary btn-sm"><i class="fas fa-arrow-left"></i> All Loans</a>
+        </div>
+    </div>
+
+    <!-- Workflow status banner -->
+    <div class="alert alert-{{ 'success' if stage=='approved' else ('danger' if stage=='rejected' else 'info') }} d-flex justify-content-between align-items-center">
+        <div><i class="fas fa-route"></i> <strong>{{ stage_label }}</strong>
+            {% if stage=='guarantors' %}<span class="ms-2">({{ accepted }}/{{ required }} guarantors accepted)</span>{% endif %}
+        </div>
+        <div class="small">Application → Guarantors → Secretary → Treasurer → President</div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-7">
+            <div class="card mb-3">
+                <div class="card-header"><h6 class="mb-0">Application Details</h6></div>
+                <div class="card-body">
+                    <table class="table mb-0">
+                        <tr><td>Amount</td><td class="text-end fw-semibold">₦{{ "{:,.2f}".format(loan.amount or 0) }}</td></tr>
+                        <tr><td>Purpose</td><td class="text-end">{{ loan.purpose }}</td></tr>
+                        <tr><td>Tenure</td><td class="text-end">{{ loan.tenure }} months</td></tr>
+                        <tr><td>Interest rate</td><td class="text-end">{{ loan.interest_rate }}%</td></tr>
+                        <tr><td>Total repayable</td><td class="text-end">₦{{ "{:,.2f}".format(loan.total_repayment or 0) }}</td></tr>
+                        <tr><td>Applied</td><td class="text-end">{{ loan.date_applied|string|truncate(19, True, '') }}</td></tr>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card mb-3">
+                <div class="card-header d-flex justify-content-between">
+                    <h6 class="mb-0">Guarantors</h6>
+                    <span class="small text-muted">{{ accepted }}/{{ required }} accepted</span>
+                </div>
+                <div class="card-body p-0">
+                    {% if guarantors %}
+                    <table class="table mb-0">
+                        <thead class="table-light"><tr><th>Member</th><th>Status</th><th>Responded</th></tr></thead>
+                        <tbody>
+                            {% for g in guarantors %}
+                            <tr>
+                                <td>{{ g.first_name }} {{ g.last_name }} <span class="text-muted small">{{ g.member_number }}</span></td>
+                                <td><span class="badge bg-{{ 'success' if g.status=='accepted' else ('danger' if g.status=='declined' else 'warning text-dark') }}">{{ g.status|title }}</span></td>
+                                <td class="small text-muted">{{ (g.responded_at|string|truncate(19, True, '')) if g.responded_at else '—' }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}
+                    <div class="p-3 text-muted">No guarantors recorded for this loan.</div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-5">
+            {% if can_act %}
+            <div class="card mb-3 border-primary">
+                <div class="card-header bg-primary text-white"><h6 class="mb-0">Your Action — {{ stage_actor }}</h6></div>
+                <div class="card-body">
+                    <form method="post" action="{{ url_for('loans.loan_act', loan_id=loan.id) }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <div class="mb-2">
+                            <label class="form-label small mb-0">Comment (optional for approve, required for reject)</label>
+                            <textarea name="comment" class="form-control form-control-sm" rows="2"></textarea>
+                        </div>
+                        <button type="submit" name="action" value="approve" class="btn btn-success"
+                                onclick="return confirm('Approve this loan at the {{ stage_actor }} stage?');">
+                            <i class="fas fa-check"></i> Approve
+                        </button>
+                        <button type="submit" name="action" value="reject" class="btn btn-outline-danger"
+                                onclick="return confirm('Reject this loan? The member will be notified.');">
+                            <i class="fas fa-times"></i> Reject
+                        </button>
+                    </form>
+                </div>
+            </div>
+            {% elif loan.status == 'pending' %}
+            <div class="alert alert-secondary">This loan is <strong>{{ stage_label }}</strong> — you are not the approver for this stage.</div>
+            {% endif %}
+
+            <div class="card">
+                <div class="card-header"><h6 class="mb-0">Approval Trail</h6></div>
+                <div class="card-body p-0">
+                    <table class="table table-sm mb-0">
+                        <tbody>
+                            {% for h in history %}
+                            <tr>
+                                <td>
+                                    <span class="badge bg-{{ 'success' if h.action=='approved' else ('danger' if h.action=='rejected' else 'secondary') }}">{{ h.action|title }}</span>
+                                    <span class="text-capitalize">{{ h.stage }}</span>
+                                    {% if h.comment %}<div class="small text-muted">{{ h.comment }}</div>{% endif %}
+                                </td>
+                                <td class="text-end small text-muted">
+                                    {{ h.acted_by_name or '' }}<br>{{ h.acted_at|string|truncate(19, True, '') }}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

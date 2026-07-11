@@ -370,6 +370,12 @@ def init_db():
     '''))
     _add_col(db, 'loans', 'loan_number', 'TEXT')
     _add_col(db, 'loans', 'interest_method', "TEXT DEFAULT 'reducing_annual'")
+    # Loan approval workflow stage: guarantors -> secretary -> treasurer -> president -> approved/rejected
+    _add_col(db, 'loans', 'approval_stage', "TEXT DEFAULT 'secretary'")
+    # Applicant terms-and-conditions consent (typed-name signature + date)
+    _add_col(db, 'loans', 'terms_accepted', 'INTEGER DEFAULT 0')
+    _add_col(db, 'loans', 'signature_name', 'TEXT')
+    _add_col(db, 'loans', 'signed_at', 'TIMESTAMP')
     _add_col(db, 'loans', 'disbursed_amount', 'REAL')
     _add_col(db, 'loans', 'disbursement_date', 'TIMESTAMP')
     _add_col(db, 'loans', 'first_payment_date', 'TIMESTAMP')
@@ -416,6 +422,38 @@ def init_db():
     _add_col(db, 'repayments', 'received_by', 'INTEGER')
     _add_col(db, 'repayments', 'verified_by', 'INTEGER')
     _add_col(db, 'repayments', 'verified_at', 'TIMESTAMP')
+
+    # Loan guarantors — members who back a loan and must consent
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS loan_guarantors (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            loan_id INTEGER NOT NULL,
+            member_id INTEGER NOT NULL,
+            status TEXT DEFAULT 'pending',
+            requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            responded_at TIMESTAMP,
+            comment TEXT,
+            FOREIGN KEY (loan_id) REFERENCES loans (id),
+            FOREIGN KEY (member_id) REFERENCES members (id)
+        )
+    '''))
+    # Loan approval audit trail — one row per stage action
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS loan_approvals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            loan_id INTEGER NOT NULL,
+            stage TEXT NOT NULL,
+            action TEXT NOT NULL,
+            acted_by INTEGER,
+            acted_by_name TEXT,
+            acted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            comment TEXT,
+            FOREIGN KEY (loan_id) REFERENCES loans (id)
+        )
+    '''))
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_loan_guarantors_loan ON loan_guarantors(loan_id)')
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_loan_guarantors_member ON loan_guarantors(member_id)')
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_loan_approvals_loan ON loan_approvals(loan_id)')
 
     # Investments table
     db.execute(_adapt('''

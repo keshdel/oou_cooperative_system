@@ -331,6 +331,35 @@ def send_loan_repayment_email(recipient: str, member: dict, loan: dict,
     send_email(recipient, 'Loan Repayment Recorded - OOU Cooperative', html, text)
 
 
+def send_guarantor_request_email(recipient: str, guarantor: dict, applicant: dict,
+                                 loan_number: str, amount: float) -> None:
+    """Ask a member to stand as guarantor for a loan."""
+    full = (f"{guarantor.get('first_name', '')} {guarantor.get('last_name', '')}".strip()
+            or 'Member')
+    app_name = f"{applicant['first_name']} {applicant['last_name']}"
+    html = (
+        f'<p>Dear {full},</p>'
+        f'<p><strong>{app_name}</strong> has requested you to stand as guarantor for a '
+        f'loan of <strong>&#8358;{float(amount):,.2f}</strong> (ref {loan_number}).</p>'
+        f'<p>Please log in to your member portal to <strong>accept or decline</strong> this request.</p>'
+    )
+    send_email(recipient, 'Guarantor Request - OOU Cooperative', html)
+
+
+def send_loan_stage_email(recipient: str, member: dict, loan_number: str,
+                          stage_label: str) -> None:
+    """Notify a member their loan advanced to a new approval stage."""
+    full = (f"{member.get('first_name', '')} {member.get('last_name', '')}".strip()
+            or 'Member')
+    html = (
+        f'<p>Dear {full},</p>'
+        f'<p>Your loan application (ref {loan_number}) has progressed: '
+        f'<strong>{stage_label}</strong>.</p>'
+        f'<p>Log in to your member portal for details.</p>'
+    )
+    send_email(recipient, 'Loan Application Update - OOU Cooperative', html)
+
+
 def send_password_reset_email(recipient: str, user: dict, reset_url: str) -> None:
     try:
         from flask import render_template

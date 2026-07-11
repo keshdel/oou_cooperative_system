@@ -92,15 +92,65 @@
                 </div>
 
                 <hr>
-                <div class="form-check mb-3">
-                    <input class="form-check-input" type="checkbox" id="termsAgree" required>
-                    <label class="form-check-label" for="termsAgree">
-                        I confirm that all information provided is true and correct.
-                    </label>
+                <button type="button" class="btn btn-outline-secondary btn-sm mb-3" id="showScheduleBtn">
+                    <i class="fas fa-list-ol"></i> View full repayment schedule
+                </button>
+                <div id="scheduleWrap" class="table-responsive mb-3 d-none" style="max-height:280px; overflow:auto;">
+                    <table class="table table-sm">
+                        <thead class="table-light"><tr><th>#</th><th class="text-end">Payment</th><th class="text-end">Principal</th><th class="text-end">Interest</th><th class="text-end">Balance</th></tr></thead>
+                        <tbody id="scheduleBody"></tbody>
+                    </table>
                 </div>
+
+                <!-- Guarantors -->
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-bold">Guarantor 1 *</label>
+                        <select class="form-select" name="guarantors" required>
+                            <option value="">-- Choose a member --</option>
+                            {% for m in all_members %}<option value="{{ m.id }}">{{ m.first_name }} {{ m.last_name }} ({{ m.member_number }})</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="form-label fw-bold">Guarantor 2 *</label>
+                        <select class="form-select" name="guarantors" required>
+                            <option value="">-- Choose a member --</option>
+                            {% for m in all_members %}<option value="{{ m.id }}">{{ m.first_name }} {{ m.last_name }} ({{ m.member_number }})</option>{% endfor %}
+                        </select>
+                        <small class="text-muted">Both guarantors must accept before your application proceeds.</small>
+                    </div>
+                </div>
+
+                <!-- Terms & signature -->
+                <div class="card border-warning mb-3">
+                    <div class="card-header bg-warning bg-opacity-25"><strong>Terms &amp; Conditions</strong></div>
+                    <div class="card-body">
+                        <div class="small text-muted mb-2" style="max-height:120px; overflow:auto;">
+                            I agree to repay this loan in accordance with the repayment schedule above. I authorise the
+                            deduction of the 1% insurance premium and 1% application fee at disbursement, and I understand
+                            that my savings and my two guarantors stand as security. Late repayments attract penalties per
+                            the bye-laws. This application is subject to approval by the Secretary, Treasurer and President.
+                        </div>
+                        <div class="form-check mb-3">
+                            <input class="form-check-input" type="checkbox" id="termsAgree" name="accept_terms" value="1" required>
+                            <label class="form-check-label" for="termsAgree">I have read and <strong>accept the terms and conditions</strong>.</label>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-8 mb-2">
+                                <label class="form-label small mb-0">Signature — type your full name *</label>
+                                <input type="text" class="form-control" name="signature_name" id="signatureName" placeholder="Your full legal name" required>
+                            </div>
+                            <div class="col-md-4 mb-2">
+                                <label class="form-label small mb-0">Date</label>
+                                <input type="text" class="form-control" value="{{ now().strftime('%Y-%m-%d') }}" readonly>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="text-end">
                     <button type="reset" class="btn btn-secondary">Reset</button>
-                    <button type="submit" class="btn btn-primary" id="submitBtn" disabled>Submit Application</button>
+                    <button type="submit" class="btn btn-primary" id="submitBtn" disabled>Accept &amp; Submit Application</button>
                 </div>
             </form>
         </div>
@@ -190,8 +240,35 @@ fetch('/api/member/current')
 document.getElementById('amount').addEventListener('input', calculateLoan);
 document.getElementById('tenure').addEventListener('change', calculateLoan);
 document.getElementById('purpose').addEventListener('change', calculateLoan);
-document.getElementById('termsAgree').addEventListener('change', function() {
-    document.getElementById('submitBtn').disabled = !this.checked;
+function updateSubmit() {
+    const ok = document.getElementById('termsAgree').checked &&
+               document.getElementById('signatureName').value.trim().length > 0;
+    document.getElementById('submitBtn').disabled = !ok;
+}
+document.getElementById('termsAgree').addEventListener('change', updateSubmit);
+document.getElementById('signatureName').addEventListener('input', updateSubmit);
+
+// Full month-by-month schedule (server-computed to match the real terms)
+document.getElementById('showScheduleBtn').addEventListener('click', function() {
+    const amount  = parseFloat(document.getElementById('amount').value) || 0;
+    const tenure  = parseInt(document.getElementById('tenure').value)    || 0;
+    const purpose = document.getElementById('purpose').value;
+    if (!amount || !tenure || !purpose) { alert('Enter amount, purpose and tenure first.'); return; }
+    fetch(`/loan-schedule-preview?amount=${amount}&tenure=${tenure}&purpose=${encodeURIComponent(purpose)}`)
+        .then(r => r.json())
+        .then(d => {
+            if (!d.ok) { alert(d.error || 'Could not compute schedule'); return; }
+            const body = document.getElementById('scheduleBody');
+            body.innerHTML = '';
+            d.schedule.forEach(row => {
+                body.insertAdjacentHTML('beforeend',
+                    `<tr><td>${row.month}</td><td class="text-end">${fmt(row.payment)}</td>` +
+                    `<td class="text-end">${fmt(row.principal)}</td><td class="text-end">${fmt(row.interest)}</td>` +
+                    `<td class="text-end">${fmt(row.balance)}</td></tr>`);
+            });
+            document.getElementById('scheduleWrap').classList.remove('d-none');
+        })
+        .catch(() => alert('Error fetching schedule'));
 });
 </script>
 {% endblock %}
