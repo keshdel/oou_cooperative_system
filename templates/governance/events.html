@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Events - OOU Cooperative{% endblock %}
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-3">
+        <div class="col"><h2><i class="fas fa-calendar-alt"></i> Cooperative Events</h2>
+            <p class="text-muted mb-0">Upcoming AGM, meetings and announcements.</p></div>
+        <div class="col-auto align-self-center">
+            <a href="{{ url_for('governance.minutes_list') }}" class="btn btn-outline-secondary btn-sm"><i class="fas fa-book"></i> Minutes</a>
+        </div>
+    </div>
+
+    <h5 class="text-primary">Upcoming</h5>
+    {% if upcoming %}
+    <div class="row">
+        {% for e in upcoming %}
+        <div class="col-md-6 col-lg-4 mb-3">
+            <div class="card h-100 border-primary">
+                <div class="card-body">
+                    <span class="badge bg-primary text-uppercase mb-2">{{ e.event_type }}</span>
+                    <h5 class="card-title">{{ e.title }}</h5>
+                    <p class="mb-1"><i class="fas fa-calendar text-muted"></i>
+                        {{ (e.event_date|string)[:16] if e.event_date else 'Date to be announced' }}</p>
+                    {% if e.location %}<p class="mb-1"><i class="fas fa-map-marker-alt text-muted"></i> {{ e.location }}</p>{% endif %}
+                    {% if e.description %}<p class="small text-muted mb-0">{{ e.description }}</p>{% endif %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="alert alert-info">No upcoming events at the moment.</div>
+    {% endif %}
+
+    {% if past %}
+    <h5 class="text-muted mt-4">Past</h5>
+    <div class="list-group">
+        {% for e in past %}
+        <div class="list-group-item d-flex justify-content-between">
+            <div><span class="badge bg-light text-dark text-uppercase">{{ e.event_type }}</span> {{ e.title }}
+                {% if e.location %}<span class="text-muted small">· {{ e.location }}</span>{% endif %}</div>
+            <span class="text-muted small">{{ (e.event_date|string)[:10] }}</span>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

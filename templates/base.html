@@ -60,6 +60,14 @@
                        class="{% if request.endpoint == 'portal.my_guarantor_requests' %}active{% endif %}">
                         <i class="fas fa-user-shield"></i> Guarantor Requests
                     </a>
+                    <a href="{{ url_for('governance.events_list') }}"
+                       class="{% if request.endpoint == 'governance.events_list' %}active{% endif %}">
+                        <i class="fas fa-calendar-alt"></i> Events
+                    </a>
+                    <a href="{{ url_for('governance.minutes_list') }}"
+                       class="{% if request.endpoint == 'governance.minutes_list' %}active{% endif %}">
+                        <i class="fas fa-book"></i> Minutes
+                    </a>
                     <a href="{{ url_for('portal.support') }}"
                        class="{% if request.endpoint == 'portal.support' %}active{% endif %}">
                         <i class="fas fa-headset"></i> Support
@@ -86,6 +94,12 @@
                     <a href="{{ url_for('members.members_list') }}"
                        class="{% if request.blueprint == 'members' %}active{% endif %}">
                         <i class="fas fa-users"></i> Members
+                    </a>
+                    {% endif %}
+                    {% if current_user.role in ['admin', 'secretary'] %}
+                    <a href="{{ url_for('governance.manage') }}"
+                       class="{% if request.blueprint == 'governance' %}active{% endif %}">
+                        <i class="fas fa-bullhorn"></i> Events &amp; Minutes
                     </a>
                     {% endif %}
                     <a href="{{ url_for('savings.savings_list') }}"

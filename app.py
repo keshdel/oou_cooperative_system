@@ -102,6 +102,7 @@ from blueprints.migration   import migration
 from blueprints.payments_bp import payments_bp
 from blueprints.help_bp     import help_bp
 from blueprints.accounting  import accounting
+from blueprints.governance  import governance
 from mobile_api             import mobile_api
 
 app.register_blueprint(auth)
@@ -118,6 +119,7 @@ app.register_blueprint(migration)
 app.register_blueprint(payments_bp)
 app.register_blueprint(help_bp)
 app.register_blueprint(accounting)
+app.register_blueprint(governance)
 app.register_blueprint(mobile_api)
 
 csrf.exempt(mobile_api)

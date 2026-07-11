@@ -4,6 +4,24 @@
 
 {% block content %}
 <div class="container-fluid">
+    <!-- Events / AGM banner -->
+    {% if events %}
+    <div class="mb-4">
+        {% for e in events %}
+        <div class="alert {{ 'alert-warning' if e.event_type in ['agm','meeting'] else 'alert-info' }} d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+            <div>
+                <span class="badge bg-{{ 'dark' if e.event_type in ['agm','meeting'] else 'secondary' }} text-uppercase me-2">{{ e.event_type }}</span>
+                <strong>{{ e.title }}</strong>
+                {% if e.event_date %}<span class="ms-2"><i class="fas fa-calendar"></i> {{ (e.event_date|string)[:16] }}</span>{% endif %}
+                {% if e.location %}<span class="ms-2"><i class="fas fa-map-marker-alt"></i> {{ e.location }}</span>{% endif %}
+                {% if e.description %}<div class="small mt-1">{{ e.description }}</div>{% endif %}
+            </div>
+            <a href="{{ url_for('governance.events_list') }}" class="btn btn-sm btn-outline-dark">All events</a>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
     <!-- Welcome Header -->
     <div class="row mb-4">
         <div class="col-12">

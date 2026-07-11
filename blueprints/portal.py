@@ -115,6 +115,14 @@ def member_portal():
         d['date'] = _parse_dt(s['date'])
         recent_savings.append(SimpleNamespace(**d))
 
+    try:
+        _today = datetime.now().strftime('%Y-%m-%d')
+        events = db.execute(
+            "SELECT * FROM events WHERE is_active = 1 AND (event_date IS NULL OR event_date >= ?) "
+            "ORDER BY event_date ASC LIMIT 3", (_today,)).fetchall()
+    except Exception:
+        events = []
+
     return render_template('member/portal.html',
                            member=_member_extras(member, db),
                            active_loans_total=sum(l.amount for l in active_loans),
@@ -122,6 +130,7 @@ def member_portal():
                            active_loans=active_loans,
                            recent_savings=recent_savings,
                            recent_loans=loans[:5],
+                           events=events,
                            unread_count=unread_count)
 
 

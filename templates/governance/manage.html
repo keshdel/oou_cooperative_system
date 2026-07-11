@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}Events & Minutes - OOU Cooperative{% endblock %}
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-3">
+        <div class="col">
+            <h2><i class="fas fa-bullhorn"></i> Events &amp; Minutes</h2>
+            <p class="text-muted mb-0">Publish AGM/meeting notices to members and keep the minutes-of-meeting repository.</p>
+        </div>
+        <div class="col-auto align-self-center">
+            <a href="{{ url_for('governance.events_list') }}" class="btn btn-outline-secondary btn-sm">Members' view</a>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Events -->
+        <div class="col-lg-6">
+            <div class="card mb-4">
+                <div class="card-header bg-primary text-white"><h6 class="mb-0"><i class="fas fa-calendar-day"></i> Publish Event / Announcement</h6></div>
+                <div class="card-body">
+                    <form method="post" action="{{ url_for('governance.add_event') }}" class="row g-2">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <div class="col-md-8"><label class="form-label small mb-0">Title *</label>
+                            <input name="title" class="form-control form-control-sm" placeholder="e.g. 2026 Annual General Meeting" required></div>
+                        <div class="col-md-4"><label class="form-label small mb-0">Type</label>
+                            <select name="event_type" class="form-select form-select-sm">
+                                <option value="agm">AGM</option><option value="meeting">Meeting</option>
+                                <option value="announcement" selected>Announcement</option><option value="holiday">Holiday</option>
+                            </select></div>
+                        <div class="col-md-5"><label class="form-label small mb-0">Date</label>
+                            <input type="date" name="event_date" class="form-control form-control-sm"></div>
+                        <div class="col-md-7"><label class="form-label small mb-0">Location</label>
+                            <input name="location" class="form-control form-control-sm" placeholder="e.g. Main Hall"></div>
+                        <div class="col-12"><label class="form-label small mb-0">Details</label>
+                            <textarea name="description" class="form-control form-control-sm" rows="2"></textarea></div>
+                        <div class="col-12"><button class="btn btn-primary btn-sm"><i class="fas fa-plus"></i> Publish</button></div>
+                    </form>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-header"><h6 class="mb-0">Events</h6></div>
+                <div class="card-body p-0">
+                    {% if events %}
+                    <table class="table table-sm mb-0">
+                        <thead class="table-light"><tr><th>Title</th><th>Date</th><th>Status</th><th></th></tr></thead>
+                        <tbody>
+                            {% for e in events %}
+                            <tr class="{% if not e.is_active %}text-muted{% endif %}">
+                                <td><span class="badge bg-light text-dark text-uppercase">{{ e.event_type }}</span> {{ e.title }}</td>
+                                <td class="small">{{ (e.event_date|string)[:10] if e.event_date else '—' }}</td>
+                                <td>{% if e.is_active %}<span class="badge bg-success">Live</span>{% else %}<span class="badge bg-secondary">Hidden</span>{% endif %}</td>
+                                <td class="text-end">
+                                    <form method="post" action="{{ url_for('governance.toggle_event', event_id=e.id) }}" class="d-inline">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <button class="btn btn-sm btn-outline-secondary">{{ 'Hide' if e.is_active else 'Show' }}</button>
+                                    </form>
+                                    <form method="post" action="{{ url_for('governance.delete_event', event_id=e.id) }}" class="d-inline" onsubmit="return confirm('Delete this event?');">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <button class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}<div class="p-3 text-muted">No events yet.</div>{% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Minutes -->
+        <div class="col-lg-6">
+            <div class="card mb-4">
+                <div class="card-header bg-info text-white"><h6 class="mb-0"><i class="fas fa-file-upload"></i> Upload Minutes</h6></div>
+                <div class="card-body">
+                    <form method="post" action="{{ url_for('governance.upload_minutes') }}" enctype="multipart/form-data" class="row g-2">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <div class="col-md-8"><label class="form-label small mb-0">Title *</label>
+                            <input name="title" class="form-control form-control-sm" placeholder="e.g. AGM 2026 Minutes" required></div>
+                        <div class="col-md-4"><label class="form-label small mb-0">Type</label>
+                            <select name="meeting_type" class="form-select form-select-sm">
+                                <option value="agm">AGM</option><option value="exco">Exco</option>
+                                <option value="general" selected>General</option><option value="committee">Committee</option>
+                            </select></div>
+                        <div class="col-md-5"><label class="form-label small mb-0">Meeting date</label>
+                            <input type="date" name="meeting_date" class="form-control form-control-sm"></div>
+                        <div class="col-md-7"><label class="form-label small mb-0">File (PDF/DOC/image, max 10MB)</label>
+                            <input type="file" name="file" class="form-control form-control-sm" accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png"></div>
+                        <div class="col-12"><label class="form-label small mb-0">Notes</label>
+                            <input name="notes" class="form-control form-control-sm"></div>
+                        <div class="col-12"><button class="btn btn-info btn-sm"><i class="fas fa-upload"></i> Save to Repository</button></div>
+                    </form>
+                </div>
+            </div>
+            <div class="card">
+                <div class="card-header"><h6 class="mb-0">Minutes Repository</h6></div>
+                <div class="card-body p-0">
+                    {% if minutes %}
+                    <table class="table table-sm mb-0">
+                        <thead class="table-light"><tr><th>Title</th><th>Date</th><th></th></tr></thead>
+                        <tbody>
+                            {% for m in minutes %}
+                            <tr>
+                                <td><span class="badge bg-light text-dark text-uppercase">{{ m.meeting_type }}</span> {{ m.title }}</td>
+                                <td class="small">{{ (m.meeting_date|string)[:10] if m.meeting_date else '—' }}</td>
+                                <td class="text-end">
+                                    {% if m.file_name %}<a href="{{ url_for('governance.minutes_download', minute_id=m.id) }}" class="btn btn-sm btn-outline-primary"><i class="fas fa-download"></i></a>{% endif %}
+                                    <form method="post" action="{{ url_for('governance.delete_minutes', minute_id=m.id) }}" class="d-inline" onsubmit="return confirm('Delete these minutes?');">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <button class="btn btn-sm btn-outline-danger"><i class="fas fa-trash"></i></button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}<div class="p-3 text-muted">No minutes uploaded yet.</div>{% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

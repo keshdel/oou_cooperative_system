@@ -204,6 +204,8 @@ def _adapt(sql):
     sql = sql.replace('INTEGER PRIMARY KEY AUTOINCREMENT', 'SERIAL PRIMARY KEY')
     # SQLite REAL = 8-byte float; PostgreSQL REAL = 4-byte; use DOUBLE PRECISION
     sql = re.sub(r'\bREAL\b', 'DOUBLE PRECISION', sql)
+    # SQLite BLOB → PostgreSQL BYTEA
+    sql = re.sub(r'\bBLOB\b', 'BYTEA', sql)
     return sql
 
 
@@ -605,6 +607,38 @@ def init_db():
             FOREIGN KEY (user_id) REFERENCES users (id)
         )
     '''))
+
+    # Events / announcements (AGM, meetings) shown on the members' banner
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            event_type TEXT DEFAULT 'announcement',
+            event_date TIMESTAMP,
+            location TEXT,
+            description TEXT,
+            is_active INTEGER DEFAULT 1,
+            created_by INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    '''))
+    # Minutes of meeting repository — file stored in the DB so it survives
+    # redeploys on platforms with an ephemeral filesystem (e.g. Railway).
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS meeting_minutes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            meeting_type TEXT DEFAULT 'general',
+            meeting_date DATE,
+            file_name TEXT,
+            file_mime TEXT,
+            file_data BLOB,
+            notes TEXT,
+            uploaded_by INTEGER,
+            uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    '''))
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_events_date ON events(event_date)')
 
     # ── Double-entry general ledger ────────────────────────────────────────────
     # Chart of accounts
