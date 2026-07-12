@@ -2,6 +2,7 @@ import os
 import unittest
 from io import BytesIO
 from unittest.mock import patch
+from urllib.parse import urlparse
 
 import jwt
 from werkzeug.security import check_password_hash
@@ -215,8 +216,32 @@ class HardeningFeatureTests(unittest.TestCase):
             self.assertEqual(user['role'], 'member')
             self.assertEqual(user['username'], email)
             self.assertEqual(user['must_change_password'], 1)
-            temp_password = onboarding_email.call_args.args[3]
-            self.assertTrue(check_password_hash(user['password_hash'], temp_password))
+            setup_url = onboarding_email.call_args.args[3]
+            self.assertIn('/setup-password/', setup_url)
+            self.assertNotIn('password', setup_url.split('/setup-password/', 1)[-1].lower())
+
+            token = urlparse(setup_url).path.rsplit('/', 1)[-1]
+            token_row = db.execute('SELECT * FROM account_setup_tokens WHERE user_id = ?', (user['id'],)).fetchone()
+            self.assertIsNotNone(token_row)
+            self.assertIsNone(token_row['used_at'])
+
+        setup = self.client.post(
+            f'/setup-password/{token}',
+            data={'new_password': 'SetupPass1!', 'confirm_password': 'SetupPass1!'},
+            follow_redirects=False,
+        )
+        self.assertIn(setup.status_code, (302, 303))
+
+        with self.app.app_context():
+            db = get_db()
+            user = db.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
+            token_row = db.execute('SELECT * FROM account_setup_tokens WHERE user_id = ?', (user['id'],)).fetchone()
+            self.assertEqual(user['must_change_password'], 0)
+            self.assertTrue(check_password_hash(user['password_hash'], 'SetupPass1!'))
+            self.assertIsNotNone(token_row['used_at'])
+
+        reused = self.client.get(f'/setup-password/{token}', follow_redirects=False)
+        self.assertIn(reused.status_code, (302, 303))
 
     def test_salary_upload_posts_savings_journal_and_batch_detail(self):
         self.login_admin()

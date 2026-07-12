@@ -608,6 +608,22 @@ def init_db():
         )
     '''))
 
+    # One-time account setup / onboarding tokens.
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS account_setup_tokens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            token_hash TEXT UNIQUE NOT NULL,
+            purpose TEXT DEFAULT 'member_onboarding',
+            expires_at TIMESTAMP NOT NULL,
+            used_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users (id)
+        )
+    '''))
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_account_setup_tokens_user ON account_setup_tokens(user_id)')
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_account_setup_tokens_hash ON account_setup_tokens(token_hash)')
+
     # Events / announcements (AGM, meetings) shown on the members' banner
     db.execute(_adapt('''
         CREATE TABLE IF NOT EXISTS events (

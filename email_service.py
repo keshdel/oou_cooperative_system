@@ -234,8 +234,7 @@ def send_welcome_email(recipient: str, member: dict) -> None:
 
 
 def send_member_onboarding_email(recipient: str, member: dict, username: str,
-                                 temporary_password: str, login_url: str,
-                                 profile_url: str = '') -> None:
+                                 setup_url: str, profile_url: str = '') -> None:
     full_name = member.get('full_name') or 'Member'
     member_number = member.get('member_number') or ''
     html = (
@@ -244,10 +243,10 @@ def send_member_onboarding_email(recipient: str, member: dict, username: str,
         f'<table cellpadding="6" cellspacing="0" style="border-collapse:collapse">'
         f'<tr><td><strong>Member number</strong></td><td>{member_number}</td></tr>'
         f'<tr><td><strong>Username</strong></td><td>{username}</td></tr>'
-        f'<tr><td><strong>Temporary password</strong></td><td>{temporary_password}</td></tr>'
         f'</table>'
-        f'<p>Sign in with the temporary password, then choose your own password before continuing.</p>'
-        f'<p><a href="{login_url}">Open member portal</a></p>'
+        f'<p>Use the secure link below to choose your password and activate your portal access.</p>'
+        f'<p><a href="{setup_url}">Set up your password</a></p>'
+        f'<p>This link can be used once and expires after 24 hours.</p>'
     )
     if profile_url:
         html += f'<p>After setting your password, review your profile here: <a href="{profile_url}">{profile_url}</a></p>'
@@ -258,9 +257,8 @@ def send_member_onboarding_email(recipient: str, member: dict, username: str,
         f'Your cooperative portal profile has been created.\n'
         f'Member number: {member_number}\n'
         f'Username: {username}\n'
-        f'Temporary password: {temporary_password}\n\n'
-        f'Login: {login_url}\n'
-        f'After login, choose your own password and review your profile.\n'
+        f'Set up your password: {setup_url}\n\n'
+        f'This link can be used once and expires after 24 hours.\n'
     )
     send_email(recipient, 'Set up your Cooperative Portal Account', html, text)
 

@@ -96,6 +96,16 @@ def generate_compliant_password(db=None, length=None):
     return ''.join(chars)
 
 
+def generate_account_setup_token():
+    """Return a plaintext token for email delivery and its database hash."""
+    token = secrets.token_urlsafe(32)
+    return token, hash_account_setup_token(token)
+
+
+def hash_account_setup_token(token):
+    return hashlib.sha256((token or '').encode('utf-8')).hexdigest()
+
+
 # ── Audit logging ────────────────────────────────────────────────────────────
 
 def log_audit(db, user_id, username, action, module, description,

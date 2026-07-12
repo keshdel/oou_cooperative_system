@@ -1,12 +1,13 @@
 import hmac
 import os
+from datetime import datetime
 
 from flask import Blueprint, render_template, redirect, url_for, request, flash
 from flask_login import login_user, login_required, logout_user
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from database import get_db
-from security import log_audit
+from security import hash_account_setup_token, log_audit, validate_password_strength
 from utils import User, is_rate_limited, lockout_seconds_remaining, record_failed_login, clear_login_attempts
 
 auth = Blueprint('auth', __name__)
@@ -20,6 +21,38 @@ def _reset_token_is_valid():
     expected_token = os.environ.get('RESET_TOKEN', '')
     provided_token = request.form.get('token') or request.headers.get('X-Reset-Token', '')
     return bool(expected_token and provided_token and hmac.compare_digest(provided_token, expected_token))
+
+
+def _parse_db_datetime(value):
+    if isinstance(value, datetime):
+        return value
+    return datetime.fromisoformat(str(value).split('.')[0].replace('T', ' '))
+
+
+def _account_setup_token_row(db, token):
+    token_hash = hash_account_setup_token(token)
+    row = db.execute('''
+        SELECT
+            t.id AS token_id,
+            t.user_id,
+            t.expires_at,
+            t.used_at,
+            u.username,
+            u.email,
+            u.full_name,
+            u.is_active
+        FROM account_setup_tokens t
+        JOIN users u ON u.id = t.user_id
+        WHERE t.token_hash = ?
+    ''', (token_hash,)).fetchone()
+    if not row or row['used_at'] or not row['is_active']:
+        return None
+    try:
+        if _parse_db_datetime(row['expires_at']) <= datetime.now():
+            return None
+    except Exception:
+        return None
+    return row
 
 
 @auth.route('/')
@@ -51,7 +84,13 @@ def login():
         db   = get_db()
         user = db.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
 
-        if user and check_password_hash(user['password_hash'], password):
+        if user and user['is_active'] == 0:
+            record_failed_login(ip)
+            log_audit(db, user['id'], user['username'], 'FAILED_LOGIN', 'auth',
+                      'Inactive user login attempt', ip, ua)
+            db.commit()
+            flash('Incorrect username or password. Please try again.', 'danger')
+        elif user and check_password_hash(user['password_hash'], password):
             clear_login_attempts(ip)
             keys = user.keys()
             user_obj = User(
@@ -97,6 +136,60 @@ def login():
                 flash('Incorrect username or password. Please try again.', 'danger')
 
     return render_template('login.html')
+
+
+@auth.route('/setup-password/<token>', methods=['GET', 'POST'])
+def setup_password(token):
+    db = get_db()
+    setup_row = _account_setup_token_row(db, token)
+    if not setup_row:
+        flash('This setup link is invalid, expired, or has already been used.', 'danger')
+        return redirect(url_for('auth.login'))
+
+    if request.method == 'POST':
+        new_password = request.form.get('new_password', '')
+        confirm_password = request.form.get('confirm_password', '')
+
+        if not new_password or not confirm_password:
+            flash('Please enter and confirm your new password.', 'danger')
+            return redirect(url_for('auth.setup_password', token=token))
+        if new_password != confirm_password:
+            flash('New passwords do not match.', 'danger')
+            return redirect(url_for('auth.setup_password', token=token))
+
+        ok, errors = validate_password_strength(new_password, db)
+        if not ok:
+            flash(' '.join(errors), 'danger')
+            return redirect(url_for('auth.setup_password', token=token))
+
+        try:
+            db.execute(
+                'UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?',
+                (generate_password_hash(new_password), setup_row['user_id'])
+            )
+            db.execute(
+                'UPDATE account_setup_tokens SET used_at = ? WHERE id = ?',
+                (datetime.now(), setup_row['token_id'])
+            )
+            log_audit(
+                db,
+                setup_row['user_id'],
+                setup_row['username'],
+                'ACCOUNT_SETUP',
+                'auth',
+                'User completed account setup',
+                request.remote_addr or '',
+                request.user_agent.string if request.user_agent else '',
+            )
+            db.commit()
+            flash('Password set successfully. Please sign in with your new password.', 'success')
+            return redirect(url_for('auth.login'))
+        except Exception:
+            db.rollback()
+            flash('Unable to complete account setup. Please request a new setup link.', 'danger')
+            return redirect(url_for('auth.login'))
+
+    return render_template('setup-password.html', token=token, user=setup_row)
 
 
 @auth.route('/logout')

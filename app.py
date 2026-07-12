@@ -205,7 +205,7 @@ def _check_billing_status():
 
 # Endpoints accessible even when subscription is expired
 _BILLING_EXEMPT = {
-    'auth.login', 'auth.logout', 'static',
+    'auth.login', 'auth.logout', 'auth.setup_password', 'static',
     'admin_panel.subscription_page',
     'admin_panel.subscription_callback',
     'help_bp.knowledge_base',
