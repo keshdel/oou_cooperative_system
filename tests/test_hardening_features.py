@@ -292,6 +292,18 @@ class HardeningFeatureTests(unittest.TestCase):
             ).fetchone()[0]
             self.assertEqual(open_links, 0)
 
+    def test_admin_readiness_endpoint_reports_core_services(self):
+        self.login_admin()
+        response = self.client.get('/api/readiness')
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertIn(payload['overall'], {'ok', 'warn', 'fail'})
+        checks = {check['key']: check for check in payload['checks']}
+        for key in ('database', 'email', 'payments', 'backup'):
+            self.assertIn(key, checks)
+            self.assertIn(checks[key]['status'], {'ok', 'warn', 'fail'})
+        self.assertIn('members', checks['database']['meta'])
+
     def test_salary_upload_posts_savings_journal_and_batch_detail(self):
         self.login_admin()
         member_id = self.create_member()

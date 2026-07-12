@@ -2,12 +2,12 @@ import os
 import random
 from datetime import datetime, timedelta
 
-from flask import Blueprint, render_template, redirect, url_for, request, flash
+from flask import Blueprint, jsonify, render_template, redirect, url_for, request, flash
 from flask_login import login_required, current_user
 from werkzeug.security import generate_password_hash
 from werkzeug.utils import secure_filename
 
-from database import get_db, last_insert_id
+from database import USE_POSTGRES, get_db, last_insert_id
 from email_service import send_member_onboarding_email
 from security import generate_account_setup_token, validate_password_strength
 from utils import (role_required, audit, validate_image,
@@ -132,6 +132,97 @@ def _issue_account_setup_link(db, user):
     return url_for('auth.setup_password', token=token, _external=True)
 
 
+def _setting_map(db):
+    return {r['key']: r['value'] for r in db.execute('SELECT key, value FROM settings').fetchall()}
+
+
+def _truthy(value):
+    return str(value or '').strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
+def _system_readiness(db):
+    rows = _setting_map(db)
+    checks = []
+
+    try:
+        db.execute('SELECT 1').fetchone()
+        counts = {
+            'members': db.execute('SELECT COUNT(*) FROM members').fetchone()[0],
+            'users': db.execute('SELECT COUNT(*) FROM users').fetchone()[0],
+            'savings': db.execute('SELECT COUNT(*) FROM savings').fetchone()[0],
+            'loans': db.execute('SELECT COUNT(*) FROM loans').fetchone()[0],
+            'journal_entries': db.execute('SELECT COUNT(*) FROM journal_entries').fetchone()[0],
+            'audit_log': db.execute('SELECT COUNT(*) FROM audit_log').fetchone()[0],
+        }
+        checks.append({
+            'key': 'database',
+            'label': 'Database',
+            'status': 'ok',
+            'detail': 'PostgreSQL' if USE_POSTGRES else 'SQLite',
+            'meta': counts,
+        })
+    except Exception as exc:
+        checks.append({
+            'key': 'database',
+            'label': 'Database',
+            'status': 'fail',
+            'detail': f'Connection/query failed: {exc}',
+            'meta': {},
+        })
+
+    mail_enabled = _truthy(rows.get('mail_enabled'))
+    has_brevo = bool(rows.get('brevo_api_key'))
+    has_resend = bool(rows.get('resend_api_key'))
+    has_smtp = bool(rows.get('smtp_host') and rows.get('smtp_user') and rows.get('smtp_pass'))
+    mail_status = 'ok' if mail_enabled and (has_brevo or has_resend or has_smtp) else 'warn'
+    checks.append({
+        'key': 'email',
+        'label': 'Outgoing Email',
+        'status': mail_status,
+        'detail': 'Configured' if mail_status == 'ok' else 'Enable mail and configure Brevo, Resend, or SMTP.',
+        'meta': {
+            'enabled': mail_enabled,
+            'brevo_api': has_brevo,
+            'resend_api': has_resend,
+            'smtp': has_smtp,
+        },
+    })
+
+    gateway = rows.get('active_gateway') or 'paystack'
+    if gateway == 'flutterwave':
+        payment_ok = bool(rows.get('flutterwave_public_key') and rows.get('flutterwave_secret_key'))
+    else:
+        payment_ok = bool(rows.get('paystack_public_key') and rows.get('paystack_secret_key'))
+    checks.append({
+        'key': 'payments',
+        'label': 'Payments',
+        'status': 'ok' if payment_ok else 'warn',
+        'detail': f'{gateway.title()} configured' if payment_ok else f'{gateway.title()} keys are incomplete.',
+        'meta': {'active_gateway': gateway},
+    })
+
+    checks.append({
+        'key': 'backup',
+        'label': 'Backup Posture',
+        'status': 'ok' if USE_POSTGRES else 'warn',
+        'detail': (
+            'Railway PostgreSQL should be covered by provider backups plus periodic export drills.'
+            if USE_POSTGRES else
+            'Local SQLite is not production-safe; use Railway PostgreSQL for client data.'
+        ),
+        'meta': {'backend': 'postgres' if USE_POSTGRES else 'sqlite'},
+    })
+
+    overall = 'fail' if any(c['status'] == 'fail' for c in checks) else (
+        'warn' if any(c['status'] == 'warn' for c in checks) else 'ok'
+    )
+    return {
+        'overall': overall,
+        'generated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'checks': checks,
+    }
+
+
 @admin_panel.route('/settings')
 @login_required
 @role_required('admin')
@@ -166,6 +257,7 @@ def settings():
         audit_logs = db.execute(
             'SELECT * FROM audit_log ORDER BY timestamp DESC LIMIT 100'
         ).fetchall()
+        readiness = _system_readiness(db)
 
         return render_template('admin/settings.html',
                                settings=settings_dict,
@@ -173,6 +265,7 @@ def settings():
                                current_is_super=current_is_super,
                                audit_logs=audit_logs,
                                backup_history=[],
+                               readiness=readiness,
                                datetime=datetime)
     except Exception as e:
         flash(f'Error loading settings: {str(e)}', 'danger')
@@ -182,6 +275,7 @@ def settings():
                                current_is_super=False,
                                audit_logs=[],
                                backup_history=[],
+                               readiness={'overall': 'fail', 'generated_at': '', 'checks': []},
                                datetime=datetime)
 
 
@@ -268,6 +362,14 @@ def reconcile_savings():
         db.rollback()
         flash(f'Error reconciling savings: {e}', 'danger')
     return redirect(url_for('admin_panel.settings') + '#system')
+
+
+@admin_panel.route('/api/readiness')
+@login_required
+@role_required('admin')
+def readiness_status():
+    db = get_db()
+    return jsonify(_system_readiness(db))
 
 
 @admin_panel.route('/expenses')
