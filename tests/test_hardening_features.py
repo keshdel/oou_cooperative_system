@@ -3,6 +3,7 @@ import unittest
 from io import BytesIO
 from unittest.mock import patch
 
+import jwt
 
 TEST_DB = os.path.abspath('.test-hardening-features.db')
 os.environ.setdefault('SECRET_KEY', 'test-secret-key-for-hardening-regression')
@@ -19,7 +20,9 @@ except FileNotFoundError:
 import app as app_module  # noqa: E402
 from database import get_db  # noqa: E402
 from ledger import backfill_from_transactions, ledger_reconciliation  # noqa: E402
+from mobile_api import JWT_AUDIENCE  # noqa: E402
 from reports_engine import income_statement  # noqa: E402
+from utils import clear_login_attempts  # noqa: E402
 
 
 class HardeningFeatureTests(unittest.TestCase):
@@ -93,6 +96,7 @@ class HardeningFeatureTests(unittest.TestCase):
             self.assertNotIn(b'TestAdmin123', form_token_response.data)
 
     def test_mobile_repayment_is_fail_closed(self):
+        clear_login_attempts('mobile:127.0.0.1')
         login = self.client.post(
             '/api/mobile/login',
             json={'username': 'admin', 'password': 'TestAdmin123'},
@@ -106,6 +110,54 @@ class HardeningFeatureTests(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 503)
         self.assertFalse(response.get_json()['success'])
+
+    def test_mobile_login_is_rate_limited_and_cleared_on_success(self):
+        login_key = 'mobile:203.0.113.10'
+        clear_login_attempts(login_key)
+        environ = {'REMOTE_ADDR': '203.0.113.10'}
+
+        for _ in range(5):
+            response = self.client.post(
+                '/api/mobile/login',
+                json={'username': 'admin', 'password': 'wrong-password'},
+                environ_overrides=environ,
+            )
+            self.assertEqual(response.status_code, 401)
+
+        blocked = self.client.post(
+            '/api/mobile/login',
+            json={'username': 'admin', 'password': 'TestAdmin123'},
+            environ_overrides=environ,
+        )
+        self.assertEqual(blocked.status_code, 429)
+
+        clear_login_attempts(login_key)
+        success = self.client.post(
+            '/api/mobile/login',
+            json={'username': 'admin', 'password': 'TestAdmin123'},
+            environ_overrides=environ,
+        )
+        self.assertEqual(success.status_code, 200)
+
+    def test_mobile_token_requires_expected_audience(self):
+        clear_login_attempts('mobile:127.0.0.1')
+        response = self.client.post(
+            '/api/mobile/login',
+            json={'username': 'admin', 'password': 'TestAdmin123'},
+        )
+        self.assertEqual(response.status_code, 200)
+        token = response.get_json()['token']
+
+        with self.assertRaises(jwt.InvalidAudienceError):
+            jwt.decode(token, self.app.config['SECRET_KEY'], algorithms=['HS256'])
+
+        payload = jwt.decode(
+            token,
+            self.app.config['SECRET_KEY'],
+            algorithms=['HS256'],
+            audience=JWT_AUDIENCE,
+        )
+        self.assertEqual(payload['username'], 'admin')
 
     def test_salary_upload_posts_savings_journal_and_batch_detail(self):
         self.login_admin()
