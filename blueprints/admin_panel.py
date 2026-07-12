@@ -8,6 +8,7 @@ from werkzeug.security import generate_password_hash
 from werkzeug.utils import secure_filename
 
 from database import get_db, last_insert_id
+from security import validate_password_strength
 from utils import (role_required, audit, validate_image,
                    member_savings_balance, reconcile_member_savings)
 from ledger import (post_journal_safe, CASH, OPERATING_EXPENSES, FEE_INCOME,
@@ -29,6 +30,11 @@ _DEFAULT_SETTINGS = {
     'currency': 'NGN',
     'date_format': 'Y-m-d',
     'session_timeout': '30',
+    'password_min_length': '8',
+    'password_require_upper': '1',
+    'password_require_lower': '1',
+    'password_require_number': '1',
+    'password_require_special': '0',
     'maintenance_mode': '0',
     'min_savings': '5000',
     'share_capital_pct': '0',
@@ -75,6 +81,11 @@ _EDITABLE_SETTING_KEYS = set(_DEFAULT_SETTINGS) | {
     'support_email',
     'office_address',
     'whatsapp_number',
+    'password_min_length',
+    'password_require_upper',
+    'password_require_lower',
+    'password_require_number',
+    'password_require_special',
 }
 
 _PROTECTED_SETTING_KEYS = {
@@ -85,6 +96,13 @@ _PROTECTED_SETTING_KEYS = {
     'resend_api_key',
     'brevo_api_key',
     'smtp_pass',
+}
+
+_PASSWORD_POLICY_BOOLEAN_KEYS = {
+    'password_require_upper',
+    'password_require_lower',
+    'password_require_number',
+    'password_require_special',
 }
 
 
@@ -185,8 +203,17 @@ def update_settings():
     try:
         updated = 0
         ignored = []
+        settings_group = request.form.get('_settings_group', '')
+        if settings_group == 'password_policy':
+            for key in _PASSWORD_POLICY_BOOLEAN_KEYS:
+                _upsert_setting(db, key, '1' if request.form.get(key) == '1' else '0')
+                updated += 1
         for key, value in request.form.items():
+            if key == '_settings_group':
+                continue
             if key in _PROTECTED_SETTING_KEYS:
+                continue
+            if key in _PASSWORD_POLICY_BOOLEAN_KEYS:
                 continue
             if key not in _EDITABLE_SETTING_KEYS:
                 ignored.append(key)
@@ -415,6 +442,11 @@ def add_user():
             flash('Username and password are required', 'danger')
             return redirect(url_for('admin_panel.settings'))
 
+        ok, errors = validate_password_strength(password, db)
+        if not ok:
+            flash(' '.join(errors), 'danger')
+            return redirect(url_for('admin_panel.settings') + '#users')
+
         existing = db.execute('SELECT id FROM users WHERE username = ?', (username,)).fetchone()
         if existing:
             flash(f'Username "{username}" already exists', 'danger')
@@ -482,8 +514,9 @@ def reset_user_password(user_id):
         new_password = request.form.get('new_password', '').strip()
         force_change  = request.form.get('force_change', '0') == '1'
 
-        if len(new_password) < 6:
-            flash('Password must be at least 6 characters.', 'danger')
+        ok, errors = validate_password_strength(new_password, db)
+        if not ok:
+            flash(' '.join(errors), 'danger')
             return redirect(url_for('admin_panel.settings') + '#users')
 
         db.execute(

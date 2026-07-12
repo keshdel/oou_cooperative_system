@@ -6,10 +6,12 @@ from types import SimpleNamespace
 
 from flask import Blueprint, render_template, redirect, url_for, request, flash, make_response
 from flask_login import login_required
+from werkzeug.security import generate_password_hash
 from werkzeug.utils import secure_filename
 
 from database import get_db, last_insert_id
-from email_service import send_welcome_email, send_email
+from email_service import send_member_onboarding_email, send_welcome_email, send_email
+from security import generate_compliant_password
 from utils import role_required, validate_image, audit, notify_member
 
 members = Blueprint('members', __name__)
@@ -155,16 +157,55 @@ def add_member():
             db.commit()
 
             member = db.execute('SELECT * FROM members WHERE id = ?', (member_id,)).fetchone()
+            onboarding = None
             if member['email']:
+                username = member['email'].strip().lower()
+                existing_user = db.execute(
+                    'SELECT id FROM users WHERE username = ? OR email = ?',
+                    (username, member['email'])
+                ).fetchone()
+                if not existing_user:
+                    temp_password = generate_compliant_password(db)
+                    full_name = f"{request.form['first_name']} {request.form['last_name']}"
+                    db.execute('''
+                        INSERT INTO users
+                            (username, password_hash, role, full_name, email,
+                             is_active, must_change_password, created_at)
+                        VALUES (?, ?, 'member', ?, ?, 1, 1, ?)
+                    ''', (
+                        username,
+                        generate_password_hash(temp_password),
+                        full_name,
+                        member['email'],
+                        datetime.now(),
+                    ))
+                    db.commit()
+                    onboarding = {
+                        'username': username,
+                        'temporary_password': temp_password,
+                        'full_name': full_name,
+                    }
                 send_welcome_email(member['email'], {
                     'full_name':     f"{request.form['first_name']} {request.form['last_name']}",
                     'member_number': member_number,
                     'coop_name':     'OOU Cooperative',
                 })
+                if onboarding:
+                    send_member_onboarding_email(
+                        member['email'],
+                        {
+                            'full_name': onboarding['full_name'],
+                            'member_number': member_number,
+                        },
+                        onboarding['username'],
+                        onboarding['temporary_password'],
+                        url_for('auth.login', _external=True),
+                        url_for('portal.profile', _external=True),
+                    )
                 notify_member(db, member['email'],
                               'Welcome to OOU Cooperative!',
                               f"Your member number is {member_number}. "
-                              f"You can now log in to view your savings and loans.",
+                              f"Check your email to configure your portal password and profile.",
                               notification_type='success')
 
             if 'photo' in request.files:

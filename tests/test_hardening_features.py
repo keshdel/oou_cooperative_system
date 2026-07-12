@@ -4,6 +4,7 @@ from io import BytesIO
 from unittest.mock import patch
 
 import jwt
+from werkzeug.security import check_password_hash
 
 TEST_DB = os.path.abspath('.test-hardening-features.db')
 os.environ.setdefault('SECRET_KEY', 'test-secret-key-for-hardening-regression')
@@ -22,6 +23,7 @@ from database import get_db  # noqa: E402
 from ledger import backfill_from_transactions, ledger_reconciliation  # noqa: E402
 from mobile_api import JWT_AUDIENCE  # noqa: E402
 from reports_engine import income_statement  # noqa: E402
+from security import generate_compliant_password, validate_password_strength  # noqa: E402
 from utils import clear_login_attempts  # noqa: E402
 
 
@@ -158,6 +160,63 @@ class HardeningFeatureTests(unittest.TestCase):
             audience=JWT_AUDIENCE,
         )
         self.assertEqual(payload['username'], 'admin')
+
+    def test_admin_configured_password_policy_is_enforced_by_helper(self):
+        with self.app.app_context():
+            db = get_db()
+            for key, value in (
+                ('password_min_length', '10'),
+                ('password_require_upper', '1'),
+                ('password_require_lower', '1'),
+                ('password_require_number', '1'),
+                ('password_require_special', '1'),
+            ):
+                db.execute(
+                    'INSERT INTO settings (key, value, description) VALUES (?, ?, ?) '
+                    'ON CONFLICT(key) DO UPDATE SET value = excluded.value',
+                    (key, value, f'Test {key}'),
+                )
+            db.commit()
+
+            ok, errors = validate_password_strength('Password1', db)
+            self.assertFalse(ok)
+            self.assertIn('special character', ' '.join(errors))
+
+            generated = generate_compliant_password(db)
+            ok, errors = validate_password_strength(generated, db)
+            self.assertTrue(ok, errors)
+
+    def test_new_member_gets_portal_user_and_onboarding_email(self):
+        self.login_admin()
+        email = 'new.member.onboarding@example.com'
+        with patch('blueprints.members.send_welcome_email') as welcome_email, \
+                patch('blueprints.members.send_member_onboarding_email') as onboarding_email:
+            response = self.client.post(
+                '/members/add',
+                data={
+                    'first_name': 'New',
+                    'last_name': 'Member',
+                    'email': email,
+                    'phone': '08000000999',
+                    'monthly_savings': '12000',
+                },
+                follow_redirects=False,
+            )
+        self.assertIn(response.status_code, (302, 303))
+        welcome_email.assert_called_once()
+        onboarding_email.assert_called_once()
+
+        with self.app.app_context():
+            db = get_db()
+            user = db.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
+            member = db.execute('SELECT * FROM members WHERE email = ?', (email,)).fetchone()
+            self.assertIsNotNone(user)
+            self.assertIsNotNone(member)
+            self.assertEqual(user['role'], 'member')
+            self.assertEqual(user['username'], email)
+            self.assertEqual(user['must_change_password'], 1)
+            temp_password = onboarding_email.call_args.args[3]
+            self.assertTrue(check_password_hash(user['password_hash'], temp_password))
 
     def test_salary_upload_posts_savings_journal_and_batch_detail(self):
         self.login_admin()
