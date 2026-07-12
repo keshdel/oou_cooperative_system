@@ -5,7 +5,7 @@ from unittest.mock import patch
 from urllib.parse import urlparse
 
 import jwt
-from werkzeug.security import check_password_hash
+from werkzeug.security import check_password_hash, generate_password_hash
 
 TEST_DB = os.path.abspath('.test-hardening-features.db')
 os.environ.setdefault('SECRET_KEY', 'test-secret-key-for-hardening-regression')
@@ -242,6 +242,55 @@ class HardeningFeatureTests(unittest.TestCase):
 
         reused = self.client.get(f'/setup-password/{token}', follow_redirects=False)
         self.assertIn(reused.status_code, (302, 303))
+
+    def test_admin_can_resend_and_revoke_setup_links(self):
+        self.login_admin()
+        email = 'resend.setup@example.com'
+        with self.app.app_context():
+            db = get_db()
+            existing = db.execute('SELECT id FROM users WHERE username = ?', (email,)).fetchone()
+            if existing:
+                user_id = existing['id']
+            else:
+                db.execute('''
+                    INSERT INTO users
+                        (username, password_hash, role, full_name, email,
+                         is_active, must_change_password, created_at)
+                    VALUES (?, ?, 'member', 'Resend Setup', ?, 1, 1, CURRENT_TIMESTAMP)
+                ''', (email, generate_password_hash('UnusedPass1!'), email))
+                db.commit()
+                user_id = db.execute('SELECT id FROM users WHERE username = ?', (email,)).fetchone()['id']
+            db.execute('''
+                INSERT INTO account_setup_tokens (user_id, token_hash, purpose, expires_at)
+                VALUES (?, 'old-token-hash-for-resend-test', 'member_onboarding', '2099-01-01 00:00:00')
+            ''', (user_id,))
+            db.commit()
+
+        with patch('blueprints.admin_panel.send_member_onboarding_email') as onboarding_email:
+            response = self.client.post(f'/api/resend_setup_link/{user_id}', follow_redirects=False)
+        self.assertIn(response.status_code, (302, 303))
+        onboarding_email.assert_called_once()
+        self.assertIn('/setup-password/', onboarding_email.call_args.args[3])
+
+        with self.app.app_context():
+            db = get_db()
+            rows = db.execute(
+                'SELECT * FROM account_setup_tokens WHERE user_id = ? ORDER BY id',
+                (user_id,)
+            ).fetchall()
+            self.assertGreaterEqual(len(rows), 2)
+            self.assertIsNotNone(rows[0]['used_at'])
+            self.assertIsNone(rows[-1]['used_at'])
+
+        revoke = self.client.post(f'/api/revoke_setup_links/{user_id}', follow_redirects=False)
+        self.assertIn(revoke.status_code, (302, 303))
+        with self.app.app_context():
+            db = get_db()
+            open_links = db.execute(
+                'SELECT COUNT(*) FROM account_setup_tokens WHERE user_id = ? AND used_at IS NULL',
+                (user_id,)
+            ).fetchone()[0]
+            self.assertEqual(open_links, 0)
 
     def test_salary_upload_posts_savings_journal_and_batch_detail(self):
         self.login_admin()

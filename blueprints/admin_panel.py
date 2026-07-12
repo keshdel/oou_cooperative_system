@@ -1,6 +1,6 @@
 import os
 import random
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from flask import Blueprint, render_template, redirect, url_for, request, flash
 from flask_login import login_required, current_user
@@ -8,7 +8,8 @@ from werkzeug.security import generate_password_hash
 from werkzeug.utils import secure_filename
 
 from database import get_db, last_insert_id
-from security import validate_password_strength
+from email_service import send_member_onboarding_email
+from security import generate_account_setup_token, validate_password_strength
 from utils import (role_required, audit, validate_image,
                    member_savings_balance, reconcile_member_savings)
 from ledger import (post_journal_safe, CASH, OPERATING_EXPENSES, FEE_INCOME,
@@ -115,6 +116,20 @@ def _upsert_setting(db, key, value, description=None):
             'INSERT INTO settings (key, value, description) VALUES (?, ?, ?)',
             (key, value, description or f'Setting for {key}')
         )
+
+
+def _issue_account_setup_link(db, user):
+    token, token_hash = generate_account_setup_token()
+    db.execute(
+        'UPDATE account_setup_tokens SET used_at = ? WHERE user_id = ? AND used_at IS NULL',
+        (datetime.now(), user['id'])
+    )
+    db.execute('''
+        INSERT INTO account_setup_tokens
+            (user_id, token_hash, purpose, expires_at)
+        VALUES (?, ?, 'admin_reissue', ?)
+    ''', (user['id'], token_hash, datetime.now() + timedelta(hours=24)))
+    return url_for('auth.setup_password', token=token, _external=True)
 
 
 @admin_panel.route('/settings')
@@ -531,6 +546,68 @@ def reset_user_password(user_id):
     except Exception as e:
         db.rollback()
         flash(f'Error resetting password: {e}', 'danger')
+    return redirect(url_for('admin_panel.settings') + '#users')
+
+
+@admin_panel.route('/api/resend_setup_link/<int:user_id>', methods=['POST'])
+@login_required
+@role_required('admin')
+def resend_setup_link(user_id):
+    db = get_db()
+    try:
+        user = db.execute(
+            'SELECT id, username, full_name, email, is_active FROM users WHERE id = ?',
+            (user_id,)
+        ).fetchone()
+        if not user:
+            flash('User not found.', 'danger')
+            return redirect(url_for('admin_panel.settings') + '#users')
+        if not user['email']:
+            flash('Cannot send setup link because this user has no email address.', 'danger')
+            return redirect(url_for('admin_panel.settings') + '#users')
+        if not user['is_active']:
+            flash('Cannot send setup link to an inactive user.', 'danger')
+            return redirect(url_for('admin_panel.settings') + '#users')
+
+        setup_url = _issue_account_setup_link(db, user)
+        db.execute('UPDATE users SET must_change_password = 1 WHERE id = ?', (user_id,))
+        audit(db, 'RESEND_SETUP_LINK', 'users', f'Reissued setup link for {user["username"]}')
+        db.commit()
+        send_member_onboarding_email(
+            user['email'],
+            {'full_name': user['full_name'] or user['username'], 'member_number': ''},
+            user['username'],
+            setup_url,
+            url_for('portal.profile', _external=True),
+        )
+        flash(f'Setup link sent to "{user["username"]}".', 'success')
+    except Exception as e:
+        db.rollback()
+        flash(f'Error sending setup link: {e}', 'danger')
+    return redirect(url_for('admin_panel.settings') + '#users')
+
+
+@admin_panel.route('/api/revoke_setup_links/<int:user_id>', methods=['POST'])
+@login_required
+@role_required('admin')
+def revoke_setup_links(user_id):
+    db = get_db()
+    try:
+        user = db.execute('SELECT username FROM users WHERE id = ?', (user_id,)).fetchone()
+        if not user:
+            flash('User not found.', 'danger')
+            return redirect(url_for('admin_panel.settings') + '#users')
+
+        db.execute(
+            'UPDATE account_setup_tokens SET used_at = ? WHERE user_id = ? AND used_at IS NULL',
+            (datetime.now(), user_id)
+        )
+        audit(db, 'REVOKE_SETUP_LINKS', 'users', f'Revoked setup links for {user["username"]}')
+        db.commit()
+        flash(f'Outstanding setup links for "{user["username"]}" have been revoked.', 'success')
+    except Exception as e:
+        db.rollback()
+        flash(f'Error revoking setup links: {e}', 'danger')
     return redirect(url_for('admin_panel.settings') + '#users')
 
 

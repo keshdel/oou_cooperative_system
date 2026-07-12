@@ -1017,6 +1017,19 @@
                                             onclick="openResetPassword(this)">
                                             <i class="fas fa-key"></i>
                                         </button>
+                                        <form method="POST" action="/api/resend_setup_link/{{ user.id }}" class="d-inline"
+                                              onsubmit="return confirm('Send a new account setup link to {{ user.username }}?')">
+                                            <button type="submit" class="btn btn-sm btn-info" title="Resend setup link"
+                                                    {% if not user.email or not user.is_active %}disabled{% endif %}>
+                                                <i class="fas fa-paper-plane"></i>
+                                            </button>
+                                        </form>
+                                        <form method="POST" action="/api/revoke_setup_links/{{ user.id }}" class="d-inline"
+                                              onsubmit="return confirm('Revoke all unused setup links for {{ user.username }}?')">
+                                            <button type="submit" class="btn btn-sm btn-outline-dark" title="Revoke setup links">
+                                                <i class="fas fa-unlink"></i>
+                                            </button>
+                                        </form>
                                         {% if not user.is_super_admin or current_is_super %}
                                         <form method="POST" action="/api/toggle_user/{{ user.id }}" class="d-inline"
                                               onsubmit="return confirm('Toggle active status for {{ user.username }}?')">
