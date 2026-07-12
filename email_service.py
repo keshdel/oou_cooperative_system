@@ -233,6 +233,36 @@ def send_welcome_email(recipient: str, member: dict) -> None:
     send_email(recipient, 'Welcome to OOU Cooperative!', html)
 
 
+def send_member_onboarding_email(recipient: str, member: dict, username: str,
+                                 setup_url: str, profile_url: str = '') -> None:
+    full_name = member.get('full_name') or 'Member'
+    member_number = member.get('member_number') or ''
+    html = (
+        f'<p>Dear {full_name},</p>'
+        f'<p>Your cooperative portal profile has been created.</p>'
+        f'<table cellpadding="6" cellspacing="0" style="border-collapse:collapse">'
+        f'<tr><td><strong>Member number</strong></td><td>{member_number}</td></tr>'
+        f'<tr><td><strong>Username</strong></td><td>{username}</td></tr>'
+        f'</table>'
+        f'<p>Use the secure link below to choose your password and activate your portal access.</p>'
+        f'<p><a href="{setup_url}">Set up your password</a></p>'
+        f'<p>This link can be used once and expires after 24 hours.</p>'
+    )
+    if profile_url:
+        html += f'<p>After setting your password, review your profile here: <a href="{profile_url}">{profile_url}</a></p>'
+    html += '<p>If any profile detail is wrong, contact the cooperative office.</p>'
+
+    text = (
+        f'Dear {full_name},\n\n'
+        f'Your cooperative portal profile has been created.\n'
+        f'Member number: {member_number}\n'
+        f'Username: {username}\n'
+        f'Set up your password: {setup_url}\n\n'
+        f'This link can be used once and expires after 24 hours.\n'
+    )
+    send_email(recipient, 'Set up your Cooperative Portal Account', html, text)
+
+
 def send_loan_approval_email(recipient: str, member: dict,
                               loan: dict, loan_url: str = '') -> None:
     try:

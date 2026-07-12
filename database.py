@@ -608,6 +608,22 @@ def init_db():
         )
     '''))
 
+    # One-time account setup / onboarding tokens.
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS account_setup_tokens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            token_hash TEXT UNIQUE NOT NULL,
+            purpose TEXT DEFAULT 'member_onboarding',
+            expires_at TIMESTAMP NOT NULL,
+            used_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users (id)
+        )
+    '''))
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_account_setup_tokens_user ON account_setup_tokens(user_id)')
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_account_setup_tokens_hash ON account_setup_tokens(token_hash)')
+
     # Events / announcements (AGM, meetings) shown on the members' banner
     db.execute(_adapt('''
         CREATE TABLE IF NOT EXISTS events (
@@ -776,6 +792,13 @@ def init_db():
     _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_repayments_reference ON repayments(reference)')
     _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_pending_payments_member_status ON pending_payments(member_id, status)')
     _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_notifications_user_read ON notifications(user_id, is_read)')
+    # Idempotency guards for financial document references. Blank/NULL values
+    # remain allowed for legacy rows, but any real business reference can only
+    # appear once.
+    _exec_ignore(db, "CREATE UNIQUE INDEX IF NOT EXISTS uq_savings_receipt_number ON savings(receipt_number) WHERE receipt_number IS NOT NULL AND receipt_number != ''")
+    _exec_ignore(db, "CREATE UNIQUE INDEX IF NOT EXISTS uq_savings_reference ON savings(reference) WHERE reference IS NOT NULL AND reference != ''")
+    _exec_ignore(db, "CREATE UNIQUE INDEX IF NOT EXISTS uq_repayments_reference ON repayments(reference) WHERE reference IS NOT NULL AND reference != ''")
+    _exec_ignore(db, "CREATE UNIQUE INDEX IF NOT EXISTS uq_journal_entries_reference ON journal_entries(reference) WHERE reference IS NOT NULL AND reference != ''")
 
     # ── Default settings ───────────────────────────────────────────────────────
     default_settings = [
@@ -790,6 +813,11 @@ def init_db():
         ('currency', 'NGN', 'Currency'),
         ('date_format', 'Y-m-d', 'Date format'),
         ('session_timeout', '30', 'Session timeout in minutes'),
+        ('password_min_length', '8', 'Minimum password length'),
+        ('password_require_upper', '1', 'Require uppercase letters in passwords'),
+        ('password_require_lower', '1', 'Require lowercase letters in passwords'),
+        ('password_require_number', '1', 'Require numbers in passwords'),
+        ('password_require_special', '0', 'Require special characters in passwords'),
         ('maintenance_mode', '0', 'Maintenance mode'),
         ('min_savings', '5000', 'Minimum monthly savings'),
         ('share_capital_pct', '0', 'Percent of each savings contribution allocated to member share capital (0 = off)'),

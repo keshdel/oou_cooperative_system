@@ -1,13 +1,15 @@
 import os
 import random
-from datetime import datetime
+from datetime import datetime, timedelta
 
-from flask import Blueprint, render_template, redirect, url_for, request, flash
+from flask import Blueprint, jsonify, render_template, redirect, url_for, request, flash
 from flask_login import login_required, current_user
 from werkzeug.security import generate_password_hash
 from werkzeug.utils import secure_filename
 
-from database import get_db, last_insert_id
+from database import USE_POSTGRES, get_db, last_insert_id
+from email_service import send_member_onboarding_email
+from security import generate_account_setup_token, validate_password_strength
 from utils import (role_required, audit, validate_image,
                    member_savings_balance, reconcile_member_savings)
 from ledger import (post_journal_safe, CASH, OPERATING_EXPENSES, FEE_INCOME,
@@ -29,6 +31,11 @@ _DEFAULT_SETTINGS = {
     'currency': 'NGN',
     'date_format': 'Y-m-d',
     'session_timeout': '30',
+    'password_min_length': '8',
+    'password_require_upper': '1',
+    'password_require_lower': '1',
+    'password_require_number': '1',
+    'password_require_special': '0',
     'maintenance_mode': '0',
     'min_savings': '5000',
     'share_capital_pct': '0',
@@ -75,6 +82,11 @@ _EDITABLE_SETTING_KEYS = set(_DEFAULT_SETTINGS) | {
     'support_email',
     'office_address',
     'whatsapp_number',
+    'password_min_length',
+    'password_require_upper',
+    'password_require_lower',
+    'password_require_number',
+    'password_require_special',
 }
 
 _PROTECTED_SETTING_KEYS = {
@@ -87,6 +99,13 @@ _PROTECTED_SETTING_KEYS = {
     'smtp_pass',
 }
 
+_PASSWORD_POLICY_BOOLEAN_KEYS = {
+    'password_require_upper',
+    'password_require_lower',
+    'password_require_number',
+    'password_require_special',
+}
+
 
 def _upsert_setting(db, key, value, description=None):
     existing = db.execute('SELECT id FROM settings WHERE key = ?', (key,)).fetchone()
@@ -97,6 +116,111 @@ def _upsert_setting(db, key, value, description=None):
             'INSERT INTO settings (key, value, description) VALUES (?, ?, ?)',
             (key, value, description or f'Setting for {key}')
         )
+
+
+def _issue_account_setup_link(db, user):
+    token, token_hash = generate_account_setup_token()
+    db.execute(
+        'UPDATE account_setup_tokens SET used_at = ? WHERE user_id = ? AND used_at IS NULL',
+        (datetime.now(), user['id'])
+    )
+    db.execute('''
+        INSERT INTO account_setup_tokens
+            (user_id, token_hash, purpose, expires_at)
+        VALUES (?, ?, 'admin_reissue', ?)
+    ''', (user['id'], token_hash, datetime.now() + timedelta(hours=24)))
+    return url_for('auth.setup_password', token=token, _external=True)
+
+
+def _setting_map(db):
+    return {r['key']: r['value'] for r in db.execute('SELECT key, value FROM settings').fetchall()}
+
+
+def _truthy(value):
+    return str(value or '').strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
+def _system_readiness(db):
+    rows = _setting_map(db)
+    checks = []
+
+    try:
+        db.execute('SELECT 1').fetchone()
+        counts = {
+            'members': db.execute('SELECT COUNT(*) FROM members').fetchone()[0],
+            'users': db.execute('SELECT COUNT(*) FROM users').fetchone()[0],
+            'savings': db.execute('SELECT COUNT(*) FROM savings').fetchone()[0],
+            'loans': db.execute('SELECT COUNT(*) FROM loans').fetchone()[0],
+            'journal_entries': db.execute('SELECT COUNT(*) FROM journal_entries').fetchone()[0],
+            'audit_log': db.execute('SELECT COUNT(*) FROM audit_log').fetchone()[0],
+        }
+        checks.append({
+            'key': 'database',
+            'label': 'Database',
+            'status': 'ok',
+            'detail': 'PostgreSQL' if USE_POSTGRES else 'SQLite',
+            'meta': counts,
+        })
+    except Exception as exc:
+        checks.append({
+            'key': 'database',
+            'label': 'Database',
+            'status': 'fail',
+            'detail': f'Connection/query failed: {exc}',
+            'meta': {},
+        })
+
+    mail_enabled = _truthy(rows.get('mail_enabled'))
+    has_brevo = bool(rows.get('brevo_api_key'))
+    has_resend = bool(rows.get('resend_api_key'))
+    has_smtp = bool(rows.get('smtp_host') and rows.get('smtp_user') and rows.get('smtp_pass'))
+    mail_status = 'ok' if mail_enabled and (has_brevo or has_resend or has_smtp) else 'warn'
+    checks.append({
+        'key': 'email',
+        'label': 'Outgoing Email',
+        'status': mail_status,
+        'detail': 'Configured' if mail_status == 'ok' else 'Enable mail and configure Brevo, Resend, or SMTP.',
+        'meta': {
+            'enabled': mail_enabled,
+            'brevo_api': has_brevo,
+            'resend_api': has_resend,
+            'smtp': has_smtp,
+        },
+    })
+
+    gateway = rows.get('active_gateway') or 'paystack'
+    if gateway == 'flutterwave':
+        payment_ok = bool(rows.get('flutterwave_public_key') and rows.get('flutterwave_secret_key'))
+    else:
+        payment_ok = bool(rows.get('paystack_public_key') and rows.get('paystack_secret_key'))
+    checks.append({
+        'key': 'payments',
+        'label': 'Payments',
+        'status': 'ok' if payment_ok else 'warn',
+        'detail': f'{gateway.title()} configured' if payment_ok else f'{gateway.title()} keys are incomplete.',
+        'meta': {'active_gateway': gateway},
+    })
+
+    checks.append({
+        'key': 'backup',
+        'label': 'Backup Posture',
+        'status': 'ok' if USE_POSTGRES else 'warn',
+        'detail': (
+            'Railway PostgreSQL should be covered by provider backups plus periodic export drills.'
+            if USE_POSTGRES else
+            'Local SQLite is not production-safe; use Railway PostgreSQL for client data.'
+        ),
+        'meta': {'backend': 'postgres' if USE_POSTGRES else 'sqlite'},
+    })
+
+    overall = 'fail' if any(c['status'] == 'fail' for c in checks) else (
+        'warn' if any(c['status'] == 'warn' for c in checks) else 'ok'
+    )
+    return {
+        'overall': overall,
+        'generated_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'checks': checks,
+    }
 
 
 @admin_panel.route('/settings')
@@ -133,6 +257,7 @@ def settings():
         audit_logs = db.execute(
             'SELECT * FROM audit_log ORDER BY timestamp DESC LIMIT 100'
         ).fetchall()
+        readiness = _system_readiness(db)
 
         return render_template('admin/settings.html',
                                settings=settings_dict,
@@ -140,6 +265,7 @@ def settings():
                                current_is_super=current_is_super,
                                audit_logs=audit_logs,
                                backup_history=[],
+                               readiness=readiness,
                                datetime=datetime)
     except Exception as e:
         flash(f'Error loading settings: {str(e)}', 'danger')
@@ -149,6 +275,7 @@ def settings():
                                current_is_super=False,
                                audit_logs=[],
                                backup_history=[],
+                               readiness={'overall': 'fail', 'generated_at': '', 'checks': []},
                                datetime=datetime)
 
 
@@ -185,8 +312,17 @@ def update_settings():
     try:
         updated = 0
         ignored = []
+        settings_group = request.form.get('_settings_group', '')
+        if settings_group == 'password_policy':
+            for key in _PASSWORD_POLICY_BOOLEAN_KEYS:
+                _upsert_setting(db, key, '1' if request.form.get(key) == '1' else '0')
+                updated += 1
         for key, value in request.form.items():
+            if key == '_settings_group':
+                continue
             if key in _PROTECTED_SETTING_KEYS:
+                continue
+            if key in _PASSWORD_POLICY_BOOLEAN_KEYS:
                 continue
             if key not in _EDITABLE_SETTING_KEYS:
                 ignored.append(key)
@@ -226,6 +362,14 @@ def reconcile_savings():
         db.rollback()
         flash(f'Error reconciling savings: {e}', 'danger')
     return redirect(url_for('admin_panel.settings') + '#system')
+
+
+@admin_panel.route('/api/readiness')
+@login_required
+@role_required('admin')
+def readiness_status():
+    db = get_db()
+    return jsonify(_system_readiness(db))
 
 
 @admin_panel.route('/expenses')
@@ -415,6 +559,11 @@ def add_user():
             flash('Username and password are required', 'danger')
             return redirect(url_for('admin_panel.settings'))
 
+        ok, errors = validate_password_strength(password, db)
+        if not ok:
+            flash(' '.join(errors), 'danger')
+            return redirect(url_for('admin_panel.settings') + '#users')
+
         existing = db.execute('SELECT id FROM users WHERE username = ?', (username,)).fetchone()
         if existing:
             flash(f'Username "{username}" already exists', 'danger')
@@ -482,8 +631,9 @@ def reset_user_password(user_id):
         new_password = request.form.get('new_password', '').strip()
         force_change  = request.form.get('force_change', '0') == '1'
 
-        if len(new_password) < 6:
-            flash('Password must be at least 6 characters.', 'danger')
+        ok, errors = validate_password_strength(new_password, db)
+        if not ok:
+            flash(' '.join(errors), 'danger')
             return redirect(url_for('admin_panel.settings') + '#users')
 
         db.execute(
@@ -498,6 +648,68 @@ def reset_user_password(user_id):
     except Exception as e:
         db.rollback()
         flash(f'Error resetting password: {e}', 'danger')
+    return redirect(url_for('admin_panel.settings') + '#users')
+
+
+@admin_panel.route('/api/resend_setup_link/<int:user_id>', methods=['POST'])
+@login_required
+@role_required('admin')
+def resend_setup_link(user_id):
+    db = get_db()
+    try:
+        user = db.execute(
+            'SELECT id, username, full_name, email, is_active FROM users WHERE id = ?',
+            (user_id,)
+        ).fetchone()
+        if not user:
+            flash('User not found.', 'danger')
+            return redirect(url_for('admin_panel.settings') + '#users')
+        if not user['email']:
+            flash('Cannot send setup link because this user has no email address.', 'danger')
+            return redirect(url_for('admin_panel.settings') + '#users')
+        if not user['is_active']:
+            flash('Cannot send setup link to an inactive user.', 'danger')
+            return redirect(url_for('admin_panel.settings') + '#users')
+
+        setup_url = _issue_account_setup_link(db, user)
+        db.execute('UPDATE users SET must_change_password = 1 WHERE id = ?', (user_id,))
+        audit(db, 'RESEND_SETUP_LINK', 'users', f'Reissued setup link for {user["username"]}')
+        db.commit()
+        send_member_onboarding_email(
+            user['email'],
+            {'full_name': user['full_name'] or user['username'], 'member_number': ''},
+            user['username'],
+            setup_url,
+            url_for('portal.profile', _external=True),
+        )
+        flash(f'Setup link sent to "{user["username"]}".', 'success')
+    except Exception as e:
+        db.rollback()
+        flash(f'Error sending setup link: {e}', 'danger')
+    return redirect(url_for('admin_panel.settings') + '#users')
+
+
+@admin_panel.route('/api/revoke_setup_links/<int:user_id>', methods=['POST'])
+@login_required
+@role_required('admin')
+def revoke_setup_links(user_id):
+    db = get_db()
+    try:
+        user = db.execute('SELECT username FROM users WHERE id = ?', (user_id,)).fetchone()
+        if not user:
+            flash('User not found.', 'danger')
+            return redirect(url_for('admin_panel.settings') + '#users')
+
+        db.execute(
+            'UPDATE account_setup_tokens SET used_at = ? WHERE user_id = ? AND used_at IS NULL',
+            (datetime.now(), user_id)
+        )
+        audit(db, 'REVOKE_SETUP_LINKS', 'users', f'Revoked setup links for {user["username"]}')
+        db.commit()
+        flash(f'Outstanding setup links for "{user["username"]}" have been revoked.', 'success')
+    except Exception as e:
+        db.rollback()
+        flash(f'Error revoking setup links: {e}', 'danger')
     return redirect(url_for('admin_panel.settings') + '#users')
 
 

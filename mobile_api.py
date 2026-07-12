@@ -7,24 +7,42 @@ from flask import Blueprint, jsonify, request, current_app, g
 from functools import wraps
 from werkzeug.security import check_password_hash
 from database import get_db
-from utils import member_for_user
+from utils import (
+    clear_login_attempts,
+    is_rate_limited,
+    lockout_seconds_remaining,
+    member_for_user,
+    record_failed_login,
+)
 import jwt
 import datetime
 
 mobile_api = Blueprint('mobile_api', __name__)
 
+JWT_ISSUER = 'oou-cooperative'
+JWT_AUDIENCE = 'oou-cooperative-mobile'
+MOBILE_TOKEN_TTL_HOURS = 24
+
 
 # ── JWT helpers ───────────────────────────────────────────────────────────────
 
 def _generate_token(user_id, username, role):
+    now = datetime.datetime.now(datetime.UTC)
     payload = {
         'user_id': user_id,
         'username': username,
         'role': role,
-        'iat': datetime.datetime.utcnow(),
-        'exp': datetime.datetime.utcnow() + datetime.timedelta(days=7),
+        'iat': now,
+        'nbf': now,
+        'exp': now + datetime.timedelta(hours=MOBILE_TOKEN_TTL_HOURS),
+        'iss': JWT_ISSUER,
+        'aud': JWT_AUDIENCE,
     }
     return jwt.encode(payload, current_app.config['SECRET_KEY'], algorithm='HS256')
+
+
+def _mobile_login_key():
+    return f"mobile:{request.remote_addr or '0.0.0.0'}"
 
 
 def jwt_required(f):
@@ -39,7 +57,9 @@ def jwt_required(f):
             payload = jwt.decode(
                 token,
                 current_app.config['SECRET_KEY'],
-                algorithms=['HS256']
+                algorithms=['HS256'],
+                issuer=JWT_ISSUER,
+                audience=JWT_AUDIENCE,
             )
             g.user_id  = payload['user_id']
             g.username = payload['username']
@@ -121,7 +141,7 @@ def _card_data(member):
 
 @mobile_api.route('/api/mobile/login', methods=['POST'])
 def mobile_login():
-    """Authenticate and return a 7-day JWT token."""
+    """Authenticate and return a short-lived JWT token."""
     data = request.get_json(silent=True) or {}
     username = (data.get('username') or '').strip()
     password = data.get('password') or ''
@@ -129,14 +149,24 @@ def mobile_login():
     if not username or not password:
         return jsonify({'success': False, 'error': 'username and password are required'}), 400
 
+    login_key = _mobile_login_key()
+    if is_rate_limited(login_key):
+        return jsonify({
+            'success': False,
+            'error': 'Too many failed login attempts. Please try again later.',
+            'retry_after_seconds': lockout_seconds_remaining(login_key),
+        }), 429
+
     db = get_db()
     user = db.execute(
         'SELECT * FROM users WHERE username = ? AND is_active = 1', (username,)
     ).fetchone()
 
     if not user or not check_password_hash(user['password_hash'], password):
+        record_failed_login(login_key)
         return jsonify({'success': False, 'error': 'Invalid credentials'}), 401
 
+    clear_login_attempts(login_key)
     token = _generate_token(user['id'], user['username'], user['role'])
     return jsonify({
         'success': True,

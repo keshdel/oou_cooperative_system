@@ -8,6 +8,7 @@ from flask_login import login_required, current_user, logout_user
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from database import get_db, last_insert_id
+from security import validate_password_strength
 from utils import (audit, notify_member, notify, compute_loan_schedule, METHOD_LABELS,
                    member_for_user, member_savings_balance)
 import loan_workflow as lw
@@ -809,11 +810,12 @@ def change_password():
         if new_pw != confirm_pw:
             flash('New passwords do not match.', 'danger')
             return redirect(url_for('portal.change_password'))
-        if len(new_pw) < 8:
-            flash('Password must be at least 8 characters.', 'danger')
+        db   = get_db()
+        ok, errors = validate_password_strength(new_pw, db)
+        if not ok:
+            flash(' '.join(errors), 'danger')
             return redirect(url_for('portal.change_password'))
 
-        db   = get_db()
         user = db.execute('SELECT * FROM users WHERE id = ?', (current_user.id,)).fetchone()
         if not check_password_hash(user['password_hash'], current_pw):
             flash('Current password is incorrect.', 'danger')

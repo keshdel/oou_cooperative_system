@@ -864,6 +864,51 @@
 
                 <!-- 6. USER MANAGEMENT TAB -->
                 <div class="tab-pane fade" id="users" role="tabpanel">
+                    <form method="POST" action="{{ url_for('admin_panel.update_settings') }}" class="border rounded p-3 mb-4 bg-light">
+                        <input type="hidden" name="_settings_group" value="password_policy">
+                        <div class="d-flex align-items-center justify-content-between mb-3">
+                            <h5 class="mb-0"><i class="fas fa-shield-alt me-2"></i>Password Policy</h5>
+                            <button type="submit" class="btn btn-sm btn-primary">
+                                <i class="fas fa-save me-1"></i> Save Policy
+                            </button>
+                        </div>
+                        <div class="row g-3 align-items-end">
+                            <div class="col-md-3">
+                                <label class="form-label">Minimum Length</label>
+                                <input type="number" class="form-control" name="password_min_length"
+                                       value="{{ settings.password_min_length|default(8) }}" min="6" max="128">
+                            </div>
+                            <div class="col-md-9">
+                                <label class="form-label d-block">Required Characters</label>
+                                <div class="d-flex flex-wrap gap-3">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="password_require_upper"
+                                               value="1" id="passwordRequireUpper"
+                                               {% if settings.password_require_upper|default('1') == '1' %}checked{% endif %}>
+                                        <label class="form-check-label" for="passwordRequireUpper">Uppercase</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="password_require_lower"
+                                               value="1" id="passwordRequireLower"
+                                               {% if settings.password_require_lower|default('1') == '1' %}checked{% endif %}>
+                                        <label class="form-check-label" for="passwordRequireLower">Lowercase</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="password_require_number"
+                                               value="1" id="passwordRequireNumber"
+                                               {% if settings.password_require_number|default('1') == '1' %}checked{% endif %}>
+                                        <label class="form-check-label" for="passwordRequireNumber">Number</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="password_require_special"
+                                               value="1" id="passwordRequireSpecial"
+                                               {% if settings.password_require_special|default('0') == '1' %}checked{% endif %}>
+                                        <label class="form-check-label" for="passwordRequireSpecial">Special character</label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
                     <div class="row mb-4">
                         <div class="col-md-12">
                             <button class="btn btn-success float-end" data-bs-toggle="modal" data-bs-target="#addUserModal">
@@ -972,6 +1017,19 @@
                                             onclick="openResetPassword(this)">
                                             <i class="fas fa-key"></i>
                                         </button>
+                                        <form method="POST" action="/api/resend_setup_link/{{ user.id }}" class="d-inline"
+                                              onsubmit="return confirm('Send a new account setup link to {{ user.username }}?')">
+                                            <button type="submit" class="btn btn-sm btn-info" title="Resend setup link"
+                                                    {% if not user.email or not user.is_active %}disabled{% endif %}>
+                                                <i class="fas fa-paper-plane"></i>
+                                            </button>
+                                        </form>
+                                        <form method="POST" action="/api/revoke_setup_links/{{ user.id }}" class="d-inline"
+                                              onsubmit="return confirm('Revoke all unused setup links for {{ user.username }}?')">
+                                            <button type="submit" class="btn btn-sm btn-outline-dark" title="Revoke setup links">
+                                                <i class="fas fa-unlink"></i>
+                                            </button>
+                                        </form>
                                         {% if not user.is_super_admin or current_is_super %}
                                         <form method="POST" action="/api/toggle_user/{{ user.id }}" class="d-inline"
                                               onsubmit="return confirm('Toggle active status for {{ user.username }}?')">
@@ -1081,6 +1139,39 @@
                 
                 <!-- 6. BACKUP & RESTORE TAB -->
                 <div class="tab-pane fade" id="backup" role="tabpanel">
+                    <div class="row mb-4">
+                        <div class="col-12">
+                            <div class="card border-{{ 'success' if readiness.overall == 'ok' else ('danger' if readiness.overall == 'fail' else 'warning') }}">
+                                <div class="card-header d-flex justify-content-between align-items-center">
+                                    <h5 class="mb-0"><i class="fas fa-heartbeat"></i> Operational Readiness</h5>
+                                    <span class="badge bg-{{ 'success' if readiness.overall == 'ok' else ('danger' if readiness.overall == 'fail' else 'warning text-dark') }}">
+                                        {{ readiness.overall|upper }}
+                                    </span>
+                                </div>
+                                <div class="card-body">
+                                    <div class="row g-3">
+                                        {% for check in readiness.checks %}
+                                        <div class="col-md-3">
+                                            <div class="border rounded p-3 h-100">
+                                                <div class="d-flex justify-content-between align-items-start mb-2">
+                                                    <strong>{{ check.label }}</strong>
+                                                    <span class="badge bg-{{ 'success' if check.status == 'ok' else ('danger' if check.status == 'fail' else 'warning text-dark') }}">
+                                                        {{ check.status|upper }}
+                                                    </span>
+                                                </div>
+                                                <p class="small text-muted mb-0">{{ check.detail }}</p>
+                                            </div>
+                                        </div>
+                                        {% endfor %}
+                                    </div>
+                                    <div class="small text-muted mt-3">
+                                        Last checked: {{ readiness.generated_at or 'Not available' }}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="row">
                         <div class="col-md-6">
                             <div class="card">

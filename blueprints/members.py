@@ -1,15 +1,18 @@
 import csv
 import os
-from datetime import datetime
+import secrets
+from datetime import datetime, timedelta
 from io import StringIO, TextIOWrapper
 from types import SimpleNamespace
 
 from flask import Blueprint, render_template, redirect, url_for, request, flash, make_response
 from flask_login import login_required
+from werkzeug.security import generate_password_hash
 from werkzeug.utils import secure_filename
 
 from database import get_db, last_insert_id
-from email_service import send_welcome_email, send_email
+from email_service import send_member_onboarding_email, send_welcome_email, send_email
+from security import generate_account_setup_token
 from utils import role_required, validate_image, audit, notify_member
 
 members = Blueprint('members', __name__)
@@ -155,16 +158,60 @@ def add_member():
             db.commit()
 
             member = db.execute('SELECT * FROM members WHERE id = ?', (member_id,)).fetchone()
+            onboarding = None
             if member['email']:
+                username = member['email'].strip().lower()
+                existing_user = db.execute(
+                    'SELECT id FROM users WHERE username = ? OR email = ?',
+                    (username, member['email'])
+                ).fetchone()
+                if not existing_user:
+                    token, token_hash = generate_account_setup_token()
+                    full_name = f"{request.form['first_name']} {request.form['last_name']}"
+                    db.execute('''
+                        INSERT INTO users
+                            (username, password_hash, role, full_name, email,
+                             is_active, must_change_password, created_at)
+                        VALUES (?, ?, 'member', ?, ?, 1, 1, ?)
+                    ''', (
+                        username,
+                        generate_password_hash(secrets.token_urlsafe(32)),
+                        full_name,
+                        member['email'],
+                        datetime.now(),
+                    ))
+                    user_id = last_insert_id(db)
+                    db.execute('''
+                        INSERT INTO account_setup_tokens
+                            (user_id, token_hash, purpose, expires_at)
+                        VALUES (?, ?, 'member_onboarding', ?)
+                    ''', (user_id, token_hash, datetime.now() + timedelta(hours=24)))
+                    db.commit()
+                    onboarding = {
+                        'username': username,
+                        'token': token,
+                        'full_name': full_name,
+                    }
                 send_welcome_email(member['email'], {
                     'full_name':     f"{request.form['first_name']} {request.form['last_name']}",
                     'member_number': member_number,
                     'coop_name':     'OOU Cooperative',
                 })
+                if onboarding:
+                    send_member_onboarding_email(
+                        member['email'],
+                        {
+                            'full_name': onboarding['full_name'],
+                            'member_number': member_number,
+                        },
+                        onboarding['username'],
+                        url_for('auth.setup_password', token=onboarding['token'], _external=True),
+                        url_for('portal.profile', _external=True),
+                    )
                 notify_member(db, member['email'],
                               'Welcome to OOU Cooperative!',
                               f"Your member number is {member_number}. "
-                              f"You can now log in to view your savings and loans.",
+                              f"Check your email to configure your portal password and profile.",
                               notification_type='success')
 
             if 'photo' in request.files:

@@ -5,7 +5,105 @@ Security utilities: audit logging, 2FA helpers.
 import pyotp
 import hashlib
 import secrets
+import string
 from datetime import datetime, timedelta
+
+
+DEFAULT_PASSWORD_POLICY = {
+    'password_min_length': '8',
+    'password_require_upper': '1',
+    'password_require_lower': '1',
+    'password_require_number': '1',
+    'password_require_special': '0',
+}
+
+
+def _setting(db, key, default=''):
+    if not db:
+        return default
+    try:
+        row = db.execute('SELECT value FROM settings WHERE key = ?', (key,)).fetchone()
+        return str(row['value']) if row and row['value'] is not None else default
+    except Exception:
+        return default
+
+
+def password_policy(db=None):
+    policy = {}
+    for key, default in DEFAULT_PASSWORD_POLICY.items():
+        policy[key] = _setting(db, key, default)
+
+    try:
+        policy['password_min_length'] = str(max(6, min(128, int(policy['password_min_length']))))
+    except (TypeError, ValueError):
+        policy['password_min_length'] = DEFAULT_PASSWORD_POLICY['password_min_length']
+    return policy
+
+
+def password_policy_description(db=None):
+    policy = password_policy(db)
+    parts = [f"at least {policy['password_min_length']} characters"]
+    if policy['password_require_upper'] == '1':
+        parts.append('an uppercase letter')
+    if policy['password_require_lower'] == '1':
+        parts.append('a lowercase letter')
+    if policy['password_require_number'] == '1':
+        parts.append('a number')
+    if policy['password_require_special'] == '1':
+        parts.append('a special character')
+    return 'Password must contain ' + ', '.join(parts) + '.'
+
+
+def validate_password_strength(password, db=None):
+    policy = password_policy(db)
+    password = password or ''
+    errors = []
+    min_length = int(policy['password_min_length'])
+
+    if len(password) < min_length:
+        errors.append(f'Password must be at least {min_length} characters.')
+    if policy['password_require_upper'] == '1' and not any(c.isupper() for c in password):
+        errors.append('Password must include an uppercase letter.')
+    if policy['password_require_lower'] == '1' and not any(c.islower() for c in password):
+        errors.append('Password must include a lowercase letter.')
+    if policy['password_require_number'] == '1' and not any(c.isdigit() for c in password):
+        errors.append('Password must include a number.')
+    if policy['password_require_special'] == '1' and not any(c in string.punctuation for c in password):
+        errors.append('Password must include a special character.')
+
+    return not errors, errors
+
+
+def generate_compliant_password(db=None, length=None):
+    policy = password_policy(db)
+    min_length = int(policy['password_min_length'])
+    target_length = max(length or 14, min_length)
+    chars = []
+    if policy['password_require_upper'] == '1':
+        chars.append(secrets.choice(string.ascii_uppercase))
+    if policy['password_require_lower'] == '1':
+        chars.append(secrets.choice(string.ascii_lowercase))
+    if policy['password_require_number'] == '1':
+        chars.append(secrets.choice(string.digits))
+    if policy['password_require_special'] == '1':
+        chars.append(secrets.choice('!@#$%^&*'))
+
+    alphabet = string.ascii_letters + string.digits + '!@#$%^&*'
+    while len(chars) < target_length:
+        chars.append(secrets.choice(alphabet))
+
+    secrets.SystemRandom().shuffle(chars)
+    return ''.join(chars)
+
+
+def generate_account_setup_token():
+    """Return a plaintext token for email delivery and its database hash."""
+    token = secrets.token_urlsafe(32)
+    return token, hash_account_setup_token(token)
+
+
+def hash_account_setup_token(token):
+    return hashlib.sha256((token or '').encode('utf-8')).hexdigest()
 
 
 # ── Audit logging ────────────────────────────────────────────────────────────
@@ -20,7 +118,6 @@ def log_audit(db, user_id, username, action, module, description,
                VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
             (user_id, username, action, module, description, ip_address, user_agent, data)
         )
-        db.commit()
     except Exception as exc:
         print(f"[audit] failed to write log: {exc}")
 
