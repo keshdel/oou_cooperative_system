@@ -1,0 +1,13 @@
+.git
+.claude
+.test-venv
+**/__pycache__
+*.pyc
+*.db
+.test-*.db
+deploy/vps/backups
+deploy/vps/clients
+deploy/vps/.env
+*.pptx
+tree_output.txt
+architecture_report.txt

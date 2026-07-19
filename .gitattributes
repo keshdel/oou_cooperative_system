@@ -1,0 +1,5 @@
+# Shell scripts and the Docker entrypoint must stay LF — they run on Linux.
+*.sh text eol=lf
+deploy/vps/docker-entrypoint.sh text eol=lf
+deploy/vps/Dockerfile text eol=lf
+*.py text eol=lf

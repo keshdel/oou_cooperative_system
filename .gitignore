@@ -42,3 +42,10 @@ config.local.py
 
 # Per-client deployment secrets (never commit)
 deploy/secrets/
+
+# VPS deployment secrets & generated artifacts (never commit)
+deploy/vps/.env
+deploy/vps/clients/*.env
+deploy/vps/docker-compose.override.yml
+deploy/vps/Caddyfile
+deploy/vps/backups/
