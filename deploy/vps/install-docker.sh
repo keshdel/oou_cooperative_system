@@ -3,6 +3,23 @@
 # the firewall for web traffic. Run as root (or with sudo).
 set -euo pipefail
 
+# Add a 2 GB swap file on small droplets (e.g. 1 GB RAM) so image builds and
+# Postgres have headroom and don't get killed for running out of memory.
+# Skips if any swap already exists.
+if [ -z "$(swapon --show)" ]; then
+  echo "==> No swap found — creating a 2 GB swap file"
+  fallocate -l 2G /swapfile || dd if=/dev/zero of=/swapfile bs=1M count=2048
+  chmod 600 /swapfile
+  mkswap /swapfile
+  swapon /swapfile
+  grep -q '/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+  sysctl -w vm.swappiness=10 >/dev/null
+  grep -q 'vm.swappiness' /etc/sysctl.conf || echo 'vm.swappiness=10' >> /etc/sysctl.conf
+  echo "    swap enabled"
+else
+  echo "==> Swap already present — leaving it as-is"
+fi
+
 echo "==> Installing Docker Engine + Compose plugin"
 apt-get update
 apt-get install -y ca-certificates curl git ufw
