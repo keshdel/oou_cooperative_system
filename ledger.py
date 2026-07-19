@@ -450,6 +450,102 @@ def trial_balance(db, as_of=None):
     }
 
 
+def account_ledger(db, code, from_date=None, to_date=None):
+    """Full audit trail for one account: every journal line that touched it.
+
+    Returns the opening balance (everything before *from_date*), each line in
+    date order with a running balance, and the closing balance. Balances are
+    signed to the account's normal side, so an asset/expense reads positive on
+    debits and a liability/equity/income reads positive on credits.
+    """
+    acct = db.execute(
+        'SELECT code, name, type, normal_balance FROM accounts WHERE code = ?', (code,)
+    ).fetchone()
+    if not acct:
+        return None
+
+    sign = -1.0 if (acct['normal_balance'] or '').lower() == 'credit' else 1.0
+
+    # Opening balance = net movement strictly before the period start.
+    opening = 0.0
+    if from_date:
+        row = db.execute('''
+            SELECT COALESCE(SUM(jl.debit), 0) - COALESCE(SUM(jl.credit), 0) AS bal
+            FROM journal_lines jl
+            JOIN journal_entries je ON je.id = jl.entry_id
+            WHERE jl.account_code = ? AND je.date < ?
+        ''', (code, from_date)).fetchone()
+        opening = float(row['bal'] or 0) if row else 0.0
+
+    where = ['jl.account_code = ?']
+    params = [code]
+    if from_date:
+        where.append('je.date >= ?')
+        params.append(from_date)
+    if to_date:
+        where.append('je.date <= ?')
+        params.append(f"{to_date} 23:59:59")
+
+    rows = db.execute(f'''
+        SELECT jl.id AS line_id, jl.debit, jl.credit, jl.memo,
+               je.id AS entry_id, je.entry_number, je.date, je.description,
+               je.reference, je.source_module, je.source_id
+        FROM journal_lines jl
+        JOIN journal_entries je ON je.id = jl.entry_id
+        WHERE {' AND '.join(where)}
+        ORDER BY je.date ASC, je.id ASC, jl.id ASC
+    ''', tuple(params)).fetchall()
+
+    running = opening
+    entries = []
+    total_debit = total_credit = 0.0
+    for r in rows:
+        debit  = float(r['debit'] or 0)
+        credit = float(r['credit'] or 0)
+        running += debit - credit
+        total_debit  += debit
+        total_credit += credit
+        d = dict(r)
+        d['debit']   = round(debit, 2)
+        d['credit']  = round(credit, 2)
+        d['balance'] = round(running * sign, 2)
+        entries.append(d)
+
+    return {
+        'account': dict(acct),
+        'entries': entries,
+        'opening_balance': round(opening * sign, 2),
+        'closing_balance': round(running * sign, 2),
+        'total_debit': round(total_debit, 2),
+        'total_credit': round(total_credit, 2),
+        'count': len(entries),
+    }
+
+
+def journal_entry_detail(db, entry_id):
+    """One journal entry with all of its debit/credit lines, for audit drill-down."""
+    entry = db.execute('SELECT * FROM journal_entries WHERE id = ?', (entry_id,)).fetchone()
+    if not entry:
+        return None
+    lines = db.execute('''
+        SELECT jl.*, a.name AS account_name, a.type AS account_type
+        FROM journal_lines jl
+        LEFT JOIN accounts a ON a.code = jl.account_code
+        WHERE jl.entry_id = ?
+        ORDER BY jl.debit DESC, jl.id ASC
+    ''', (entry_id,)).fetchall()
+
+    total_debit  = sum(float(l['debit'] or 0) for l in lines)
+    total_credit = sum(float(l['credit'] or 0) for l in lines)
+    return {
+        'entry': dict(entry),
+        'lines': [dict(l) for l in lines],
+        'total_debit': round(total_debit, 2),
+        'total_credit': round(total_credit, 2),
+        'balanced': abs(total_debit - total_credit) < 0.01,
+    }
+
+
 def account_balance(db, code, as_of=None):
     """Signed balance (debits - credits) for one account."""
     date_filter = ''

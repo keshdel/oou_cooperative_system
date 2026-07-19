@@ -51,7 +51,7 @@
                 <tbody>
                     <tr><th colspan="2" class="text-muted">Income</th></tr>
                     {% for l in inc.income_lines %}
-                    <tr><td class="ps-4">{{ l.name }}</td>
+                    <tr><td class="ps-4">{% if current_user.role in ['admin', 'treasurer'] and l.code %}<a href="{{ url_for('accounting.account_ledger_view', code=l.code) }}" title="Trace this figure to its journal entries">{{ l.name }}</a>{% else %}{{ l.name }}{% endif %}</td>
                         <td class="text-end">₦{{ "{:,.2f}".format(l.amount) }}</td></tr>
                     {% endfor %}
                     <tr class="fw-semibold border-top">
@@ -60,7 +60,7 @@
 
                     <tr><th colspan="2" class="text-muted pt-3">Expenses</th></tr>
                     {% for l in inc.expense_lines %}
-                    <tr><td class="ps-4">{{ l.name }}</td>
+                    <tr><td class="ps-4">{% if current_user.role in ['admin', 'treasurer'] and l.code %}<a href="{{ url_for('accounting.account_ledger_view', code=l.code) }}" title="Trace this figure to its journal entries">{{ l.name }}</a>{% else %}{{ l.name }}{% endif %}</td>
                         <td class="text-end">(₦{{ "{:,.2f}".format(l.amount) }})</td></tr>
                     {% endfor %}
                     <tr class="fw-semibold border-top">
@@ -100,7 +100,7 @@
                         <tbody>
                             <tr><th colspan="2" class="text-muted">Assets</th></tr>
                             {% for l in bs.asset_lines %}
-                            <tr><td class="ps-4">{{ l.name }}</td>
+                            <tr><td class="ps-4">{% if current_user.role in ['admin', 'treasurer'] and l.code %}<a href="{{ url_for('accounting.account_ledger_view', code=l.code) }}" title="Trace this figure to its journal entries">{{ l.name }}</a>{% else %}{{ l.name }}{% endif %}</td>
                                 <td class="text-end">₦{{ "{:,.2f}".format(l.amount) }}</td></tr>
                             {% endfor %}
                             <tr class="fw-bold border-top">
@@ -121,14 +121,14 @@
                         <tbody>
                             <tr><th colspan="2" class="text-muted">Liabilities</th></tr>
                             {% for l in bs.liability_lines %}
-                            <tr><td class="ps-4">{{ l.name }}</td>
+                            <tr><td class="ps-4">{% if current_user.role in ['admin', 'treasurer'] and l.code %}<a href="{{ url_for('accounting.account_ledger_view', code=l.code) }}" title="Trace this figure to its journal entries">{{ l.name }}</a>{% else %}{{ l.name }}{% endif %}</td>
                                 <td class="text-end">₦{{ "{:,.2f}".format(l.amount) }}</td></tr>
                             {% endfor %}
                             <tr class="fw-semibold"><td>Total liabilities</td>
                                 <td class="text-end">₦{{ "{:,.2f}".format(bs.total_liabilities) }}</td></tr>
                             <tr><th colspan="2" class="text-muted pt-3">Equity</th></tr>
                             {% for l in bs.equity_lines %}
-                            <tr><td class="ps-4">{{ l.name }}</td>
+                            <tr><td class="ps-4">{% if current_user.role in ['admin', 'treasurer'] and l.code %}<a href="{{ url_for('accounting.account_ledger_view', code=l.code) }}" title="Trace this figure to its journal entries">{{ l.name }}</a>{% else %}{{ l.name }}{% endif %}</td>
                                 <td class="text-end">₦{{ "{:,.2f}".format(l.amount) }}</td></tr>
                             {% endfor %}
                             <tr class="fw-bold border-top">

@@ -46,7 +46,8 @@
                         {% for r in tb.rows %}
                         <tr>
                             <td class="text-muted">{{ r.code }}</td>
-                            <td>{{ r.name }}</td>
+                            <td><a href="{{ url_for('accounting.account_ledger_view', code=r.code) }}"
+                                   title="Open the full ledger for this account">{{ r.name }}</a></td>
                             <td><span class="badge bg-light text-dark text-capitalize">{{ r.type }}</span></td>
                             <td class="text-end">{% if r.debit %}₦{{ "{:,.2f}".format(r.debit) }}{% endif %}</td>
                             <td class="text-end">{% if r.credit %}₦{{ "{:,.2f}".format(r.credit) }}{% endif %}</td>

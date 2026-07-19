@@ -11,7 +11,7 @@ from flask_login import login_required, current_user
 from database import get_db
 from utils import role_required, audit
 from ledger import (get_accounts, trial_balance, backfill_from_transactions,
-                    ledger_reconciliation)
+                    ledger_reconciliation, account_ledger, journal_entry_detail)
 
 accounting = Blueprint('accounting', __name__, url_prefix='/accounting')
 
@@ -285,6 +285,78 @@ def backfill():
         db.rollback()
         flash(f'Error backfilling ledger: {e}', 'danger')
     return redirect(url_for('accounting.journal_register'))
+
+
+def _source_link(db, module, source_id):
+    """Resolve a journal entry's originating record to (label, url) for drill-down.
+
+    Returns (label, None) when the source is known but has no dedicated page.
+    """
+    module = (module or '').lower()
+    if not source_id:
+        return (module.title() or 'Manual entry', None)
+    try:
+        if module == 'savings':
+            row = db.execute(
+                'SELECT s.member_id, m.first_name, m.last_name, m.member_number '
+                'FROM savings s LEFT JOIN members m ON m.id = s.member_id WHERE s.id = ?',
+                (source_id,)).fetchone()
+            if row and row['member_id']:
+                return (f"Savings — {row['first_name']} {row['last_name']} (#{row['member_number']})",
+                        url_for('members.member_savings_statement', member_id=row['member_id']))
+            return ('Savings contribution', None)
+        if module in ('loans', 'payments'):
+            row = db.execute(
+                'SELECT id, loan_number FROM loans WHERE id = ?', (source_id,)).fetchone()
+            if row:
+                return (f"Loan {row['loan_number'] or row['id']}",
+                        url_for('loans.loan_detail', loan_id=row['id']))
+            return ('Loan transaction', None)
+        if module == 'investments':
+            return ('Investment', url_for('investments.investments_list'))
+        if module == 'dividend':
+            return ('Dividend declaration',
+                    url_for('accounting.dividend_detail', decl_id=source_id))
+        if module == 'opening':
+            return ('Opening balance import', None)
+    except Exception:
+        pass
+    return (module.title() or 'Manual entry', None)
+
+
+@accounting.route('/ledger/<code>')
+@login_required
+@role_required('admin', 'treasurer')
+def account_ledger_view(code):
+    """Audit drill-down: every journal line that hit one account."""
+    db = get_db()
+    from_date = request.args.get('from_date', '')
+    to_date   = request.args.get('to_date', '')
+    data = account_ledger(db, code, from_date or None, to_date or None)
+    if not data:
+        flash(f'Account {code} not found.', 'danger')
+        return redirect(url_for('accounting.chart_of_accounts'))
+    return render_template('accounting/account-ledger.html',
+                           data=data, account=data['account'],
+                           from_date=from_date, to_date=to_date,
+                           generated_on=datetime.now())
+
+
+@accounting.route('/journal/<int:entry_id>')
+@login_required
+@role_required('admin', 'treasurer')
+def journal_entry_view(entry_id):
+    """Audit drill-down: one journal entry, its lines, and its source document."""
+    db = get_db()
+    data = journal_entry_detail(db, entry_id)
+    if not data:
+        flash('Journal entry not found.', 'danger')
+        return redirect(url_for('accounting.journal_register'))
+    src_label, src_url = _source_link(db, data['entry'].get('source_module'),
+                                      data['entry'].get('source_id'))
+    return render_template('accounting/journal-entry.html',
+                           data=data, entry=data['entry'], lines=data['lines'],
+                           source_label=src_label, source_url=src_url)
 
 
 @accounting.route('/journal')

@@ -64,7 +64,8 @@
                 <tbody>
                     {% for a in accounts %}
                     <tr class="{% if not a.is_active %}text-muted{% endif %}">
-                        <td>{{ a.code }}{% if a.parent_code %}<br><small class="text-muted">↳ {{ a.parent_code }}</small>{% endif %}</td>
+                        <td><a href="{{ url_for('accounting.account_ledger_view', code=a.code) }}"
+                               title="Open the full ledger for this account">{{ a.code }}</a>{% if a.parent_code %}<br><small class="text-muted">↳ {{ a.parent_code }}</small>{% endif %}</td>
                         <td>{{ a.name }}</td>
                         <td class="text-capitalize">{{ a.normal_balance }}</td>
                         <td>{% if a.is_active %}<span class="badge bg-success">Active</span>{% else %}<span class="badge bg-secondary">Inactive</span>{% endif %}</td>

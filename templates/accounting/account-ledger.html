@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}Account Ledger {{ account.code }} - OOU Cooperative{% endblock %}
+{% block content %}
+<div class="container-fluid">
+
+    <div class="row mb-3">
+        <div class="col">
+            <h2><i class="fas fa-book-open"></i> Account Ledger</h2>
+            <p class="text-muted mb-0">
+                <span class="badge bg-dark">{{ account.code }}</span>
+                <strong>{{ account.name }}</strong>
+                <span class="badge bg-light text-dark text-uppercase">{{ account.type }}</span>
+                <span class="text-muted small">· normal balance: {{ account.normal_balance }}</span>
+            </p>
+        </div>
+        <div class="col-auto align-self-center">
+            <a href="{{ url_for('accounting.trial_balance_view') }}" class="btn btn-outline-secondary btn-sm">
+                <i class="fas fa-balance-scale"></i> Trial Balance</a>
+            <a href="{{ url_for('accounting.chart_of_accounts') }}" class="btn btn-outline-secondary btn-sm">
+                <i class="fas fa-list"></i> Chart of Accounts</a>
+        </div>
+    </div>
+
+    <!-- Date filter -->
+    <div class="card mb-3">
+        <div class="card-body py-2">
+            <form method="get" class="row g-2 align-items-end">
+                <div class="col-auto"><label class="form-label small mb-0">From</label>
+                    <input type="date" name="from_date" value="{{ from_date }}" class="form-control form-control-sm"></div>
+                <div class="col-auto"><label class="form-label small mb-0">To</label>
+                    <input type="date" name="to_date" value="{{ to_date }}" class="form-control form-control-sm"></div>
+                <div class="col-auto"><button class="btn btn-primary btn-sm">Filter</button></div>
+                {% if from_date or to_date %}
+                <div class="col-auto"><a href="{{ url_for('accounting.account_ledger_view', code=account.code) }}"
+                       class="btn btn-outline-secondary btn-sm">Clear</a></div>
+                {% endif %}
+            </form>
+        </div>
+    </div>
+
+    <!-- Summary -->
+    <div class="row mb-3">
+        <div class="col-md-3"><div class="card text-center"><div class="card-body py-2">
+            <div class="text-muted small">Opening balance</div>
+            <div class="h5 mb-0">₦{{ '{:,.2f}'.format(data.opening_balance) }}</div></div></div></div>
+        <div class="col-md-3"><div class="card text-center"><div class="card-body py-2">
+            <div class="text-muted small">Total debits</div>
+            <div class="h5 mb-0 text-success">₦{{ '{:,.2f}'.format(data.total_debit) }}</div></div></div></div>
+        <div class="col-md-3"><div class="card text-center"><div class="card-body py-2">
+            <div class="text-muted small">Total credits</div>
+            <div class="h5 mb-0 text-danger">₦{{ '{:,.2f}'.format(data.total_credit) }}</div></div></div></div>
+        <div class="col-md-3"><div class="card text-center bg-light"><div class="card-body py-2">
+            <div class="text-muted small">Closing balance</div>
+            <div class="h5 mb-0 fw-bold">₦{{ '{:,.2f}'.format(data.closing_balance) }}</div></div></div></div>
+    </div>
+
+    <!-- Ledger -->
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h6 class="mb-0">Transactions ({{ data.count }})</h6>
+            <span class="text-muted small">Click any row to open the full journal entry</span>
+        </div>
+        <div class="card-body p-0">
+            {% if data.entries %}
+            <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0 align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Date</th><th>Entry #</th><th>Description</th><th>Reference</th><th>Source</th>
+                        <th class="text-end">Debit</th><th class="text-end">Credit</th><th class="text-end">Balance</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr class="table-light">
+                        <td colspan="7" class="fst-italic text-muted">Opening balance</td>
+                        <td class="text-end fw-bold">₦{{ '{:,.2f}'.format(data.opening_balance) }}</td>
+                    </tr>
+                    {% for e in data.entries %}
+                    <tr>
+                        <td class="small">{{ (e.date|string)[:10] }}</td>
+                        <td class="small"><a href="{{ url_for('accounting.journal_entry_view', entry_id=e.entry_id) }}"
+                               class="fw-semibold">{{ e.entry_number or ('JE-' ~ e.entry_id) }}</a></td>
+                        <td class="small">{{ e.description or '—' }}{% if e.memo %}<br>
+                            <span class="text-muted">{{ e.memo }}</span>{% endif %}</td>
+                        <td class="small text-muted">{{ e.reference or '—' }}</td>
+                        <td class="small"><span class="badge bg-light text-dark">{{ e.source_module or 'manual' }}</span></td>
+                        <td class="text-end">{% if e.debit %}₦{{ '{:,.2f}'.format(e.debit) }}{% endif %}</td>
+                        <td class="text-end">{% if e.credit %}₦{{ '{:,.2f}'.format(e.credit) }}{% endif %}</td>
+                        <td class="text-end fw-semibold">₦{{ '{:,.2f}'.format(e.balance) }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot class="table-light">
+                    <tr class="fw-bold">
+                        <td colspan="5">Closing balance</td>
+                        <td class="text-end">₦{{ '{:,.2f}'.format(data.total_debit) }}</td>
+                        <td class="text-end">₦{{ '{:,.2f}'.format(data.total_credit) }}</td>
+                        <td class="text-end">₦{{ '{:,.2f}'.format(data.closing_balance) }}</td>
+                    </tr>
+                </tfoot>
+            </table>
+            </div>
+            {% else %}
+            <div class="p-4 text-center text-muted">
+                <i class="fas fa-inbox fa-2x mb-2"></i><br>
+                No journal lines for this account{% if from_date or to_date %} in the selected period{% endif %}.
+                <div class="small mt-2">If this looks wrong, run <strong>Journal → Backfill ledger</strong> once.</div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <p class="text-muted small mt-2">Generated {{ generated_on.strftime('%Y-%m-%d %H:%M') }}</p>
+</div>
+{% endblock %}

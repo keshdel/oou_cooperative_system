@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}Journal Entry {{ entry.entry_number or entry.id }} - OOU Cooperative{% endblock %}
+{% block content %}
+<div class="container-fluid">
+
+    <div class="row mb-3">
+        <div class="col">
+            <h2><i class="fas fa-file-invoice-dollar"></i> Journal Entry
+                <span class="text-muted">{{ entry.entry_number or ('JE-' ~ entry.id) }}</span></h2>
+            <p class="text-muted mb-0">The complete double-entry record behind this transaction.</p>
+        </div>
+        <div class="col-auto align-self-center">
+            <a href="{{ url_for('accounting.journal_register') }}" class="btn btn-outline-secondary btn-sm">
+                <i class="fas fa-arrow-left"></i> Journal Register</a>
+        </div>
+    </div>
+
+    {% if data.balanced %}
+    <div class="alert alert-success py-2"><i class="fas fa-check-circle"></i>
+        This entry is balanced — debits equal credits (₦{{ '{:,.2f}'.format(data.total_debit) }}).</div>
+    {% else %}
+    <div class="alert alert-danger py-2"><i class="fas fa-exclamation-triangle"></i>
+        <strong>Out of balance.</strong> Debits ₦{{ '{:,.2f}'.format(data.total_debit) }}
+        vs credits ₦{{ '{:,.2f}'.format(data.total_credit) }}. This should never happen — please investigate.</div>
+    {% endif %}
+
+    <div class="row">
+        <!-- Entry header -->
+        <div class="col-lg-4">
+            <div class="card mb-3">
+                <div class="card-header"><h6 class="mb-0">Entry details</h6></div>
+                <div class="card-body">
+                    <dl class="row mb-0 small">
+                        <dt class="col-5">Entry number</dt>
+                        <dd class="col-7">{{ entry.entry_number or ('JE-' ~ entry.id) }}</dd>
+                        <dt class="col-5">Date</dt>
+                        <dd class="col-7">{{ (entry.date|string)[:19] }}</dd>
+                        <dt class="col-5">Description</dt>
+                        <dd class="col-7">{{ entry.description or '—' }}</dd>
+                        <dt class="col-5">Reference</dt>
+                        <dd class="col-7">{{ entry.reference or '—' }}</dd>
+                        <dt class="col-5">Source module</dt>
+                        <dd class="col-7"><span class="badge bg-light text-dark">{{ entry.source_module or 'manual' }}</span></dd>
+                        <dt class="col-5">Posted</dt>
+                        <dd class="col-7">{{ (entry.created_at|string)[:19] if entry.created_at else '—' }}</dd>
+                    </dl>
+                </div>
+            </div>
+
+            <!-- Source document drill-through -->
+            <div class="card">
+                <div class="card-header"><h6 class="mb-0"><i class="fas fa-link"></i> Source document</h6></div>
+                <div class="card-body">
+                    <p class="mb-2">{{ source_label }}</p>
+                    {% if source_url %}
+                    <a href="{{ source_url }}" class="btn btn-sm btn-primary">
+                        <i class="fas fa-external-link-alt"></i> Open source record</a>
+                    {% else %}
+                    <span class="text-muted small">No dedicated source page for this entry type.</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Lines -->
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header"><h6 class="mb-0">Journal lines</h6></div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                    <table class="table table-sm mb-0 align-middle">
+                        <thead class="table-light">
+                            <tr><th>Account</th><th>Type</th><th>Memo</th>
+                                <th class="text-end">Debit</th><th class="text-end">Credit</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for l in lines %}
+                            <tr>
+                                <td>
+                                    <a href="{{ url_for('accounting.account_ledger_view', code=l.account_code) }}">
+                                        <span class="badge bg-dark">{{ l.account_code }}</span>
+                                        {{ l.account_name or '' }}</a>
+                                </td>
+                                <td><span class="badge bg-light text-dark text-uppercase">{{ l.account_type or '—' }}</span></td>
+                                <td class="small text-muted">{{ l.memo or '' }}</td>
+                                <td class="text-end text-success">{% if l.debit %}₦{{ '{:,.2f}'.format(l.debit) }}{% endif %}</td>
+                                <td class="text-end text-danger">{% if l.credit %}₦{{ '{:,.2f}'.format(l.credit) }}{% endif %}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                        <tfoot class="table-light fw-bold">
+                            <tr>
+                                <td colspan="3" class="text-end">Totals</td>
+                                <td class="text-end">₦{{ '{:,.2f}'.format(data.total_debit) }}</td>
+                                <td class="text-end">₦{{ '{:,.2f}'.format(data.total_credit) }}</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                    </div>
+                </div>
+                <div class="card-footer text-muted small">
+                    Click any account to open its full ledger and trace the balance further.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
