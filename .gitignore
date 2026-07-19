@@ -39,3 +39,6 @@ backups/
 
 # Local configuration
 config.local.py
+
+# Per-client deployment secrets (never commit)
+deploy/secrets/
