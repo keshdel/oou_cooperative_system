@@ -260,6 +260,31 @@ a:hover {
 }
 /* You can also create colored variants by using bg-success, etc. */
 
+/* Clean metric cards (soft icon chip + muted label + bold value) */
+.metric-icon {
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.15rem;
+    flex: 0 0 auto;
+}
+.metric-label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 600;
+    color: var(--gray-500);
+}
+.metric-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--dark-color);
+    line-height: 1.15;
+}
+
 /* Tables */
 .table-container {
     background: white;

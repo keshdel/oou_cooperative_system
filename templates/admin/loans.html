@@ -7,50 +7,64 @@
             <h2><i class="fas fa-hand-holding-usd"></i> Loan Management</h2>
             <p class="text-muted">Process and track all loan applications</p>
         </div>
-        <div class="col-md-4 text-end">
-            <a href="{{ url_for('loans.apply_loan') }}" class="btn btn-primary">
-                <i class="fas fa-plus-circle"></i> New Loan Application
-            </a>
-			<a href="{{ url_for('loans.export_loans') }}" class="btn btn-success">
-				<i class="fas fa-download"></i> Export Loans
-			</a>
-			<a href="{{ url_for('loans.bulk_loan_repayments') }}" class="btn btn-info">
-				<i class="fas fa-upload"></i> Bulk Repayments
-			</a>
+        <div class="col-md-4">
+            <div class="d-flex gap-2 justify-content-md-end flex-wrap">
+                <a href="{{ url_for('loans.apply_loan') }}" class="btn btn-primary">
+                    <i class="fas fa-plus-circle"></i> New Loan Application
+                </a>
+                <a href="{{ url_for('loans.export_loans') }}" class="btn btn-outline-secondary">
+                    <i class="fas fa-download"></i> Export
+                </a>
+                <a href="{{ url_for('loans.bulk_loan_repayments') }}" class="btn btn-outline-secondary">
+                    <i class="fas fa-upload"></i> Bulk Repayments
+                </a>
+            </div>
         </div>
     </div>
     
     <!-- Loan Summary -->
-    <div class="row g-4 mb-4">
-        <div class="col-md-3">
-            <div class="card bg-primary text-white">
-                <div class="card-body">
-                    <h6>Active Loans</h6>
-                    <h3>₦{{ "{:,.2f}".format(active_loans) }}</h3>
+    <div class="row g-3 mb-4">
+        <div class="col-sm-6 col-xl-3">
+            <div class="card h-100 border-0 shadow-sm">
+                <div class="card-body d-flex align-items-center">
+                    <span class="metric-icon me-3" style="background:rgba(37,99,235,.12);color:#2563eb;"><i class="fas fa-hand-holding-usd"></i></span>
+                    <div>
+                        <div class="metric-label">Active Loans</div>
+                        <div class="metric-value">₦{{ "{:,.2f}".format(active_loans) }}</div>
+                    </div>
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
-            <div class="card bg-warning text-white">
-                <div class="card-body">
-                    <h6>Pending Applications</h6>
-                    <h3>{{ loans|selectattr('status', 'equalto', 'pending')|list|length }}</h3>
+        <div class="col-sm-6 col-xl-3">
+            <div class="card h-100 border-0 shadow-sm">
+                <div class="card-body d-flex align-items-center">
+                    <span class="metric-icon me-3" style="background:rgba(245,158,11,.14);color:#d97706;"><i class="fas fa-clock"></i></span>
+                    <div>
+                        <div class="metric-label">Pending Applications</div>
+                        <div class="metric-value">{{ loans|selectattr('status', 'equalto', 'pending')|list|length }}</div>
+                    </div>
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
-            <div class="card bg-success text-white">
-                <div class="card-body">
-                    <h6>Completed</h6>
-                    <h3>{{ loans|selectattr('status', 'equalto', 'completed')|list|length }}</h3>
+        <div class="col-sm-6 col-xl-3">
+            <div class="card h-100 border-0 shadow-sm">
+                <div class="card-body d-flex align-items-center">
+                    <span class="metric-icon me-3" style="background:rgba(16,185,129,.14);color:#059669;"><i class="fas fa-check-circle"></i></span>
+                    <div>
+                        <div class="metric-label">Completed</div>
+                        <div class="metric-value">{{ loans|selectattr('status', 'equalto', 'completed')|list|length }}</div>
+                    </div>
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
-            <div class="card bg-info text-white">
-                <div class="card-body">
-                    <h6>Total Interest</h6>
-                    <h3>₦{{ "{:,.2f}".format(loans|sum(attribute='total_repayment') - loans|sum(attribute='amount')) }}</h3>
+        <div class="col-sm-6 col-xl-3">
+            <div class="card h-100 border-0 shadow-sm">
+                <div class="card-body d-flex align-items-center">
+                    <span class="metric-icon me-3" style="background:rgba(6,182,212,.14);color:#0891b2;"><i class="fas fa-percent"></i></span>
+                    <div>
+                        <div class="metric-label">Total Interest</div>
+                        <div class="metric-value">₦{{ "{:,.2f}".format(loans|sum(attribute='total_repayment') - loans|sum(attribute='amount')) }}</div>
+                    </div>
                 </div>
             </div>
         </div>
