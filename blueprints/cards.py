@@ -30,8 +30,10 @@ def generate_member_card(member_id):
     card_gen = MemberCardGenerator()
 
     member_dict = dict(member)
+    _coop = db.execute("SELECT value FROM settings WHERE key = 'coop_name'").fetchone()
     member_data = {
-        'member_number': member_dict.get('member_number', f"OOU/{member_id:04d}"),
+        'coop_name':     (_coop['value'] if _coop else '') or 'Cooperative',
+        'member_number': member_dict.get('member_number', f"MEM/{member_id:04d}"),
         'full_name':     f"{member_dict['first_name']} {member_dict['last_name']}",
         'join_date':     (member_dict.get('date_joined', '')[:10]
                           if member_dict.get('date_joined') else ''),
@@ -111,6 +113,6 @@ def verify_card(token):
 @cards.route('/test-email')
 @login_required
 def test_email():
-    member = {'full_name': 'Test User', 'member_number': 'T123', 'coop_name': 'OOU Coop'}
+    member = {'full_name': 'Test User', 'member_number': 'T123', 'coop_name': 'Cooperative'}
     send_welcome_email('your-test-email@gmail.com', member)
     return 'Test email sent. Check your inbox.'

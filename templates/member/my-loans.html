@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}My Loans - OOU Cooperative{% endblock %}
+{% block title %}My Loans - {{ coop_name }}{% endblock %}
 
 {% block content %}
 <div class="container-fluid">
@@ -497,7 +497,7 @@ document.getElementById('paymentMethod').addEventListener('change', function() {
                         case 'cash':
                             instructionText.innerHTML = `
                                 <strong>Visit our branch:</strong><br>
-                                OOU Cooperative Office, Main Campus<br>
+                                {{ coop_name }} Office<br>
                                 Bring this code: LOAN-${currentLoanId}
                             `;
                             break;

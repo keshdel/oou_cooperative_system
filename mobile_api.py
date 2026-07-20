@@ -19,8 +19,8 @@ import datetime
 
 mobile_api = Blueprint('mobile_api', __name__)
 
-JWT_ISSUER = 'oou-cooperative'
-JWT_AUDIENCE = 'oou-cooperative-mobile'
+JWT_ISSUER = 'coopms'
+JWT_AUDIENCE = 'coopms-mobile'
 MOBILE_TOKEN_TTL_HOURS = 24
 
 

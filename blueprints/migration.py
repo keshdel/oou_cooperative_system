@@ -14,7 +14,7 @@ from flask_login import login_required, current_user
 from werkzeug.security import generate_password_hash
 
 from database import get_db
-from utils import role_required, audit
+from utils import role_required, audit, member_prefix
 from ledger import get_accounts, post_journal, account_exists, ACCUM_SURPLUS
 
 migration = Blueprint('migration', __name__, url_prefix='/migration')
@@ -339,7 +339,7 @@ def import_members():
                     if not member_number:
                         seq  = db.execute('SELECT COUNT(*) FROM members').fetchone()[0] + 1
                         year = (date_joined or datetime.now()).year
-                        member_number = f"OOU/{year}/{seq:04d}"
+                        member_number = f"{member_prefix(db)}/{year}/{seq:04d}"
 
                     db.execute('''
                         INSERT INTO members (
@@ -434,7 +434,7 @@ def template_members():
     w = csv.writer(out)
     w.writerow(MEMBERS_COLUMNS)
     w.writerow(['John', 'Doe', 'john@example.com', '08012345678',
-                'OOU/2024/0001', '2020-01-15', '5000',
+                'MEM/2024/0001', '2020-01-15', '5000',
                 'Lagos', 'Teacher', '1985-06-20', 'active',
                 'Mary Doe', 'Spouse', '08099991111',
                 'GTBank', '0123456789', 'John Doe',
@@ -591,11 +591,11 @@ def template_savings():
     out = StringIO()
     w = csv.writer(out)
     w.writerow(SAVINGS_COLUMNS)
-    w.writerow(['OOU/2024/0001', 'john@example.com', '5000', '2024-01', 'monthly',
+    w.writerow(['MEM/2024/0001', 'john@example.com', '5000', '2024-01', 'monthly',
                 '0', 'salary_deduction', 'RCPT/20240115/0001', '2024-01-10', ''])
-    w.writerow(['OOU/2024/0001', 'john@example.com', '2000', '2024-01', 'personal',
+    w.writerow(['MEM/2024/0001', 'john@example.com', '2000', '2024-01', 'personal',
                 '0', 'cash', 'RCPT/20240115/0002', '2024-01-15', 'Personal top-up'])
-    w.writerow(['OOU/2024/0002', 'jane@example.com', '10000', '2024-01', 'monthly',
+    w.writerow(['MEM/2024/0002', 'jane@example.com', '10000', '2024-01', 'monthly',
                 '1000', 'transfer', 'RCPT/20240118/0003', '2024-01-18', 'Late payment'])
     return _csv_response(out, 'savings_import_template.csv')
 
@@ -741,15 +741,15 @@ def template_loans():
     w = csv.writer(out)
     w.writerow(LOANS_COLUMNS)
     # Active loan — already disbursed, partially repaid
-    w.writerow(['OOU/2024/0001', 'john@example.com', 'LOAN/20240201/0001',
+    w.writerow(['MEM/2024/0001', 'john@example.com', 'LOAN/20240201/0001',
                 '200000', 'Regular', '12', '11', '224000', '100000',
                 'active', '2024-02-01', '2024-02-15', '2024-02-20', '200000', ''])
     # Pending loan — not yet disbursed
-    w.writerow(['OOU/2024/0002', 'jane@example.com', '',
+    w.writerow(['MEM/2024/0002', 'jane@example.com', '',
                 '100000', 'Emergency', '6', '10', '105000', '105000',
                 'pending', '2024-03-10', '', '', '', 'Awaiting guarantor'])
     # Completed loan — fully repaid
-    w.writerow(['OOU/2024/0003', '', 'LOAN/20230601/0042',
+    w.writerow(['MEM/2024/0003', '', 'LOAN/20230601/0042',
                 '50000', 'School Fees', '6', '9', '52250', '0',
                 'completed', '2023-06-01', '2023-06-05', '2023-06-10', '50000', ''])
     return _csv_response(out, 'loans_import_template.csv')
@@ -943,7 +943,7 @@ def template_repayments():
     w = csv.writer(out)
     w.writerow(REPAYMENTS_COLUMNS)
     # Full repayment breakdown known
-    w.writerow(['LOAN/20240201/0001', 'OOU/2024/0001', 'john@example.com',
+    w.writerow(['LOAN/20240201/0001', 'MEM/2024/0001', 'john@example.com',
                 '18667', '15000', '3667', '0',
                 'salary_deduction', 'RCPT/20240310/0001', '2024-03-10', ''])
     # Only amount known — principal will be derived as amount − interest − penalty
@@ -951,7 +951,7 @@ def template_repayments():
                 '18667', '', '', '',
                 'transfer', '', '2024-04-10', 'April instalment'])
     # Resolved by member (latest active loan used)
-    w.writerow(['', 'OOU/2024/0002', 'jane@example.com',
+    w.writerow(['', 'MEM/2024/0002', 'jane@example.com',
                 '17500', '14000', '3500', '0',
                 'cash', 'RCPT/20240315/0003', '2024-03-15', ''])
     return _csv_response(out, 'repayments_import_template.csv')
@@ -1406,7 +1406,7 @@ def template_honorarium():
     out = StringIO()
     w = csv.writer(out)
     w.writerow(HONORARIUM_COLUMNS)
-    w.writerow(['Ade Afolabi', 'OOU/2024/0001', 'ade@example.com',
+    w.writerow(['Ade Afolabi', 'MEM/2024/0001', 'ade@example.com',
                 '15000', 'Executive allowance', '2024-01', '2024-01-31'])
     w.writerow(['Bola Tinubu', '', 'bola@example.com',
                 '10000', 'Secretary allowance', '2024-01', '2024-01-31'])

@@ -1270,8 +1270,8 @@ def support():
                            whatsapp_number=wa_raw,
                            whatsapp_link=wa_link,
                            support_phone=_setting('support_phone', wa_raw),
-                           support_email=_setting('support_email', _setting('email', 'support@ooucoop.ng')),
-                           office_address=_setting('office_address', 'OOU Main Campus'))
+                           support_email=_setting('support_email', _setting('email', '')),
+                           office_address=_setting('office_address', 'Main Office'))
 
 
 # ── PDF Statement (admin/member download) ─────────────────────────────────────────
@@ -1314,7 +1314,7 @@ def member_statement(member_id):
         elems  = []
 
         coop_name = db.execute("SELECT value FROM settings WHERE key='coop_name'").fetchone()
-        coop_name = coop_name['value'] if coop_name else 'OOU Cooperative'
+        coop_name = coop_name['value'] if coop_name else 'Your Cooperative'
 
         elems.append(Paragraph(f'{coop_name} – Member Statement of Account', styles['Title']))
         elems.append(Spacer(1, 0.2 * inch))

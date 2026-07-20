@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Saving Details - OOU Cooperative{% endblock %}
+{% block title %}Saving Details - {{ coop_name }}{% endblock %}
 
 {% block content %}
 <div class="container-fluid">
@@ -31,7 +31,7 @@
                     <div class="row mb-4">
                         <div class="col-6">
                             <img src="{{ url_for('static', filename='images/logo.png') }}" alt="Logo" height="60">
-                            <h5 class="mt-2">OOU Acctg 2005 Alumni CMS</h5>
+                            <h5 class="mt-2">{{ coop_name }}</h5>
                             <p class="text-muted mb-0">Cooperative Multipurpose Society</p>
                         </div>
                         <div class="col-6 text-end">

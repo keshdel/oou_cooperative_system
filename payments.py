@@ -1,5 +1,5 @@
 """
-Payment Gateway Module — OOU Cooperative
+Payment Gateway Module — CoopMS
 Supports Paystack and Flutterwave.
 
 Keys are NEVER hardcoded. Priority order for each key:
@@ -15,6 +15,16 @@ import secrets
 import urllib.request
 import urllib.error
 from datetime import datetime
+
+
+def _coop_title():
+    """The cooperative's own name for payment pages (from settings)."""
+    try:
+        from database import get_db
+        row = get_db().execute("SELECT value FROM settings WHERE key = 'coop_name'").fetchone()
+        return (row['value'] if row else '') or 'Cooperative'
+    except Exception:
+        return 'Cooperative'
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -215,8 +225,8 @@ class FlutterwaveGateway:
                 'phonenumber': phone or '',
             },
             'customizations': {
-                'title':       'OOU Cooperative',
-                'description': description or 'Payment to OOU Cooperative',
+                'title':       _coop_title(),
+                'description': description or f'Payment to {_coop_title()}',
             },
         }
         return self._post('/payments', payload)

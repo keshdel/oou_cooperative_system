@@ -22,7 +22,7 @@ _DEFAULT_SETTINGS = {
     'resend_api_key': '',
     'brevo_api_key': '',
     'mail_from':     '',
-    'coop_name': 'OOU Acctg 2005 Alumni CMS',
+    'coop_name': 'Your Cooperative',
     'reg_number': 'CMS/2005/001',
     'address': '',
     'phone': '',
@@ -65,6 +65,7 @@ _DEFAULT_SETTINGS = {
 
 _EDITABLE_SETTING_KEYS = set(_DEFAULT_SETTINGS) | {
     'coop_short_name',
+    'member_prefix',
     'coop_logo',
     'active_gateway',
     'paystack_public_key',
@@ -842,11 +843,11 @@ def test_mail():
 
     html = (
         '<h2 style="color:#1a3a6c">Test Email</h2>'
-        '<p>This is a test email from your OOU Cooperative Management System.</p>'
+        '<p>This is a test email from your cooperative management system, powered by CoopMS.</p>'
         '<p>If you received this, your outgoing email provider is configured correctly.</p>'
         f'<hr><small>Sent at {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</small>'
     )
-    ok = send_email(recipient, 'Test Email — OOU Cooperative', html)
+    ok = send_email(recipient, 'Test Email', html)
     if ok:
         audit(db, 'TEST_MAIL', 'settings', f'Test email sent to {recipient}')
         return jsonify({'success': True, 'message': f'Test email sent to {recipient}'})

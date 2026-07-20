@@ -6,7 +6,7 @@ cursor = conn.cursor()
 
 # Default settings to insert
 default_settings = [
-    ('coop_name', 'OOU Acctg 2005 Alumni CMS', 'Cooperative name'),
+    ('coop_name', 'Your Cooperative', 'Cooperative name'),
     ('reg_number', 'CMS/2005/001', 'Registration number'),
     ('address', '', 'Cooperative address'),
     ('phone', '', 'Contact phone'),

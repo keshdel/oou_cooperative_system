@@ -201,7 +201,7 @@ class Member:
         import string
         year = datetime.now().year
         random_chars = ''.join(random.choices(string.digits, k=4))
-        return f"OOU/{year}/{random_chars}"
+        return f"MEM/{year}/{random_chars}"
     
     @staticmethod
     def get_by_id(member_id):

@@ -13,7 +13,7 @@ from werkzeug.utils import secure_filename
 from database import get_db, last_insert_id
 from email_service import send_member_onboarding_email, send_welcome_email, send_email
 from security import generate_account_setup_token
-from utils import role_required, validate_image, audit, notify_member
+from utils import role_required, validate_image, audit, notify_member, member_prefix, coop_name
 
 members = Blueprint('members', __name__)
 
@@ -153,7 +153,7 @@ def add_member():
             db.commit()
 
             member_id     = last_insert_id(db)
-            member_number = f"OOU/{datetime.now().year}/{member_id:04d}"
+            member_number = f"{member_prefix(db)}/{datetime.now().year}/{member_id:04d}"
             db.execute('UPDATE members SET member_number = ? WHERE id = ?', (member_number, member_id))
             db.commit()
 
@@ -195,7 +195,6 @@ def add_member():
                 send_welcome_email(member['email'], {
                     'full_name':     f"{request.form['first_name']} {request.form['last_name']}",
                     'member_number': member_number,
-                    'coop_name':     'OOU Cooperative',
                 })
                 if onboarding:
                     send_member_onboarding_email(
@@ -209,7 +208,7 @@ def add_member():
                         url_for('portal.profile', _external=True),
                     )
                 notify_member(db, member['email'],
-                              'Welcome to OOU Cooperative!',
+                              f'Welcome to {coop_name(db)}!',
                               f"Your member number is {member_number}. "
                               f"Check your email to configure your portal password and profile.",
                               notification_type='success')
@@ -364,7 +363,7 @@ def bulk_upload_members():
                     address        = row.get('address', '').strip()
                     occupation     = row.get('occupation', '').strip()
                     monthly_savings = float(row.get('monthly_savings', 5000))
-                    member_number  = f"OOU/{datetime.now().year}/{row_num:04d}"
+                    member_number  = f"{member_prefix(db)}/{datetime.now().year}/{row_num:04d}"
 
                     db.execute('''
                         INSERT INTO members (
@@ -546,7 +545,7 @@ def savings_request_act(req_id):
             send_email(req['email'], 'Savings Change Approved',
                        f"<p>Dear {req['first_name']},</p><p>{msg}</p>"
                        + (f"<p><em>Note from the office:</em> {comment}</p>" if comment else "")
-                       + "<p>OOU Cooperative</p>")
+                       + f"<p>{coop_name(db)}</p>")
         flash('Request approved — the member\'s monthly savings has been updated.', 'success')
 
     elif action == 'reject':
@@ -566,7 +565,7 @@ def savings_request_act(req_id):
             send_email(req['email'], 'Savings Change Not Approved',
                        f"<p>Dear {req['first_name']},</p><p>{msg}</p>"
                        + (f"<p><em>Reason:</em> {comment}</p>" if comment else "")
-                       + "<p>OOU Cooperative</p>")
+                       + f"<p>{coop_name(db)}</p>")
         flash('Request rejected and the member notified.', 'info')
     else:
         flash('Unknown action.', 'danger')

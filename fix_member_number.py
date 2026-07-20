@@ -17,7 +17,7 @@ except sqlite3.OperationalError as e:
 cursor.execute("SELECT id FROM members WHERE member_number IS NULL")
 rows = cursor.fetchall()
 for (member_id,) in rows:
-    new_number = f"OOU/{member_id:04d}"
+    new_number = f"MEM/{member_id:04d}"
     cursor.execute("UPDATE members SET member_number = ? WHERE id = ?", (new_number, member_id))
     print(f"Updated member {member_id} -> {new_number}")
 

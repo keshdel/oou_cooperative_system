@@ -284,6 +284,28 @@ def record_revenue(db, category, amount, description='', source='',
             print(f"[revenue] failed to record {category} {amount}: {exc}")
 
 
+def coop_name(db):
+    """This client cooperative's own name (from settings); neutral fallback."""
+    try:
+        row = db.execute("SELECT value FROM settings WHERE key = 'coop_name'").fetchone()
+        return (row['value'] if row else '') or 'Your Cooperative'
+    except Exception:
+        return 'Your Cooperative'
+
+
+def member_prefix(db):
+    """The configurable prefix for auto-generated member numbers (per-client).
+
+    Falls back to 'MEM' so nothing is hard-coded to any one cooperative.
+    """
+    try:
+        row = db.execute("SELECT value FROM settings WHERE key = 'member_prefix'").fetchone()
+        v = (row['value'] if row else '') or ''
+        return (v.strip() or 'MEM').upper()
+    except Exception:
+        return 'MEM'
+
+
 def member_savings_balance(db, member_id):
     """Authoritative savings balance from the savings ledger (source of truth).
 

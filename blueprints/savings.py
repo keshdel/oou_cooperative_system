@@ -169,7 +169,7 @@ def download_salary_template():
         'month', 'date', 'receipt_number', 'notes',
     ])
     writer.writerow([
-        'OOU/2025/0001', 'EMP001', 'member@example.com', '08012345678',
+        'MEM/2025/0001', 'EMP001', 'member@example.com', '08012345678',
         '15000', datetime.now().strftime('%Y-%m'), datetime.now().strftime('%Y-%m-%d'),
         '', 'July payroll deduction',
     ])

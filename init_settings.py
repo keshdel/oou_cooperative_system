@@ -17,8 +17,8 @@ def init_settings():
     
     # Default settings (including new branding keys)
     default_settings = [
-        ('coop_name', 'OOU Acctg 2005 Alumni CMS', 'Cooperative full name'),
-        ('coop_short_name', 'OOU Coop', 'Short name for sidebar'),
+        ('coop_name', 'Your Cooperative', 'Cooperative full name'),
+        ('coop_short_name', 'Coop', 'Short name for sidebar'),
         ('coop_logo', '', 'Path to logo image'),
         ('reg_number', 'CMS/2005/001', 'Registration number'),
         ('address', '', 'Cooperative address'),

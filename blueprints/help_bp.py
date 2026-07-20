@@ -84,7 +84,7 @@ ARTICLES = [
                     'Click <b>Add Member</b> (top-right).',
                     'Fill in First Name, Last Name, and Phone (required).',
                     'Enter optional fields: email, address, occupation, date of birth, monthly savings target.',
-                    'Click <b>Save Member</b>. A member number is auto-assigned (e.g. OOU/2025/0042).',
+                    'Click <b>Save Member</b>. A member number is auto-assigned (e.g. MEM/2025/0042).',
                 ],
             },
             {

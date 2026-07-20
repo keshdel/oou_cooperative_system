@@ -821,9 +821,10 @@ def init_db():
 
     # ── Default settings ───────────────────────────────────────────────────────
     default_settings = [
-        ('coop_name',       'OOU Acctg 2005 Alumni CMS', 'Cooperative full name'),
-        ('coop_short_name', 'OOU Coop',                  'Short name shown in sidebar and reports'),
-        ('coop_logo',       '',                           'Logo path relative to static/ (e.g. uploads/logo.png)'),
+        ('coop_name',       'Your Cooperative', 'Cooperative full name'),
+        ('coop_short_name', 'Coop',             'Short name shown in sidebar and reports'),
+        ('coop_logo',       '',                 'Logo path relative to static/ (e.g. uploads/logo.png)'),
+        ('member_prefix',   'MEM',              'Prefix for auto-generated member numbers, e.g. MEM/2026/0001'),
         ('reg_number', 'CMS/2005/001', 'Registration number'),
         ('address', '', 'Cooperative address'),
         ('phone', '', 'Contact phone'),
@@ -882,7 +883,7 @@ def init_db():
         # ── Email ─────────────────────────────────────────────────────────────
         ('mail_enabled',   '0',  'Enable outgoing email (1=yes, 0=no)'),
         ('resend_api_key', '',   'Resend API key (re_...) — leave blank to use SMTP instead'),
-        ('mail_from',      '',   'Sender address shown in inbox, e.g. "OOU Coop <noreply@yourdomain.com>"'),
+        ('mail_from',      '',   'Sender address shown in inbox, e.g. "Your Coop <noreply@yourdomain.com>"'),
         ('smtp_host',      '',   'SMTP server hostname, e.g. smtp-relay.brevo.com or smtp.gmail.com'),
         ('smtp_port',      '587','SMTP port (587 for TLS, 465 for SSL)'),
         ('smtp_user',      '',   'SMTP login username (your email address)'),

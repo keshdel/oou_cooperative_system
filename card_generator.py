@@ -13,7 +13,7 @@ class MemberCardGenerator:
         self.card_width = 900
         self.card_height = 540
         self.bg_color = (255, 255, 255)
-        self.primary_color = (0, 102, 204)      # OOU Blue
+        self.primary_color = (0, 102, 204)      # Brand blue
         self.secondary_color = (255, 215, 0)    # Gold
         self.text_color = (33, 37, 41)
         self.light_text = (100, 100, 100)
@@ -32,6 +32,9 @@ class MemberCardGenerator:
         card = Image.new('RGB', (self.card_width, self.card_height), self.bg_color)
         draw = ImageDraw.Draw(card)
 
+        # Cooperative name comes from the caller (per-client), never hard-coded.
+        self.coop_name = (member_data.get('coop_name') or 'Cooperative')
+
         # Draw background gradient
         self._draw_gradient_background(card, draw)
 
@@ -47,7 +50,7 @@ class MemberCardGenerator:
             font_title = ImageFont.load_default()
             font_sub = ImageFont.load_default()
 
-        draw.text((30, 35), "OOU Acctg 2005 Alumni CMS", fill=(255,255,255), font=font_title)
+        draw.text((30, 35), self.coop_name, fill=(255,255,255), font=font_title)
         draw.text((30, 75), "Cooperative Multipurpose Society", fill=(255,255,255), font=font_sub)
 
         # Add member photo (if exists)
@@ -147,7 +150,7 @@ class MemberCardGenerator:
         draw.text((x_start, y_start+line_height*4+25), expiry, fill=(200, 0, 0), font=value_font)
 
         # Small footer text
-        draw.text((50, 500), "This card is the property of OOU Cooperative. If found, please return to any branch.",
+        draw.text((50, 500), f"This card is the property of {self.coop_name}. If found, please return to any branch.",
                   fill=self.light_text, font=small_font)
 
     def _add_qr_code(self, card, data):
@@ -179,4 +182,4 @@ class MemberCardGenerator:
             font = ImageFont.truetype("arial.ttf", 30)
         except:
             font = ImageFont.load_default()
-        draw.text((200, 280), "OOU COOPERATIVE", fill=(230, 230, 230), font=font)
+        draw.text((200, 280), self.coop_name.upper(), fill=(230, 230, 230), font=font)

@@ -1,5 +1,5 @@
 """
-OOU Acctg 2005 Alumni CMS - Cooperative Accounting Software
+CoopMS - Cooperative Management System
 """
 import os
 import re

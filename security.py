@@ -145,6 +145,6 @@ class SecurityManager:
             })
         return codes
 
-    def get_totp_uri(self, secret, username, issuer='OOU Cooperative'):
+    def get_totp_uri(self, secret, username, issuer='CoopMS'):
         """Return an otpauth:// URI for QR-code provisioning."""
         return pyotp.TOTP(secret).provisioning_uri(name=username, issuer_name=issuer)

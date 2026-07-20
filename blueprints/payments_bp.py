@@ -1,5 +1,5 @@
 """
-Online Payments Blueprint — OOU Cooperative
+Online Payments Blueprint — CoopMS
 Routes:
   POST  /admin/pay/savings              — initiate savings payment
   POST  /admin/pay/loan/<loan_id>       — initiate loan repayment
