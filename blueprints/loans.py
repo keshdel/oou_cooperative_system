@@ -103,7 +103,7 @@ def _disburse_loan(db, loan):
         {'account': LOANS_RECEIVABLE, 'debit': loan['amount'], 'memo': loan['loan_number']},
         {'account': CASH, 'credit': disbursed, 'memo': 'Net disbursed'},
         {'account': FEE_INCOME, 'credit': insurance + application_fee, 'memo': 'Loan fees'},
-    ], reference=loan['loan_number'], source_module='loans',
+    ], reference=loan['loan_number'], source_module='loan_disbursement',
        source_id=loan['id'], created_by=current_user.id)
     member = db.execute('SELECT * FROM members WHERE id = ?', (loan['member_id'],)).fetchone()
     if member and member['email']:
@@ -524,6 +524,7 @@ def bulk_loan_repayments():
                         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ''', (repayment_number, loan['id'], settled_amount, principal_paid, interest_paid,
                           payment_method, receipt_number, repayment_notes, payment_date))
+                    rep_id = last_insert_id(db)
 
                     new_balance = loan['balance'] - settled_amount
                     status = 'completed' if new_balance <= 0 else 'active'
@@ -536,8 +537,8 @@ def bulk_loan_repayments():
                         {'account': CASH, 'debit': settled_amount, 'memo': 'Repayment'},
                         {'account': LOANS_RECEIVABLE, 'credit': principal_paid, 'memo': loan_number},
                         {'account': LOAN_INTEREST_INCOME, 'credit': interest_paid, 'memo': 'Interest earned'},
-                    ], date=payment_date, reference=repayment_number, source_module='loans',
-                       source_id=loan['id'], created_by=current_user.id)
+                    ], date=payment_date, reference=repayment_number, source_module='loan_repayment',
+                       source_id=rep_id, created_by=current_user.id)
                     if loan['email']:
                         send_loan_repayment_email(
                             loan['email'],
@@ -650,6 +651,7 @@ def repay_loan(loan_id):
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ''', (repayment_number, loan_id, settled, principal_paid, interest_paid,
               method, notes, datetime.now()))
+        rep_id = last_insert_id(db)
 
         new_balance = loan['balance'] - settled
         new_status  = 'completed' if new_balance <= 0 else 'active'
@@ -665,8 +667,8 @@ def repay_loan(loan_id):
             {'account': CASH, 'debit': settled, 'memo': 'Repayment'},
             {'account': LOANS_RECEIVABLE, 'credit': principal_paid, 'memo': loan['loan_number']},
             {'account': LOAN_INTEREST_INCOME, 'credit': interest_paid, 'memo': 'Interest earned'},
-        ], reference=repayment_number, source_module='loans',
-           source_id=loan_id, created_by=current_user.id)
+        ], reference=repayment_number, source_module='loan_repayment',
+           source_id=rep_id, created_by=current_user.id)
         db.commit()
 
         member = db.execute('SELECT * FROM members WHERE id = ?', (loan['member_id'],)).fetchone()

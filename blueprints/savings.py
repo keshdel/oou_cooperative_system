@@ -259,6 +259,7 @@ def salary_upload():
                         receipt_number, notes, payment_date, current_user.id,
                         batch_ref, file.filename,
                     ))
+                    sav_id = last_insert_id(db)   # before any revenue/GL INSERT
                     db.execute(
                         'UPDATE members SET total_savings = total_savings + ?, '
                         'shares_value = COALESCE(shares_value, 0) + ? WHERE id = ?',
@@ -285,7 +286,7 @@ def salary_upload():
                     post_journal_safe(
                         db, f'Salary savings deduction - {row_month}', lines,
                         date=payment_date, reference=receipt_number,
-                        source_module='savings', source_id=member['id'],
+                        source_module='savings_deposit', source_id=sav_id,
                         created_by=current_user.id,
                     )
 
@@ -359,6 +360,7 @@ def add_saving():
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (member_id, deposit_amount, share_amount, month, payment_type, late_fee,
               payment_method, receipt_number, notes, today))
+        sav_id = last_insert_id(db)   # captured before any other INSERT (revenue/GL)
 
         # Deposits grow by the deposit portion; share capital by the share portion.
         db.execute(
@@ -387,12 +389,12 @@ def add_saving():
         if late_fee:
             _lines.append({'account': FEE_INCOME, 'credit': late_fee, 'memo': 'Late fee'})
         post_journal_safe(db, f'Savings deposit — {month}', _lines,
-                          reference=receipt_number, source_module='savings',
-                          source_id=member_id, created_by=current_user.id)
+                          reference=receipt_number, source_module='savings_deposit',
+                          source_id=sav_id, created_by=current_user.id)
 
         db.commit()
 
-        saving_id = last_insert_id(db)
+        saving_id = sav_id   # the savings row id (captured above, before GL posting)
         member    = db.execute('SELECT * FROM members WHERE id = ?', (member_id,)).fetchone()
         new_saving = db.execute('SELECT * FROM savings WHERE id = ?', (saving_id,)).fetchone()
         share_note = f" (₦{deposit_amount:,.2f} to savings, ₦{share_amount:,.2f} to share capital)" if share_amount else ""

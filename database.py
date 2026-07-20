@@ -437,6 +437,7 @@ def init_db():
     _add_col(db, 'repayments', 'notes', 'TEXT')
     _add_col(db, 'repayments', 'received_by', 'INTEGER')
     _add_col(db, 'repayments', 'verified_by', 'INTEGER')
+    _add_col(db, 'repayments', 'reversed_at', 'TIMESTAMP')
     _add_col(db, 'repayments', 'verified_at', 'TIMESTAMP')
 
     # Loan guarantors — members who back a loan and must consent

@@ -297,7 +297,8 @@ def _source_link(db, module, source_id):
     if not source_id:
         return (module.title() or 'Manual entry', None)
     try:
-        if module == 'savings':
+        if module == 'savings_deposit':
+            # Precise linkage: source_id is the savings row.
             row = db.execute(
                 'SELECT s.member_id, m.first_name, m.last_name, m.member_number '
                 'FROM savings s LEFT JOIN members m ON m.id = s.member_id WHERE s.id = ?',
@@ -306,7 +307,24 @@ def _source_link(db, module, source_id):
                 return (f"Savings — {row['first_name']} {row['last_name']} (#{row['member_number']})",
                         url_for('members.member_savings_statement', member_id=row['member_id']))
             return ('Savings contribution', None)
-        if module in ('loans', 'payments'):
+        if module in ('savings', 'payments'):
+            # Legacy coarse linkage: source_id was the member id.
+            m = db.execute('SELECT id, first_name, last_name, member_number FROM members WHERE id = ?',
+                           (source_id,)).fetchone()
+            if m:
+                return (f"Savings/payment — {m['first_name']} {m['last_name']} (#{m['member_number']})",
+                        url_for('members.member_savings_statement', member_id=m['id']))
+            return ('Member transaction', None)
+        if module == 'loan_repayment':
+            # Precise linkage: source_id is the repayment row.
+            rep = db.execute(
+                'SELECT r.loan_id, l.loan_number FROM repayments r '
+                'LEFT JOIN loans l ON l.id = r.loan_id WHERE r.id = ?', (source_id,)).fetchone()
+            if rep and rep['loan_id']:
+                return (f"Loan repayment — {rep['loan_number'] or rep['loan_id']}",
+                        url_for('loans.loan_detail', loan_id=rep['loan_id']))
+            return ('Loan repayment', None)
+        if module in ('loans', 'loan_disbursement'):
             row = db.execute(
                 'SELECT id, loan_number FROM loans WHERE id = ?', (source_id,)).fetchone()
             if row:
@@ -369,11 +387,15 @@ def journal_entry_view(entry_id):
 def reverse_entry(entry_id):
     db = get_db()
     try:
-        new_id = reverse_journal_entry(db, entry_id, created_by=current_user.id)
+        new_id, source_note = reverse_journal_entry(db, entry_id, created_by=current_user.id)
         db.commit()
         audit(db, 'REVERSE_JOURNAL', 'accounting',
-              f'Reversed journal entry {entry_id} with new entry {new_id}')
-        flash('Entry reversed — a balanced offsetting entry has been posted.', 'success')
+              f'Reversed journal entry {entry_id} with new entry {new_id}'
+              + (f' ({source_note})' if source_note else ''))
+        msg = 'Entry reversed — a balanced offsetting entry has been posted.'
+        if source_note:
+            msg += ' ' + source_note
+        flash(msg, 'success')
         return redirect(url_for('accounting.journal_entry_view', entry_id=new_id))
     except PeriodLockedError as e:
         db.rollback()

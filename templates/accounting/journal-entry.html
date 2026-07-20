@@ -15,7 +15,7 @@
             {% if current_user.role in ['admin', 'treasurer']
                   and not data.reversed_by and not entry.reversal_of and not entry_locked %}
             <form method="post" action="{{ url_for('accounting.reverse_entry', entry_id=entry.id) }}" class="d-inline"
-                  onsubmit="return confirm('Post a reversing entry that cancels this one?{% if entry.source_module and entry.source_module not in ['manual','reversal','opening',''] %}\n\nNote: this entry came from the {{ entry.source_module }} module. Reversing corrects the LEDGER only — review the original {{ entry.source_module }} record separately.{% endif %}');">
+                  onsubmit="return confirm('Post a reversing entry that cancels this one?{% if entry.source_module == 'savings_deposit' %}\n\nThis will also reverse the member savings deposit (their balance goes down).{% elif entry.source_module == 'loan_repayment' %}\n\nThis will also reverse the loan repayment (the loan balance goes back up).{% elif entry.source_module and entry.source_module not in ['manual','reversal','opening',''] %}\n\nNote: this entry came from the {{ entry.source_module }} module. Reversing corrects the LEDGER only — review the original record separately.{% endif %}');">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button class="btn btn-outline-danger btn-sm"><i class="fas fa-rotate-left"></i> Reverse entry</button>
             </form>

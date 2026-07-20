@@ -606,13 +606,66 @@ def journal_entry_detail(db, entry_id):
     }
 
 
+def _reverse_source_effect(db, e):
+    """Undo the subledger record behind an operational entry, for the precisely-
+    linked modules only. Returns a short human note, or None if there is nothing
+    to undo (GL-only reversal). Assumes the caller has already guarded against
+    double-reversal via the journal entry's reversed_at.
+    """
+    module = (e.get('source_module') or '')
+    sid = e.get('source_id')
+    if not sid:
+        return None
+
+    if module == 'savings_deposit':
+        sav = db.execute('SELECT * FROM savings WHERE id = ?', (sid,)).fetchone()
+        if not sav:
+            return None
+        amt = float(sav['amount'] or 0)
+        keys = sav.keys()
+        shr = float(sav['share_capital'] or 0) if 'share_capital' in keys else 0.0
+        # Compensating negative deposit so SUM(amount) nets to zero — nothing deleted.
+        db.execute('''INSERT INTO savings
+                          (member_id, amount, share_capital, month, payment_type,
+                           late_fee, payment_method, receipt_number, notes, date)
+                      VALUES (?, ?, ?, ?, 'reversal', 0, 'reversal', ?, ?, ?)''',
+                   (sav['member_id'], -amt, -shr, sav['month'],
+                    f"REV-{sav['receipt_number'] or sav['id']}",
+                    f"Reversal of savings deposit #{sav['id']}", datetime.now()))
+        db.execute('''UPDATE members
+                          SET total_savings = COALESCE(total_savings, 0) - ?,
+                              shares_value  = COALESCE(shares_value, 0) - ?
+                      WHERE id = ?''', (amt, shr, sav['member_id']))
+        return f"Member savings reduced by ₦{amt:,.2f}."
+
+    if module == 'loan_repayment':
+        rep = db.execute('SELECT * FROM repayments WHERE id = ?', (sid,)).fetchone()
+        if not rep:
+            return None
+        if 'reversed_at' in rep.keys() and rep['reversed_at']:
+            return None
+        loan = db.execute('SELECT * FROM loans WHERE id = ?', (rep['loan_id'],)).fetchone()
+        if not loan:
+            return None
+        restored = round(float(loan['balance'] or 0) + float(rep['amount'] or 0), 2)
+        new_status = 'active' if (loan['status'] == 'completed') else loan['status']
+        db.execute('UPDATE loans SET balance = ?, status = ?, completed_at = NULL WHERE id = ?',
+                   (restored, new_status, loan['id']))
+        db.execute('UPDATE repayments SET reversed_at = ? WHERE id = ?', (datetime.now(), rep['id']))
+        return f"Loan {loan['loan_number'] or loan['id']} balance restored by ₦{float(rep['amount'] or 0):,.2f}."
+
+    return None
+
+
 def reverse_journal_entry(db, entry_id, created_by=None):
-    """Reverse a journal entry by posting a balanced offsetting entry.
+    """Reverse a journal entry by posting a balanced offsetting entry, and — for
+    precisely-linked savings deposits and loan repayments — also undo the source
+    record (subledger). Everything happens in the caller's transaction.
 
     Never deletes: the original stays and is linked to its reversal. Refuses to
     reverse an entry that is in a locked period, that is itself a reversal, or
     that has already been reversed. The reversal is dated today (the open
-    period). Does NOT commit. Returns the new reversal entry id.
+    period). Does NOT commit. Returns (new_entry_id, source_note-or-None).
     """
     entry = db.execute('SELECT * FROM journal_entries WHERE id = ?', (entry_id,)).fetchone()
     if not entry:
@@ -650,7 +703,10 @@ def reverse_journal_entry(db, entry_id, created_by=None):
     now = datetime.now()
     db.execute('UPDATE journal_entries SET reversal_of = ? WHERE id = ?', (entry_id, new_id))
     db.execute('UPDATE journal_entries SET reversed_at = ? WHERE id = ?', (now, entry_id))
-    return new_id
+
+    # Undo the subledger for precisely-linked operational entries.
+    source_note = _reverse_source_effect(db, e)
+    return new_id, source_note
 
 
 def account_balance(db, code, as_of=None):
