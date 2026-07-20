@@ -7,41 +7,52 @@
             <h2><i class="fas fa-piggy-bank"></i> Savings Management</h2>
             <p class="text-muted">Track all member savings and contributions</p>
         </div>
-        <div class="col-md-4 text-end">
-            {% if current_user.role in ['admin', 'treasurer'] %}
-            <a href="{{ url_for('savings.salary_upload') }}" class="btn btn-primary">
-                <i class="fas fa-upload"></i> Salary Upload
-            </a>
-            {% endif %}
-            <button class="btn btn-success" onclick="exportToCSV()">
-                <i class="fas fa-file-excel"></i> Export to CSV
-            </button>
+        <div class="col-md-4">
+            <div class="d-flex gap-2 justify-content-md-end flex-wrap">
+                {% if current_user.role in ['admin', 'treasurer'] %}
+                <a href="{{ url_for('savings.salary_upload') }}" class="btn btn-primary">
+                    <i class="fas fa-upload"></i> Salary Upload
+                </a>
+                {% endif %}
+                <button class="btn btn-outline-secondary" onclick="exportToCSV()">
+                    <i class="fas fa-file-excel"></i> Export to CSV
+                </button>
+            </div>
         </div>
     </div>
     
     <!-- Savings Summary -->
-    <div class="row g-4 mb-4">
+    <div class="row g-3 mb-4">
         <div class="col-md-4">
-            <div class="card bg-primary text-white">
-                <div class="card-body">
-                    <h6>Total Savings</h6>
-                    <h3>₦{{ "{:,.2f}".format(total_savings) }}</h3>
+            <div class="card h-100 border-0 shadow-sm">
+                <div class="card-body d-flex align-items-center">
+                    <span class="metric-icon me-3" style="background:rgba(37,99,235,.12);color:#2563eb;"><i class="fas fa-piggy-bank"></i></span>
+                    <div>
+                        <div class="metric-label">Total Savings</div>
+                        <div class="metric-value">₦{{ "{:,.2f}".format(total_savings) }}</div>
+                    </div>
                 </div>
             </div>
         </div>
         <div class="col-md-4">
-            <div class="card bg-warning text-white">
-                <div class="card-body">
-                    <h6>This Month</h6>
-                    <h3>₦{{ "{:,.2f}".format(savings|selectattr('month', 'equalto', now().strftime('%Y-%m'))|sum(attribute='amount')) }}</h3>
+            <div class="card h-100 border-0 shadow-sm">
+                <div class="card-body d-flex align-items-center">
+                    <span class="metric-icon me-3" style="background:rgba(16,185,129,.14);color:#059669;"><i class="fas fa-calendar-check"></i></span>
+                    <div>
+                        <div class="metric-label">This Month</div>
+                        <div class="metric-value">₦{{ "{:,.2f}".format(savings|selectattr('month', 'equalto', now().strftime('%Y-%m'))|sum(attribute='amount')) }}</div>
+                    </div>
                 </div>
             </div>
         </div>
         <div class="col-md-4">
-            <div class="card bg-danger text-white">
-                <div class="card-body">
-                    <h6>Late Fees Collected</h6>
-                    <h3>₦{{ "{:,.2f}".format(savings|sum(attribute='late_fee')) }}</h3>
+            <div class="card h-100 border-0 shadow-sm">
+                <div class="card-body d-flex align-items-center">
+                    <span class="metric-icon me-3" style="background:rgba(220,38,38,.12);color:#dc2626;"><i class="fas fa-exclamation-triangle"></i></span>
+                    <div>
+                        <div class="metric-label">Late Fees Collected</div>
+                        <div class="metric-value">₦{{ "{:,.2f}".format(savings|sum(attribute='late_fee')) }}</div>
+                    </div>
                 </div>
             </div>
         </div>

@@ -10,51 +10,65 @@
             <h2><i class="fas fa-hand-holding-usd"></i> My Loans</h2>
             <p class="text-muted">View and manage all your loan applications</p>
         </div>
-        <div class="col-md-4 text-end">
-            <a href="{{ url_for('portal.apply_loan_member') }}" class="btn btn-success">
-                <i class="fas fa-plus-circle"></i> Apply for New Loan
-            </a>
-            <a href="{{ url_for('portal.loan_calculator') }}" class="btn btn-info">
-                <i class="fas fa-calculator"></i> Calculator
-            </a>
+        <div class="col-md-4">
+            <div class="d-flex gap-2 justify-content-md-end flex-wrap">
+                <a href="{{ url_for('portal.apply_loan_member') }}" class="btn btn-primary">
+                    <i class="fas fa-plus-circle"></i> Apply for New Loan
+                </a>
+                <a href="{{ url_for('portal.loan_calculator') }}" class="btn btn-outline-secondary">
+                    <i class="fas fa-calculator"></i> Calculator
+                </a>
+            </div>
         </div>
     </div>
 
     <!-- Loan Summary -->
-    <div class="row g-4 mb-4">
-        <div class="col-md-3">
-            <div class="card bg-primary text-white">
-                <div class="card-body">
-                    <h6>Total Loans Taken</h6>
-                    <h3>₦{{ "{:,.2f}".format(total_loans_taken) }}</h3>
-                    <small>{{ total_loans_count }} loan(s)</small>
+    <div class="row g-3 mb-4">
+        <div class="col-sm-6 col-xl-3">
+            <div class="card h-100 border-0 shadow-sm">
+                <div class="card-body d-flex align-items-center">
+                    <span class="metric-icon me-3" style="background:rgba(37,99,235,.12);color:#2563eb;"><i class="fas fa-hand-holding-usd"></i></span>
+                    <div>
+                        <div class="metric-label">Total Loans Taken</div>
+                        <div class="metric-value">₦{{ "{:,.2f}".format(total_loans_taken) }}</div>
+                        <div class="text-muted small">{{ total_loans_count }} loan(s)</div>
+                    </div>
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
-            <div class="card bg-success text-white">
-                <div class="card-body">
-                    <h6>Outstanding Balance</h6>
-                    <h3>₦{{ "{:,.2f}".format(outstanding_balance) }}</h3>
-                    <small>{{ active_loans_count }} active</small>
+        <div class="col-sm-6 col-xl-3">
+            <div class="card h-100 border-0 shadow-sm">
+                <div class="card-body d-flex align-items-center">
+                    <span class="metric-icon me-3" style="background:rgba(245,158,11,.14);color:#d97706;"><i class="fas fa-balance-scale"></i></span>
+                    <div>
+                        <div class="metric-label">Outstanding Balance</div>
+                        <div class="metric-value">₦{{ "{:,.2f}".format(outstanding_balance) }}</div>
+                        <div class="text-muted small">{{ active_loans_count }} active</div>
+                    </div>
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
-            <div class="card bg-info text-white">
-                <div class="card-body">
-                    <h6>Total Repaid</h6>
-                    <h3>₦{{ "{:,.2f}".format(total_repaid) }}</h3>
-                    <small>{{ repayment_percentage }}% of total</small>
+        <div class="col-sm-6 col-xl-3">
+            <div class="card h-100 border-0 shadow-sm">
+                <div class="card-body d-flex align-items-center">
+                    <span class="metric-icon me-3" style="background:rgba(16,185,129,.14);color:#059669;"><i class="fas fa-check-circle"></i></span>
+                    <div>
+                        <div class="metric-label">Total Repaid</div>
+                        <div class="metric-value">₦{{ "{:,.2f}".format(total_repaid) }}</div>
+                        <div class="text-muted small">{{ repayment_percentage }}% of total</div>
+                    </div>
                 </div>
             </div>
         </div>
-        <div class="col-md-3">
-            <div class="card bg-warning text-white">
-                <div class="card-body">
-                    <h6>Available Credit</h6>
-                    <h3>₦{{ "{:,.2f}".format(available_credit) }}</h3>
-                    <small>Based on 2x savings</small>
+        <div class="col-sm-6 col-xl-3">
+            <div class="card h-100 border-0 shadow-sm">
+                <div class="card-body d-flex align-items-center">
+                    <span class="metric-icon me-3" style="background:rgba(6,182,212,.14);color:#0891b2;"><i class="fas fa-wallet"></i></span>
+                    <div>
+                        <div class="metric-label">Available Credit</div>
+                        <div class="metric-value">₦{{ "{:,.2f}".format(available_credit) }}</div>
+                        <div class="text-muted small">Based on 2x savings</div>
+                    </div>
                 </div>
             </div>
         </div>

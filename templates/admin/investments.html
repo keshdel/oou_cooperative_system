@@ -16,12 +16,15 @@
         </div>
     </div>
 
-    <div class="row g-4 mb-4">
+    <div class="row g-3 mb-4">
         <div class="col-md-4">
-            <div class="card bg-primary text-white">
-                <div class="card-body">
-                    <h6>Total Investments</h6>
-                    <h3>₦{{ "{:,.2f}".format(total_investments) }}</h3>
+            <div class="card h-100 border-0 shadow-sm">
+                <div class="card-body d-flex align-items-center">
+                    <span class="metric-icon me-3" style="background:rgba(37,99,235,.12);color:#2563eb;"><i class="fas fa-chart-line"></i></span>
+                    <div>
+                        <div class="metric-label">Total Investments</div>
+                        <div class="metric-value">₦{{ "{:,.2f}".format(total_investments) }}</div>
+                    </div>
                 </div>
             </div>
         </div>

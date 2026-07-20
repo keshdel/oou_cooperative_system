@@ -79,39 +79,46 @@
     </div>
     
     <!-- Financial Summary Cards -->
-    <div class="row g-4 mb-4">
+    <div class="row g-3 mb-4">
         <div class="col-md-4">
-            <div class="card bg-success text-white">
-                <div class="card-body">
-                    <h6>Total Savings</h6>
-                    <h3>₦{{ "{:,.2f}".format(total_savings) }}</h3>
-                    <small>Monthly: ₦{{ "{:,.0f}".format(member.monthly_savings) }}</small>
-                </div>
-            </div>
+            <div class="card h-100 border-0 shadow-sm">
+      <div class="card-body d-flex align-items-center">
+        <span class="metric-icon me-3" style="background:rgba(16,185,129,.14);color:#059669;"><i class="fas fa-piggy-bank"></i></span>
+        <div>
+          <div class="metric-label">Total Savings</div>
+          <div class="metric-value">₦{{ "{:,.2f}".format(total_savings) }}</div>
+            <div class="text-muted small">Monthly: ₦{{ "{:,.0f}".format(member.monthly_savings) }}</div>
+        </div>
+      </div>
+    </div>
         </div>
         <div class="col-md-4">
-            <div class="card bg-warning text-white">
-                <div class="card-body">
-                    <h6>Active Loans</h6>
-                    <h3>₦{{ "{:,.2f}".format(total_loans) }}</h3>
-                    <small>Max eligible: ₦{{ "{:,.2f}".format(member.total_savings * 2) }}</small>
-                </div>
-            </div>
+            <div class="card h-100 border-0 shadow-sm">
+      <div class="card-body d-flex align-items-center">
+        <span class="metric-icon me-3" style="background:rgba(245,158,11,.14);color:#d97706;"><i class="fas fa-hand-holding-usd"></i></span>
+        <div>
+          <div class="metric-label">Active Loans</div>
+          <div class="metric-value">₦{{ "{:,.2f}".format(total_loans) }}</div>
+            <div class="text-muted small">Max eligible: ₦{{ "{:,.2f}".format(member.total_savings * 2) }}</div>
+        </div>
+      </div>
+    </div>
         </div>
         <div class="col-md-4">
-            <div class="card bg-info text-white">
-                <div class="card-body">
-                    <h6>Loan Eligibility</h6>
-                    <h3>
-                        {% if member.total_savings >= 50000 %}
+            <div class="card h-100 border-0 shadow-sm">
+      <div class="card-body d-flex align-items-center">
+        <span class="metric-icon me-3" style="background:rgba(6,182,212,.14);color:#0891b2;"><i class="fas fa-hand-holding-usd"></i></span>
+        <div>
+          <div class="metric-label">Loan Eligibility</div>
+          <div class="metric-value">{% if member.total_savings >= 50000 %}
                         <i class="fas fa-check-circle"></i> Qualified
                         {% else %}
                         <i class="fas fa-times-circle"></i> Not Qualified
-                        {% endif %}
-                    </h3>
-                    <small>Need ₦50,000 savings minimum</small>
-                </div>
-            </div>
+                        {% endif %}</div>
+            <div class="text-muted small">Need ₦50,000 savings minimum</div>
+        </div>
+      </div>
+    </div>
         </div>
     </div>
     

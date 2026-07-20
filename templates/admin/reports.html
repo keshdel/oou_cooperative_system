@@ -10,7 +10,7 @@
             <p class="text-muted">Generate and view comprehensive financial reports</p>
         </div>
         <div class="col-md-4 text-end">
-            <button class="btn btn-success" onclick="exportAllReports()">
+            <button class="btn btn-outline-secondary" onclick="exportAllReports()">
                 <i class="fas fa-file-excel"></i> Export All Reports
             </button>
             <button class="btn btn-primary" onclick="window.print()">
@@ -169,38 +169,50 @@
                         </div>
                     </div>
                     
-                    <div class="row g-4 mb-4">
+                    <div class="row g-3 mb-4">
                         <div class="col-md-3">
-                            <div class="card bg-primary text-white">
-                                <div class="card-body">
-                                    <h6>Total Savings</h6>
-                                    <h3>₦{{ "{:,.2f}".format(total_savings_all|default(0)) }}</h3>
-                                </div>
-                            </div>
+                            <div class="card h-100 border-0 shadow-sm">
+      <div class="card-body d-flex align-items-center">
+        <span class="metric-icon me-3" style="background:rgba(37,99,235,.12);color:#2563eb;"><i class="fas fa-piggy-bank"></i></span>
+        <div>
+          <div class="metric-label">Total Savings</div>
+          <div class="metric-value">₦{{ "{:,.2f}".format(total_savings_all|default(0)) }}</div>
+        </div>
+      </div>
+    </div>
                         </div>
                         <div class="col-md-3">
-                            <div class="card bg-success text-white">
-                                <div class="card-body">
-                                    <h6>This Month</h6>
-                                    <h3>₦{{ "{:,.2f}".format(this_month_savings|default(0)) }}</h3>
-                                </div>
-                            </div>
+                            <div class="card h-100 border-0 shadow-sm">
+      <div class="card-body d-flex align-items-center">
+        <span class="metric-icon me-3" style="background:rgba(16,185,129,.14);color:#059669;"><i class="fas fa-calendar-check"></i></span>
+        <div>
+          <div class="metric-label">This Month</div>
+          <div class="metric-value">₦{{ "{:,.2f}".format(this_month_savings|default(0)) }}</div>
+        </div>
+      </div>
+    </div>
                         </div>
                         <div class="col-md-3">
-                            <div class="card bg-warning text-white">
-                                <div class="card-body">
-                                    <h6>Late Fees</h6>
-                                    <h3>₦{{ "{:,.2f}".format(total_late_fees|default(0)) }}</h3>
-                                </div>
-                            </div>
+                            <div class="card h-100 border-0 shadow-sm">
+      <div class="card-body d-flex align-items-center">
+        <span class="metric-icon me-3" style="background:rgba(245,158,11,.14);color:#d97706;"><i class="fas fa-exclamation-triangle"></i></span>
+        <div>
+          <div class="metric-label">Late Fees</div>
+          <div class="metric-value">₦{{ "{:,.2f}".format(total_late_fees|default(0)) }}</div>
+        </div>
+      </div>
+    </div>
                         </div>
                         <div class="col-md-3">
-                            <div class="card bg-info text-white">
-                                <div class="card-body">
-                                    <h6>Average per Member</h6>
-                                    <h3>₦{{ "{:,.2f}".format(avg_savings_per_member|default(0)) }}</h3>
-                                </div>
-                            </div>
+                            <div class="card h-100 border-0 shadow-sm">
+      <div class="card-body d-flex align-items-center">
+        <span class="metric-icon me-3" style="background:rgba(6,182,212,.14);color:#0891b2;"><i class="fas fa-user"></i></span>
+        <div>
+          <div class="metric-label">Average per Member</div>
+          <div class="metric-value">₦{{ "{:,.2f}".format(avg_savings_per_member|default(0)) }}</div>
+        </div>
+      </div>
+    </div>
                         </div>
                     </div>
                     
@@ -246,38 +258,50 @@
                 
                 <!-- 3. LOANS REPORT TAB -->
                 <div class="tab-pane fade" id="loans" role="tabpanel">
-                    <div class="row g-4 mb-4">
+                    <div class="row g-3 mb-4">
                         <div class="col-md-3">
-                            <div class="card bg-primary text-white">
-                                <div class="card-body">
-                                    <h6>Active Loans</h6>
-                                    <h3>₦{{ "{:,.2f}".format(active_loans_total|default(0)) }}</h3>
-                                </div>
-                            </div>
+                            <div class="card h-100 border-0 shadow-sm">
+      <div class="card-body d-flex align-items-center">
+        <span class="metric-icon me-3" style="background:rgba(37,99,235,.12);color:#2563eb;"><i class="fas fa-hand-holding-usd"></i></span>
+        <div>
+          <div class="metric-label">Active Loans</div>
+          <div class="metric-value">₦{{ "{:,.2f}".format(active_loans_total|default(0)) }}</div>
+        </div>
+      </div>
+    </div>
                         </div>
                         <div class="col-md-3">
-                            <div class="card bg-success text-white">
-                                <div class="card-body">
-                                    <h6>Total Disbursed</h6>
-                                    <h3>₦{{ "{:,.2f}".format(total_disbursed|default(0)) }}</h3>
-                                </div>
-                            </div>
+                            <div class="card h-100 border-0 shadow-sm">
+      <div class="card-body d-flex align-items-center">
+        <span class="metric-icon me-3" style="background:rgba(16,185,129,.14);color:#059669;"><i class="fas fa-arrow-up"></i></span>
+        <div>
+          <div class="metric-label">Total Disbursed</div>
+          <div class="metric-value">₦{{ "{:,.2f}".format(total_disbursed|default(0)) }}</div>
+        </div>
+      </div>
+    </div>
                         </div>
                         <div class="col-md-3">
-                            <div class="card bg-warning text-white">
-                                <div class="card-body">
-                                    <h6>Total Repaid</h6>
-                                    <h3>₦{{ "{:,.2f}".format(total_repaid|default(0)) }}</h3>
-                                </div>
-                            </div>
+                            <div class="card h-100 border-0 shadow-sm">
+      <div class="card-body d-flex align-items-center">
+        <span class="metric-icon me-3" style="background:rgba(245,158,11,.14);color:#d97706;"><i class="fas fa-check-circle"></i></span>
+        <div>
+          <div class="metric-label">Total Repaid</div>
+          <div class="metric-value">₦{{ "{:,.2f}".format(total_repaid|default(0)) }}</div>
+        </div>
+      </div>
+    </div>
                         </div>
                         <div class="col-md-3">
-                            <div class="card bg-info text-white">
-                                <div class="card-body">
-                                    <h6>Interest Earned</h6>
-                                    <h3>₦{{ "{:,.2f}".format(total_interest|default(0)) }}</h3>
-                                </div>
-                            </div>
+                            <div class="card h-100 border-0 shadow-sm">
+      <div class="card-body d-flex align-items-center">
+        <span class="metric-icon me-3" style="background:rgba(6,182,212,.14);color:#0891b2;"><i class="fas fa-percent"></i></span>
+        <div>
+          <div class="metric-label">Interest Earned</div>
+          <div class="metric-value">₦{{ "{:,.2f}".format(total_interest|default(0)) }}</div>
+        </div>
+      </div>
+    </div>
                         </div>
                     </div>
                     
@@ -339,38 +363,50 @@
                 
                 <!-- 4. MEMBERS REPORT TAB -->
                 <div class="tab-pane fade" id="members" role="tabpanel">
-                    <div class="row g-4 mb-4">
+                    <div class="row g-3 mb-4">
                         <div class="col-md-3">
-                            <div class="card bg-primary text-white">
-                                <div class="card-body">
-                                    <h6>Total Members</h6>
-                                    <h3>{{ total_members|default(0) }}</h3>
-                                </div>
-                            </div>
+                            <div class="card h-100 border-0 shadow-sm">
+      <div class="card-body d-flex align-items-center">
+        <span class="metric-icon me-3" style="background:rgba(37,99,235,.12);color:#2563eb;"><i class="fas fa-users"></i></span>
+        <div>
+          <div class="metric-label">Total Members</div>
+          <div class="metric-value">{{ total_members|default(0) }}</div>
+        </div>
+      </div>
+    </div>
                         </div>
                         <div class="col-md-3">
-                            <div class="card bg-success text-white">
-                                <div class="card-body">
-                                    <h6>Active</h6>
-                                    <h3>{{ active_members|default(0) }}</h3>
-                                </div>
-                            </div>
+                            <div class="card h-100 border-0 shadow-sm">
+      <div class="card-body d-flex align-items-center">
+        <span class="metric-icon me-3" style="background:rgba(16,185,129,.14);color:#059669;"><i class="fas fa-user-check"></i></span>
+        <div>
+          <div class="metric-label">Active</div>
+          <div class="metric-value">{{ active_members|default(0) }}</div>
+        </div>
+      </div>
+    </div>
                         </div>
                         <div class="col-md-3">
-                            <div class="card bg-warning text-white">
-                                <div class="card-body">
-                                    <h6>With Loans</h6>
-                                    <h3>{{ members_with_loans|default(0) }}</h3>
-                                </div>
-                            </div>
+                            <div class="card h-100 border-0 shadow-sm">
+      <div class="card-body d-flex align-items-center">
+        <span class="metric-icon me-3" style="background:rgba(245,158,11,.14);color:#d97706;"><i class="fas fa-hand-holding-usd"></i></span>
+        <div>
+          <div class="metric-label">With Loans</div>
+          <div class="metric-value">{{ members_with_loans|default(0) }}</div>
+        </div>
+      </div>
+    </div>
                         </div>
                         <div class="col-md-3">
-                            <div class="card bg-info text-white">
-                                <div class="card-body">
-                                    <h6>New This Month</h6>
-                                    <h3>{{ new_members_month|default(0) }}</h3>
-                                </div>
-                            </div>
+                            <div class="card h-100 border-0 shadow-sm">
+      <div class="card-body d-flex align-items-center">
+        <span class="metric-icon me-3" style="background:rgba(6,182,212,.14);color:#0891b2;"><i class="fas fa-calendar-check"></i></span>
+        <div>
+          <div class="metric-label">New This Month</div>
+          <div class="metric-value">{{ new_members_month|default(0) }}</div>
+        </div>
+      </div>
+    </div>
                         </div>
                     </div>
                     
@@ -451,30 +487,39 @@
                 
                 <!-- 5. INVESTMENTS REPORT TAB -->
                 <div class="tab-pane fade" id="investments" role="tabpanel">
-                    <div class="row g-4 mb-4">
+                    <div class="row g-3 mb-4">
                         <div class="col-md-4">
-                            <div class="card bg-primary text-white">
-                                <div class="card-body">
-                                    <h6>Total Investments</h6>
-                                    <h3>₦{{ "{:,.2f}".format(total_investments_value|default(0)) }}</h3>
-                                </div>
-                            </div>
+                            <div class="card h-100 border-0 shadow-sm">
+      <div class="card-body d-flex align-items-center">
+        <span class="metric-icon me-3" style="background:rgba(37,99,235,.12);color:#2563eb;"><i class="fas fa-coins"></i></span>
+        <div>
+          <div class="metric-label">Total Investments</div>
+          <div class="metric-value">₦{{ "{:,.2f}".format(total_investments_value|default(0)) }}</div>
+        </div>
+      </div>
+    </div>
                         </div>
                         <div class="col-md-4">
-                            <div class="card bg-success text-white">
-                                <div class="card-body">
-                                    <h6>Total Returns</h6>
-                                    <h3>₦{{ "{:,.2f}".format(total_returns|default(0)) }}</h3>
-                                </div>
-                            </div>
+                            <div class="card h-100 border-0 shadow-sm">
+      <div class="card-body d-flex align-items-center">
+        <span class="metric-icon me-3" style="background:rgba(16,185,129,.14);color:#059669;"><i class="fas fa-coins"></i></span>
+        <div>
+          <div class="metric-label">Total Returns</div>
+          <div class="metric-value">₦{{ "{:,.2f}".format(total_returns|default(0)) }}</div>
+        </div>
+      </div>
+    </div>
                         </div>
                         <div class="col-md-4">
-                            <div class="card bg-warning text-white">
-                                <div class="card-body">
-                                    <h6>ROI</h6>
-                                    <h3>{{ roi|default(0)|round(2) }}%</h3>
-                                </div>
-                            </div>
+                            <div class="card h-100 border-0 shadow-sm">
+      <div class="card-body d-flex align-items-center">
+        <span class="metric-icon me-3" style="background:rgba(245,158,11,.14);color:#d97706;"><i class="fas fa-chart-line"></i></span>
+        <div>
+          <div class="metric-label">ROI</div>
+          <div class="metric-value">{{ roi|default(0)|round(2) }}%</div>
+        </div>
+      </div>
+    </div>
                         </div>
                     </div>
                     
