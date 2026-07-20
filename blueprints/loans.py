@@ -16,6 +16,7 @@ from utils import (role_required, audit, notify_member, notify, compute_loan_sch
 from ledger import (post_journal_safe, CASH, LOANS_RECEIVABLE, FEE_INCOME,
                     LOAN_INTEREST_INCOME)
 import loan_workflow as lw
+from delinquency import portfolio_delinquency
 
 loans = Blueprint('loans', __name__)
 
@@ -96,23 +97,12 @@ def loans_list():
     ''').fetchall()
     active_loans = db.execute("SELECT SUM(amount) FROM loans WHERE status = 'active'").fetchone()[0] or 0
 
-    # Compute overdue: active loans where disbursement_date + tenure months < today
-    today = datetime.now()
-    overdue = []
-    for loan in all_loans:
-        if loan['status'] != 'active':
-            continue
-        try:
-            disbursed_str = loan['disbursement_date'] or loan['date_applied']
-            disbursed = datetime.fromisoformat(str(disbursed_str).replace('Z', '+00:00').split('+')[0])
-            due = disbursed + timedelta(days=int(loan['tenure']) * 30)
-            if due < today:
-                overdue.append(loan)
-        except Exception:
-            pass
+    # Real delinquency: compare each active loan's expected repayments-to-date
+    # against what has actually been repaid, and age the shortfall.
+    ageing = portfolio_delinquency(db)
 
     return render_template('admin/loans.html', loans=all_loans, active_loans=active_loans,
-                           overdue_loans=overdue)
+                           overdue_loans=ageing['loans'], ageing=ageing)
 
 
 @loans.route('/loans/apply', methods=['GET', 'POST'])

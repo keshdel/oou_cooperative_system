@@ -307,35 +307,64 @@
 
                 <!-- Overdue Loans Tab -->
                 <div class="tab-pane" id="overdue">
+                    {% if ageing and ageing.count %}
+                    <!-- Ageing summary -->
+                    <div class="row g-2 mb-3">
+                        <div class="col-6 col-md">
+                            <div class="border rounded p-2 text-center">
+                                <div class="metric-label">Total Arrears</div>
+                                <div class="fw-bold text-danger">₦{{ "{:,.2f}".format(ageing.total_arrears) }}</div>
+                            </div>
+                        </div>
+                        {% set bucket_color = {'1-30':'#d97706','31-60':'#ea580c','61-90':'#dc2626','90+':'#991b1b'} %}
+                        {% for b in ageing.bucket_order %}
+                        <div class="col-6 col-md">
+                            <div class="border rounded p-2 text-center">
+                                <div class="metric-label">{{ b }} days</div>
+                                <div class="fw-bold" style="color:{{ bucket_color[b] }}">
+                                    {{ ageing.buckets[b].count }}
+                                    <span class="text-muted small">(₦{{ "{:,.0f}".format(ageing.buckets[b].amount) }})</span>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
                     <div class="table-responsive">
-                        <table class="table table-hover">
+                        <table class="table table-hover align-middle">
                             <thead>
                                 <tr>
-                                    <th>ID</th><th>Member</th><th>Amount</th><th>Purpose</th>
-                                    <th>Balance</th><th>Tenure</th><th>Date Applied</th><th>Actions</th>
+                                    <th>Member</th><th>Loan #</th><th class="text-end">Monthly</th>
+                                    <th class="text-end">Arrears</th><th class="text-center">Behind</th>
+                                    <th class="text-center">Days overdue</th><th>Bucket</th>
+                                    <th class="text-end">Balance</th><th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
+                                {% set bucket_badge = {'1-30':'bg-warning text-dark','31-60':'bg-warning text-dark','61-90':'bg-danger','90+':'bg-dark'} %}
                                 {% for loan in overdue_loans %}
-                                <tr class="table-danger">
-                                    <td>{{ loan.id }}</td>
+                                <tr>
                                     <td><a href="{{ url_for('members.member_details', member_id=loan.member_id) }}">{{ loan.member_name }}</a></td>
-                                    <td>₦{{ "{:,.2f}".format(loan.amount) }}</td>
-                                    <td>{{ loan.purpose[:30] }}...</td>
-                                    <td><strong class="text-danger">₦{{ "{:,.2f}".format(loan.balance) }}</strong></td>
-                                    <td>{{ loan.tenure }} months</td>
-                                    <td>{{ loan.date_applied[:10] }}</td>
+                                    <td class="small text-muted">{{ loan.loan_number or loan.id }}</td>
+                                    <td class="text-end">₦{{ "{:,.2f}".format(loan.monthly_payment) }}</td>
+                                    <td class="text-end fw-bold text-danger">₦{{ "{:,.2f}".format(loan.arrears) }}</td>
+                                    <td class="text-center">{{ loan.instalments_behind }}</td>
+                                    <td class="text-center">{{ loan.days_overdue }}</td>
+                                    <td><span class="badge {{ bucket_badge.get(loan.bucket, 'bg-secondary') }}">{{ loan.bucket }} days</span></td>
+                                    <td class="text-end">₦{{ "{:,.2f}".format(loan.balance) }}</td>
                                     <td>
+                                        <a href="{{ url_for('loans.loan_detail', loan_id=loan.id) }}" class="btn btn-outline-secondary btn-sm" title="View">
+                                            <i class="fas fa-eye"></i></a>
                                         {% if current_user.role in ['admin', 'treasurer'] %}
                                         <button class="btn btn-warning btn-sm" title="Record Repayment"
                                                 onclick="showRepaymentModal({{ loan.id }}, {{ loan.balance }})">
-                                            <i class="fas fa-money-bill"></i> Record Payment
+                                            <i class="fas fa-money-bill"></i>
                                         </button>
                                         {% endif %}
                                     </td>
                                 </tr>
                                 {% else %}
-                                <tr><td colspan="8" class="text-center text-muted py-3">No overdue loans</td></tr>
+                                <tr><td colspan="9" class="text-center text-muted py-3">No overdue loans — every active loan is up to date. 🎉</td></tr>
                                 {% endfor %}
                             </tbody>
                         </table>
