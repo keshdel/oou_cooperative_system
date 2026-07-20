@@ -721,6 +721,10 @@ def init_db():
     _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_journal_lines_entry ON journal_lines(entry_id)')
     _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_journal_lines_account ON journal_lines(account_code)')
     _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_journal_entries_date ON journal_entries(date)')
+    # Reversal linkage: reversal_of points from a reversal entry to the original;
+    # reversed_at is set on an original once it has been reversed.
+    _add_col(db, 'journal_entries', 'reversal_of', 'INTEGER')
+    _add_col(db, 'journal_entries', 'reversed_at', 'TIMESTAMP')
 
     # Dividend declarations (year-end surplus distribution)
     db.execute(_adapt('''

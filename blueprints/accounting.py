@@ -12,7 +12,7 @@ from database import get_db
 from utils import role_required, audit
 from ledger import (get_accounts, trial_balance, backfill_from_transactions,
                     ledger_reconciliation, account_ledger, journal_entry_detail,
-                    get_lock_date)
+                    get_lock_date, reverse_journal_entry, PeriodLockedError)
 
 accounting = Blueprint('accounting', __name__, url_prefix='/accounting')
 
@@ -355,9 +355,36 @@ def journal_entry_view(entry_id):
         return redirect(url_for('accounting.journal_register'))
     src_label, src_url = _source_link(db, data['entry'].get('source_module'),
                                       data['entry'].get('source_id'))
+    lock = get_lock_date(db)
+    entry_locked = bool(lock) and str(data['entry'].get('date') or '')[:10] <= lock
     return render_template('accounting/journal-entry.html',
                            data=data, entry=data['entry'], lines=data['lines'],
-                           source_label=src_label, source_url=src_url)
+                           source_label=src_label, source_url=src_url,
+                           lock_date=lock, entry_locked=entry_locked)
+
+
+@accounting.route('/journal/<int:entry_id>/reverse', methods=['POST'])
+@login_required
+@role_required('admin', 'treasurer')
+def reverse_entry(entry_id):
+    db = get_db()
+    try:
+        new_id = reverse_journal_entry(db, entry_id, created_by=current_user.id)
+        db.commit()
+        audit(db, 'REVERSE_JOURNAL', 'accounting',
+              f'Reversed journal entry {entry_id} with new entry {new_id}')
+        flash('Entry reversed — a balanced offsetting entry has been posted.', 'success')
+        return redirect(url_for('accounting.journal_entry_view', entry_id=new_id))
+    except PeriodLockedError as e:
+        db.rollback()
+        flash(str(e), 'warning')
+    except ValueError as e:
+        db.rollback()
+        flash(str(e), 'danger')
+    except Exception as e:
+        db.rollback()
+        flash(f'Could not reverse entry: {e}', 'danger')
+    return redirect(url_for('accounting.journal_entry_view', entry_id=entry_id))
 
 
 @accounting.route('/period-close', methods=['GET'])

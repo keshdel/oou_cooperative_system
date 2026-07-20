@@ -12,8 +12,34 @@
         <div class="col-auto align-self-center">
             <a href="{{ url_for('accounting.journal_register') }}" class="btn btn-outline-secondary btn-sm">
                 <i class="fas fa-arrow-left"></i> Journal Register</a>
+            {% if current_user.role in ['admin', 'treasurer']
+                  and not data.reversed_by and not entry.reversal_of and not entry_locked %}
+            <form method="post" action="{{ url_for('accounting.reverse_entry', entry_id=entry.id) }}" class="d-inline"
+                  onsubmit="return confirm('Post a reversing entry that cancels this one?{% if entry.source_module and entry.source_module not in ['manual','reversal','opening',''] %}\n\nNote: this entry came from the {{ entry.source_module }} module. Reversing corrects the LEDGER only — review the original {{ entry.source_module }} record separately.{% endif %}');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-outline-danger btn-sm"><i class="fas fa-rotate-left"></i> Reverse entry</button>
+            </form>
+            {% endif %}
         </div>
     </div>
+
+    <!-- Reversal status -->
+    {% if data.reversed_by %}
+    <div class="alert alert-secondary py-2"><i class="fas fa-rotate-left"></i>
+        This entry was <strong>reversed</strong> on {{ (data.reversed_by.date|string)[:10] }} by
+        <a href="{{ url_for('accounting.journal_entry_view', entry_id=data.reversed_by.id) }}">{{ data.reversed_by.entry_number }}</a>.
+    </div>
+    {% elif entry.reversal_of and data.original %}
+    <div class="alert alert-info py-2"><i class="fas fa-rotate-left"></i>
+        This is a <strong>reversal</strong> of
+        <a href="{{ url_for('accounting.journal_entry_view', entry_id=data.original.id) }}">{{ data.original.entry_number }}</a>.
+    </div>
+    {% elif entry_locked %}
+    <div class="alert alert-warning py-2"><i class="fas fa-lock"></i>
+        This entry is in a locked period (books locked through {{ lock_date }}), so it can't be reversed.
+        An admin can move the lock date under <a href="{{ url_for('accounting.period_close') }}">Period Close</a>.
+    </div>
+    {% endif %}
 
     {% if data.balanced %}
     <div class="alert alert-success py-2"><i class="fas fa-check-circle"></i>

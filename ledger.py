@@ -581,13 +581,76 @@ def journal_entry_detail(db, entry_id):
 
     total_debit  = sum(float(l['debit'] or 0) for l in lines)
     total_credit = sum(float(l['credit'] or 0) for l in lines)
+
+    entry_d = dict(entry)
+    # The reversal entry that cancelled this one (if any).
+    rev = db.execute(
+        'SELECT id, entry_number, date FROM journal_entries WHERE reversal_of = ?',
+        (entry_id,)).fetchone()
+    reversed_by = dict(rev) if rev else None
+    # If this entry is itself a reversal, the original it cancelled.
+    original = None
+    if entry_d.get('reversal_of'):
+        o = db.execute('SELECT id, entry_number, date FROM journal_entries WHERE id = ?',
+                       (entry_d['reversal_of'],)).fetchone()
+        original = dict(o) if o else None
+
     return {
-        'entry': dict(entry),
+        'entry': entry_d,
         'lines': [dict(l) for l in lines],
         'total_debit': round(total_debit, 2),
         'total_credit': round(total_credit, 2),
         'balanced': abs(total_debit - total_credit) < 0.01,
+        'reversed_by': reversed_by,
+        'original': original,
     }
+
+
+def reverse_journal_entry(db, entry_id, created_by=None):
+    """Reverse a journal entry by posting a balanced offsetting entry.
+
+    Never deletes: the original stays and is linked to its reversal. Refuses to
+    reverse an entry that is in a locked period, that is itself a reversal, or
+    that has already been reversed. The reversal is dated today (the open
+    period). Does NOT commit. Returns the new reversal entry id.
+    """
+    entry = db.execute('SELECT * FROM journal_entries WHERE id = ?', (entry_id,)).fetchone()
+    if not entry:
+        raise ValueError('Journal entry not found.')
+    e = dict(entry)
+    if e.get('reversal_of'):
+        raise ValueError('This entry is itself a reversal and cannot be reversed.')
+    if e.get('reversed_at'):
+        raise ValueError('This entry has already been reversed.')
+
+    # Only entries in the OPEN period may be reversed.
+    lock = get_lock_date(db)
+    if lock and _date_str(e['date']) <= lock:
+        raise PeriodLockedError(
+            f'This entry is dated {_date_str(e["date"])}, within the locked period '
+            f'(books locked through {lock}). Move the lock date forward to reverse it.'
+        )
+
+    lines = db.execute(
+        'SELECT account_code, debit, credit, memo FROM journal_lines WHERE entry_id = ?',
+        (entry_id,)).fetchall()
+    # Swap debit and credit to offset the original.
+    offset = [{'account': l['account_code'],
+               'debit': float(l['credit'] or 0),
+               'credit': float(l['debit'] or 0),
+               'memo': (l['memo'] or '')} for l in lines]
+
+    new_id = post_journal(
+        db, f"Reversal of {e['entry_number']}", offset,
+        date=datetime.now(), reference=e['entry_number'],
+        source_module='reversal', source_id=entry_id, created_by=created_by)
+    if new_id is None:
+        raise ValueError('Nothing to reverse — the original entry has no lines.')
+
+    now = datetime.now()
+    db.execute('UPDATE journal_entries SET reversal_of = ? WHERE id = ?', (entry_id, new_id))
+    db.execute('UPDATE journal_entries SET reversed_at = ? WHERE id = ?', (now, entry_id))
+    return new_id
 
 
 def account_balance(db, code, as_of=None):
