@@ -11,7 +11,8 @@ from flask_login import login_required, current_user
 from database import get_db
 from utils import role_required, audit
 from ledger import (get_accounts, trial_balance, backfill_from_transactions,
-                    ledger_reconciliation, account_ledger, journal_entry_detail)
+                    ledger_reconciliation, account_ledger, journal_entry_detail,
+                    get_lock_date)
 
 accounting = Blueprint('accounting', __name__, url_prefix='/accounting')
 
@@ -357,6 +358,59 @@ def journal_entry_view(entry_id):
     return render_template('accounting/journal-entry.html',
                            data=data, entry=data['entry'], lines=data['lines'],
                            source_label=src_label, source_url=src_url)
+
+
+@accounting.route('/period-close', methods=['GET'])
+@login_required
+@role_required('admin', 'treasurer')
+def period_close():
+    db = get_db()
+    lock = get_lock_date(db)
+    # Recent lock-date changes for an audit trail.
+    try:
+        history = db.execute(
+            "SELECT username, description, timestamp FROM audit_log "
+            "WHERE action = 'PERIOD_LOCK' ORDER BY id DESC LIMIT 10").fetchall()
+    except Exception:
+        history = []
+    return render_template('accounting/period-close.html',
+                           lock_date=lock, history=history,
+                           today=datetime.now().strftime('%Y-%m-%d'))
+
+
+@accounting.route('/period-close/set', methods=['POST'])
+@login_required
+@role_required('admin')
+def set_lock_date():
+    db = get_db()
+    new_date = request.form.get('lock_date', '').strip()
+    action = request.form.get('action', 'set')
+
+    if action == 'clear':
+        new_date = ''
+    elif new_date:
+        # Validate the date format.
+        try:
+            datetime.strptime(new_date, '%Y-%m-%d')
+        except ValueError:
+            flash('Enter a valid date (YYYY-MM-DD).', 'danger')
+            return redirect(url_for('accounting.period_close'))
+
+    row = db.execute("SELECT value FROM settings WHERE key = 'books_lock_date'").fetchone()
+    if row is None:
+        db.execute("INSERT INTO settings (key, value, description) VALUES (?, ?, ?)",
+                   ('books_lock_date', new_date, 'Books locked through this date'))
+    else:
+        db.execute("UPDATE settings SET value = ? WHERE key = 'books_lock_date'", (new_date,))
+    db.commit()
+
+    if new_date:
+        audit(db, 'PERIOD_LOCK', 'accounting', f'Books locked through {new_date}')
+        flash(f'Books are now locked through {new_date}. Entries on or before that date are blocked.', 'success')
+    else:
+        audit(db, 'PERIOD_LOCK', 'accounting', 'Books unlocked (lock date cleared)')
+        flash('Books unlocked — no period lock is in effect.', 'info')
+    return redirect(url_for('accounting.period_close'))
 
 
 @accounting.route('/journal')

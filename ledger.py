@@ -34,6 +34,42 @@ OPERATIONAL_REVENUE_CATEGORIES = {
 }
 
 
+# ── Period close / books-lock date ────────────────────────────────────────────
+
+class PeriodLockedError(ValueError):
+    """Raised when a journal entry is dated on or before the books-lock date.
+
+    Subclasses ValueError so existing `except ValueError` posting handlers show
+    the message to the user instead of 500-ing.
+    """
+
+
+def _date_str(date):
+    """Normalise a date/datetime/string/None to a 'YYYY-MM-DD' string."""
+    if date is None:
+        return datetime.now().strftime('%Y-%m-%d')
+    if isinstance(date, datetime):
+        return date.strftime('%Y-%m-%d')
+    return str(date)[:10]
+
+
+def get_lock_date(db):
+    """The date the books are locked through ('YYYY-MM-DD'), or None if unlocked."""
+    try:
+        row = db.execute(
+            "SELECT value FROM settings WHERE key = 'books_lock_date'").fetchone()
+        v = (row['value'] if row else '') or ''
+        return v.strip() or None
+    except Exception:
+        return None
+
+
+def date_is_locked(db, date):
+    """True if `date` falls on or before the current books-lock date."""
+    lock = get_lock_date(db)
+    return bool(lock) and _date_str(date) <= lock
+
+
 def get_accounts(db, active_only=True):
     sql = 'SELECT code, name, type, normal_balance, parent_code, is_active FROM accounts'
     if active_only:
@@ -80,6 +116,14 @@ def post_journal(db, description, lines, date=None, reference='',
     if round(total_debit, 2) != round(total_credit, 2):
         raise ValueError(
             f'unbalanced journal entry: debits {total_debit:.2f} != credits {total_credit:.2f}'
+        )
+
+    # Period close: refuse to post into a locked period.
+    lock = get_lock_date(db)
+    if lock and _date_str(date) <= lock:
+        raise PeriodLockedError(
+            f'The books are locked through {lock}. Choose a later date, '
+            f'or an admin can move the lock date under Accounting → Period Close.'
         )
 
     entry_number = f"JE-{datetime.now().strftime('%Y%m%d')}-{secrets.token_hex(3).upper()}"

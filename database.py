@@ -835,6 +835,7 @@ def init_db():
         ('insurance_rate', '1', 'Loan insurance premium rate'),
         ('guarantors_required', '2', 'Number of guarantors required'),
         ('default_penalty_rate', '20', 'Default penalty rate'),
+        ('books_lock_date', '', 'Books locked through this date (YYYY-MM-DD); entries on/before are blocked'),
         ('interest_regular', '11', 'Regular loan interest rate'),
         ('interest_housing', '9', 'Housing loan interest rate'),
         ('interest_emergency', '10', 'Emergency loan interest rate'),
