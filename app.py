@@ -157,7 +157,7 @@ def utility_processor():
 
     return {
         'now':                      datetime.now,
-        'coop_name':                coop_name['value']  if coop_name  else 'OOU Cooperative',
+        'coop_name':                coop_name['value']  if coop_name  else 'Your Cooperative',
         'coop_logo':                coop_logo['value']  if coop_logo  else '',
         'coop_short_name':          coop_short['value'] if coop_short else 'Coop',
         'unread_notifications_count': unread_count,
