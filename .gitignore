@@ -49,3 +49,6 @@ deploy/vps/clients/*.env
 deploy/vps/docker-compose.override.yml
 deploy/vps/Caddyfile
 deploy/vps/backups/
+
+# Personal command cheat-sheet (contains server IP) — keep local
+deploy/vps/COMMANDS.txt
