@@ -81,8 +81,15 @@ fi
 echo "==> Regenerating compose + Caddy config"
 python3 generate.py
 
-echo "==> Building/starting the app container and reloading Caddy"
+echo "==> Building/starting the app container"
 docker compose up -d --build
+
+# Caddy is already running from earlier clients, so `up -d` won't restart it and
+# it won't see the new site block on its own. Reload it so it picks up the new
+# domain and fetches its HTTPS certificate.
+echo "==> Reloading Caddy to pick up ${DOMAIN}"
+docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile 2>/dev/null \
+  || docker compose restart caddy
 
 echo
 echo "======================================================================"

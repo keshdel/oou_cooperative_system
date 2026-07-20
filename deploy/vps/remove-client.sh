@@ -21,7 +21,10 @@ docker compose rm -f "app-${NAME}" 2>/dev/null || true
 
 rm -f "clients/${NAME}.env"
 python3 generate.py
-docker compose up -d   # reload Caddy without this client
+docker compose up -d
+# Make Caddy drop this client's site block.
+docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile 2>/dev/null \
+  || docker compose restart caddy
 
 if [[ "$DROP_DB" == "--drop-db" ]]; then
   echo "!! Dropping database coop_${NAME} PERMANENTLY in 5s (Ctrl-C to cancel)"
