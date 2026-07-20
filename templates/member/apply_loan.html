@@ -102,6 +102,47 @@
                     </table>
                 </div>
 
+                <!-- Pre-disbursement requirements -->
+                <div class="card border-info mb-3">
+                    <div class="card-header bg-info bg-opacity-10">
+                        <strong>Pre-disbursement Checks &amp; Repayment Security</strong>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label fw-bold">Repayment collateral *</label>
+                                <select class="form-select" name="payment_collateral_type" id="paymentCollateralType" required>
+                                    <option value="">-- Select one --</option>
+                                    <option value="standing_order">Standing order / salary deduction mandate</option>
+                                    <option value="post_dated_cheques">Post-dated cheques</option>
+                                </select>
+                                <small class="text-muted">The cooperative must verify this before disbursement.</small>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label fw-bold">Bank statement *</label>
+                                <div class="form-check mt-2">
+                                    <input class="form-check-input required-ack" type="checkbox" id="bankStatementAck" name="bank_statement_ack" value="1" required>
+                                    <label class="form-check-label" for="bankStatementAck">
+                                        I understand my recent bank statement is required for affordability review before this loan can be issued.
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input required-ack" type="checkbox" id="creditCheckConsent" name="credit_check_consent" value="1" required>
+                            <label class="form-check-label" for="creditCheckConsent">
+                                I authorise the cooperative to perform affordability, employment/salary deduction, credit, and repayment-history checks for this application.
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input required-ack" type="checkbox" id="dataProcessingConsent" name="data_processing_consent" value="1" required>
+                            <label class="form-check-label" for="dataProcessingConsent">
+                                I give express permission for my personal information and supporting documents to be processed for this loan application and audit record.
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Guarantors -->
                 <div class="row">
                     <div class="col-md-6 mb-3">
@@ -132,7 +173,11 @@
                             the bye-laws. This application is subject to approval by the Secretary, Treasurer and President.
                         </div>
                         <div class="form-check mb-3">
-                            <input class="form-check-input" type="checkbox" id="termsAgree" name="accept_terms" value="1" required>
+                            <input class="form-check-input required-ack" type="checkbox" id="scheduleAgree" name="repayment_schedule_accepted" value="1" required>
+                            <label class="form-check-label" for="scheduleAgree">I have reviewed and <strong>accept the calculated repayment schedule</strong> for the amount, tenure and loan purpose selected above.</label>
+                        </div>
+                        <div class="form-check mb-3">
+                            <input class="form-check-input required-ack" type="checkbox" id="termsAgree" name="accept_terms" value="1" required>
                             <label class="form-check-label" for="termsAgree">I have read and <strong>accept the terms and conditions</strong>.</label>
                         </div>
                         <div class="row">
@@ -221,6 +266,11 @@ function calculateLoan() {
             document.getElementById(id).textContent = '₦—';
         });
     }
+    const scheduleAgree = document.getElementById('scheduleAgree');
+    if (scheduleAgree) {
+        scheduleAgree.checked = false;
+    }
+    updateSubmit();
 }
 
 // Fetch member's savings to set max loan hint
@@ -241,11 +291,14 @@ document.getElementById('amount').addEventListener('input', calculateLoan);
 document.getElementById('tenure').addEventListener('change', calculateLoan);
 document.getElementById('purpose').addEventListener('change', calculateLoan);
 function updateSubmit() {
-    const ok = document.getElementById('termsAgree').checked &&
+    const requiredChecks = Array.from(document.querySelectorAll('.required-ack'));
+    const ok = requiredChecks.every(el => el.checked) &&
+               document.getElementById('paymentCollateralType').value.length > 0 &&
                document.getElementById('signatureName').value.trim().length > 0;
     document.getElementById('submitBtn').disabled = !ok;
 }
-document.getElementById('termsAgree').addEventListener('change', updateSubmit);
+document.querySelectorAll('.required-ack').forEach(el => el.addEventListener('change', updateSubmit));
+document.getElementById('paymentCollateralType').addEventListener('change', updateSubmit);
 document.getElementById('signatureName').addEventListener('input', updateSubmit);
 
 // Full month-by-month schedule (server-computed to match the real terms)

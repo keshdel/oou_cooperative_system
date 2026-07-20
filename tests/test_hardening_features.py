@@ -1,3 +1,4 @@
+import json
 import os
 import unittest
 from io import BytesIO
@@ -66,6 +67,58 @@ class HardeningFeatureTests(unittest.TestCase):
             return db.execute(
                 "SELECT id FROM members WHERE member_number = 'OOU/TEST/0001'"
             ).fetchone()['id']
+
+    def create_member_user(self, member_id, email='ada.audit@example.com'):
+        with self.app.app_context():
+            db = get_db()
+            db.execute('''
+                INSERT INTO users (username, password_hash, role, full_name, email, is_active, must_change_password)
+                VALUES (?, ?, 'member', 'Ada Audit', ?, 1, 0)
+                ON CONFLICT(username) DO UPDATE SET
+                    password_hash = excluded.password_hash,
+                    is_active = 1,
+                    must_change_password = 0
+            ''', (email, generate_password_hash('MemberPass1!'), email))
+            db.commit()
+
+    def create_guarantor_member(self, number, email, first_name):
+        with self.app.app_context():
+            db = get_db()
+            existing = db.execute('SELECT id FROM members WHERE member_number = ?', (number,)).fetchone()
+            if existing:
+                return existing['id']
+            db.execute('''
+                INSERT INTO members
+                    (member_number, employee_id, first_name, last_name, email,
+                     phone, status, monthly_savings, total_savings, date_joined)
+                VALUES (?, ?, ?, 'Guarantor', ?, '08000000991', 'active', 15000, 100000, '2024-01-01')
+            ''', (number, number.replace('/', ''), first_name, email))
+            db.commit()
+            return db.execute('SELECT id FROM members WHERE member_number = ?', (number,)).fetchone()['id']
+
+    def fund_member_savings(self, member_id, amount=100000):
+        with self.app.app_context():
+            db = get_db()
+            receipt = f'SAV/LOANAPP/{member_id}'
+            if db.execute('SELECT id FROM savings WHERE receipt_number = ?', (receipt,)).fetchone():
+                backfill_from_transactions(db)
+                db.commit()
+                return
+            db.execute('''
+                INSERT INTO savings
+                    (member_id, amount, month, payment_type, payment_method, receipt_number, date)
+                VALUES (?, ?, '2026-07', 'monthly', 'cash', ?, '2026-07-01')
+            ''', (member_id, amount, receipt))
+            backfill_from_transactions(db)
+            db.commit()
+
+    def login_member(self):
+        response = self.client.post(
+            '/login',
+            data={'username': 'ada.audit@example.com', 'password': 'MemberPass1!'},
+            follow_redirects=False,
+        )
+        self.assertIn(response.status_code, (302, 303))
 
     def test_support_routes_are_disabled_by_default(self):
         for path in ('/setup', '/debug-auth', '/emergency-reset'):
@@ -242,6 +295,87 @@ class HardeningFeatureTests(unittest.TestCase):
 
         reused = self.client.get(f'/setup-password/{token}', follow_redirects=False)
         self.assertIn(reused.status_code, (302, 303))
+
+    def test_member_loan_application_requires_due_diligence_acknowledgements(self):
+        member_id = self.create_member()
+        self.create_member_user(member_id)
+        self.fund_member_savings(member_id)
+        guarantor_1 = self.create_guarantor_member('OOU/TEST/G001', 'g1@example.com', 'Grace')
+        guarantor_2 = self.create_guarantor_member('OOU/TEST/G002', 'g2@example.com', 'George')
+        self.login_member()
+
+        response = self.client.post(
+            '/apply-loan-member',
+            data={
+                'amount': '50000',
+                'purpose': 'Regular',
+                'tenure': '6',
+                'payment_collateral_type': 'standing_order',
+                'guarantors': [str(guarantor_1), str(guarantor_2)],
+                'accept_terms': '1',
+                'signature_name': 'Ada Audit',
+            },
+            follow_redirects=False,
+        )
+        self.assertIn(response.status_code, (302, 303))
+
+        with self.app.app_context():
+            db = get_db()
+            loan = db.execute(
+                'SELECT * FROM loans WHERE member_id = ? ORDER BY id DESC',
+                (member_id,),
+            ).fetchone()
+            self.assertIsNone(loan)
+
+    def test_member_loan_application_stores_consent_and_schedule_snapshot(self):
+        member_id = self.create_member()
+        self.create_member_user(member_id)
+        self.fund_member_savings(member_id)
+        guarantor_1 = self.create_guarantor_member('OOU/TEST/G003', 'g3@example.com', 'Gina')
+        guarantor_2 = self.create_guarantor_member('OOU/TEST/G004', 'g4@example.com', 'Gabriel')
+        self.login_member()
+
+        response = self.client.post(
+            '/apply-loan-member',
+            data={
+                'amount': '50000',
+                'purpose': 'Regular',
+                'tenure': '6',
+                'payment_collateral_type': 'standing_order',
+                'guarantors': [str(guarantor_1), str(guarantor_2)],
+                'bank_statement_ack': '1',
+                'data_processing_consent': '1',
+                'credit_check_consent': '1',
+                'repayment_schedule_accepted': '1',
+                'accept_terms': '1',
+                'signature_name': 'Ada Audit',
+            },
+            follow_redirects=False,
+            environ_overrides={'REMOTE_ADDR': '203.0.113.44'},
+        )
+        self.assertIn(response.status_code, (302, 303))
+
+        with self.app.app_context():
+            db = get_db()
+            loan = db.execute(
+                'SELECT * FROM loans WHERE member_id = ? ORDER BY id DESC',
+                (member_id,),
+            ).fetchone()
+            self.assertIsNotNone(loan)
+            self.assertEqual(loan['terms_accepted'], 1)
+            self.assertEqual(loan['data_processing_consent'], 1)
+            self.assertEqual(loan['credit_check_consent'], 1)
+            self.assertEqual(loan['repayment_schedule_accepted'], 1)
+            self.assertEqual(loan['bank_statement_status'], 'requested')
+            self.assertEqual(loan['payment_collateral_type'], 'standing_order')
+            self.assertEqual(loan['payment_collateral_status'], 'pending')
+            self.assertEqual(loan['consent_ip'], '203.0.113.44')
+
+            snapshot = json.loads(loan['repayment_schedule_snapshot'])
+            self.assertEqual(snapshot['principal'], 50000)
+            self.assertEqual(snapshot['purpose'], 'Regular')
+            self.assertEqual(snapshot['tenure'], 6)
+            self.assertEqual(len(snapshot['schedule']), 6)
 
     def test_admin_can_resend_and_revoke_setup_links(self):
         self.login_admin()

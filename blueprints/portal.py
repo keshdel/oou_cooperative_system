@@ -1,3 +1,4 @@
+import json
 import random
 from datetime import datetime, timedelta
 from io import BytesIO
@@ -561,8 +562,21 @@ def apply_loan_member():
             return redirect(url_for('portal.apply_loan_member'))
 
         signature = request.form.get('signature_name', '').strip()
-        if not request.form.get('accept_terms') or not signature:
-            flash('You must accept the terms & conditions and sign with your full name to proceed.', 'danger')
+        payment_collateral_type = request.form.get('payment_collateral_type', '').strip()
+        required_acknowledgements = {
+            'accept_terms': 'You must accept the loan terms and conditions.',
+            'data_processing_consent': 'You must permit the cooperative to process your personal information for this loan application.',
+            'credit_check_consent': 'You must permit the cooperative to perform affordability and credit checks.',
+            'bank_statement_ack': 'You must acknowledge that a bank statement is required before disbursement.',
+            'repayment_schedule_accepted': 'You must accept the calculated repayment schedule before submitting.',
+        }
+        missing_ack = [message for field, message in required_acknowledgements.items()
+                       if not request.form.get(field)]
+        if missing_ack or not signature:
+            flash(missing_ack[0] if missing_ack else 'Type your full name to sign this application.', 'danger')
+            return redirect(url_for('portal.apply_loan_member'))
+        if payment_collateral_type not in {'standing_order', 'post_dated_cheques'}:
+            flash('Select the repayment collateral you will provide before the loan is issued.', 'danger')
             return redirect(url_for('portal.apply_loan_member'))
 
         try:
@@ -599,21 +613,42 @@ def apply_loan_member():
 
             rate   = rates.get(purpose, rates['Regular'])
             method = methods.get(purpose, 'reducing_annual')
-            mp, total_repayment, _ = compute_loan_schedule(amount, rate, tenure, method)
+            mp, total_repayment, schedule = compute_loan_schedule(amount, rate, tenure, method)
+            schedule_snapshot = json.dumps({
+                'principal': round(amount, 2),
+                'purpose': purpose,
+                'tenure': tenure,
+                'interest_rate': rate,
+                'interest_method': method,
+                'monthly_payment': round(mp, 2),
+                'total_repayment': round(total_repayment, 2),
+                'schedule': schedule,
+                'accepted_at': datetime.now().isoformat(timespec='seconds'),
+            }, separators=(',', ':'))
 
-            guarantor_ids = [g for g in request.form.getlist('guarantors')
-                             if g and g != str(member['id'])]
             required_g = lw.guarantors_required(db)
+            guarantor_ids = list(dict.fromkeys(
+                g for g in request.form.getlist('guarantors') if g and g != str(member['id'])
+            ))
+            if len(guarantor_ids) < required_g:
+                flash(f'Select {required_g} guarantor(s) who are not the applicant.', 'danger')
+                return redirect(url_for('portal.apply_loan_member'))
             initial_stage = lw.STAGE_GUARANTORS if required_g > 0 else lw.STAGE_SECRETARY
 
             loan_number = f"LOAN/{datetime.now().strftime('%Y%m%d')}/{random.randint(1000, 9999)}"
             db.execute('''
                 INSERT INTO loans (loan_number, member_id, amount, purpose, tenure, interest_rate,
                                    interest_method, total_repayment, balance, status, approval_stage,
-                                   terms_accepted, signature_name, signed_at, date_applied)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, 1, ?, ?, ?)
+                                   terms_accepted, data_processing_consent, credit_check_consent,
+                                   repayment_schedule_accepted, bank_statement_status,
+                                   payment_collateral_type, payment_collateral_status,
+                                   repayment_schedule_snapshot, consent_ip, signature_name,
+                                   signed_at, date_applied)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, 1, 1, 1, 1, 'requested',
+                        ?, 'pending', ?, ?, ?, ?, ?)
             ''', (loan_number, member['id'], amount, purpose, tenure, rate,
                   method, total_repayment, total_repayment, initial_stage,
+                  payment_collateral_type, schedule_snapshot, request.remote_addr,
                   signature, datetime.now(), datetime.now()))
             loan_id = last_insert_id(db)
             lw.record_action(db, loan_id, 'submitted', 'submitted', acted_by=current_user.id,

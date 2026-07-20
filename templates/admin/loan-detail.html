@@ -40,6 +40,53 @@
             </div>
 
             <div class="card mb-3">
+                <div class="card-header"><h6 class="mb-0">Due Diligence &amp; Consent</h6></div>
+                <div class="card-body">
+                    <table class="table mb-0">
+                        <tr>
+                            <td>Terms accepted</td>
+                            <td class="text-end">
+                                <span class="badge bg-{{ 'success' if loan.terms_accepted else 'danger' }}">{{ 'Yes' if loan.terms_accepted else 'No' }}</span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Data processing consent</td>
+                            <td class="text-end">
+                                <span class="badge bg-{{ 'success' if loan.data_processing_consent else 'danger' }}">{{ 'Yes' if loan.data_processing_consent else 'No' }}</span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Credit check consent</td>
+                            <td class="text-end">
+                                <span class="badge bg-{{ 'success' if loan.credit_check_consent else 'danger' }}">{{ 'Yes' if loan.credit_check_consent else 'No' }}</span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Repayment schedule accepted</td>
+                            <td class="text-end">
+                                <span class="badge bg-{{ 'success' if loan.repayment_schedule_accepted else 'danger' }}">{{ 'Yes' if loan.repayment_schedule_accepted else 'No' }}</span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Bank statement</td>
+                            <td class="text-end text-capitalize">{{ loan.bank_statement_status or 'requested' }}</td>
+                        </tr>
+                        <tr>
+                            <td>Repayment collateral</td>
+                            <td class="text-end">
+                                {{ 'Standing order / salary deduction mandate' if loan.payment_collateral_type == 'standing_order' else ('Post-dated cheques' if loan.payment_collateral_type == 'post_dated_cheques' else 'Pending') }}
+                                <div class="small text-muted text-capitalize">{{ loan.payment_collateral_status or 'pending' }}</div>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>Signed by</td>
+                            <td class="text-end">{{ loan.signature_name or 'Not signed' }}<br><span class="small text-muted">{{ loan.signed_at|string|truncate(19, True, '') if loan.signed_at else '' }}</span></td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card mb-3">
                 <div class="card-header d-flex justify-content-between">
                     <h6 class="mb-0">Guarantors</h6>
                     <span class="small text-muted">{{ accepted }}/{{ required }} accepted</span>
