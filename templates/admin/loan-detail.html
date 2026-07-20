@@ -100,6 +100,58 @@
                             <td class="text-end">{{ loan.signature_name or 'Not signed' }}<br><span class="small text-muted">{{ loan.signed_at|string|truncate(19, True, '') if loan.signed_at else '' }}</span></td>
                         </tr>
                     </table>
+                    <hr>
+                    <div class="alert alert-{{ 'success' if due_diligence_complete else 'warning' }} py-2">
+                        <strong>{{ 'Due diligence complete' if due_diligence_complete else 'Due diligence pending' }}</strong>
+                        {% if not due_diligence_complete %}
+                        <div class="small">Final approval/disbursement is blocked until all required checks below are complete.</div>
+                        {% endif %}
+                    </div>
+                    {% if loan.status == 'pending' %}
+                    <form method="post" action="{{ url_for('loans.update_due_diligence', loan_id=loan.id) }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        {% if loan.loan_applicant_type == 'staff' %}
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="hrAffordabilityConfirmed"
+                                   name="hr_affordability_confirmed" value="1"
+                                   {% if loan.hr_affordability_status == 'confirmed' %}checked{% endif %}>
+                            <label class="form-check-label" for="hrAffordabilityConfirmed">
+                                HR/payroll affordability confirmed
+                            </label>
+                        </div>
+                        {% else %}
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="bankStatementReceived"
+                                   name="bank_statement_received" value="1"
+                                   {% if loan.bank_statement_status == 'received' %}checked{% endif %}>
+                            <label class="form-check-label" for="bankStatementReceived">
+                                Bank statement received
+                            </label>
+                        </div>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" id="creditCheckCompleted"
+                                   name="credit_check_completed" value="1"
+                                   {% if loan.credit_check_status == 'completed' %}checked{% endif %}>
+                            <label class="form-check-label" for="creditCheckCompleted">
+                                Credit/affordability check completed
+                            </label>
+                        </div>
+                        {% endif %}
+                        <div class="form-check mb-3">
+                            <input class="form-check-input" type="checkbox" id="paymentCollateralVerified"
+                                   name="payment_collateral_verified" value="1"
+                                   {% if loan.payment_collateral_status == 'verified' %}checked{% endif %}>
+                            <label class="form-check-label" for="paymentCollateralVerified">
+                                Repayment collateral verified
+                            </label>
+                        </div>
+                        <label class="form-label small mb-0">Verification note</label>
+                        <textarea name="comment" class="form-control form-control-sm mb-2" rows="2"></textarea>
+                        <button type="submit" class="btn btn-outline-primary btn-sm">
+                            <i class="fas fa-clipboard-check"></i> Save Due Diligence
+                        </button>
+                    </form>
+                    {% endif %}
                 </div>
             </div>
 
@@ -141,9 +193,13 @@
                             <textarea name="comment" class="form-control form-control-sm" rows="2"></textarea>
                         </div>
                         <button type="submit" name="action" value="approve" class="btn btn-success"
+                                {% if stage == 'president' and not due_diligence_complete %}disabled{% endif %}
                                 onclick="return confirm('Approve this loan at the {{ stage_actor }} stage?');">
                             <i class="fas fa-check"></i> Approve
                         </button>
+                        {% if stage == 'president' and not due_diligence_complete %}
+                        <div class="small text-danger mt-2">Complete due diligence before final approval/disbursement.</div>
+                        {% endif %}
                         <button type="submit" name="action" value="reject" class="btn btn-outline-danger"
                                 onclick="return confirm('Reject this loan? The member will be notified.');">
                             <i class="fas fa-times"></i> Reject

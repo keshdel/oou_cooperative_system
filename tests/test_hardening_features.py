@@ -436,6 +436,94 @@ class HardeningFeatureTests(unittest.TestCase):
             ).fetchone()
             self.assertIsNone(loan)
 
+    def test_final_loan_approval_requires_completed_due_diligence(self):
+        self.login_admin()
+        with self.app.app_context():
+            db = get_db()
+            db.execute('''
+                INSERT INTO members
+                    (member_number, employee_id, first_name, last_name, email,
+                     phone, status, monthly_savings, total_savings, date_joined)
+                VALUES
+                    ('OOU/TEST/DUE1', 'EMP-DUE1', 'Dara', 'Due',
+                     'dara.due@example.com', '08000000021', 'active',
+                     15000, 100000, '2024-01-01')
+            ''')
+            member_id = db.execute(
+                "SELECT id FROM members WHERE member_number = 'OOU/TEST/DUE1'"
+            ).fetchone()['id']
+            db.execute('''
+                INSERT INTO loans
+                    (loan_number, member_id, amount, purpose, tenure, interest_rate,
+                     interest_method, total_repayment, balance, status, approval_stage,
+                     loan_applicant_type, hr_affordability_consent, hr_affordability_status,
+                     payment_collateral_type, payment_collateral_status, date_applied)
+                VALUES
+                    ('LOAN/DUE/0001', ?, 50000, 'Regular', 6, 11,
+                     'reducing_annual', 52000, 52000, 'pending', 'president',
+                     'staff', 1, 'pending', 'standing_order', 'pending', '2026-07-20')
+            ''', (member_id,))
+            db.commit()
+            loan_id = db.execute(
+                "SELECT id FROM loans WHERE loan_number = 'LOAN/DUE/0001'"
+            ).fetchone()['id']
+
+        blocked = self.client.post(
+            f'/loans/{loan_id}/act',
+            data={'action': 'approve'},
+            follow_redirects=False,
+        )
+        self.assertIn(blocked.status_code, (302, 303))
+
+        with self.app.app_context():
+            db = get_db()
+            loan = db.execute('SELECT * FROM loans WHERE id = ?', (loan_id,)).fetchone()
+            self.assertEqual(loan['status'], 'pending')
+            self.assertEqual(loan['approval_stage'], 'president')
+
+        verified = self.client.post(
+            f'/loans/{loan_id}/due-diligence',
+            data={
+                'hr_affordability_confirmed': '1',
+                'payment_collateral_verified': '1',
+                'comment': 'HR confirmed salary deduction capacity.',
+            },
+            follow_redirects=False,
+        )
+        self.assertIn(verified.status_code, (302, 303))
+
+        approved = self.client.post(
+            f'/loans/{loan_id}/act',
+            data={'action': 'approve'},
+            follow_redirects=False,
+        )
+        self.assertIn(approved.status_code, (302, 303))
+
+        with self.app.app_context():
+            db = get_db()
+            loan = db.execute('SELECT * FROM loans WHERE id = ?', (loan_id,)).fetchone()
+            self.assertEqual(loan['hr_affordability_status'], 'confirmed')
+            self.assertEqual(loan['payment_collateral_status'], 'verified')
+            self.assertEqual(loan['status'], 'active')
+            self.assertEqual(loan['approval_stage'], 'approved')
+            trail = db.execute(
+                "SELECT * FROM loan_approvals WHERE loan_id = ? AND stage = 'due_diligence'",
+                (loan_id,),
+            ).fetchone()
+            self.assertIsNotNone(trail)
+
+            journal = db.execute(
+                "SELECT id FROM journal_entries WHERE reference = 'LOAN/DUE/0001'"
+            ).fetchone()
+            if journal:
+                db.execute('DELETE FROM journal_lines WHERE entry_id = ?', (journal['id'],))
+                db.execute('DELETE FROM journal_entries WHERE id = ?', (journal['id'],))
+            db.execute("DELETE FROM revenue WHERE source = 'Loan LOAN/DUE/0001'")
+            db.execute('DELETE FROM loan_approvals WHERE loan_id = ?', (loan_id,))
+            db.execute('DELETE FROM loans WHERE id = ?', (loan_id,))
+            db.execute('DELETE FROM members WHERE id = ?', (member_id,))
+            db.commit()
+
     def test_admin_can_resend_and_revoke_setup_links(self):
         self.login_admin()
         email = 'resend.setup@example.com'

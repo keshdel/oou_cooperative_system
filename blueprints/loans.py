@@ -36,6 +36,50 @@ def _notify_role(db, role, title, message, action_url='/loans'):
         pass
 
 
+def _loan_applicant_type(loan):
+    return loan['loan_applicant_type'] if 'loan_applicant_type' in loan.keys() and loan['loan_applicant_type'] else 'non_staff'
+
+
+def _due_diligence_checks(loan):
+    """Return the required pre-disbursement checks for this loan."""
+    applicant_type = _loan_applicant_type(loan)
+    checks = []
+    if applicant_type == 'staff':
+        checks.append({
+            'key': 'hr_affordability',
+            'label': 'HR/payroll affordability confirmed',
+            'status': loan['hr_affordability_status'] or 'pending',
+            'done': (loan['hr_affordability_status'] or '') == 'confirmed',
+        })
+    else:
+        checks.extend([
+            {
+                'key': 'bank_statement',
+                'label': 'Bank statement received',
+                'status': loan['bank_statement_status'] or 'requested',
+                'done': (loan['bank_statement_status'] or '') == 'received',
+            },
+            {
+                'key': 'credit_check',
+                'label': 'Credit/affordability check completed',
+                'status': loan['credit_check_status'] or 'pending',
+                'done': (loan['credit_check_status'] or '') == 'completed',
+            },
+        ])
+    checks.append({
+        'key': 'payment_collateral',
+        'label': 'Repayment collateral verified',
+        'status': loan['payment_collateral_status'] or 'pending',
+        'done': (loan['payment_collateral_status'] or '') == 'verified',
+    })
+    return checks
+
+
+def _due_diligence_complete(loan):
+    checks = _due_diligence_checks(loan)
+    return all(c['done'] for c in checks), checks
+
+
 def _disburse_loan(db, loan):
     """Final approval: book fees, disburse, post the GL entry, notify the member.
     Expects `loan` row; assumes caller commits."""
@@ -268,12 +312,70 @@ def loan_detail(loan_id):
     accepted, required = lw.guarantor_progress(db, loan_id)
     stage = loan['approval_stage'] or 'secretary'
     can_act = lw.can_act(current_user.role, stage) and loan['status'] == 'pending'
+    due_diligence_complete, due_diligence_checks = _due_diligence_complete(loan)
     return render_template('admin/loan-detail.html',
                            loan=loan, guarantors=guarantors, history=history,
                            stage=stage, stage_label=lw.STAGE_LABELS.get(stage, stage),
                            accepted=accepted, required=required, can_act=can_act,
+                           due_diligence_complete=due_diligence_complete,
+                           due_diligence_checks=due_diligence_checks,
                            stage_actor=lw.STAGE_ACTOR_LABEL.get(stage, ''),
                            stage_labels=lw.STAGE_LABELS)
+
+
+@loans.route('/loans/<int:loan_id>/due-diligence', methods=['POST'])
+@login_required
+@role_required('admin', 'treasurer', 'secretary')
+def update_due_diligence(loan_id):
+    db = get_db()
+    loan = db.execute('SELECT * FROM loans WHERE id = ?', (loan_id,)).fetchone()
+    if not loan:
+        flash('Loan not found.', 'danger')
+        return redirect(url_for('loans.loans_list'))
+    if loan['status'] != 'pending':
+        flash('Due diligence can only be updated on pending loan applications.', 'warning')
+        return redirect(url_for('loans.loan_detail', loan_id=loan_id))
+
+    applicant_type = _loan_applicant_type(loan)
+    payment_collateral_status = 'verified' if request.form.get('payment_collateral_verified') else 'pending'
+    comment = request.form.get('comment', '').strip()
+
+    if applicant_type == 'staff':
+        hr_status = 'confirmed' if request.form.get('hr_affordability_confirmed') else 'pending'
+        db.execute('''
+            UPDATE loans
+               SET hr_affordability_status = ?,
+                   payment_collateral_status = ?,
+                   due_diligence_updated_by = ?,
+                   due_diligence_updated_at = ?
+             WHERE id = ?
+        ''', (hr_status, payment_collateral_status, current_user.id, datetime.now(), loan_id))
+    else:
+        bank_status = 'received' if request.form.get('bank_statement_received') else 'requested'
+        credit_status = 'completed' if request.form.get('credit_check_completed') else 'pending'
+        db.execute('''
+            UPDATE loans
+               SET bank_statement_status = ?,
+                   credit_check_status = ?,
+                   payment_collateral_status = ?,
+                   due_diligence_updated_by = ?,
+                   due_diligence_updated_at = ?
+             WHERE id = ?
+        ''', (bank_status, credit_status, payment_collateral_status,
+              current_user.id, datetime.now(), loan_id))
+
+    updated = db.execute('SELECT * FROM loans WHERE id = ?', (loan_id,)).fetchone()
+    complete, checks = _due_diligence_complete(updated)
+    action = 'verified' if complete else 'updated'
+    summary = ', '.join(f"{c['label']}: {c['status']}" for c in checks)
+    lw.record_action(db, loan_id, 'due_diligence', action, current_user.id,
+                     current_user.username, comment or summary)
+    audit(db, 'LOAN_DUE_DILIGENCE_UPDATE', 'loans',
+          f"Loan {loan['loan_number']} due diligence {action}: {summary}")
+    db.commit()
+    flash('Due diligence complete. This loan can now reach final approval/disbursement.'
+          if complete else 'Due diligence checklist updated.', 'success')
+    return redirect(url_for('loans.loan_detail', loan_id=loan_id))
 
 
 @loans.route('/loans/<int:loan_id>/act', methods=['POST'])
@@ -310,8 +412,15 @@ def loan_act(loan_id):
             return redirect(url_for('loans.loan_detail', loan_id=loan_id))
 
         # ── approve ──
-        lw.record_action(db, loan_id, stage, 'approved', current_user.id, current_user.username, comment)
         nxt = lw.NEXT_STAGE.get(stage)
+        if nxt == lw.STAGE_APPROVED:
+            complete, checks = _due_diligence_complete(loan)
+            if not complete:
+                pending = ', '.join(c['label'] for c in checks if not c['done'])
+                flash(f'Due diligence is incomplete. Complete before final approval/disbursement: {pending}.',
+                      'danger')
+                return redirect(url_for('loans.loan_detail', loan_id=loan_id))
+        lw.record_action(db, loan_id, stage, 'approved', current_user.id, current_user.username, comment)
         if nxt == lw.STAGE_APPROVED:
             _disburse_loan(db, loan)
             audit(db, 'LOAN_APPROVE_FINAL', 'loans', f"Loan {loan['loan_number']} approved & disbursed")
