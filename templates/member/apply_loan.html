@@ -113,12 +113,23 @@
                                 <label class="form-label fw-bold">Repayment collateral *</label>
                                 <select class="form-select" name="payment_collateral_type" id="paymentCollateralType" required>
                                     <option value="">-- Select one --</option>
-                                    <option value="standing_order">Standing order / salary deduction mandate</option>
+                                    <option value="standing_order"{% if is_staff_member %} selected{% endif %}>Standing order / salary deduction mandate</option>
+                                    {% if not is_staff_member %}
                                     <option value="post_dated_cheques">Post-dated cheques</option>
+                                    {% endif %}
                                 </select>
                                 <small class="text-muted">The cooperative must verify this before disbursement.</small>
                             </div>
                             <div class="col-md-6 mb-3">
+                                {% if is_staff_member %}
+                                <label class="form-label fw-bold">HR/payroll affordability *</label>
+                                <div class="form-check mt-2">
+                                    <input class="form-check-input required-ack" type="checkbox" id="hrAffordabilityConsent" name="hr_affordability_consent" value="1" required>
+                                    <label class="form-check-label" for="hrAffordabilityConsent">
+                                        I authorise HR/payroll to confirm my affordability and salary deduction capacity for this loan.
+                                    </label>
+                                </div>
+                                {% else %}
                                 <label class="form-label fw-bold">Bank statement *</label>
                                 <div class="form-check mt-2">
                                     <input class="form-check-input required-ack" type="checkbox" id="bankStatementAck" name="bank_statement_ack" value="1" required>
@@ -126,14 +137,17 @@
                                         I understand my recent bank statement is required for affordability review before this loan can be issued.
                                     </label>
                                 </div>
+                                {% endif %}
                             </div>
                         </div>
+                        {% if not is_staff_member %}
                         <div class="form-check mb-2">
                             <input class="form-check-input required-ack" type="checkbox" id="creditCheckConsent" name="credit_check_consent" value="1" required>
                             <label class="form-check-label" for="creditCheckConsent">
                                 I authorise the cooperative to perform affordability, employment/salary deduction, credit, and repayment-history checks for this application.
                             </label>
                         </div>
+                        {% endif %}
                         <div class="form-check">
                             <input class="form-check-input required-ack" type="checkbox" id="dataProcessingConsent" name="data_processing_consent" value="1" required>
                             <label class="form-check-label" for="dataProcessingConsent">

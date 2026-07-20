@@ -56,20 +56,37 @@
                             </td>
                         </tr>
                         <tr>
+                            <td>Applicant type</td>
+                            <td class="text-end text-capitalize">{{ loan.loan_applicant_type or 'non_staff' }}</td>
+                        </tr>
+                        {% if loan.loan_applicant_type == 'staff' %}
+                        <tr>
+                            <td>HR/payroll affordability consent</td>
+                            <td class="text-end">
+                                <span class="badge bg-{{ 'success' if loan.hr_affordability_consent else 'danger' }}">{{ 'Yes' if loan.hr_affordability_consent else 'No' }}</span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>HR/payroll affordability</td>
+                            <td class="text-end text-capitalize">{{ loan.hr_affordability_status or 'pending' }}</td>
+                        </tr>
+                        {% else %}
+                        <tr>
                             <td>Credit check consent</td>
                             <td class="text-end">
                                 <span class="badge bg-{{ 'success' if loan.credit_check_consent else 'danger' }}">{{ 'Yes' if loan.credit_check_consent else 'No' }}</span>
                             </td>
                         </tr>
                         <tr>
+                            <td>Bank statement</td>
+                            <td class="text-end text-capitalize">{{ loan.bank_statement_status or 'requested' }}</td>
+                        </tr>
+                        {% endif %}
+                        <tr>
                             <td>Repayment schedule accepted</td>
                             <td class="text-end">
                                 <span class="badge bg-{{ 'success' if loan.repayment_schedule_accepted else 'danger' }}">{{ 'Yes' if loan.repayment_schedule_accepted else 'No' }}</span>
                             </td>
-                        </tr>
-                        <tr>
-                            <td>Bank statement</td>
-                            <td class="text-end text-capitalize">{{ loan.bank_statement_status or 'requested' }}</td>
                         </tr>
                         <tr>
                             <td>Repayment collateral</td>

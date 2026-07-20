@@ -551,6 +551,7 @@ def apply_loan_member():
     max_tenure     = int(max_tenure_row['value']) if max_tenure_row else 18
     rates          = _interest_rates(db)
     methods        = _interest_methods(db)
+    is_staff_member = bool((member['employee_id'] or '').strip()) if 'employee_id' in member.keys() else False
 
     if request.method == 'POST':
         amount  = float(request.form.get('amount', 0))
@@ -566,10 +567,17 @@ def apply_loan_member():
         required_acknowledgements = {
             'accept_terms': 'You must accept the loan terms and conditions.',
             'data_processing_consent': 'You must permit the cooperative to process your personal information for this loan application.',
-            'credit_check_consent': 'You must permit the cooperative to perform affordability and credit checks.',
-            'bank_statement_ack': 'You must acknowledge that a bank statement is required before disbursement.',
             'repayment_schedule_accepted': 'You must accept the calculated repayment schedule before submitting.',
         }
+        if is_staff_member:
+            required_acknowledgements['hr_affordability_consent'] = (
+                'You must permit HR/payroll affordability confirmation for this staff cooperative loan.'
+            )
+        else:
+            required_acknowledgements.update({
+                'credit_check_consent': 'You must permit the cooperative to perform affordability and credit checks.',
+                'bank_statement_ack': 'You must acknowledge that a bank statement is required before disbursement.',
+            })
         missing_ack = [message for field, message in required_acknowledgements.items()
                        if not request.form.get(field)]
         if missing_ack or not signature:
@@ -577,6 +585,9 @@ def apply_loan_member():
             return redirect(url_for('portal.apply_loan_member'))
         if payment_collateral_type not in {'standing_order', 'post_dated_cheques'}:
             flash('Select the repayment collateral you will provide before the loan is issued.', 'danger')
+            return redirect(url_for('portal.apply_loan_member'))
+        if is_staff_member and payment_collateral_type != 'standing_order':
+            flash('Staff cooperative loans must use a salary deduction or standing order mandate.', 'danger')
             return redirect(url_for('portal.apply_loan_member'))
 
         try:
@@ -642,13 +653,19 @@ def apply_loan_member():
                                    terms_accepted, data_processing_consent, credit_check_consent,
                                    repayment_schedule_accepted, bank_statement_status,
                                    payment_collateral_type, payment_collateral_status,
-                                   repayment_schedule_snapshot, consent_ip, signature_name,
+                                   repayment_schedule_snapshot, consent_ip, loan_applicant_type,
+                                   hr_affordability_consent, hr_affordability_status, signature_name,
                                    signed_at, date_applied)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, 1, 1, 1, 1, 'requested',
-                        ?, 'pending', ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, 1, 1, ?, 1, ?,
+                        ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (loan_number, member['id'], amount, purpose, tenure, rate,
                   method, total_repayment, total_repayment, initial_stage,
+                  0 if is_staff_member else 1,
+                  'not_required' if is_staff_member else 'requested',
                   payment_collateral_type, schedule_snapshot, request.remote_addr,
+                  'staff' if is_staff_member else 'non_staff',
+                  1 if is_staff_member else 0,
+                  'pending' if is_staff_member else 'not_required',
                   signature, datetime.now(), datetime.now()))
             loan_id = last_insert_id(db)
             lw.record_action(db, loan_id, 'submitted', 'submitted', acted_by=current_user.id,
@@ -695,6 +712,7 @@ def apply_loan_member():
                            interest_methods=methods,
                            method_labels=METHOD_LABELS,
                            loan_types=list(rates.keys()),
+                           is_staff_member=is_staff_member,
                            all_members=all_members)
 
 

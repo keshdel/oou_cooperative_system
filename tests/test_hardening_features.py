@@ -81,6 +81,28 @@ class HardeningFeatureTests(unittest.TestCase):
             ''', (email, generate_password_hash('MemberPass1!'), email))
             db.commit()
 
+    def create_non_staff_member(self):
+        email = 'non.staff.loan@example.com'
+        with self.app.app_context():
+            db = get_db()
+            existing = db.execute(
+                "SELECT * FROM members WHERE member_number = 'OOU/TEST/N001'"
+            ).fetchone()
+            if existing:
+                return existing['id'], email
+            db.execute('''
+                INSERT INTO members
+                    (member_number, employee_id, first_name, last_name, email,
+                     phone, status, monthly_savings, total_savings, date_joined)
+                VALUES
+                    ('OOU/TEST/N001', NULL, 'Nora', 'Nonstaff',
+                     ?, '08000000011', 'active', 15000, 0, '2024-01-01')
+            ''', (email,))
+            db.commit()
+            return db.execute(
+                "SELECT id FROM members WHERE member_number = 'OOU/TEST/N001'"
+            ).fetchone()['id'], email
+
     def create_guarantor_member(self, number, email, first_name):
         with self.app.app_context():
             db = get_db()
@@ -112,10 +134,10 @@ class HardeningFeatureTests(unittest.TestCase):
             backfill_from_transactions(db)
             db.commit()
 
-    def login_member(self):
+    def login_member(self, email='ada.audit@example.com'):
         response = self.client.post(
             '/login',
-            data={'username': 'ada.audit@example.com', 'password': 'MemberPass1!'},
+            data={'username': email, 'password': 'MemberPass1!'},
             follow_redirects=False,
         )
         self.assertIn(response.status_code, (302, 303))
@@ -313,6 +335,8 @@ class HardeningFeatureTests(unittest.TestCase):
                 'payment_collateral_type': 'standing_order',
                 'guarantors': [str(guarantor_1), str(guarantor_2)],
                 'accept_terms': '1',
+                'data_processing_consent': '1',
+                'repayment_schedule_accepted': '1',
                 'signature_name': 'Ada Audit',
             },
             follow_redirects=False,
@@ -343,9 +367,8 @@ class HardeningFeatureTests(unittest.TestCase):
                 'tenure': '6',
                 'payment_collateral_type': 'standing_order',
                 'guarantors': [str(guarantor_1), str(guarantor_2)],
-                'bank_statement_ack': '1',
+                'hr_affordability_consent': '1',
                 'data_processing_consent': '1',
-                'credit_check_consent': '1',
                 'repayment_schedule_accepted': '1',
                 'accept_terms': '1',
                 'signature_name': 'Ada Audit',
@@ -364,18 +387,54 @@ class HardeningFeatureTests(unittest.TestCase):
             self.assertIsNotNone(loan)
             self.assertEqual(loan['terms_accepted'], 1)
             self.assertEqual(loan['data_processing_consent'], 1)
-            self.assertEqual(loan['credit_check_consent'], 1)
+            self.assertEqual(loan['credit_check_consent'], 0)
             self.assertEqual(loan['repayment_schedule_accepted'], 1)
-            self.assertEqual(loan['bank_statement_status'], 'requested')
+            self.assertEqual(loan['bank_statement_status'], 'not_required')
             self.assertEqual(loan['payment_collateral_type'], 'standing_order')
             self.assertEqual(loan['payment_collateral_status'], 'pending')
             self.assertEqual(loan['consent_ip'], '203.0.113.44')
+            self.assertEqual(loan['loan_applicant_type'], 'staff')
+            self.assertEqual(loan['hr_affordability_consent'], 1)
+            self.assertEqual(loan['hr_affordability_status'], 'pending')
 
             snapshot = json.loads(loan['repayment_schedule_snapshot'])
             self.assertEqual(snapshot['principal'], 50000)
             self.assertEqual(snapshot['purpose'], 'Regular')
             self.assertEqual(snapshot['tenure'], 6)
             self.assertEqual(len(snapshot['schedule']), 6)
+
+    def test_non_staff_loan_application_still_requires_bank_and_credit_acknowledgements(self):
+        member_id, email = self.create_non_staff_member()
+        self.create_member_user(member_id, email=email)
+        self.fund_member_savings(member_id)
+        guarantor_1 = self.create_guarantor_member('OOU/TEST/G005', 'g5@example.com', 'Gideon')
+        guarantor_2 = self.create_guarantor_member('OOU/TEST/G006', 'g6@example.com', 'Gloria')
+        self.login_member(email=email)
+
+        response = self.client.post(
+            '/apply-loan-member',
+            data={
+                'amount': '50000',
+                'purpose': 'Regular',
+                'tenure': '6',
+                'payment_collateral_type': 'post_dated_cheques',
+                'guarantors': [str(guarantor_1), str(guarantor_2)],
+                'data_processing_consent': '1',
+                'repayment_schedule_accepted': '1',
+                'accept_terms': '1',
+                'signature_name': 'Nora Nonstaff',
+            },
+            follow_redirects=False,
+        )
+        self.assertIn(response.status_code, (302, 303))
+
+        with self.app.app_context():
+            db = get_db()
+            loan = db.execute(
+                'SELECT * FROM loans WHERE member_id = ? ORDER BY id DESC',
+                (member_id,),
+            ).fetchone()
+            self.assertIsNone(loan)
 
     def test_admin_can_resend_and_revoke_setup_links(self):
         self.login_admin()

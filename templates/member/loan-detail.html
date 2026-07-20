@@ -120,9 +120,20 @@
                                     <td>{{ 'Yes' if loan.data_processing_consent else 'No' }}</td>
                                 </tr>
                                 <tr>
+                                    <th>Applicant type:</th>
+                                    <td class="text-capitalize">{{ loan.loan_applicant_type or 'non_staff' }}</td>
+                                </tr>
+                                {% if loan.loan_applicant_type == 'staff' %}
+                                <tr>
+                                    <th>HR/payroll consent:</th>
+                                    <td>{{ 'Yes' if loan.hr_affordability_consent else 'No' }}</td>
+                                </tr>
+                                {% else %}
+                                <tr>
                                     <th>Credit check consent:</th>
                                     <td>{{ 'Yes' if loan.credit_check_consent else 'No' }}</td>
                                 </tr>
+                                {% endif %}
                                 <tr>
                                     <th>Schedule accepted:</th>
                                     <td>{{ 'Yes' if loan.repayment_schedule_accepted else 'No' }}</td>
@@ -132,8 +143,13 @@
                         <div class="col-md-6">
                             <table class="table table-borderless mb-0">
                                 <tr>
+                                    {% if loan.loan_applicant_type == 'staff' %}
+                                    <th>HR affordability:</th>
+                                    <td class="text-capitalize">{{ loan.hr_affordability_status or 'pending' }}</td>
+                                    {% else %}
                                     <th>Bank statement:</th>
                                     <td class="text-capitalize">{{ loan.bank_statement_status or 'requested' }}</td>
+                                    {% endif %}
                                 </tr>
                                 <tr>
                                     <th>Repayment collateral:</th>
