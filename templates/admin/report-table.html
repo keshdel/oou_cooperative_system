@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+
+{% block title %}{{ title }} - {{ coop_name }}{% endblock %}
+
+{% block content %}
+<style>
+  .report-table-shell { max-width:1440px; margin:0 auto; }
+  .report-actions { display:flex; gap:.5rem; flex-wrap:wrap; justify-content:flex-end; align-items:center; }
+  .report-total-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:1rem; }
+  .report-total { border:1px solid #e2e8f0; border-radius:8px; background:#fff; padding:.85rem; }
+  .report-total small { display:block; color:#64748b; text-transform:uppercase; font-weight:700; font-size:.72rem; }
+  .report-total strong { display:block; color:#0f172a; font-size:1.08rem; margin-top:.25rem; }
+  .report-card { border:1px solid #e2e8f0; border-radius:8px; overflow:hidden; }
+  .report-card .card-header { background:#f8fafc; }
+  @media (max-width: 992px) { .report-total-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+  @media (max-width: 576px) { .report-total-grid { grid-template-columns:1fr; } .report-actions { justify-content:flex-start; } }
+</style>
+
+{% macro total_value(value) -%}
+  {% if value is number %}
+    NGN {{ "{:,.2f}".format(value) }}
+  {% else %}
+    {{ value }}
+  {% endif %}
+{%- endmacro %}
+
+<div class="container-fluid report-table-shell">
+  <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
+    <div>
+      <h2 class="mb-1">{{ title }}</h2>
+      <p class="text-muted mb-0">{{ subtitle }}</p>
+    </div>
+    <div class="report-actions">
+      <a href="{{ back_url }}" class="btn btn-outline-secondary">
+        <i class="fas fa-arrow-left"></i> Report Center
+      </a>
+      <a href="{{ export_url }}" class="btn btn-outline-success">
+        <i class="fas fa-file-csv"></i> Export CSV
+      </a>
+    </div>
+  </div>
+
+  {% if totals %}
+  <div class="report-total-grid mb-3">
+    {% for label, value in totals %}
+    <div class="report-total">
+      <small>{{ label }}</small>
+      <strong>{{ total_value(value) }}</strong>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="card report-card">
+    <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+      <h6 class="mb-0">{{ rows|length }} rows</h6>
+      <span class="text-muted small">Export this report for spreadsheet analysis or audit working papers.</span>
+    </div>
+    <div class="card-body p-0">
+      {% if rows %}
+      <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              {% for col in columns %}
+              <th>{{ col.label }}</th>
+              {% endfor %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in rows %}
+            <tr>
+              {% for col in columns %}
+              <td>{{ row[col.key] }}</td>
+              {% endfor %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="p-4 text-center text-muted">
+        <i class="fas fa-inbox fa-2x mb-2"></i><br>
+        No records found for this report.
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -685,6 +685,79 @@ class HardeningFeatureTests(unittest.TestCase):
         self.assertEqual(export.status_code, 200)
         self.assertIn(b'posted_to_gl', export.data)
 
+    def test_accounting_exports_journal_and_gl_register_csv(self):
+        self.login_admin()
+        with self.app.app_context():
+            from ledger import CASH, OPERATING_EXPENSES, post_journal
+            db = get_db()
+            existing = db.execute(
+                "SELECT id FROM journal_entries WHERE reference = 'TEST/GL/EXPORT'"
+            ).fetchone()
+            if not existing:
+                post_journal(
+                    db,
+                    'CSV export smoke test',
+                    [
+                        {'account': OPERATING_EXPENSES, 'debit': 1234.56, 'memo': 'Export debit'},
+                        {'account': CASH, 'credit': 1234.56, 'memo': 'Export credit'},
+                    ],
+                    date='2026-07-21',
+                    reference='TEST/GL/EXPORT',
+                    source_module='manual',
+                )
+                db.commit()
+
+        journal_export = self.client.get('/accounting/journal/export')
+        self.assertEqual(journal_export.status_code, 200)
+        self.assertIn(b'entry_number,date,description,reference', journal_export.data)
+        self.assertIn(b'TEST/GL/EXPORT', journal_export.data)
+
+        gl_export = self.client.get('/accounting/ledger/1000/export')
+        self.assertEqual(gl_export.status_code, 200)
+        self.assertIn(b'account_code,account_name,account_type,normal_balance', gl_export.data)
+        self.assertIn(b'TEST/GL/EXPORT', gl_export.data)
+
+        with self.app.app_context():
+            db = get_db()
+            journal = db.execute(
+                "SELECT id FROM journal_entries WHERE reference = 'TEST/GL/EXPORT'"
+            ).fetchone()
+            if journal:
+                db.execute('DELETE FROM journal_lines WHERE entry_id = ?', (journal['id'],))
+                db.execute('DELETE FROM journal_entries WHERE id = ?', (journal['id'],))
+                db.commit()
+
+    def test_financial_reporting_center_and_control_exports_render(self):
+        self.login_admin()
+        member_id = self.create_member()
+        with self.app.app_context():
+            db = get_db()
+            db.execute(
+                "DELETE FROM savings WHERE receipt_number = 'REPORT/SAV/0001'"
+            )
+            db.execute('''
+                INSERT INTO savings
+                    (member_id, amount, month, payment_type, payment_method,
+                     receipt_number, date, share_capital)
+                VALUES (?, 5000, '2026-07', 'monthly', 'cash',
+                        'REPORT/SAV/0001', '2026-07-21', 0)
+            ''', (member_id,))
+            db.commit()
+
+        page = self.client.get('/reports')
+        self.assertEqual(page.status_code, 200)
+        self.assertIn(b'Financial Reporting', page.data)
+        self.assertIn(b'Member Savings Control', page.data)
+
+        for url, marker in (
+            ('/reports/cashbook?format=csv', b'Date,Entry #,Description'),
+            ('/reports/member-savings-control?format=csv', b'Member #,Member Name,Email'),
+            ('/reports/loan-portfolio?format=csv', b'Loan #,Member #,Member Name'),
+        ):
+            response = self.client.get(url)
+            self.assertEqual(response.status_code, 200)
+            self.assertIn(marker, response.data)
+
     def test_financial_report_uses_legacy_income_fallback(self):
         with self.app.app_context():
             db = get_db()

@@ -3,9 +3,11 @@ Accounting blueprint — general-ledger views: chart of accounts, trial balance,
 and the journal register. This is the auditable face of the double-entry ledger.
 """
 
+import csv
+import io
 from datetime import datetime
 
-from flask import Blueprint, render_template, request, redirect, url_for, flash
+from flask import Blueprint, render_template, request, redirect, url_for, flash, make_response
 from flask_login import login_required, current_user
 
 from database import get_db
@@ -95,8 +97,9 @@ def new_journal():
         codes   = request.form.getlist('account')
         debits  = request.form.getlist('debit')
         credits = request.form.getlist('credit')
+        memos   = request.form.getlist('memo')
         lines = []
-        for c, d, cr in zip(codes, debits, credits):
+        for c, d, cr, memo in zip(codes, debits, credits, memos):
             c = (c or '').strip()
             if not c:
                 continue
@@ -106,7 +109,7 @@ def new_journal():
                 continue
             if d_v == 0 and c_v == 0:
                 continue
-            lines.append({'account': c, 'debit': d_v, 'credit': c_v})
+            lines.append({'account': c, 'debit': d_v, 'credit': c_v, 'memo': (memo or '').strip()})
         try:
             if not desc:
                 raise ValueError('A description is required.')
@@ -361,6 +364,56 @@ def account_ledger_view(code):
                            generated_on=datetime.now())
 
 
+@accounting.route('/ledger/<code>/export')
+@login_required
+@role_required('admin', 'treasurer')
+def account_ledger_export(code):
+    """Export one GL account register as CSV for audit and spreadsheet analysis."""
+    db = get_db()
+    from_date = request.args.get('from_date', '')
+    to_date   = request.args.get('to_date', '')
+    data = account_ledger(db, code, from_date or None, to_date or None)
+    if not data:
+        flash(f'Account {code} not found.', 'danger')
+        return redirect(url_for('accounting.chart_of_accounts'))
+
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow([
+        'account_code', 'account_name', 'account_type', 'normal_balance',
+        'from_date', 'to_date', 'opening_balance',
+    ])
+    writer.writerow([
+        data['account']['code'], data['account']['name'], data['account']['type'],
+        data['account']['normal_balance'], from_date, to_date, data['opening_balance'],
+    ])
+    writer.writerow([])
+    writer.writerow([
+        'date', 'entry_number', 'description', 'reference', 'source_module',
+        'source_id', 'line_memo', 'debit', 'credit', 'running_balance',
+    ])
+    for e in data['entries']:
+        writer.writerow([
+            str(e.get('date') or '')[:10],
+            e.get('entry_number') or f"JE-{e.get('entry_id')}",
+            e.get('description') or '',
+            e.get('reference') or '',
+            e.get('source_module') or '',
+            e.get('source_id') or '',
+            e.get('memo') or '',
+            f"{float(e.get('debit') or 0):.2f}",
+            f"{float(e.get('credit') or 0):.2f}",
+            f"{float(e.get('balance') or 0):.2f}",
+        ])
+    writer.writerow([])
+    writer.writerow(['totals', '', '', '', '', '', '', f"{data['total_debit']:.2f}", f"{data['total_credit']:.2f}", f"{data['closing_balance']:.2f}"])
+
+    resp = make_response(out.getvalue())
+    resp.headers['Content-Type'] = 'text/csv; charset=utf-8'
+    resp.headers['Content-Disposition'] = f'attachment; filename=gl_register_{code}.csv'
+    return resp
+
+
 @accounting.route('/journal/<int:entry_id>')
 @login_required
 @role_required('admin', 'treasurer')
@@ -486,3 +539,52 @@ def journal_register():
         lines_by_entry[e['id']] = rows
     return render_template('accounting/journal.html',
                            entries=entries, lines_by_entry=lines_by_entry)
+
+
+@accounting.route('/journal/export')
+@login_required
+@role_required('admin', 'treasurer')
+def journal_register_export():
+    """Export the journal register line-by-line as CSV."""
+    db = get_db()
+    from_date = request.args.get('from_date', '')
+    to_date = request.args.get('to_date', '')
+    where = []
+    params = []
+    if from_date:
+        where.append('je.date >= ?')
+        params.append(from_date)
+    if to_date:
+        where.append('je.date <= ?')
+        params.append(f'{to_date} 23:59:59')
+    where_sql = 'WHERE ' + ' AND '.join(where) if where else ''
+
+    rows = db.execute(f'''
+        SELECT je.entry_number, je.date, je.description, je.reference,
+               je.source_module, je.source_id,
+               jl.account_code, a.name AS account_name, jl.memo, jl.debit, jl.credit
+        FROM journal_entries je
+        JOIN journal_lines jl ON jl.entry_id = je.id
+        LEFT JOIN accounts a ON a.code = jl.account_code
+        {where_sql}
+        ORDER BY je.date DESC, je.id DESC, jl.id ASC
+    ''', tuple(params)).fetchall()
+
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow([
+        'entry_number', 'date', 'description', 'reference', 'source_module',
+        'source_id', 'account_code', 'account_name', 'line_memo', 'debit', 'credit',
+    ])
+    for r in rows:
+        writer.writerow([
+            r['entry_number'], str(r['date'] or '')[:10], r['description'] or '',
+            r['reference'] or '', r['source_module'] or '', r['source_id'] or '',
+            r['account_code'], r['account_name'] or '', r['memo'] or '',
+            f"{float(r['debit'] or 0):.2f}", f"{float(r['credit'] or 0):.2f}",
+        ])
+
+    resp = make_response(out.getvalue())
+    resp.headers['Content-Type'] = 'text/csv; charset=utf-8'
+    resp.headers['Content-Disposition'] = 'attachment; filename=journal_register.csv'
+    return resp

@@ -1,95 +1,243 @@
 {% extends "base.html" %}
 {% block title %}New Journal Entry - {{ coop_name }}{% endblock %}
 {% block content %}
-<div class="container-fluid">
-    <div class="row mb-3">
-        <div class="col-md-8">
-            <h2><i class="fas fa-plus"></i> New Journal Entry</h2>
-            <p class="text-muted mb-0">Post a manual double-entry adjustment. Total debits must equal total credits.</p>
+<style>
+  .je-shell { max-width: 1320px; margin: 0 auto; }
+  .je-toolbar { display:flex; gap:.5rem; flex-wrap:wrap; justify-content:flex-end; align-items:center; }
+  .je-panel { border:1px solid #e2e8f0; border-radius:8px; background:#fff; box-shadow:0 1px 2px rgba(15,23,42,.05); }
+  .je-panel-hd { padding:1rem 1.25rem; border-bottom:1px solid #e2e8f0; background:#f8fafc; border-radius:8px 8px 0 0; }
+  .je-status { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:.75rem; }
+  .je-stat { border:1px solid #e2e8f0; border-radius:8px; padding:.75rem; background:#fff; }
+  .je-stat-label { font-size:.75rem; text-transform:uppercase; color:#64748b; font-weight:700; }
+  .je-stat-value { font-size:1.05rem; font-weight:800; color:#0f172a; }
+  .je-grid th { font-size:.75rem; text-transform:uppercase; color:#475569; white-space:nowrap; }
+  .je-grid td { vertical-align:middle; }
+  .je-grid .form-control, .je-grid .form-select { min-height:38px; }
+  .je-row-no { width:48px; color:#64748b; text-align:center; }
+  .je-actions { width:52px; text-align:center; }
+  .je-footer { position:sticky; bottom:0; z-index:2; background:#f8fafc; border-top:1px solid #e2e8f0; }
+  @media (max-width: 768px) {
+    .je-status { grid-template-columns:1fr; }
+    .je-toolbar { justify-content:flex-start; }
+  }
+</style>
+
+<div class="container-fluid je-shell">
+  <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
+    <div>
+      <h2 class="mb-1"><i class="fas fa-pen-nib"></i> New Journal Entry</h2>
+      <p class="text-muted mb-0">Record an audited manual adjustment. Debits and credits must balance before posting.</p>
+    </div>
+    <div class="je-toolbar">
+      <a href="{{ url_for('accounting.journal_register') }}" class="btn btn-outline-secondary">
+        <i class="fas fa-arrow-left"></i> Journal Register
+      </a>
+    </div>
+  </div>
+
+  <form method="post" id="journalForm">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <div class="je-panel mb-3">
+      <div class="je-panel-hd">
+        <div class="row g-3 align-items-end">
+          <div class="col-lg-6">
+            <label class="form-label fw-semibold">Journal title</label>
+            <input name="description" class="form-control" placeholder="e.g. Reclassify bank charges for June 2026" required>
+          </div>
+          <div class="col-md-3 col-lg-2">
+            <label class="form-label fw-semibold">Date</label>
+            <input type="date" name="date" value="{{ today }}" class="form-control">
+          </div>
+          <div class="col-md-5 col-lg-3">
+            <label class="form-label fw-semibold">Reference</label>
+            <input name="reference" class="form-control" placeholder="Voucher, memo, or bank ref">
+          </div>
+          <div class="col-md-4 col-lg-1 text-lg-end">
+            <span class="badge bg-secondary">Manual</span>
+          </div>
         </div>
-        <div class="col-md-4 text-end">
-            <a href="{{ url_for('accounting.journal_register') }}" class="btn btn-outline-secondary btn-sm"><i class="fas fa-arrow-left"></i> Journal</a>
+      </div>
+
+      <div class="p-3">
+        <div class="je-status mb-3">
+          <div class="je-stat">
+            <div class="je-stat-label">Total debits</div>
+            <div class="je-stat-value text-success" id="totDebit">NGN 0.00</div>
+          </div>
+          <div class="je-stat">
+            <div class="je-stat-label">Total credits</div>
+            <div class="je-stat-value text-danger" id="totCredit">NGN 0.00</div>
+          </div>
+          <div class="je-stat">
+            <div class="je-stat-label">Status</div>
+            <div class="je-stat-value" id="balStatus">No lines entered</div>
+          </div>
         </div>
+
+        <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+          <div class="text-muted small">Use one amount column per line. Add memo details where they help audit review.</div>
+          <div class="je-toolbar">
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="addRowsBtn">
+              <i class="fas fa-plus"></i> Add rows
+            </button>
+            <button type="button" class="btn btn-outline-danger btn-sm" id="clearRowsBtn">
+              <i class="fas fa-eraser"></i> Clear lines
+            </button>
+          </div>
+        </div>
+
+        <div class="table-responsive">
+          <table class="table table-hover align-middle mb-0 je-grid" id="jeTable">
+            <thead class="table-light">
+              <tr>
+                <th class="je-row-no">#</th>
+                <th style="min-width:280px">Account</th>
+                <th style="min-width:220px">Memo</th>
+                <th class="text-end" style="width:170px">Debit</th>
+                <th class="text-end" style="width:170px">Credit</th>
+                <th class="je-actions"></th>
+              </tr>
+            </thead>
+            <tbody id="lineBody">
+              {% for i in range(6) %}
+              <tr>
+                <td class="je-row-no">{{ i + 1 }}</td>
+                <td>
+                  <select name="account" class="form-select account-select">
+                    <option value="">Select account</option>
+                    {% for a in accounts %}
+                    <option value="{{ a.code }}">{{ a.code }} - {{ a.name }}</option>
+                    {% endfor %}
+                  </select>
+                </td>
+                <td><input name="memo" class="form-control" placeholder="Line memo"></td>
+                <td><input name="debit" type="number" step="0.01" min="0" class="form-control text-end je-amt" data-side="d" inputmode="decimal"></td>
+                <td><input name="credit" type="number" step="0.01" min="0" class="form-control text-end je-amt" data-side="c" inputmode="decimal"></td>
+                <td class="je-actions">
+                  <button type="button" class="btn btn-outline-secondary btn-sm remove-line" title="Remove line">
+                    <i class="fas fa-times"></i>
+                  </button>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+            <tfoot class="je-footer">
+              <tr>
+                <td colspan="3" class="text-end fw-bold">Difference</td>
+                <td colspan="2" class="text-end fw-bold" id="diffTotal">NGN 0.00</td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
     </div>
 
-    <form method="post">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <div class="row g-2 mb-3">
-            <div class="col-md-6">
-                <label class="form-label small mb-0">Description</label>
-                <input name="description" class="form-control form-control-sm" placeholder="e.g. Bank charges reclass" required>
-            </div>
-            <div class="col-md-3">
-                <label class="form-label small mb-0">Date</label>
-                <input type="date" name="date" value="{{ today }}" class="form-control form-control-sm">
-            </div>
-            <div class="col-md-3">
-                <label class="form-label small mb-0">Reference (optional)</label>
-                <input name="reference" class="form-control form-control-sm">
-            </div>
-        </div>
-
-        <div class="card">
-            <div class="card-body p-0">
-                <table class="table mb-0" id="jeTable">
-                    <thead class="table-light">
-                        <tr><th>Account</th><th style="width:180px" class="text-end">Debit</th><th style="width:180px" class="text-end">Credit</th></tr>
-                    </thead>
-                    <tbody>
-                        {% for i in range(6) %}
-                        <tr>
-                            <td>
-                                <select name="account" class="form-select form-select-sm">
-                                    <option value="">—</option>
-                                    {% for a in accounts %}
-                                    <option value="{{ a.code }}">{{ a.code }} · {{ a.name }}</option>
-                                    {% endfor %}
-                                </select>
-                            </td>
-                            <td><input name="debit" type="number" step="0.01" min="0" class="form-control form-control-sm text-end je-amt" data-side="d"></td>
-                            <td><input name="credit" type="number" step="0.01" min="0" class="form-control form-control-sm text-end je-amt" data-side="c"></td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                    <tfoot class="table-light">
-                        <tr class="fw-bold">
-                            <td class="text-end">Totals</td>
-                            <td class="text-end" id="totDebit">₦0.00</td>
-                            <td class="text-end" id="totCredit">₦0.00</td>
-                        </tr>
-                        <tr>
-                            <td class="text-end">Balance</td>
-                            <td colspan="2" class="text-end" id="balStatus">—</td>
-                        </tr>
-                    </tfoot>
-                </table>
-            </div>
-        </div>
-
-        <div class="mt-3">
-            <button type="submit" class="btn btn-primary" id="postBtn"><i class="fas fa-check"></i> Post Entry</button>
-        </div>
-    </form>
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
+      <div class="small text-muted" id="postHint">Enter at least one debit line and one credit line.</div>
+      <button type="submit" class="btn btn-primary btn-lg" id="postBtn" disabled>
+        <i class="fas fa-check"></i> Post Journal
+      </button>
+    </div>
+  </form>
 </div>
 
 <script>
 (function(){
-  function fmt(n){ return '₦' + n.toLocaleString('en-NG', {minimumFractionDigits:2, maximumFractionDigits:2}); }
-  function recalc(){
-    var d=0, c=0;
-    document.querySelectorAll('.je-amt').forEach(function(el){
-      var v=parseFloat(el.value)||0;
-      if(el.dataset.side==='d') d+=v; else c+=v;
-    });
-    document.getElementById('totDebit').textContent=fmt(d);
-    document.getElementById('totCredit').textContent=fmt(c);
-    var bs=document.getElementById('balStatus');
-    var diff=Math.round((d-c)*100)/100;
-    if(d===0 && c===0){ bs.textContent='—'; bs.className='text-end'; }
-    else if(diff===0){ bs.textContent='Balanced'; bs.className='text-end text-success fw-bold'; }
-    else { bs.textContent='Off by '+fmt(Math.abs(diff)); bs.className='text-end text-danger fw-bold'; }
+  const body = document.getElementById('lineBody');
+  const postBtn = document.getElementById('postBtn');
+  const postHint = document.getElementById('postHint');
+  const accountOptions = `{% for a in accounts %}<option value="{{ a.code }}">{{ a.code }} - {{ a.name }}</option>{% endfor %}`;
+
+  function fmt(n){
+    return 'NGN ' + n.toLocaleString('en-NG', {minimumFractionDigits:2, maximumFractionDigits:2});
   }
-  document.querySelectorAll('.je-amt').forEach(function(el){ el.addEventListener('input', recalc); });
+
+  function renumber(){
+    body.querySelectorAll('tr').forEach(function(row, index){
+      row.querySelector('.je-row-no').textContent = index + 1;
+    });
+  }
+
+  function recalc(){
+    let d = 0, c = 0, debitLines = 0, creditLines = 0;
+    body.querySelectorAll('.je-amt').forEach(function(el){
+      const v = parseFloat(el.value) || 0;
+      if (el.dataset.side === 'd') {
+        d += v;
+        if (v > 0) debitLines += 1;
+      } else {
+        c += v;
+        if (v > 0) creditLines += 1;
+      }
+    });
+
+    document.getElementById('totDebit').textContent = fmt(d);
+    document.getElementById('totCredit').textContent = fmt(c);
+    const diff = Math.round((d - c) * 100) / 100;
+    document.getElementById('diffTotal').textContent = fmt(Math.abs(diff));
+
+    const bs = document.getElementById('balStatus');
+    const ready = d > 0 && c > 0 && diff === 0 && debitLines > 0 && creditLines > 0;
+    if (d === 0 && c === 0) {
+      bs.textContent = 'No lines entered';
+      bs.className = 'je-stat-value text-muted';
+      postHint.textContent = 'Enter at least one debit line and one credit line.';
+    } else if (ready) {
+      bs.textContent = 'Balanced';
+      bs.className = 'je-stat-value text-success';
+      postHint.textContent = 'Ready to post.';
+    } else {
+      bs.textContent = 'Off by ' + fmt(Math.abs(diff));
+      bs.className = 'je-stat-value text-danger';
+      postHint.textContent = 'Debits and credits must match before posting.';
+    }
+    postBtn.disabled = !ready;
+  }
+
+  function attach(row){
+    row.querySelectorAll('.je-amt').forEach(function(el){
+      el.addEventListener('input', function(){
+        const other = el.dataset.side === 'd'
+          ? row.querySelector('[data-side="c"]')
+          : row.querySelector('[data-side="d"]');
+        if ((parseFloat(el.value) || 0) > 0 && other) other.value = '';
+        recalc();
+      });
+    });
+    row.querySelector('.remove-line')?.addEventListener('click', function(){
+      if (body.querySelectorAll('tr').length > 2) {
+        row.remove();
+        renumber();
+        recalc();
+      }
+    });
+  }
+
+  function addRow(){
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="je-row-no"></td>
+      <td><select name="account" class="form-select account-select"><option value="">Select account</option>${accountOptions}</select></td>
+      <td><input name="memo" class="form-control" placeholder="Line memo"></td>
+      <td><input name="debit" type="number" step="0.01" min="0" class="form-control text-end je-amt" data-side="d" inputmode="decimal"></td>
+      <td><input name="credit" type="number" step="0.01" min="0" class="form-control text-end je-amt" data-side="c" inputmode="decimal"></td>
+      <td class="je-actions"><button type="button" class="btn btn-outline-secondary btn-sm remove-line" title="Remove line"><i class="fas fa-times"></i></button></td>`;
+    body.appendChild(tr);
+    attach(tr);
+    renumber();
+  }
+
+  document.getElementById('addRowsBtn').addEventListener('click', function(){
+    for (let i = 0; i < 4; i++) addRow();
+  });
+  document.getElementById('clearRowsBtn').addEventListener('click', function(){
+    body.querySelectorAll('input').forEach(function(el){ el.value = ''; });
+    body.querySelectorAll('select').forEach(function(el){ el.value = ''; });
+    recalc();
+  });
+  body.querySelectorAll('tr').forEach(attach);
   recalc();
 })();
 </script>
