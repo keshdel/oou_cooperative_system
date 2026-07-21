@@ -573,6 +573,61 @@ class HardeningFeatureTests(unittest.TestCase):
             ).fetchone()[0]
             self.assertEqual(open_links, 0)
 
+    def test_admin_can_bulk_send_pending_setup_links(self):
+        self.login_admin()
+        users = [
+            ('bulk.pending.1@example.com', 'Bulk Pending One', 'bulk.pending.1@example.com', 1, 1),
+            ('bulk.pending.2@example.com', 'Bulk Pending Two', 'bulk.pending.2@example.com', 1, 1),
+            ('bulk.completed@example.com', 'Bulk Completed', 'bulk.completed@example.com', 1, 0),
+            ('bulk.inactive@example.com', 'Bulk Inactive', 'bulk.inactive@example.com', 0, 1),
+            ('bulk.noemail@example.com', 'Bulk No Email', '', 1, 1),
+        ]
+        with self.app.app_context():
+            db = get_db()
+            for username, full_name, email, is_active, must_change in users:
+                db.execute('DELETE FROM account_setup_tokens WHERE user_id IN (SELECT id FROM users WHERE username = ?)', (username,))
+                db.execute('DELETE FROM users WHERE username = ?', (username,))
+                db.execute('''
+                    INSERT INTO users
+                        (username, password_hash, role, full_name, email,
+                         is_active, must_change_password, created_at)
+                    VALUES (?, ?, 'member', ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ''', (
+                    username,
+                    generate_password_hash('UnusedPass1!'),
+                    full_name,
+                    email,
+                    is_active,
+                    must_change,
+                ))
+            db.commit()
+
+        with patch('blueprints.admin_panel.send_member_onboarding_email') as onboarding_email:
+            response = self.client.post('/api/bulk_send_setup_links', follow_redirects=False)
+
+        self.assertIn(response.status_code, (302, 303))
+        self.assertEqual(onboarding_email.call_count, 2)
+        recipients = {call.args[0] for call in onboarding_email.call_args_list}
+        self.assertEqual(recipients, {'bulk.pending.1@example.com', 'bulk.pending.2@example.com'})
+
+        with self.app.app_context():
+            db = get_db()
+            token_counts = {
+                row['username']: row['token_count']
+                for row in db.execute('''
+                    SELECT u.username, COUNT(t.id) AS token_count
+                    FROM users u
+                    LEFT JOIN account_setup_tokens t ON t.user_id = u.id AND t.used_at IS NULL
+                    WHERE u.username LIKE 'bulk.%@example.com'
+                    GROUP BY u.username
+                ''').fetchall()
+            }
+            self.assertEqual(token_counts['bulk.pending.1@example.com'], 1)
+            self.assertEqual(token_counts['bulk.pending.2@example.com'], 1)
+            self.assertEqual(token_counts['bulk.completed@example.com'], 0)
+            self.assertEqual(token_counts['bulk.inactive@example.com'], 0)
+            self.assertEqual(token_counts['bulk.noemail@example.com'], 0)
+
     def test_admin_readiness_endpoint_reports_core_services(self):
         self.login_admin()
         response = self.client.get('/api/readiness')

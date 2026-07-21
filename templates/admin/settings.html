@@ -918,9 +918,15 @@
                     </form>
                     <div class="row mb-4">
                         <div class="col-md-12">
-                            <button class="btn btn-success float-end" data-bs-toggle="modal" data-bs-target="#addUserModal">
+                            <button class="btn btn-success float-end ms-2" data-bs-toggle="modal" data-bs-target="#addUserModal">
                                 <i class="fas fa-user-plus"></i> Add New User
                             </button>
+                            <form method="POST" action="{{ url_for('admin_panel.bulk_send_setup_links') }}" class="float-end"
+                                  onsubmit="return confirm('Send account setup links to all active users who have not completed setup?')">
+                                <button type="submit" class="btn btn-outline-info">
+                                    <i class="fas fa-paper-plane"></i> Send Pending Setup Links
+                                </button>
+                            </form>
                             <h5>System Users</h5>
                         </div>
                     </div>
@@ -999,6 +1005,9 @@
                                         <span class="badge bg-success">Active</span>
                                         {% else %}
                                         <span class="badge bg-secondary">Inactive</span>
+                                        {% endif %}
+                                        {% if user.must_change_password %}
+                                        <span class="badge bg-warning text-dark ms-1">Setup pending</span>
                                         {% endif %}
                                     </td>
                                     <td class="text-nowrap">

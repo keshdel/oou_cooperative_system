@@ -236,7 +236,12 @@ def settings():
             settings_dict.setdefault(key, default_value)
 
         users = db.execute(
-            'SELECT id, username, full_name, email, role, is_active, last_login, is_super_admin FROM users ORDER BY id'
+            '''
+            SELECT id, username, full_name, email, role, is_active, last_login,
+                   is_super_admin, must_change_password
+            FROM users
+            ORDER BY id
+            '''
         ).fetchall()
         # Check if the currently logged-in user is a super admin
         me_row = db.execute('SELECT is_super_admin FROM users WHERE id = ?', (current_user.id,)).fetchone()
@@ -251,6 +256,7 @@ def settings():
                 'is_active':      u['is_active'] if u['is_active'] is not None else 1,
                 'last_login':     u['last_login'] or 'Never',
                 'is_super_admin': bool(u['is_super_admin'] if 'is_super_admin' in u.keys() else 0),
+                'must_change_password': bool(u['must_change_password'] if 'must_change_password' in u.keys() else 0),
             }
             for u in users
         ]
@@ -690,6 +696,56 @@ def resend_setup_link(user_id):
     return redirect(url_for('admin_panel.settings') + '#users')
 
 
+@admin_panel.route('/api/bulk_send_setup_links', methods=['POST'])
+@login_required
+@role_required('admin')
+def bulk_send_setup_links():
+    db = get_db()
+    sent = 0
+    failed = []
+
+    try:
+        users = db.execute('''
+            SELECT id, username, full_name, email, is_active, must_change_password
+            FROM users
+            WHERE COALESCE(is_active, 1) = 1
+              AND COALESCE(must_change_password, 0) = 1
+              AND COALESCE(email, '') <> ''
+            ORDER BY id
+        ''').fetchall()
+
+        if not users:
+            flash('No active users are waiting for account setup links.', 'info')
+            return redirect(url_for('admin_panel.settings') + '#users')
+
+        for user in users:
+            try:
+                setup_url = _issue_account_setup_link(db, user)
+                audit(db, 'BULK_SEND_SETUP_LINK', 'users', f'Reissued setup link for {user["username"]}')
+                db.commit()
+                send_member_onboarding_email(
+                    user['email'],
+                    {'full_name': user['full_name'] or user['username'], 'member_number': ''},
+                    user['username'],
+                    setup_url,
+                    url_for('portal.profile', _external=True),
+                )
+                sent += 1
+            except Exception as exc:
+                db.rollback()
+                failed.append(f'{user["username"]}: {exc}')
+
+        if sent:
+            flash(f'Setup links sent to {sent} user{"s" if sent != 1 else ""}.', 'success')
+        if failed:
+            flash(f'{len(failed)} setup link{"s" if len(failed) != 1 else ""} failed. Check logs/email settings.', 'warning')
+    except Exception as e:
+        db.rollback()
+        flash(f'Error sending setup links: {e}', 'danger')
+
+    return redirect(url_for('admin_panel.settings') + '#users')
+
+
 @admin_panel.route('/api/revoke_setup_links/<int:user_id>', methods=['POST'])
 @login_required
 @role_required('admin')
@@ -1010,4 +1066,3 @@ def subscription_callback():
 
     flash(f'✅ Subscription renewed successfully! Active until {new_expiry}.', 'success')
     return redirect(url_for('admin_panel.subscription_page'))
-
