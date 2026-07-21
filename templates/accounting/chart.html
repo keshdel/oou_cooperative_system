@@ -1,90 +1,227 @@
 {% extends "base.html" %}
 {% block title %}Chart of Accounts - {{ coop_name }}{% endblock %}
 {% block content %}
+<style>
+  .coa-actions { display:flex; gap:.5rem; flex-wrap:wrap; justify-content:flex-end; align-items:center; }
+  .coa-panel { border:1px solid #e2e8f0; border-radius:8px; background:#fff; }
+  .coa-panel .card-header { background:#f8fafc; border-bottom:1px solid #e2e8f0; }
+  .coa-mode { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem; }
+  .coa-row-parent { background:#fbfdff; }
+  .coa-child { padding-left:1.35rem; position:relative; }
+  .coa-child:before { content:""; position:absolute; left:.35rem; top:.55rem; width:.65rem; height:.65rem; border-left:2px solid #94a3b8; border-bottom:2px solid #94a3b8; }
+  @media (max-width: 992px) { .coa-mode { grid-template-columns:1fr; } .coa-actions { justify-content:flex-start; } }
+</style>
+
 <div class="container-fluid">
-    <div class="row mb-3">
-        <div class="col-md-7">
-            <h2><i class="fas fa-sitemap"></i> Chart of Accounts</h2>
-            <p class="text-muted mb-0">The general-ledger accounts every transaction posts to. Add your own — statements group by type automatically and always balance.</p>
+  <div class="row mb-3 g-3 align-items-start">
+    <div class="col-lg-7">
+      <h2><i class="fas fa-sitemap"></i> Chart of Accounts</h2>
+      <p class="text-muted mb-0">Create header accounts and posting detail accounts. Bank accounts should be detail assets under Cash &amp; Bank.</p>
+    </div>
+    <div class="col-lg-5 coa-actions">
+      <a href="{{ url_for('accounting.trial_balance_view') }}" class="btn btn-outline-secondary btn-sm">Trial Balance</a>
+      <a href="{{ url_for('accounting.journal_register') }}" class="btn btn-outline-secondary btn-sm">Journal</a>
+      <a href="{{ url_for('accounting.reconciliation') }}" class="btn btn-outline-secondary btn-sm">Reconciliation</a>
+      <a href="{{ url_for('accounting.new_journal') }}" class="btn btn-primary btn-sm"><i class="fas fa-plus"></i> New Journal Entry</a>
+    </div>
+  </div>
+
+  {% if current_user.role == 'admin' %}
+  <div class="card coa-panel mb-4">
+    <div class="card-header">
+      <h6 class="mb-0"><i class="fas fa-wallet"></i> Default Cash / Bank Posting Account</h6>
+    </div>
+    <div class="card-body">
+      <form method="post" action="{{ url_for('accounting.set_default_cash_account') }}" class="row g-2 align-items-end">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="col-lg-7">
+          <label class="form-label small mb-0">Default account for savings, repayments, disbursements, expenses, revenue, and investments</label>
+          <select name="default_cash_account" class="form-select form-select-sm" required>
+            {% for a in all_accounts %}
+              {% if a.type == 'asset' and a.is_active %}
+              <option value="{{ a.code }}" {% if a.code == default_cash_account %}selected{% endif %}>
+                {{ a.code }} - {{ a.name }}{% if a.parent_code %} (detail of {{ a.parent_code }}){% endif %}
+              </option>
+              {% endif %}
+            {% endfor %}
+          </select>
         </div>
-        <div class="col-md-5 text-end">
-            <a href="{{ url_for('accounting.trial_balance_view') }}" class="btn btn-outline-secondary btn-sm">Trial Balance</a>
-            <a href="{{ url_for('accounting.journal_register') }}" class="btn btn-outline-secondary btn-sm">Journal</a>
-            <a href="{{ url_for('accounting.reconciliation') }}" class="btn btn-outline-secondary btn-sm">Reconciliation</a>
-            <a href="{{ url_for('accounting.new_journal') }}" class="btn btn-primary btn-sm"><i class="fas fa-plus"></i> New Journal Entry</a>
+        <div class="col-lg-3">
+          <div class="small text-muted">Current default: <strong>{{ default_cash_account }}</strong></div>
         </div>
+        <div class="col-lg-2 text-lg-end">
+          <button class="btn btn-sm btn-primary"><i class="fas fa-save"></i> Save Default</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="coa-mode mb-4">
+    <div class="card coa-panel">
+      <div class="card-header">
+        <h6 class="mb-0"><i class="fas fa-layer-group"></i> Add Header Account</h6>
+      </div>
+      <div class="card-body">
+        <form method="post" action="{{ url_for('accounting.add_account') }}" class="row g-2">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="col-md-4">
+            <label class="form-label small mb-0">Code</label>
+            <input name="code" class="form-control form-control-sm" placeholder="e.g. 1050" required>
+          </div>
+          <div class="col-md-8">
+            <label class="form-label small mb-0">Name</label>
+            <input name="name" class="form-control form-control-sm" placeholder="e.g. Other Current Assets" required>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small mb-0">Type</label>
+            <select name="type" class="form-select form-select-sm" required>
+              <option value="asset">Asset</option>
+              <option value="liability">Liability</option>
+              <option value="equity">Equity</option>
+              <option value="income">Income</option>
+              <option value="expense">Expense</option>
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label small mb-0">Normal balance</label>
+            <select name="normal_balance" class="form-select form-select-sm">
+              <option value="">Auto from type</option>
+              <option value="debit">Debit</option>
+              <option value="credit">Credit</option>
+            </select>
+          </div>
+          <div class="col-12">
+            <button class="btn btn-sm btn-primary"><i class="fas fa-plus"></i> Add Header</button>
+          </div>
+        </form>
+        <p class="small text-muted mb-0 mt-2">Use header accounts for grouping. Operational postings should normally go to detail accounts.</p>
+      </div>
     </div>
 
-    {% if current_user.role == 'admin' %}
-    <div class="card mb-4">
-        <div class="card-header"><h6 class="mb-0"><i class="fas fa-plus-circle"></i> Add Account</h6></div>
-        <div class="card-body">
-            <form method="post" action="{{ url_for('accounting.add_account') }}" class="row g-2 align-items-end">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <div class="col-md-2"><label class="form-label small mb-0">Code</label>
-                    <input name="code" class="form-control form-control-sm" placeholder="e.g. 1010" required></div>
-                <div class="col-md-3"><label class="form-label small mb-0">Name</label>
-                    <input name="name" class="form-control form-control-sm" placeholder="e.g. Bank — Access" required></div>
-                <div class="col-md-2"><label class="form-label small mb-0">Type</label>
-                    <select name="type" class="form-select form-select-sm" required>
-                        <option value="asset">Asset</option>
-                        <option value="liability">Liability</option>
-                        <option value="equity">Equity</option>
-                        <option value="income">Income</option>
-                        <option value="expense">Expense</option>
-                    </select></div>
-                <div class="col-md-2"><label class="form-label small mb-0">Normal balance</label>
-                    <select name="normal_balance" class="form-select form-select-sm">
-                        <option value="">Auto (from type)</option>
-                        <option value="debit">Debit</option>
-                        <option value="credit">Credit</option>
-                    </select></div>
-                <div class="col-md-2"><label class="form-label small mb-0">Parent (optional)</label>
-                    <select name="parent_code" class="form-select form-select-sm">
-                        <option value="">— none —</option>
-                        {% for a in all_accounts %}
-                        <option value="{{ a.code }}">{{ a.code }} · {{ a.name }}</option>
-                        {% endfor %}
-                    </select></div>
-                <div class="col-md-1"><button class="btn btn-sm btn-primary w-100">Add</button></div>
-            </form>
-            <p class="small text-muted mt-2 mb-0">Tip: a sub-account (with a Parent) still posts on its own but rolls up under its parent's type. Transactions should post to detail accounts, not header/parent accounts.</p>
-        </div>
+    <div class="card coa-panel">
+      <div class="card-header">
+        <h6 class="mb-0"><i class="fas fa-university"></i> Add Detail Account</h6>
+      </div>
+      <div class="card-body">
+        <form method="post" action="{{ url_for('accounting.add_account') }}" class="row g-2">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="col-md-5">
+            <label class="form-label small mb-0">Parent</label>
+            <select name="parent_code" id="detailParent" class="form-select form-select-sm" required>
+              <option value="">Select parent</option>
+              {% for a in all_accounts %}
+              <option value="{{ a.code }}" data-type="{{ a.type }}" data-normal="{{ a.normal_balance }}">
+                {{ a.code }} - {{ a.name }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label small mb-0">Code</label>
+            <input name="code" class="form-control form-control-sm" placeholder="e.g. 1010" required>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label small mb-0">Name</label>
+            <input name="name" class="form-control form-control-sm" placeholder="e.g. OOU Main Bank" required>
+          </div>
+          <input type="hidden" name="type" id="detailType">
+          <input type="hidden" name="normal_balance" id="detailNormal">
+          <div class="col-12 d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <small class="text-muted" id="detailHint">Type and normal balance will inherit from the selected parent.</small>
+            <button class="btn btn-sm btn-primary"><i class="fas fa-plus"></i> Add Detail</button>
+          </div>
+        </form>
+        <p class="small text-muted mb-0 mt-2">Examples: `1010 OOU Main Bank`, `1020 Paystack Clearing`, `1030 Salary Deduction Receivable` under `1000 Cash & Bank`.</p>
+      </div>
     </div>
-    {% endif %}
+  </div>
+  {% endif %}
 
-    {% for type, accounts in grouped %}
-    <div class="card mb-3">
-        <div class="card-header text-capitalize"><strong>{{ type }}</strong></div>
-        <div class="card-body p-0">
-            <table class="table mb-0">
-                <thead class="table-light">
-                    <tr><th style="width:110px">Code</th><th>Account</th><th style="width:130px">Normal</th><th style="width:120px">Status</th>{% if current_user.role == 'admin' %}<th style="width:120px"></th>{% endif %}</tr>
-                </thead>
-                <tbody>
-                    {% for a in accounts %}
-                    <tr class="{% if not a.is_active %}text-muted{% endif %}">
-                        <td><a href="{{ url_for('accounting.account_ledger_view', code=a.code) }}"
-                               title="Open the full ledger for this account">{{ a.code }}</a>{% if a.parent_code %}<br><small class="text-muted">↳ {{ a.parent_code }}</small>{% endif %}</td>
-                        <td>{{ a.name }}</td>
-                        <td class="text-capitalize">{{ a.normal_balance }}</td>
-                        <td>{% if a.is_active %}<span class="badge bg-success">Active</span>{% else %}<span class="badge bg-secondary">Inactive</span>{% endif %}</td>
-                        {% if current_user.role == 'admin' %}
-                        <td>
-                            <form method="post" action="{{ url_for('accounting.toggle_account', code=a.code) }}">
-                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <button class="btn btn-sm btn-outline-{{ 'secondary' if a.is_active else 'success' }}">
-                                    {{ 'Deactivate' if a.is_active else 'Reactivate' }}
-                                </button>
-                            </form>
-                        </td>
-                        {% endif %}
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
+  {% for type, accounts in grouped %}
+  <div class="card coa-panel mb-3">
+    <div class="card-header text-capitalize d-flex justify-content-between align-items-center">
+      <strong>{{ type }}</strong>
+      <span class="badge bg-light text-dark">{{ accounts|length }} accounts</span>
     </div>
-    {% endfor %}
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th style="width:120px">Code</th>
+              <th>Account</th>
+              <th style="width:130px">Normal</th>
+              <th style="width:160px">Role</th>
+              <th style="width:120px">Status</th>
+              {% if current_user.role == 'admin' %}<th style="width:130px"></th>{% endif %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for a in accounts %}
+            <tr class="{% if a.parent_code %}coa-detail{% else %}coa-row-parent{% endif %} {% if not a.is_active %}text-muted{% endif %}">
+              <td>
+                <a href="{{ url_for('accounting.account_ledger_view', code=a.code) }}" title="Open the full ledger for this account">{{ a.code }}</a>
+              </td>
+              <td>
+                <div class="{% if a.parent_code %}coa-child{% endif %}">
+                  <span class="fw-semibold">{{ a.name }}</span>
+                  {% if a.parent_code %}
+                  <div class="small text-muted">Detail of {{ a.parent_code }}{% if accounts_by_code.get(a.parent_code) %} - {{ accounts_by_code[a.parent_code].name }}{% endif %}</div>
+                  {% elif a.children %}
+                  <div class="small text-muted">{{ a.children|length }} detail account{{ 's' if a.children|length != 1 else '' }}</div>
+                  {% endif %}
+                </div>
+              </td>
+              <td class="text-capitalize">{{ a.normal_balance }}</td>
+              <td>
+                {% if a.parent_code %}
+                <span class="badge bg-info text-dark">Detail / posting</span>
+                {% elif a.children %}
+                <span class="badge bg-secondary">Header</span>
+                {% else %}
+                <span class="badge bg-light text-dark">Posting</span>
+                {% endif %}
+              </td>
+              <td>{% if a.is_active %}<span class="badge bg-success">Active</span>{% else %}<span class="badge bg-secondary">Inactive</span>{% endif %}</td>
+              {% if current_user.role == 'admin' %}
+              <td>
+                <form method="post" action="{{ url_for('accounting.toggle_account', code=a.code) }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button class="btn btn-sm btn-outline-{{ 'secondary' if a.is_active else 'success' }}">
+                    {{ 'Deactivate' if a.is_active else 'Reactivate' }}
+                  </button>
+                </form>
+              </td>
+              {% endif %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
 </div>
+
+<script>
+(function(){
+  const parent = document.getElementById('detailParent');
+  if (!parent) return;
+  const type = document.getElementById('detailType');
+  const normal = document.getElementById('detailNormal');
+  const hint = document.getElementById('detailHint');
+  function syncParent(){
+    const selected = parent.options[parent.selectedIndex];
+    const accountType = selected?.dataset.type || '';
+    const normalBalance = selected?.dataset.normal || '';
+    type.value = accountType;
+    normal.value = normalBalance;
+    hint.textContent = accountType
+      ? `Inherits ${accountType} type and ${normalBalance} normal balance from parent.`
+      : 'Type and normal balance will inherit from the selected parent.';
+  }
+  parent.addEventListener('change', syncParent);
+  syncParent();
+})();
+</script>
 {% endblock %}

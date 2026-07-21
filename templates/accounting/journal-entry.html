@@ -50,6 +50,12 @@
         vs credits ₦{{ '{:,.2f}'.format(data.total_credit) }}. This should never happen — please investigate.</div>
     {% endif %}
 
+    <div class="alert alert-light border py-2">
+        <i class="fas fa-shield-alt"></i>
+        Posted journal entries are not edited or deleted directly. Use <strong>Reverse entry</strong>
+        or post a correcting journal so the audit trail remains complete.
+    </div>
+
     <div class="row">
         <!-- Entry header -->
         <div class="col-lg-4">
@@ -97,7 +103,7 @@
                     <table class="table table-sm mb-0 align-middle">
                         <thead class="table-light">
                             <tr><th>Account</th><th>Type</th><th>Memo</th>
-                                <th class="text-end">Debit</th><th class="text-end">Credit</th></tr>
+                                <th class="text-end">Debit (left side)</th><th class="text-end">Credit (right side)</th></tr>
                         </thead>
                         <tbody>
                             {% for l in lines %}

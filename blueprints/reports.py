@@ -6,7 +6,7 @@ from flask import Blueprint, flash, make_response, redirect, render_template, re
 from flask_login import login_required
 
 from database import get_db
-from ledger import CASH, account_ledger, trial_balance
+from ledger import account_ledger, get_default_cash_account, trial_balance
 from reports_engine import balance_sheet, cash_flow, income_statement, surplus_appropriation
 from utils import role_required
 
@@ -153,6 +153,7 @@ def reports_list():
     try:
         inc = income_statement(db, year_start, today)
         bs = balance_sheet(db, as_of=today)
+        cash_account = get_default_cash_account(db)
         stats = {
             'total_members': _get_val(db, 'SELECT COUNT(*) FROM members'),
             'active_members': _get_val(db, "SELECT COUNT(*) FROM members WHERE status = 'active'"),
@@ -163,7 +164,7 @@ def reports_list():
                 SELECT COALESCE(SUM(debit), 0) - COALESCE(SUM(credit), 0)
                 FROM journal_lines
                 WHERE account_code = ?
-            ''', (CASH,))),
+            ''', (cash_account,))),
             'ytd_income': inc['total_income'],
             'ytd_expenses': inc['total_expenses'],
             'ytd_surplus': inc['net_surplus'],
@@ -258,7 +259,8 @@ def cashbook_report():
     db = get_db()
     from_date = request.args.get('from_date') or _year_start()
     to_date = request.args.get('to_date') or _today()
-    data = account_ledger(db, CASH, from_date, to_date)
+    cash_account = get_default_cash_account(db)
+    data = account_ledger(db, cash_account, from_date, to_date)
     if not data:
         flash('Cash account is not available in the chart of accounts.', 'danger')
         return redirect(url_for('reports.reports_list'))

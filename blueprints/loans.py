@@ -13,7 +13,7 @@ from email_service import (send_loan_approval_email, send_loan_rejection_email,
 from utils import (role_required, audit, notify_member, notify, compute_loan_schedule,
                    PURPOSE_SETTING_KEY, METHOD_LABELS, record_revenue, split_repayment,
                    member_savings_balance)
-from ledger import (post_journal_safe, CASH, LOANS_RECEIVABLE, FEE_INCOME,
+from ledger import (post_journal_safe, get_default_cash_account, LOANS_RECEIVABLE, FEE_INCOME,
                     LOAN_INTEREST_INCOME)
 import loan_workflow as lw
 from delinquency import portfolio_delinquency
@@ -99,9 +99,10 @@ def _disburse_loan(db, loan):
     record_revenue(db, 'Loan Application Fee', application_fee,
                    description=f"Application fee on loan {loan['loan_number']}",
                    source=f"Loan {loan['loan_number']}", received_by=current_user.id)
+    cash_account = get_default_cash_account(db)
     post_journal_safe(db, f"Loan disbursement — {loan['loan_number']}", [
         {'account': LOANS_RECEIVABLE, 'debit': loan['amount'], 'memo': loan['loan_number']},
-        {'account': CASH, 'credit': disbursed, 'memo': 'Net disbursed'},
+        {'account': cash_account, 'credit': disbursed, 'memo': 'Net disbursed'},
         {'account': FEE_INCOME, 'credit': insurance + application_fee, 'memo': 'Loan fees'},
     ], reference=loan['loan_number'], source_module='loan_disbursement',
        source_id=loan['id'], created_by=current_user.id)
@@ -533,8 +534,9 @@ def bulk_loan_repayments():
                         'UPDATE loans SET balance = ?, status = ?, completed_at = ? WHERE id = ?',
                         (new_balance, status, completed_at, loan['id'])
                     )
+                    cash_account = get_default_cash_account(db)
                     post_journal_safe(db, f"Loan repayment — {loan_number}", [
-                        {'account': CASH, 'debit': settled_amount, 'memo': 'Repayment'},
+                        {'account': cash_account, 'debit': settled_amount, 'memo': 'Repayment'},
                         {'account': LOANS_RECEIVABLE, 'credit': principal_paid, 'memo': loan_number},
                         {'account': LOAN_INTEREST_INCOME, 'credit': interest_paid, 'memo': 'Interest earned'},
                     ], date=payment_date, reference=repayment_number, source_module='loan_repayment',
@@ -663,8 +665,9 @@ def repay_loan(loan_id):
         )
 
         # Double-entry: cash in; principal reduces the receivable; interest is income.
+        cash_account = get_default_cash_account(db)
         post_journal_safe(db, f"Loan repayment — {loan['loan_number']}", [
-            {'account': CASH, 'debit': settled, 'memo': 'Repayment'},
+            {'account': cash_account, 'debit': settled, 'memo': 'Repayment'},
             {'account': LOANS_RECEIVABLE, 'credit': principal_paid, 'memo': loan['loan_number']},
             {'account': LOAN_INTEREST_INCOME, 'credit': interest_paid, 'memo': 'Interest earned'},
         ], reference=repayment_number, source_module='loan_repayment',

@@ -727,6 +727,80 @@ class HardeningFeatureTests(unittest.TestCase):
                 db.execute('DELETE FROM journal_entries WHERE id = ?', (journal['id'],))
                 db.commit()
 
+    def test_chart_of_accounts_creates_detail_account_under_parent(self):
+        self.login_admin()
+        with self.app.app_context():
+            db = get_db()
+            db.execute("DELETE FROM accounts WHERE code = '1099'")
+            db.commit()
+
+        response = self.client.post(
+            '/accounting/accounts/add',
+            data={
+                'code': '1099',
+                'name': 'Test Detail Bank',
+                'type': '',
+                'normal_balance': '',
+                'parent_code': '1000',
+            },
+            follow_redirects=False,
+        )
+        self.assertIn(response.status_code, (302, 303))
+        with self.app.app_context():
+            db = get_db()
+            account = db.execute("SELECT * FROM accounts WHERE code = '1099'").fetchone()
+            self.assertIsNotNone(account)
+            self.assertEqual(account['parent_code'], '1000')
+            self.assertEqual(account['type'], 'asset')
+            self.assertEqual(account['normal_balance'], 'debit')
+
+            db.execute("DELETE FROM accounts WHERE code = '1099'")
+            db.commit()
+
+    def test_savings_post_to_configured_default_cash_detail_account(self):
+        self.login_admin()
+        member_id = self.create_member()
+        with self.app.app_context():
+            db = get_db()
+            db.execute("DELETE FROM journal_lines WHERE account_code = '1098'")
+            db.execute("DELETE FROM accounts WHERE code = '1098'")
+            db.execute("DELETE FROM settings WHERE key = 'default_cash_account'")
+            db.execute('''
+                INSERT INTO accounts (code, name, type, normal_balance, parent_code, is_active)
+                VALUES ('1098', 'Test Main Bank', 'asset', 'debit', '1000', 1)
+            ''')
+            db.execute(
+                "INSERT INTO settings (key, value, description) VALUES ('default_cash_account', '1098', 'test')"
+            )
+            db.commit()
+
+        response = self.client.post('/savings/add', data={
+            'member_id': member_id,
+            'amount': '5000',
+            'month': '2026-07',
+            'payment_type': 'monthly',
+            'payment_method': 'bank_transfer',
+            'notes': 'Default cash account test',
+        }, follow_redirects=False)
+        self.assertIn(response.status_code, (302, 303))
+
+        with self.app.app_context():
+            db = get_db()
+            line = db.execute('''
+                SELECT jl.*
+                FROM journal_lines jl
+                JOIN journal_entries je ON je.id = jl.entry_id
+                WHERE jl.account_code = '1098'
+                  AND je.source_module = 'savings_deposit'
+                ORDER BY jl.id DESC
+            ''').fetchone()
+            self.assertIsNotNone(line)
+            self.assertGreater(float(line['debit'] or 0), 0)
+            db.execute("DELETE FROM settings WHERE key = 'default_cash_account'")
+            db.execute("DELETE FROM journal_lines WHERE account_code = '1098'")
+            db.execute("DELETE FROM accounts WHERE code = '1098'")
+            db.commit()
+
     def test_financial_reporting_center_and_control_exports_render(self):
         self.login_admin()
         member_id = self.create_member()

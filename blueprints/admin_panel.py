@@ -12,7 +12,7 @@ from email_service import send_member_onboarding_email
 from security import generate_account_setup_token, validate_password_strength
 from utils import (role_required, audit, validate_image,
                    member_savings_balance, reconcile_member_savings)
-from ledger import (post_journal_safe, CASH, OPERATING_EXPENSES, FEE_INCOME,
+from ledger import (post_journal_safe, get_default_cash_account, OPERATING_EXPENSES, FEE_INCOME,
                     HONORARIUM)
 
 admin_panel = Blueprint('admin_panel', __name__)
@@ -415,10 +415,11 @@ def add_expense():
                 current_user.id,
                 request.form.get('notes', ''),
             ))
+            cash_account = get_default_cash_account(db)
             post_journal_safe(db, f"Expense — {request.form['category']}", [
                 {'account': OPERATING_EXPENSES, 'debit': float(request.form['amount']),
                  'memo': request.form.get('description', '')},
-                {'account': CASH, 'credit': float(request.form['amount'])},
+                {'account': cash_account, 'credit': float(request.form['amount'])},
             ], reference=expense_number, source_module='expenses', created_by=current_user.id)
             db.commit()
             audit(db, 'ADD_EXPENSE', 'expenses',
@@ -464,8 +465,9 @@ def add_revenue():
                 current_user.id,
                 request.form.get('notes', ''),
             ))
+            cash_account = get_default_cash_account(db)
             post_journal_safe(db, f"Revenue — {request.form['category']}", [
-                {'account': CASH, 'debit': float(request.form['amount'])},
+                {'account': cash_account, 'debit': float(request.form['amount'])},
                 {'account': FEE_INCOME, 'credit': float(request.form['amount']),
                  'memo': request.form.get('description', '')},
             ], reference=revenue_number, source_module='revenue', created_by=current_user.id)
@@ -513,10 +515,11 @@ def add_honorarium():
             current_user.id,
         ))
         _hid = last_insert_id(db)
+        cash_account = get_default_cash_account(db)
         post_journal_safe(db, f"Honorarium — {request.form.get('recipient_name', '')}", [
             {'account': HONORARIUM, 'debit': float(request.form['amount']),
              'memo': request.form.get('recipient_name', '')},
-            {'account': CASH, 'credit': float(request.form['amount'])},
+            {'account': cash_account, 'credit': float(request.form['amount'])},
         ], source_module='honorarium', source_id=_hid, created_by=current_user.id)
         db.commit()
         flash('Honorarium recorded successfully!', 'success')

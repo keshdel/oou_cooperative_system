@@ -9,7 +9,7 @@ from flask_login import login_required, current_user
 from database import get_db, last_insert_id
 from email_service import send_payment_confirmation_email
 from utils import role_required, audit, notify_member, record_revenue, share_capital_split
-from ledger import post_journal_safe, CASH, MEMBER_DEPOSITS, FEE_INCOME, SHARE_CAPITAL
+from ledger import post_journal_safe, get_default_cash_account, MEMBER_DEPOSITS, FEE_INCOME, SHARE_CAPITAL
 
 savings = Blueprint('savings', __name__)
 
@@ -275,8 +275,9 @@ def salary_upload():
                             notes=f'Receipt {receipt_number}; batch {batch_ref}',
                         )
 
+                    cash_account = get_default_cash_account(db)
                     lines = [
-                        {'account': CASH, 'debit': amount + late_fee, 'memo': f'Salary savings {row_month}'},
+                        {'account': cash_account, 'debit': amount + late_fee, 'memo': f'Salary savings {row_month}'},
                         {'account': MEMBER_DEPOSITS, 'credit': deposit_amount, 'memo': f"Member {member['id']}"},
                     ]
                     if share_amount:
@@ -380,8 +381,9 @@ def add_saving():
                            notes=f'Receipt {receipt_number}')
 
         # Double-entry: cash in; deposit liability + share capital up; fee is income.
+        cash_account = get_default_cash_account(db)
         _lines = [
-            {'account': CASH, 'debit': amount + late_fee, 'memo': f'Savings {month}'},
+            {'account': cash_account, 'debit': amount + late_fee, 'memo': f'Savings {month}'},
             {'account': MEMBER_DEPOSITS, 'credit': deposit_amount, 'memo': f'Member {member_id}'},
         ]
         if share_amount:

@@ -14,7 +14,8 @@ from database import get_db
 from utils import role_required, audit
 from ledger import (get_accounts, trial_balance, backfill_from_transactions,
                     ledger_reconciliation, account_ledger, journal_entry_detail,
-                    get_lock_date, reverse_journal_entry, PeriodLockedError)
+                    get_lock_date, reverse_journal_entry, PeriodLockedError,
+                    get_default_cash_account)
 
 accounting = Blueprint('accounting', __name__, url_prefix='/accounting')
 
@@ -25,13 +26,25 @@ accounting = Blueprint('accounting', __name__, url_prefix='/accounting')
 def chart_of_accounts():
     db = get_db()
     accounts = get_accounts(db, active_only=False)
+    default_cash_account = get_default_cash_account(db)
+    account_list = [dict(a) for a in accounts]
+    by_code = {a['code']: a for a in account_list}
+    children = {}
+    for a in account_list:
+        if a.get('parent_code'):
+            children.setdefault(a['parent_code'], []).append(a)
+    for a in account_list:
+        a['children'] = children.get(a['code'], [])
+        a['is_parent'] = bool(a['children'])
     # Group by type for display
     groups = {}
-    for a in accounts:
+    for a in account_list:
         groups.setdefault(a['type'], []).append(a)
     order = ['asset', 'liability', 'equity', 'income', 'expense']
     grouped = [(t, groups[t]) for t in order if t in groups]
-    return render_template('accounting/chart.html', grouped=grouped, all_accounts=accounts)
+    return render_template('accounting/chart.html', grouped=grouped,
+                           all_accounts=account_list, accounts_by_code=by_code,
+                           default_cash_account=default_cash_account)
 
 
 ACCOUNT_TYPES = ('asset', 'liability', 'equity', 'income', 'expense')
@@ -47,6 +60,21 @@ def add_account():
     atype  = request.form.get('type', '').strip().lower()
     normal = request.form.get('normal_balance', '').strip().lower()
     parent = request.form.get('parent_code', '').strip() or None
+    if parent:
+        parent_row = db.execute(
+            'SELECT code, type, normal_balance FROM accounts WHERE code = ? AND is_active = 1',
+            (parent,)
+        ).fetchone()
+        if not parent_row:
+            flash('Selected parent account does not exist or is inactive.', 'danger')
+            return redirect(url_for('accounting.chart_of_accounts'))
+        if not atype:
+            atype = parent_row['type']
+        if atype != parent_row['type']:
+            flash('A detail account must use the same type as its parent account.', 'danger')
+            return redirect(url_for('accounting.chart_of_accounts'))
+        if not normal:
+            normal = parent_row['normal_balance']
     if not code or not name or atype not in ACCOUNT_TYPES:
         flash('Account code, name, and a valid type are required.', 'danger')
         return redirect(url_for('accounting.chart_of_accounts'))
@@ -63,6 +91,43 @@ def add_account():
     except Exception as e:
         db.rollback()
         flash(f'Could not add account (the code may already exist): {e}', 'danger')
+    return redirect(url_for('accounting.chart_of_accounts'))
+
+
+@accounting.route('/accounts/default-cash', methods=['POST'])
+@login_required
+@role_required('admin')
+def set_default_cash_account():
+    db = get_db()
+    code = request.form.get('default_cash_account', '').strip()
+    account = db.execute(
+        "SELECT code, name FROM accounts WHERE code = ? AND type = 'asset' AND is_active = 1",
+        (code,)
+    ).fetchone()
+    if not account:
+        flash('Choose an active asset account for cash/bank posting.', 'danger')
+        return redirect(url_for('accounting.chart_of_accounts'))
+    try:
+        existing = db.execute(
+            "SELECT id FROM settings WHERE key = 'default_cash_account'"
+        ).fetchone()
+        if existing:
+            db.execute(
+                "UPDATE settings SET value = ? WHERE key = 'default_cash_account'",
+                (code,)
+            )
+        else:
+            db.execute(
+                "INSERT INTO settings (key, value, description) VALUES (?, ?, ?)",
+                ('default_cash_account', code, 'Default cash/bank GL account for receipts and disbursements')
+            )
+        db.commit()
+        audit(db, 'SET_DEFAULT_CASH_ACCOUNT', 'accounting',
+              f'Set default cash/bank posting account to {code} - {account["name"]}')
+        flash(f'Default cash/bank posting account set to {code} - {account["name"]}.', 'success')
+    except Exception as e:
+        db.rollback()
+        flash(f'Could not update default cash/bank account: {e}', 'danger')
     return redirect(url_for('accounting.chart_of_accounts'))
 
 

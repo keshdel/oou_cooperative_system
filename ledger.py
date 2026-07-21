@@ -78,6 +78,27 @@ def get_accounts(db, active_only=True):
     return db.execute(sql).fetchall()
 
 
+def get_default_cash_account(db):
+    """Return the configured cash/bank posting account, falling back to 1000.
+
+    The selected account must be an active asset account. This allows a coop to
+    post receipts/disbursements to a bank detail account like 1010 while keeping
+    legacy installs safe on the seeded Cash & Bank account.
+    """
+    try:
+        row = db.execute(
+            "SELECT value FROM settings WHERE key = 'default_cash_account'"
+        ).fetchone()
+        code = (row['value'] if row else '') or CASH
+        account = db.execute(
+            "SELECT code FROM accounts WHERE code = ? AND type = 'asset' AND is_active = 1",
+            (code,)
+        ).fetchone()
+        return account['code'] if account else CASH
+    except Exception:
+        return CASH
+
+
 def account_exists(db, code):
     return db.execute('SELECT 1 FROM accounts WHERE code = ?', (code,)).fetchone() is not None
 
@@ -313,6 +334,7 @@ def backfill_from_transactions(db, created_by=None):
     """
     from utils import split_repayment
     posted = 0
+    cash_account = get_default_cash_account(db)
 
     # Savings deposits
     for s in db.execute('SELECT * FROM savings').fetchall():
@@ -328,7 +350,7 @@ def backfill_from_transactions(db, created_by=None):
         if amount + late <= 0:
             continue
         lines = [
-            {'account': CASH, 'debit': amount + late, 'memo': f"Savings {s['month']}"},
+            {'account': cash_account, 'debit': amount + late, 'memo': f"Savings {s['month']}"},
             {'account': MEMBER_DEPOSITS, 'credit': amount, 'memo': f"Member {s['member_id']}"},
         ]
         if late:
@@ -353,7 +375,7 @@ def backfill_from_transactions(db, created_by=None):
         disbursed = float(disbursed) if disbursed is not None else (principal - fees)
         lines = [{'account': LOANS_RECEIVABLE, 'debit': principal, 'memo': l['loan_number']}]
         if disbursed:
-            lines.append({'account': CASH, 'credit': disbursed, 'memo': 'Net disbursed'})
+            lines.append({'account': cash_account, 'credit': disbursed, 'memo': 'Net disbursed'})
         if fees:
             lines.append({'account': FEE_INCOME, 'credit': fees, 'memo': 'Loan fees'})
         if post_journal_safe(db, f"Loan disbursement — {ref}", lines,
@@ -375,7 +397,7 @@ def backfill_from_transactions(db, created_by=None):
         if pp == 0 and ip == 0:
             pp, ip = split_repayment(amount, r['principal'], r['total_repayment'])
         if post_journal_safe(db, f"Loan repayment — {r['loan_number']}", [
-            {'account': CASH, 'debit': amount, 'memo': 'Repayment'},
+            {'account': cash_account, 'debit': amount, 'memo': 'Repayment'},
             {'account': LOANS_RECEIVABLE, 'credit': pp, 'memo': r['loan_number']},
             {'account': LOAN_INTEREST_INCOME, 'credit': ip, 'memo': 'Interest earned'},
         ], date=r['date'], reference=ref, source_module='loans',
@@ -392,7 +414,7 @@ def backfill_from_transactions(db, created_by=None):
             continue
         if post_journal_safe(db, f"Expense — {e['category']}", [
             {'account': OPERATING_EXPENSES, 'debit': amt, 'memo': e['description'] or ''},
-            {'account': CASH, 'credit': amt},
+            {'account': cash_account, 'credit': amt},
         ], date=e['date'], reference=ref, source_module='expenses', created_by=created_by):
             posted += 1
 
@@ -407,7 +429,7 @@ def backfill_from_transactions(db, created_by=None):
         if amt <= 0:
             continue
         if post_journal_safe(db, f"Revenue — {rv['category']}", [
-            {'account': CASH, 'debit': amt},
+            {'account': cash_account, 'debit': amt},
             {'account': FEE_INCOME, 'credit': amt, 'memo': rv['description'] or ''},
         ], date=rv['date'], reference=ref, source_module='revenue', created_by=created_by):
             posted += 1
@@ -425,7 +447,7 @@ def backfill_from_transactions(db, created_by=None):
             continue
         if post_journal_safe(db, f"Honorarium — {h['recipient_name'] or ''}", [
             {'account': HONORARIUM, 'debit': amt, 'memo': h['recipient_name'] or ''},
-            {'account': CASH, 'credit': amt},
+            {'account': cash_account, 'credit': amt},
         ], date=h['date'], source_module='honorarium', source_id=h['id'], created_by=created_by):
             posted += 1
 
@@ -439,7 +461,7 @@ def backfill_from_transactions(db, created_by=None):
             continue
         if post_journal_safe(db, f"Investment — {iv['name']}", [
             {'account': INVESTMENTS, 'debit': amt, 'memo': iv['name']},
-            {'account': CASH, 'credit': amt},
+            {'account': cash_account, 'credit': amt},
         ], date=iv['date'], reference=ref, source_module='investments', created_by=created_by):
             posted += 1
 

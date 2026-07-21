@@ -26,7 +26,7 @@
   <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
     <div>
       <h2 class="mb-1"><i class="fas fa-pen-nib"></i> New Journal Entry</h2>
-      <p class="text-muted mb-0">Record an audited manual adjustment. Debits and credits must balance before posting.</p>
+      <p class="text-muted mb-0">Record an audited manual adjustment. Review the debit and credit sides before posting.</p>
     </div>
     <div class="je-toolbar">
       <a href="{{ url_for('accounting.journal_register') }}" class="btn btn-outline-secondary">
@@ -75,8 +75,17 @@
           </div>
         </div>
 
+        <div class="alert alert-light border mb-3">
+          <div class="fw-semibold mb-1">Debit and credit guide</div>
+          <div class="small text-muted">
+            Debit is the left side of the entry and usually increases assets/expenses.
+            Credit is the right side and usually increases liabilities/equity/income.
+            Use only one side per row.
+          </div>
+        </div>
+
         <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
-          <div class="text-muted small">Use one amount column per line. Add memo details where they help audit review.</div>
+          <div class="text-muted small">Add memo details where they help audit review. Posted entries are corrected by reversal or a new correcting journal.</div>
           <div class="je-toolbar">
             <button type="button" class="btn btn-outline-secondary btn-sm" id="addRowsBtn">
               <i class="fas fa-plus"></i> Add rows
@@ -94,8 +103,8 @@
                 <th class="je-row-no">#</th>
                 <th style="min-width:280px">Account</th>
                 <th style="min-width:220px">Memo</th>
-                <th class="text-end" style="width:170px">Debit</th>
-                <th class="text-end" style="width:170px">Credit</th>
+                <th class="text-end" style="width:170px">Debit (left side)</th>
+                <th class="text-end" style="width:170px">Credit (right side)</th>
                 <th class="je-actions"></th>
               </tr>
             </thead>
@@ -137,7 +146,7 @@
     <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
       <div class="small text-muted" id="postHint">Enter at least one debit line and one credit line.</div>
       <button type="submit" class="btn btn-primary btn-lg" id="postBtn" disabled>
-        <i class="fas fa-check"></i> Post Journal
+        <i class="fas fa-clipboard-check"></i> Review & Post Journal
       </button>
     </div>
   </form>
@@ -236,6 +245,24 @@
     body.querySelectorAll('input').forEach(function(el){ el.value = ''; });
     body.querySelectorAll('select').forEach(function(el){ el.value = ''; });
     recalc();
+  });
+  document.getElementById('journalForm').addEventListener('submit', function(e){
+    const rows = Array.from(body.querySelectorAll('tr')).filter(function(row){
+      const account = row.querySelector('[name="account"]')?.value;
+      const debit = parseFloat(row.querySelector('[data-side="d"]')?.value) || 0;
+      const credit = parseFloat(row.querySelector('[data-side="c"]')?.value) || 0;
+      return account && (debit > 0 || credit > 0);
+    });
+    const summary = [
+      'Post this balanced journal entry?',
+      '',
+      'Lines: ' + rows.length,
+      'Debits: ' + document.getElementById('totDebit').textContent,
+      'Credits: ' + document.getElementById('totCredit').textContent,
+      '',
+      'After posting, use reversal/correcting entries for changes so the audit trail remains intact.'
+    ].join('\n');
+    if (!confirm(summary)) e.preventDefault();
   });
   body.querySelectorAll('tr').forEach(attach);
   recalc();

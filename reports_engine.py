@@ -14,10 +14,11 @@ Accounting model:
 """
 
 from ledger import (
-    CASH, LOANS_RECEIVABLE, INVESTMENTS, MEMBER_DEPOSITS,
+    LOANS_RECEIVABLE, INVESTMENTS, MEMBER_DEPOSITS,
     ACCUM_SURPLUS, STATUTORY_RESERVE, SHARE_CAPITAL,
     LOAN_INTEREST_INCOME, FEE_INCOME, INVESTMENT_INCOME,
     OPERATING_EXPENSES, HONORARIUM,
+    get_default_cash_account,
 )
 
 
@@ -213,13 +214,14 @@ def cash_flow(db, from_date, to_date):
     account. Each cash movement is attributed to its counterpart account and
     grouped into operating / investing / financing activities."""
     lo, hi = _period_bounds(from_date, to_date)
+    cash_account = get_default_cash_account(db)
 
     opening = 0.0
     row = db.execute('''
         SELECT COALESCE(SUM(jl.debit), 0) - COALESCE(SUM(jl.credit), 0)
         FROM journal_lines jl JOIN journal_entries je ON je.id = jl.entry_id
         WHERE jl.account_code = ? AND je.date < ?
-    ''', (CASH, from_date)).fetchone()
+    ''', (cash_account, from_date)).fetchone()
     opening = float(row[0] or 0) if row else 0.0
 
     # Counterpart movements for every entry that touches cash in the period.
@@ -236,7 +238,7 @@ def cash_flow(db, from_date, to_date):
           )
         GROUP BY jl.account_code, a.name
         ORDER BY jl.account_code
-    ''', (CASH, CASH, lo, hi)).fetchall()
+    ''', (cash_account, cash_account, lo, hi)).fetchall()
 
     groups = {'operating': [], 'investing': [], 'financing': []}
     subtotals = {'operating': 0.0, 'investing': 0.0, 'financing': 0.0}
