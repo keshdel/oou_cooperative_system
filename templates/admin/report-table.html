@@ -12,6 +12,18 @@
   .report-total strong { display:block; color:#0f172a; font-size:1.08rem; margin-top:.25rem; }
   .report-card { border:1px solid #e2e8f0; border-radius:8px; overflow:hidden; }
   .report-card .card-header { background:#f8fafc; }
+  .report-data-table thead th {
+    background:#f8fafc !important;
+    color:#334155 !important;
+    border-bottom:2px solid #334155;
+    font-size:.75rem;
+    font-weight:800;
+    letter-spacing:0;
+    text-transform:uppercase;
+    white-space:nowrap;
+  }
+  .report-data-table td { color:#0f172a; }
+  .report-data-table .numeric-cell { text-align:right; font-variant-numeric:tabular-nums; }
   @media (max-width: 992px) { .report-total-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
   @media (max-width: 576px) { .report-total-grid { grid-template-columns:1fr; } .report-actions { justify-content:flex-start; } }
 </style>
@@ -59,8 +71,8 @@
     <div class="card-body p-0">
       {% if rows %}
       <div class="table-responsive">
-        <table class="table table-sm table-hover align-middle mb-0">
-          <thead class="table-light">
+        <table class="table table-sm table-hover align-middle mb-0 report-data-table">
+          <thead>
             <tr>
               {% for col in columns %}
               <th>{{ col.label }}</th>
@@ -71,7 +83,10 @@
             {% for row in rows %}
             <tr>
               {% for col in columns %}
-              <td>{{ row[col.key] }}</td>
+              {% set key = col.key|lower %}
+              <td class="{% if 'amount' in key or 'balance' in key or 'cash' in key or 'principal' in key or 'repaid' in key or 'credit' in key or 'debit' in key or 'outstanding' in key %}numeric-cell{% endif %}">
+                {{ row[col.key] }}
+              </td>
               {% endfor %}
             </tr>
             {% endfor %}
