@@ -110,7 +110,10 @@
             <tr>
               <td class="small">{{ (e.date|string)[:10] }}</td>
               <td class="small">
-                <a href="{{ url_for('accounting.journal_entry_view', entry_id=e.entry_id) }}" class="fw-semibold">
+                <a href="{{ url_for('accounting.journal_entry_view', entry_id=e.entry_id) }}"
+                   class="fw-semibold"
+                   data-journal-quick-view
+                   data-quick-view-url="{{ url_for('accounting.journal_entry_quick_view', entry_id=e.entry_id) }}">
                   {{ e.entry_number or ('JE-' ~ e.entry_id) }}
                 </a>
               </td>
@@ -148,4 +151,5 @@
 
   <p class="text-muted small mt-2">Generated {{ generated_on.strftime('%Y-%m-%d %H:%M') }}</p>
 </div>
+{% include "accounting/_journal_drawer.html" %}
 {% endblock %}

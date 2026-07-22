@@ -1,0 +1,161 @@
+<style>
+  .journal-qv-backdrop {
+    position: fixed;
+    inset: 0;
+    display: none;
+    background: rgba(15, 23, 42, .45);
+    z-index: 1040;
+  }
+  .journal-qv-shell {
+    position: fixed;
+    top: 0;
+    right: 0;
+    height: 100vh;
+    width: min(760px, 100vw);
+    background: #fff;
+    box-shadow: -16px 0 40px rgba(15, 23, 42, .2);
+    transform: translateX(100%);
+    transition: transform .18s ease-out;
+    z-index: 1041;
+    display: flex;
+    flex-direction: column;
+  }
+  body.journal-qv-open { overflow: hidden; }
+  body.journal-qv-open .journal-qv-backdrop { display: block; }
+  body.journal-qv-open .journal-qv-shell { transform: translateX(0); }
+  .journal-qv-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid #e2e8f0;
+    background: #f8fafc;
+  }
+  .journal-qv-body {
+    overflow: auto;
+    padding: 1.25rem;
+  }
+  .journal-qv-field {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: .75rem;
+    min-height: 72px;
+    background: #fff;
+  }
+  .journal-qv-field span {
+    display: block;
+    color: #64748b;
+    font-size: .78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    margin-bottom: .25rem;
+  }
+  .journal-qv-field strong {
+    color: #0f172a;
+    overflow-wrap: anywhere;
+  }
+  .journal-qv-source {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    border: 1px solid #dbeafe;
+    border-radius: 8px;
+    padding: .75rem;
+    background: #eff6ff;
+  }
+  .journal-qv-table-wrap {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+  }
+  .journal-qv-table thead,
+  .journal-qv-table tfoot {
+    background: #f8fafc;
+  }
+  .journal-qv-error {
+    border: 1px solid #fecaca;
+    border-radius: 8px;
+    color: #991b1b;
+    background: #fef2f2;
+    padding: 1rem;
+  }
+  @media (max-width: 576px) {
+    .journal-qv-header,
+    .journal-qv-body { padding: 1rem; }
+  }
+</style>
+
+<div class="journal-qv-backdrop" data-journal-qv-close></div>
+<aside class="journal-qv-shell" id="journalQuickViewDrawer" aria-hidden="true" aria-labelledby="journalQuickViewTitle">
+  <div class="journal-qv-header">
+    <div>
+      <div class="text-muted small text-uppercase fw-bold">Quick audit view</div>
+      <h5 class="mb-0" id="journalQuickViewTitle">Journal entry</h5>
+    </div>
+    <button type="button" class="btn btn-light btn-sm" data-journal-qv-close aria-label="Close journal quick view">
+      <i class="fas fa-times"></i>
+    </button>
+  </div>
+  <div class="journal-qv-body" id="journalQuickViewContent">
+    <div class="text-muted">Select a journal entry to inspect its lines and source document.</div>
+  </div>
+</aside>
+
+<script>
+(function () {
+  if (window.__journalQuickViewBound) return;
+  window.__journalQuickViewBound = true;
+
+  const drawer = document.getElementById('journalQuickViewDrawer');
+  const title = document.getElementById('journalQuickViewTitle');
+  const content = document.getElementById('journalQuickViewContent');
+  if (!drawer || !title || !content) return;
+
+  function closeDrawer() {
+    document.body.classList.remove('journal-qv-open');
+    drawer.setAttribute('aria-hidden', 'true');
+  }
+
+  function showDrawer() {
+    document.body.classList.add('journal-qv-open');
+    drawer.setAttribute('aria-hidden', 'false');
+  }
+
+  async function openQuickView(link) {
+    const url = link.dataset.quickViewUrl;
+    if (!url) return;
+    title.textContent = link.textContent.trim() || 'Journal entry';
+    content.innerHTML = '<div class="text-muted">Loading journal entry...</div>';
+    showDrawer();
+    try {
+      const response = await fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
+      if (!response.ok) throw new Error('Unable to load journal entry');
+      const payload = await response.json();
+      if (!payload.ok || !payload.html) throw new Error(payload.message || 'Unable to load journal entry');
+      title.textContent = payload.title || title.textContent;
+      content.innerHTML = payload.html;
+    } catch (error) {
+      content.innerHTML = '<div class="journal-qv-error">' + error.message + '</div>';
+    }
+  }
+
+  document.addEventListener('click', function (event) {
+    const closer = event.target.closest('[data-journal-qv-close]');
+    if (closer) {
+      event.preventDefault();
+      closeDrawer();
+      return;
+    }
+
+    const link = event.target.closest('[data-journal-quick-view]');
+    if (!link) return;
+    event.preventDefault();
+    openQuickView(link);
+  });
+
+  document.addEventListener('keydown', function (event) {
+    if (event.key === 'Escape') closeDrawer();
+  });
+})();
+</script>

@@ -1,0 +1,137 @@
+<div class="journal-qv-panel">
+  <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+    <div>
+      <div class="text-muted small text-uppercase fw-bold">Journal entry</div>
+      <h4 class="mb-1">{{ entry.entry_number or ('JE-' ~ entry.id) }}</h4>
+      <div class="text-muted">{{ (entry.date|string)[:19] }}</div>
+    </div>
+    <div class="text-end">
+      {% if data.balanced %}
+      <span class="badge bg-success">Balanced</span>
+      {% else %}
+      <span class="badge bg-danger">Out of balance</span>
+      {% endif %}
+      {% if entry.source_module %}
+      <span class="badge bg-light text-dark">{{ entry.source_module }}</span>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if data.reversed_by %}
+  <div class="alert alert-secondary py-2">
+    This entry was reversed on {{ (data.reversed_by.date|string)[:10] }} by
+    <a href="{{ url_for('accounting.journal_entry_view', entry_id=data.reversed_by.id) }}">
+      {{ data.reversed_by.entry_number }}
+    </a>.
+  </div>
+  {% elif entry.reversal_of and data.original %}
+  <div class="alert alert-info py-2">
+    This is a reversal of
+    <a href="{{ url_for('accounting.journal_entry_view', entry_id=data.original.id) }}">
+      {{ data.original.entry_number }}
+    </a>.
+  </div>
+  {% elif entry_locked %}
+  <div class="alert alert-warning py-2">
+    This entry is in a locked period through {{ lock_date }} and cannot be reversed.
+  </div>
+  {% endif %}
+
+  <div class="row g-2 mb-3">
+    <div class="col-md-6">
+      <div class="journal-qv-field">
+        <span>Description</span>
+        <strong>{{ entry.description or '-' }}</strong>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="journal-qv-field">
+        <span>Reference</span>
+        <strong>{{ entry.reference or '-' }}</strong>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="journal-qv-field">
+        <span>Debits</span>
+        <strong>NGN {{ '{:,.2f}'.format(data.total_debit) }}</strong>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="journal-qv-field">
+        <span>Credits</span>
+        <strong>NGN {{ '{:,.2f}'.format(data.total_credit) }}</strong>
+      </div>
+    </div>
+  </div>
+
+  <div class="journal-qv-source mb-3">
+    <div>
+      <div class="text-muted small text-uppercase fw-bold">Source document</div>
+      <div>{{ source_label }}</div>
+    </div>
+    {% if source_url %}
+    <a href="{{ source_url }}" class="btn btn-sm btn-outline-primary">
+      <i class="fas fa-external-link-alt"></i> Open source
+    </a>
+    {% endif %}
+  </div>
+
+  <div class="table-responsive journal-qv-table-wrap">
+    <table class="table table-sm align-middle mb-0 journal-qv-table">
+      <thead>
+        <tr>
+          <th>Account</th>
+          <th>Memo</th>
+          <th class="text-end">Debit (left side)</th>
+          <th class="text-end">Credit (right side)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for l in lines %}
+        <tr>
+          <td>
+            <a href="{{ url_for('accounting.account_ledger_view', code=l.account_code) }}" class="fw-semibold">
+              {{ l.account_code }}
+            </a>
+            <div class="small text-muted">{{ l.account_name or '' }}</div>
+            <span class="badge bg-light text-dark text-uppercase">{{ l.account_type or '-' }}</span>
+          </td>
+          <td class="small text-muted">{{ l.memo or '-' }}</td>
+          <td class="text-end text-success fw-semibold">
+            {% if l.debit %}NGN {{ '{:,.2f}'.format(l.debit) }}{% else %}-{% endif %}
+          </td>
+          <td class="text-end text-danger fw-semibold">
+            {% if l.credit %}NGN {{ '{:,.2f}'.format(l.credit) }}{% else %}-{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr>
+          <th colspan="2" class="text-end">Totals</th>
+          <th class="text-end">NGN {{ '{:,.2f}'.format(data.total_debit) }}</th>
+          <th class="text-end">NGN {{ '{:,.2f}'.format(data.total_credit) }}</th>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mt-3">
+    <div class="text-muted small">
+      Posted entries stay immutable. Use reversal or correction entries for audit-safe changes.
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+      <a href="{{ url_for('accounting.journal_entry_view', entry_id=entry.id) }}" class="btn btn-outline-secondary btn-sm">
+        Open full page
+      </a>
+      {% if current_user.role in ['admin', 'treasurer']
+            and not data.reversed_by and not entry.reversal_of and not entry_locked %}
+      <form method="post" action="{{ url_for('accounting.reverse_entry', entry_id=entry.id) }}"
+            onsubmit="return confirm('Post a reversing entry that cancels this one?');">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="btn btn-outline-danger btn-sm">Reverse entry</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+</div>

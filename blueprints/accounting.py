@@ -7,7 +7,7 @@ import csv
 import io
 from datetime import datetime
 
-from flask import Blueprint, render_template, request, redirect, url_for, flash, make_response
+from flask import Blueprint, render_template, request, redirect, url_for, flash, make_response, jsonify
 from flask_login import login_required, current_user
 
 from database import get_db
@@ -497,6 +497,30 @@ def journal_entry_view(entry_id):
                            data=data, entry=data['entry'], lines=data['lines'],
                            source_label=src_label, source_url=src_url,
                            lock_date=lock, entry_locked=entry_locked)
+
+
+@accounting.route('/journal/<int:entry_id>/quick-view')
+@login_required
+@role_required('admin', 'treasurer')
+def journal_entry_quick_view(entry_id):
+    """Compact journal detail for the in-app audit drawer."""
+    db = get_db()
+    data = journal_entry_detail(db, entry_id)
+    if not data:
+        return jsonify({'ok': False, 'message': 'Journal entry not found.'}), 404
+    src_label, src_url = _source_link(db, data['entry'].get('source_module'),
+                                      data['entry'].get('source_id'))
+    lock = get_lock_date(db)
+    entry_locked = bool(lock) and str(data['entry'].get('date') or '')[:10] <= lock
+    html = render_template('accounting/_journal_quick_view.html',
+                           data=data, entry=data['entry'], lines=data['lines'],
+                           source_label=src_label, source_url=src_url,
+                           lock_date=lock, entry_locked=entry_locked)
+    return jsonify({
+        'ok': True,
+        'title': data['entry'].get('entry_number') or f"JE-{entry_id}",
+        'html': html,
+    })
 
 
 @accounting.route('/journal/<int:entry_id>/reverse', methods=['POST'])

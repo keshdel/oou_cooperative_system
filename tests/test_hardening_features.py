@@ -727,6 +727,49 @@ class HardeningFeatureTests(unittest.TestCase):
                 db.execute('DELETE FROM journal_entries WHERE id = ?', (journal['id'],))
                 db.commit()
 
+    def test_journal_quick_view_drawer_endpoint_and_register_link(self):
+        self.login_admin()
+        with self.app.app_context():
+            from ledger import CASH, OPERATING_EXPENSES, post_journal
+            db = get_db()
+            existing = db.execute(
+                "SELECT id FROM journal_entries WHERE reference = 'TEST/JOURNAL/DRAWER'"
+            ).fetchone()
+            if existing:
+                entry_id = existing['id']
+            else:
+                entry_id = post_journal(
+                    db,
+                    'Drawer quick view smoke test',
+                    [
+                        {'account': OPERATING_EXPENSES, 'debit': 500, 'memo': 'Drawer debit'},
+                        {'account': CASH, 'credit': 500, 'memo': 'Drawer credit'},
+                    ],
+                    date='2026-07-22',
+                    reference='TEST/JOURNAL/DRAWER',
+                    source_module='manual',
+                )
+                db.commit()
+
+        quick_view = self.client.get(f'/accounting/journal/{entry_id}/quick-view')
+        self.assertEqual(quick_view.status_code, 200)
+        payload = quick_view.get_json()
+        self.assertTrue(payload['ok'])
+        self.assertIn('TEST/JOURNAL/DRAWER', payload['html'])
+        self.assertIn('Debit (left side)', payload['html'])
+        self.assertIn('Open full page', payload['html'])
+
+        register = self.client.get('/accounting/journal')
+        self.assertEqual(register.status_code, 200)
+        self.assertIn(b'data-journal-quick-view', register.data)
+        self.assertIn(f'/accounting/journal/{entry_id}/quick-view'.encode(), register.data)
+
+        with self.app.app_context():
+            db = get_db()
+            db.execute('DELETE FROM journal_lines WHERE entry_id = ?', (entry_id,))
+            db.execute('DELETE FROM journal_entries WHERE id = ?', (entry_id,))
+            db.commit()
+
     def test_chart_of_accounts_creates_detail_account_under_parent(self):
         self.login_admin()
         with self.app.app_context():
