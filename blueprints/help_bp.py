@@ -722,6 +722,297 @@ ARTICLES = [
             },
         ],
     },
+
+    {
+        'slug':      'profile-readiness-and-setup-links',
+        'title':     'Profile Readiness & Member Setup Links',
+        'category':  'Administration',
+        'summary':   'Track member readiness, send setup links, and help members complete their self-service profile.',
+        'endpoints': ['admin_panel.settings', 'members.members_list', 'portal.profile', 'portal.edit_profile'],
+        'body': [
+            {
+                'head':  'What readiness means',
+                'steps': [
+                    '<b>Profile completion</b> measures required personal, contact, bank, emergency, and nominee fields.',
+                    '<b>Certified member</b> status is reached when the profile is 100 percent complete.',
+                    '<b>Readiness to transact</b> helps admin see who can safely use portal services, statements, savings changes, and loan workflows.',
+                ],
+            },
+            {
+                'head':  'Sending setup links',
+                'steps': [
+                    'Go to <b>Settings - Users</b> or the member/user management area.',
+                    'Use <b>Resend Setup Link</b> for one member, or <b>Bulk Send Setup Links</b> for all users who have not completed setup.',
+                    'The member receives an email link to configure their password and profile.',
+                    'Use revoke when an old setup link should no longer be valid.',
+                ],
+            },
+            {
+                'head':  'Admin and member view switching',
+                'text':  'A staff user who also has a member profile can switch into the member portal to confirm the member experience, then return to the admin area from the account menu.',
+            },
+            {
+                'head':  'Audit note',
+                'tips':  [
+                    'Keep email addresses clean before sending setup links.',
+                    'Use Communications to remind members with incomplete profiles.',
+                    'Do not share setup links publicly; each link is for the intended member account.',
+                ],
+            },
+        ],
+    },
+
+    {
+        'slug':      'chart-of-accounts-and-bank-accounts',
+        'title':     'Chart of Accounts, Bank Accounts & Reconciliation',
+        'category':  'Accounting',
+        'summary':   'Create GL detail accounts, track bank positions, and reconcile savings posted to the right bank account.',
+        'endpoints': ['accounting.chart_of_accounts', 'accounting.bank_accounts',
+                      'accounting.bank_account_detail', 'accounting.reconciliation'],
+        'body': [
+            {
+                'head':  'Chart of accounts',
+                'steps': [
+                    'Use <b>Accounting - Chart of Accounts</b> to review all GL accounts.',
+                    'Create detail bank accounts under Cash and Bank, such as Zenith Bank, Access Bank, or petty cash.',
+                    'Set the default cash/bank account used when new savings deposits are posted.',
+                    'Inactive accounts are hidden from normal posting but retained for audit history.',
+                ],
+            },
+            {
+                'head':  'Bank account position',
+                'steps': [
+                    'Open <b>Accounting - Bank Accounts</b> to see each bank account balance by period.',
+                    'Click a bank account to view opening balance, cash in, cash out, closing balance, and linked journal lines.',
+                    'Use the period filter before reconciling against the bank statement.',
+                ],
+            },
+            {
+                'head':  'Savings bank reclassification',
+                'text':  'If historical savings were posted to the general Cash and Bank GL instead of a detail bank account, use the savings reclassification tool to move those journal lines to the correct bank account without changing member savings balances.',
+            },
+            {
+                'head':  'Control checks',
+                'tips':  [
+                    'Cash and Bank total should equal the sum of detail bank accounts.',
+                    'Member Deposits should agree with member savings control reports.',
+                    'Do not delete accounts with transactions; deactivate instead.',
+                ],
+            },
+        ],
+    },
+
+    {
+        'slug':      'journals-ledger-and-voids',
+        'title':     'Journals, Ledger Drill-Down & Voids',
+        'category':  'Accounting',
+        'summary':   'Post manual journals, review debit/credit sides, drill into GL lines, and reverse entries safely.',
+        'endpoints': ['accounting.new_journal', 'accounting.journal_register',
+                      'accounting.journal_entry_view', 'accounting.journal_entry_quick_view',
+                      'accounting.account_ledger_view', 'accounting.trial_balance_view',
+                      'accounting.period_close'],
+        'body': [
+            {
+                'head':  'Manual journal entry',
+                'steps': [
+                    'Go to <b>Accounting - New Journal</b>.',
+                    'Enter the description, date, reference, and at least two lines.',
+                    'Debit lines increase assets/expenses and reduce liabilities/equity/income.',
+                    'Credit lines reduce assets/expenses and increase liabilities/equity/income.',
+                    'The journal must balance before posting.',
+                ],
+            },
+            {
+                'head':  'Ledger drill-down',
+                'steps': [
+                    'Use the GL register or an account ledger to review journal lines by period.',
+                    'Open a journal to see the full debit and credit split.',
+                    'Use quick-view drawers where available for faster review without losing your place.',
+                    'Export ledger lines for spreadsheet analysis and audit sampling.',
+                ],
+            },
+            {
+                'head':  'Voids and reversals',
+                'text':  'Transactions are corrected by reversal entries, not hard deletion. For savings deposits and loan repayments, the reversal also updates the related subledger so member balances and GL remain aligned.',
+            },
+            {
+                'head':  'Period close',
+                'tips':  [
+                    'Set a lock date after monthly review to prevent backdated posting into closed periods.',
+                    'Use reversal entries for corrections after a period has already been reviewed.',
+                    'Every journal keeps source module, reference, and audit metadata where available.',
+                ],
+            },
+        ],
+    },
+
+    {
+        'slug':      'financial-reporting-center',
+        'title':     'Financial Reporting Center',
+        'category':  'Reports',
+        'summary':   'Use financial statements, trial balance, cashbook, savings control, loan aging, and exports.',
+        'endpoints': ['reports.reports_list', 'reports.financial_report', 'reports.cashbook_report',
+                      'reports.member_savings_control', 'reports.loan_portfolio_report'],
+        'body': [
+            {
+                'head':  'Core statements',
+                'steps': [
+                    '<b>Financial Statements</b> include income statement, balance sheet, cash flow, and surplus appropriation.',
+                    '<b>Trial Balance</b> shows debit and credit balances for every chart-of-account line.',
+                    '<b>General Ledger Register</b> exports journal lines for external analysis and audit working papers.',
+                ],
+            },
+            {
+                'head':  'Control reports',
+                'steps': [
+                    '<b>Cashbook</b> shows bank/cash movements with running balance.',
+                    '<b>Member Savings Control</b> reconciles member-level savings to the Member Deposits control account.',
+                    '<b>Loan Portfolio and Aging</b> shows outstanding loan book, repayments, due dates, and aging indicators.',
+                ],
+            },
+            {
+                'head':  'How to use reports',
+                'steps': [
+                    'Choose the report from <b>Reports</b>.',
+                    'Set the period date range.',
+                    'Review totals and status badges, especially balance-sheet balance and control differences.',
+                    'Export CSV/Excel/PDF where available for committee packs or further analysis.',
+                ],
+            },
+            {
+                'head':  'Audit trail',
+                'tips':  [
+                    'Every report should be traceable back to journal entries and source modules.',
+                    'Investigate any variance between member subledgers and GL control accounts before closing a period.',
+                    'Use exports for external accountant review.',
+                ],
+            },
+        ],
+    },
+
+    {
+        'slug':      'member-communications-center',
+        'title':     'Member Communications Center',
+        'category':  'Communications',
+        'summary':   'Send branded CoopMS emails for profile updates, savings reminders, loan repayments, and member notices.',
+        'endpoints': ['communications.index', 'communications.new_campaign', 'communications.campaign_detail'],
+        'body': [
+            {
+                'head':  'What can be sent',
+                'steps': [
+                    '<b>Profile update reminder</b> targets members with incomplete profiles.',
+                    '<b>Monthly savings reminder</b> targets members with no savings recorded for the current month.',
+                    '<b>Loan repayment reminder</b> targets members with active loan balances.',
+                    '<b>Balance and statement notice</b> prompts members to review their portal account position.',
+                    '<b>General cooperative notice</b> sends a standard administrative email.',
+                ],
+            },
+            {
+                'head':  'Sending a message',
+                'steps': [
+                    'Go to <b>Communications - Compose Email</b>.',
+                    'Choose the message type; the title, subject, body, and audience are filled automatically.',
+                    'Review the message and selected audience.',
+                    'Send to a selected test member first before sending to a large audience.',
+                ],
+            },
+            {
+                'head':  'Merge tags',
+                'text':  'Available tags include member name, member number, savings balance, monthly savings target, savings due day, loan balance, estimated monthly repayment, next repayment date, profile completion, and portal link.',
+            },
+            {
+                'head':  'Delivery ledger',
+                'tips':  [
+                    'Every campaign records recipient count, sent, failed, and skipped totals.',
+                    'A skipped row usually means the member has no email address.',
+                    'WhatsApp should only be enabled after consent and approved template setup.',
+                ],
+            },
+        ],
+    },
+
+    {
+        'slug':      'loan-application-due-diligence',
+        'title':     'Loan Application Due Diligence',
+        'category':  'Loans',
+        'summary':   'Understand member loan consent, repayment schedule acceptance, and staff vs non-staff documentation rules.',
+        'endpoints': ['portal.apply_loan_member', 'portal.loan_detail', 'loans.loans_list',
+                      'loans.apply_loan'],
+        'body': [
+            {
+                'head':  'Before submission',
+                'steps': [
+                    'The applicant selects loan type, amount, and tenure.',
+                    'CoopMS calculates the repayment schedule from the configured loan settings.',
+                    'The applicant must accept the schedule before the application can proceed.',
+                    'The applicant must accept terms and give express data-processing consent.',
+                ],
+            },
+            {
+                'head':  'Non-staff members',
+                'steps': [
+                    'Credit check consent and status must be reviewed.',
+                    'Bank statement request/status must be tracked.',
+                    'Payment collateral such as post-dated cheques or standing order can be recorded.',
+                    'Final approval should not proceed until due diligence is complete.',
+                ],
+            },
+            {
+                'head':  'Staff cooperative members',
+                'text':  'Staff-member applications can use HR affordability confirmation because repayments are salary-deducted. Bank statement and credit-check requirements may be marked not required according to the cooperative policy.',
+            },
+            {
+                'head':  'Audit record',
+                'tips':  [
+                    'The accepted schedule and consent snapshot are retained with the loan.',
+                    'Loan stage actions should be reviewed by the required cooperative officers.',
+                    'Repayment emails and loan status notifications depend on configured outgoing email.',
+                ],
+            },
+        ],
+    },
+
+    {
+        'slug':      'system-settings-and-hardening',
+        'title':     'System Settings & Hardening',
+        'category':  'Administration',
+        'summary':   'Configure identity, users, password policy, mail, accounting defaults, and readiness checks.',
+        'endpoints': ['admin_panel.settings'],
+        'body': [
+            {
+                'head':  'Key settings areas',
+                'steps': [
+                    '<b>Cooperative identity</b> controls name, short name, logo, address, and support details.',
+                    '<b>Users</b> controls staff access, roles, activation, setup links, and super-admin status.',
+                    '<b>Password policy</b> lets admin define the minimum strength expected for user passwords.',
+                    '<b>Email</b> controls SMTP/provider settings used for setup links, notifications, and communications.',
+                    '<b>Accounting defaults</b> control the bank/cash account used for new postings.',
+                ],
+            },
+            {
+                'head':  'Readiness checks',
+                'text':  'Use the system readiness indicators to confirm critical operational items such as outgoing email, payment configuration, and accounting defaults before onboarding members at scale.',
+            },
+            {
+                'head':  'Email setup',
+                'steps': [
+                    'Enable outgoing email.',
+                    'Enter the sender name/address and SMTP or provider credentials.',
+                    'Save settings before sending a test email.',
+                    'Use a selected test member before sending a campaign to many members.',
+                ],
+            },
+            {
+                'head':  'Safety notes',
+                'tips':  [
+                    'Give admin access only to trusted officers.',
+                    'Use setup links instead of sharing temporary passwords by hand.',
+                    'Keep SMTP/API secrets out of screenshots and documents.',
+                    'Review settings after every deployment or major configuration change.',
+                ],
+            },
+        ],
+    },
 ]
 
 # ── Category metadata ─────────────────────────────────────────────────────────
@@ -731,7 +1022,9 @@ CATEGORIES = {
     'Savings':          {'icon': 'fas fa-piggy-bank',     'color': '#059669'},
     'Loans':            {'icon': 'fas fa-hand-holding-usd','color': '#d97706'},
     'Investments':      {'icon': 'fas fa-chart-line',     'color': '#7c3aed'},
+    'Accounting':       {'icon': 'fas fa-balance-scale',   'color': '#0f766e'},
     'Reports':          {'icon': 'fas fa-file-alt',       'color': '#be185d'},
+    'Communications':   {'icon': 'fas fa-paper-plane',    'color': '#2563eb'},
     'Administration':   {'icon': 'fas fa-cog',            'color': '#374151'},
     'Member Portal':    {'icon': 'fas fa-user-circle',    'color': '#0891b2'},
 }
