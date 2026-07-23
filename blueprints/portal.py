@@ -12,6 +12,7 @@ from werkzeug.security import check_password_hash, generate_password_hash
 from werkzeug.utils import secure_filename
 
 from database import get_db, last_insert_id
+from crypto import decrypt_member_sensitive_fields, encrypt_field, mask_member_sensitive_fields
 from security import validate_password_strength
 from utils import (audit, notify_member, notify, compute_loan_schedule, METHOD_LABELS,
                    member_for_user, member_savings_balance, validate_image)
@@ -26,6 +27,7 @@ STAFF_ROLES = {'admin', 'treasurer', 'secretary', 'exco'}
 def _member_extras(member, db):
     """Augment a member row with computed fields the templates need."""
     d = dict(member)
+    d = mask_member_sensitive_fields(d)
     d['full_name'] = f"{member['first_name']} {member['last_name']}"
     # Show the ledger balance (source of truth), not the cached column, so the
     # member always sees a correct figure even if the cache has drifted.
@@ -914,6 +916,32 @@ def profile():
     return render_template('member/profile.html', member=_member_extras(member, db))
 
 
+@portal.route('/profile/reveal-sensitive', methods=['POST'])
+@login_required
+def reveal_sensitive_profile_fields():
+    db = get_db()
+    member = member_for_user(db)
+    if not member:
+        return jsonify({'ok': False, 'error': 'member_not_found'}), 404
+    password = request.form.get('password', '')
+    user = db.execute('SELECT password_hash FROM users WHERE id = ?', (current_user.id,)).fetchone()
+    if not user or not check_password_hash(user['password_hash'], password):
+        audit(db, 'SENSITIVE_FIELD_REVEAL_DENIED', 'members', f"Invalid reveal password for member {member['id']}")
+        db.commit()
+        return jsonify({'ok': False, 'error': 'invalid_password'}), 403
+
+    data = decrypt_member_sensitive_fields({
+        'bank_name': member.get('bank_name') or '',
+        'account_name': member.get('account_name') or '',
+        'account_number': member.get('account_number') or '',
+        'bvn': member.get('bvn') or '',
+        'nin': member.get('nin') or '',
+    })
+    audit(db, 'SENSITIVE_FIELD_REVEAL', 'members', f"Member {member['id']} revealed own bank/ID fields")
+    db.commit()
+    return jsonify({'ok': True, 'fields': data})
+
+
 @portal.route('/edit-profile', methods=['GET', 'POST'])
 @login_required
 def edit_profile():
@@ -1005,11 +1033,11 @@ def edit_profile():
             first_name, last_name, email, phone,
             address, city, state, country,
             occupation, date_of_birth,
-            bank_name, account_name, account_number,
+            encrypt_field(bank_name), encrypt_field(account_name), encrypt_field(account_number),
             emergency_contact_name, emergency_contact_phone,
             nominee_name, nominee_relationship, nominee_phone,
             nominee_email, nominee_address,
-            bvn, nin, photo_path, member['id'],
+            encrypt_field(bvn), encrypt_field(nin), photo_path, member['id'],
         ))
         db.execute(
             'UPDATE users SET username = ?, email = ?, full_name = ?, phone = ? WHERE id = ?',
@@ -1022,7 +1050,8 @@ def edit_profile():
         flash('Profile updated successfully!', 'success')
         return redirect(url_for('portal.profile'))
 
-    return render_template('member/edit-profile.html', member=_member_extras(member, db))
+    return render_template('member/edit-profile.html',
+                           member=decrypt_member_sensitive_fields(_member_extras(member, db)))
 
 
 # ── Change Password ───────────────────────────────────────────────────────────────

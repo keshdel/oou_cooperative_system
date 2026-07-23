@@ -143,11 +143,15 @@
       <div class="card info-card">
         <div class="card-header"><h5 class="mb-0">Bank and Identification</h5></div>
         <div class="card-body">
-          <div class="info-row"><span>Bank Name</span><strong>{{ member.bank_name or 'Not provided' }}</strong></div>
-          <div class="info-row"><span>Account Name</span><strong>{{ member.account_name or 'Not provided' }}</strong></div>
-          <div class="info-row"><span>Account Number</span><strong>{{ member.account_number or 'Not provided' }}</strong></div>
-          <div class="info-row"><span>BVN</span><strong>{{ member.bvn|default('Not provided', true) }}</strong></div>
-          <div class="info-row"><span>NIN</span><strong>{{ member.nin|default('Not provided', true) }}</strong></div>
+          <div class="info-row"><span>Bank Name</span><strong id="sensitiveBankName">{{ member.bank_name_masked or 'Not provided' }}</strong></div>
+          <div class="info-row"><span>Account Name</span><strong id="sensitiveAccountName">{{ member.account_name_masked or 'Not provided' }}</strong></div>
+          <div class="info-row"><span>Account Number</span><strong id="sensitiveAccountNumber">{{ member.account_number_masked or 'Not provided' }}</strong></div>
+          <div class="info-row"><span>BVN</span><strong id="sensitiveBvn">{{ member.bvn_masked or 'Not provided' }}</strong></div>
+          <div class="info-row"><span>NIN</span><strong id="sensitiveNin">{{ member.nin_masked or 'Not provided' }}</strong></div>
+          <button type="button" class="btn btn-outline-primary btn-sm mt-2" data-bs-toggle="modal" data-bs-target="#revealSensitiveModal">
+            <i class="fas fa-eye"></i> Reveal with password
+          </button>
+          <div class="small text-muted mt-2">Sensitive details are encrypted at rest and masked by default.</div>
         </div>
       </div>
     </div>
@@ -176,4 +180,67 @@
     </div>
   </div>
 </div>
+
+<div class="modal fade" id="revealSensitiveModal" tabindex="-1" aria-labelledby="revealSensitiveTitle" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="revealSensitiveTitle"><i class="fas fa-lock"></i> Confirm Password</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted small mb-3">Enter your password to temporarily reveal encrypted bank and identification details.</p>
+        <div class="mb-3">
+          <label class="form-label">Password</label>
+          <input type="password" class="form-control" id="revealPassword" autocomplete="current-password">
+        </div>
+        <div class="alert alert-danger py-2 d-none" id="revealError">Password could not be verified.</div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="revealSensitiveButton">
+          <i class="fas fa-unlock"></i> Reveal
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    const button = document.getElementById('revealSensitiveButton');
+    const password = document.getElementById('revealPassword');
+    const error = document.getElementById('revealError');
+    if (!button || !password) return;
+
+    function valueOrFallback(value) {
+      return value || 'Not provided';
+    }
+
+    button.addEventListener('click', function () {
+      error.classList.add('d-none');
+      const formData = new FormData();
+      formData.append('password', password.value || '');
+      fetch("{{ url_for('portal.reveal_sensitive_profile_fields') }}", {
+        method: 'POST',
+        body: formData,
+        credentials: 'same-origin'
+      }).then(function (response) {
+        if (!response.ok) throw new Error('reveal failed');
+        return response.json();
+      }).then(function (data) {
+        if (!data.ok) throw new Error('reveal failed');
+        document.getElementById('sensitiveBankName').textContent = valueOrFallback(data.fields.bank_name);
+        document.getElementById('sensitiveAccountName').textContent = valueOrFallback(data.fields.account_name);
+        document.getElementById('sensitiveAccountNumber').textContent = valueOrFallback(data.fields.account_number);
+        document.getElementById('sensitiveBvn').textContent = valueOrFallback(data.fields.bvn);
+        document.getElementById('sensitiveNin').textContent = valueOrFallback(data.fields.nin);
+        password.value = '';
+        bootstrap.Modal.getInstance(document.getElementById('revealSensitiveModal')).hide();
+      }).catch(function () {
+        error.classList.remove('d-none');
+      });
+    });
+  })();
+</script>
 {% endblock %}

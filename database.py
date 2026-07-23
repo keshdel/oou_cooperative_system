@@ -238,6 +238,29 @@ def _exec_ignore(db, sql):
         print(f"[schema] skipped optional DDL: {exc}")
 
 
+def _encrypt_existing_member_sensitive_fields(db):
+    """Encrypt existing plaintext member PII once FIELD_ENCRYPTION_KEY is set."""
+    try:
+        from crypto import SENSITIVE_MEMBER_FIELDS, encrypt_field, encryption_enabled, is_encrypted
+        if not encryption_enabled():
+            return
+        rows = db.execute(
+            'SELECT id, bank_name, account_name, account_number, bvn, nin FROM members'
+        ).fetchall()
+        for row in rows:
+            updates = {}
+            for field in SENSITIVE_MEMBER_FIELDS:
+                value = row.get(field)
+                if value and not is_encrypted(str(value)):
+                    updates[field] = encrypt_field(str(value))
+            if updates:
+                assignments = ', '.join(f'{field} = ?' for field in updates)
+                params = list(updates.values()) + [row['id']]
+                db.execute(f'UPDATE members SET {assignments} WHERE id = ?', params)
+    except Exception as exc:
+        print(f"[security] skipped sensitive field encryption pass: {exc}")
+
+
 # ── Schema ─────────────────────────────────────────────────────────────────────
 
 def init_db():
@@ -311,6 +334,7 @@ def init_db():
     _add_col(db, 'members', 'city', 'TEXT')
     _add_col(db, 'members', 'state', 'TEXT')
     _add_col(db, 'members', 'country', "TEXT DEFAULT 'Nigeria'")
+    _encrypt_existing_member_sensitive_fields(db)
 
     # Savings table
     db.execute(_adapt('''

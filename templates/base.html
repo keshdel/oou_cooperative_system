@@ -348,6 +348,158 @@
         });
     </script>
 
+    {% if current_user.is_authenticated %}
+    <style>
+        .idle-timeout-backdrop {
+            position: fixed;
+            inset: 0;
+            z-index: 2060;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background: rgba(15, 23, 42, .58);
+        }
+        .idle-timeout-backdrop.show { display: flex; }
+        .idle-timeout-dialog {
+            width: min(440px, 100%);
+            border: 1px solid #dbeafe;
+            border-radius: 8px;
+            background: #fff;
+            box-shadow: 0 18px 48px rgba(15, 23, 42, .28);
+        }
+        .idle-timeout-header {
+            padding: 16px 18px;
+            border-bottom: 1px solid #e2e8f0;
+            background: #f8fafc;
+            font-weight: 800;
+            color: #0f172a;
+        }
+        .idle-timeout-body { padding: 18px; color: #334155; }
+        .idle-countdown {
+            display: inline-flex;
+            min-width: 54px;
+            justify-content: center;
+            padding: 4px 8px;
+            border-radius: 6px;
+            background: #fee2e2;
+            color: #991b1b;
+            font-weight: 800;
+        }
+        .idle-timeout-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            padding: 0 18px 18px;
+        }
+    </style>
+    <div class="idle-timeout-backdrop" id="idleTimeoutModal" role="dialog" aria-modal="true" aria-labelledby="idleTimeoutTitle">
+        <div class="idle-timeout-dialog">
+            <div class="idle-timeout-header" id="idleTimeoutTitle">
+                <i class="fas fa-lock me-2"></i>Session security warning
+            </div>
+            <div class="idle-timeout-body">
+                <p class="mb-2">You have been inactive for a while. For data protection, CoopMS will log you out soon.</p>
+                <p class="mb-0">Time remaining: <span class="idle-countdown" id="idleCountdown">--</span></p>
+            </div>
+            <div class="idle-timeout-actions">
+                <a class="btn btn-outline-secondary" href="{{ url_for('auth.logout', reason='timeout') }}">Log out now</a>
+                <button type="button" class="btn btn-primary" id="idleStaySignedIn">
+                    <i class="fas fa-check-circle"></i> Stay signed in
+                </button>
+            </div>
+        </div>
+    </div>
+    <script>
+        (function() {
+            const timeoutSeconds = {{ config.IDLE_TIMEOUT_SECONDS|default(900) }};
+            const warningSeconds = {{ config.IDLE_WARNING_SECONDS|default(120) }};
+            const warningAtMs = Math.max(0, (timeoutSeconds - warningSeconds) * 1000);
+            const logoutAtMs = timeoutSeconds * 1000;
+            const modal = document.getElementById('idleTimeoutModal');
+            const countdown = document.getElementById('idleCountdown');
+            const stayButton = document.getElementById('idleStaySignedIn');
+            const logoutUrl = "{{ url_for('auth.logout', reason='timeout') }}";
+            const pingUrl = "{{ url_for('session_ping') }}";
+            let warningTimer = null;
+            let logoutTimer = null;
+            let countdownTimer = null;
+            let deadline = Date.now() + logoutAtMs;
+            let modalOpen = false;
+            let lastPingAt = Date.now();
+
+            function formatSeconds(seconds) {
+                const mins = Math.floor(seconds / 60);
+                const secs = seconds % 60;
+                return String(mins).padStart(2, '0') + ':' + String(secs).padStart(2, '0');
+            }
+
+            function updateCountdown() {
+                const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+                countdown.textContent = formatSeconds(remaining);
+                if (remaining <= 0) {
+                    window.location.href = logoutUrl;
+                }
+            }
+
+            function showWarning() {
+                modalOpen = true;
+                modal.classList.add('show');
+                updateCountdown();
+                countdownTimer = window.setInterval(updateCountdown, 1000);
+            }
+
+            function hideWarning() {
+                modalOpen = false;
+                modal.classList.remove('show');
+                if (countdownTimer) window.clearInterval(countdownTimer);
+                countdownTimer = null;
+            }
+
+            function scheduleTimers() {
+                if (warningTimer) window.clearTimeout(warningTimer);
+                if (logoutTimer) window.clearTimeout(logoutTimer);
+                deadline = Date.now() + logoutAtMs;
+                warningTimer = window.setTimeout(showWarning, warningAtMs);
+                logoutTimer = window.setTimeout(function() {
+                    window.location.href = logoutUrl;
+                }, logoutAtMs);
+            }
+
+            function refreshServerActivity() {
+                const now = Date.now();
+                if (now - lastPingAt < 60000) return;
+                lastPingAt = now;
+                fetch(pingUrl, { credentials: 'same-origin' }).catch(function() {});
+            }
+
+            function resetLocalActivity() {
+                if (modalOpen) return;
+                refreshServerActivity();
+                scheduleTimers();
+            }
+
+            ['click', 'keydown', 'mousemove', 'scroll', 'touchstart'].forEach(function(eventName) {
+                document.addEventListener(eventName, resetLocalActivity, { passive: true });
+            });
+
+            stayButton.addEventListener('click', function() {
+                fetch(pingUrl, { credentials: 'same-origin' })
+                    .then(function(response) {
+                        if (!response.ok) throw new Error('session expired');
+                        hideWarning();
+                        scheduleTimers();
+                    })
+                    .catch(function() {
+                        window.location.href = logoutUrl;
+                    });
+            });
+
+            scheduleTimers();
+        })();
+    </script>
+    {% endif %}
+
     {% block extra_js %}{% endblock %}
 
     {% if current_user.is_authenticated %}

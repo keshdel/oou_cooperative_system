@@ -13,6 +13,7 @@ from flask import Blueprint, render_template, redirect, url_for, request, flash,
 from flask_login import login_required, current_user
 from werkzeug.security import generate_password_hash
 
+from crypto import encrypt_field
 from database import get_db
 from utils import role_required, audit, member_prefix
 from ledger import get_accounts, post_journal, account_exists, ACCUM_SURPLUS
@@ -364,9 +365,9 @@ def import_members():
                         row.get('nominee_name', '').strip() or None,
                         row.get('nominee_relationship', '').strip() or None,
                         row.get('nominee_phone', '').strip() or None,
-                        row.get('bank_name', '').strip() or None,
-                        row.get('account_number', '').strip() or None,
-                        row.get('account_name', '').strip() or None,
+                        encrypt_field(row.get('bank_name', '').strip()) or None,
+                        encrypt_field(row.get('account_number', '').strip()) or None,
+                        encrypt_field(row.get('account_name', '').strip()) or None,
                         row.get('emergency_contact_name', '').strip() or None,
                         row.get('emergency_contact_phone', '').strip() or None,
                     ))

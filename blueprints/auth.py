@@ -2,7 +2,7 @@ import hmac
 import os
 from datetime import datetime
 
-from flask import Blueprint, render_template, redirect, url_for, request, flash, session
+from flask import Blueprint, current_app, render_template, redirect, url_for, request, flash, session
 from flask_login import login_user, login_required, logout_user
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -199,11 +199,19 @@ def logout():
     from flask_login import current_user
     db = get_db()
     from utils import audit
-    audit(db, 'LOGOUT', 'auth', 'User logged out')
+    if request.args.get('reason') == 'timeout':
+        audit(db, 'SESSION_TIMEOUT', 'auth', 'User logged out after inactivity timeout')
+    else:
+        audit(db, 'LOGOUT', 'auth', 'User logged out')
     db.commit()
     session.pop('view_mode', None)
+    session.pop('last_activity_at', None)
     logout_user()
-    flash('You have been logged out', 'info')
+    if request.args.get('reason') == 'timeout':
+        timeout_minutes = int(current_app.config.get('IDLE_TIMEOUT_SECONDS', 15 * 60)) // 60
+        flash(f'You were logged out after {timeout_minutes} minutes of inactivity.', 'warning')
+    else:
+        flash('You have been logged out', 'info')
     return redirect(url_for('auth.index'))
 
 

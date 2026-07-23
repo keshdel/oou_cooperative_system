@@ -3,13 +3,16 @@ CoopMS - Cooperative Management System
 """
 import os
 import re
+import time
 from datetime import datetime
 
-from flask import Flask, render_template, request, session
-from flask_login import LoginManager, current_user
+from flask import Flask, flash, jsonify, redirect, render_template, request, session, url_for
+from flask_login import LoginManager, current_user, logout_user
 
 from database import init_db, get_db, close_db
 from extensions import csrf
+from crypto import encryption_enabled
+from security import log_audit
 from utils import User, member_for_user
 
 # ── App factory ──────────────────────────────────────────────────────────────
@@ -39,6 +42,14 @@ app.config['MAX_CONTENT_LENGTH'] = 10 * 1024 * 1024  # 10 MB
 # config.py is not loaded via from_object, so these must be set on the live app.
 # Secure cookies are enabled unless FLASK_DEBUG=1 (local http development).
 _is_debug = os.environ.get('FLASK_DEBUG') == '1'
+if not _is_debug and not encryption_enabled():
+    raise RuntimeError(
+        "\n\n  *** STARTUP ABORTED ***\n"
+        "  FIELD_ENCRYPTION_KEY is required in production to encrypt sensitive PII.\n"
+        "  Generate one with:\n\n"
+        "      python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\"\n\n"
+        "  Then set: FIELD_ENCRYPTION_KEY=<generated-value>\n"
+    )
 app.config.update(
     SESSION_COOKIE_HTTPONLY=True,
     SESSION_COOKIE_SAMESITE='Lax',
@@ -47,6 +58,8 @@ app.config.update(
     REMEMBER_COOKIE_SAMESITE='Lax',
     REMEMBER_COOKIE_SECURE=not _is_debug,
 )
+app.config['IDLE_TIMEOUT_SECONDS'] = int(os.environ.get('IDLE_TIMEOUT_SECONDS', 15 * 60))
+app.config['IDLE_WARNING_SECONDS'] = int(os.environ.get('IDLE_WARNING_SECONDS', 2 * 60))
 
 # Behind Railway's HTTPS proxy, honor X-Forwarded-Proto/Host so that
 # request.is_secure, Secure cookies, and url_for(_external=True) payment
@@ -228,6 +241,13 @@ _BILLING_EXEMPT = {
     'help_bp.panel_api',
 }
 
+_IDLE_EXEMPT = {
+    'auth.login',
+    'auth.logout',
+    'auth.setup_password',
+    'static',
+}
+
 
 @app.before_request
 def check_maintenance():
@@ -244,6 +264,45 @@ def check_maintenance():
                 'errors/subscription_expired.html',
                 expiry=_get_subscription_expiry()
             ), 402
+
+
+@app.before_request
+def enforce_idle_timeout():
+    if not current_user.is_authenticated:
+        session.pop('last_activity_at', None)
+        return
+    if request.endpoint in _IDLE_EXEMPT:
+        return
+
+    now_ts = time.time()
+    timeout = int(app.config.get('IDLE_TIMEOUT_SECONDS', 15 * 60))
+    last_activity = session.get('last_activity_at')
+
+    try:
+        last_activity = float(last_activity) if last_activity is not None else None
+    except (TypeError, ValueError):
+        last_activity = None
+
+    if last_activity is not None and now_ts - last_activity > timeout:
+        db = get_db()
+        user_id = getattr(current_user, 'id', None)
+        username = getattr(current_user, 'username', '')
+        log_audit(
+            db, user_id, username, 'SESSION_TIMEOUT', 'auth',
+            f'User logged out after {timeout // 60} minutes of inactivity',
+            request.remote_addr or '',
+            request.headers.get('User-Agent', ''),
+        )
+        db.commit()
+        session.pop('view_mode', None)
+        session.pop('last_activity_at', None)
+        logout_user()
+        flash(f'You were logged out after {timeout // 60} minutes of inactivity.', 'warning')
+        if request.path.startswith('/api/') or request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({'error': 'session_timeout'}), 401
+        return redirect(url_for('auth.login'))
+
+    session['last_activity_at'] = now_ts
 
 
 # ── Forced password-change gate ───────────────────────────────────────────────
@@ -275,6 +334,29 @@ def enforce_password_change():
 
 
 # ── Error handlers ────────────────────────────────────────────────────────────
+
+@app.route('/session/ping')
+def session_ping():
+    if not current_user.is_authenticated:
+        return jsonify({'ok': False, 'error': 'unauthenticated'}), 401
+    session['last_activity_at'] = time.time()
+    return jsonify({'ok': True})
+
+
+@app.after_request
+def apply_security_headers(response):
+    response.headers.setdefault('X-Content-Type-Options', 'nosniff')
+    response.headers.setdefault('X-Frame-Options', 'DENY')
+    response.headers.setdefault('Referrer-Policy', 'strict-origin-when-cross-origin')
+    response.headers.setdefault('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
+    if not _is_debug:
+        response.headers.setdefault('Strict-Transport-Security', 'max-age=31536000; includeSubDomains')
+    if current_user.is_authenticated and request.endpoint != 'static':
+        response.headers.setdefault('Cache-Control', 'no-store, no-cache, must-revalidate, private')
+        response.headers.setdefault('Pragma', 'no-cache')
+        response.headers.setdefault('Expires', '0')
+    return response
+
 
 @app.errorhandler(404)
 def not_found_error(error):

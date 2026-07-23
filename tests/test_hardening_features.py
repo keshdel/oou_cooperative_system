@@ -1,5 +1,6 @@
 import json
 import os
+import time
 import unittest
 from io import BytesIO
 from unittest.mock import patch
@@ -12,6 +13,7 @@ TEST_DB = os.path.abspath('.test-hardening-features.db')
 os.environ.setdefault('SECRET_KEY', 'test-secret-key-for-hardening-regression')
 os.environ.setdefault('ADMIN_PASSWORD', 'TestAdmin123')
 os.environ.setdefault('FLASK_DEBUG', '1')
+os.environ.setdefault('FIELD_ENCRYPTION_KEY', '05SmPJhNFMKwg9NysnBdQjKtqn3VwWDl1IiPIMAg2as=')
 os.environ.pop('DATABASE_URL', None)
 os.environ['SQLITE_DB_PATH'] = TEST_DB
 
@@ -22,6 +24,7 @@ except FileNotFoundError:
 
 import app as app_module  # noqa: E402
 from database import get_db  # noqa: E402
+from crypto import decrypt_field, is_encrypted  # noqa: E402
 from ledger import backfill_from_transactions, ledger_reconciliation  # noqa: E402
 from mobile_api import JWT_AUDIENCE  # noqa: E402
 from reports_engine import income_statement  # noqa: E402
@@ -45,6 +48,32 @@ class HardeningFeatureTests(unittest.TestCase):
             follow_redirects=False,
         )
         self.assertIn(response.status_code, (302, 303))
+
+    def test_idle_session_timeout_logs_user_out_and_audits(self):
+        self.login_admin()
+        with self.client.session_transaction() as sess:
+            sess['last_activity_at'] = time.time() - (self.app.config['IDLE_TIMEOUT_SECONDS'] + 5)
+
+        response = self.client.get('/dashboard', follow_redirects=False)
+        self.assertIn(response.status_code, (302, 303))
+        self.assertIn('/login', response.headers.get('Location', ''))
+
+        with self.app.app_context():
+            db = get_db()
+            row = db.execute(
+                "SELECT action, module, description FROM audit_log WHERE action = 'SESSION_TIMEOUT' ORDER BY id DESC"
+            ).fetchone()
+            self.assertIsNotNone(row)
+            self.assertEqual(row['module'], 'auth')
+            self.assertIn('inactivity', row['description'].lower())
+
+    def test_authenticated_pages_have_security_headers(self):
+        self.login_admin()
+        response = self.client.get('/dashboard')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers.get('X-Frame-Options'), 'DENY')
+        self.assertEqual(response.headers.get('X-Content-Type-Options'), 'nosniff')
+        self.assertIn('no-store', response.headers.get('Cache-Control', ''))
 
     def create_member(self):
         with self.app.app_context():
@@ -1005,15 +1034,31 @@ class HardeningFeatureTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertIn(b'Certified Member', response.data)
         self.assertIn(b'100%', response.data)
+        self.assertNotIn(b'1234567890', response.data)
+        self.assertIn(b'******7890', response.data)
 
         with self.app.app_context():
             db = get_db()
             member = db.execute('SELECT * FROM members WHERE id = ?', (member_id,)).fetchone()
             self.assertEqual(member['city'], 'Ago-Iwoye')
             self.assertEqual(member['state'], 'Ogun')
-            self.assertEqual(member['bank_name'], 'Test Bank')
+            self.assertTrue(is_encrypted(member['bank_name']))
+            self.assertTrue(is_encrypted(member['account_number']))
+            self.assertTrue(is_encrypted(member['bvn']))
+            self.assertEqual(decrypt_field(member['bank_name']), 'Test Bank')
+            self.assertEqual(decrypt_field(member['account_number']), '1234567890')
+            self.assertEqual(decrypt_field(member['bvn']), '12345678901')
             user = db.execute('SELECT * FROM users WHERE email = ?', ('ada.audit@example.com',)).fetchone()
             self.assertEqual(user['phone'], '08000000001')
+
+        bad_reveal = self.client.post('/profile/reveal-sensitive', data={'password': 'wrong'})
+        self.assertEqual(bad_reveal.status_code, 403)
+        reveal = self.client.post('/profile/reveal-sensitive', data={'password': 'MemberPass1!'})
+        self.assertEqual(reveal.status_code, 200)
+        fields = reveal.get_json()['fields']
+        self.assertEqual(fields['account_number'], '1234567890')
+        self.assertEqual(fields['bvn'], '12345678901')
+        self.assertEqual(fields['nin'], '10987654321')
 
     def test_staff_user_can_switch_between_admin_and_member_views(self):
         member_id = self.create_member()
