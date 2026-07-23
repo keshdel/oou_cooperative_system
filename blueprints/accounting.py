@@ -359,10 +359,12 @@ def bank_account_detail(code):
     statement_balance_raw = request.args.get('statement_balance', '').strip()
     statement_balance = None
     variance = None
+    variance_reconciled = None
     if statement_balance_raw:
         try:
             statement_balance = float(statement_balance_raw.replace(',', ''))
             variance = round(statement_balance - data['closing_balance'], 2)
+            variance_reconciled = abs(variance) < 0.01
         except ValueError:
             flash('Statement balance must be a valid number.', 'warning')
 
@@ -408,6 +410,7 @@ def bank_account_detail(code):
                            statement_balance=statement_balance,
                            statement_balance_raw=statement_balance_raw,
                            variance=variance,
+                           variance_reconciled=variance_reconciled,
                            generated_on=datetime.now())
 
 

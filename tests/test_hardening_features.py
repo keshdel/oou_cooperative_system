@@ -798,6 +798,11 @@ class HardeningFeatureTests(unittest.TestCase):
         self.assertIn(b'gl_closing_balance,3100.00', detail_csv.data)
         self.assertIn(b'TEST/BANK/OUT', detail_csv.data)
 
+        cash_header = self.client.get('/accounting/bank-accounts/1000?from_date=2026-01-01&to_date=2026-07-31')
+        self.assertEqual(cash_header.status_code, 200)
+        self.assertIn(b'Bank Reconciliation', cash_header.data)
+        self.assertIn(b'Cash &amp; Bank', cash_header.data)
+
         with self.app.app_context():
             db = get_db()
             for entry_id in entry_ids:

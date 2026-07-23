@@ -85,7 +85,7 @@ NGN {{ "{:,.2f}".format(value|default(0)) }}
       <small>Variance</small>
       {% if variance is none %}
       <strong class="text-muted">Enter statement</strong>
-      {% elif variance|abs < 0.01 %}
+      {% elif variance_reconciled %}
       <strong class="text-success">{{ money(variance) }}</strong>
       {% else %}
       <strong class="text-danger">{{ money(variance) }}</strong>
@@ -94,7 +94,7 @@ NGN {{ "{:,.2f}".format(value|default(0)) }}
   </div>
 
   {% if statement_balance is not none %}
-  <div class="alert {% if variance|abs < 0.01 %}alert-success{% else %}alert-warning{% endif %}">
+  <div class="alert {% if variance_reconciled %}alert-success{% else %}alert-warning{% endif %}">
     <strong>Statement balance:</strong> {{ money(statement_balance) }}
     <span class="ms-2"><strong>GL closing:</strong> {{ money(data.closing_balance) }}</span>
     <span class="ms-2"><strong>Variance:</strong> {{ money(variance) }}</span>
