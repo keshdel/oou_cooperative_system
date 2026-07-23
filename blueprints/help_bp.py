@@ -847,6 +847,61 @@ ARTICLES = [
     },
 
     {
+        'slug':      'dividends-and-patronage',
+        'title':     'Dividends & Patronage',
+        'category':  'Accounting',
+        'summary':   'Compute surplus appropriation, preview member allocations, declare dividends, and export schedules.',
+        'endpoints': ['accounting.dividends', 'accounting.declare_dividend',
+                      'accounting.dividend_detail'],
+        'body': [
+            {
+                'head':  'What the dividend page does',
+                'steps': [
+                    '<b>Preview</b> calculates the period net surplus and proposed appropriation.',
+                    '<b>Surplus appropriation</b> splits net surplus into statutory reserve, honorarium, other allocation, and dividend pool.',
+                    '<b>Member schedule</b> shows each member allocation before posting.',
+                    '<b>Declared dividends</b> keeps a permanent history of posted dividend declarations.',
+                ],
+            },
+            {
+                'head':  'Computing a dividend',
+                'steps': [
+                    'Select the <b>From</b> and <b>To</b> dates for the surplus period.',
+                    'Enter the percentage split for dividend, reserve, honorarium, and other allocation.',
+                    'Set <b>Patronage split %</b> if part of the dividend pool should be distributed by loan-interest patronage.',
+                    'Click <b>Compute</b> and review the surplus appropriation and member schedule.',
+                ],
+            },
+            {
+                'head':  'Declaring dividends',
+                'steps': [
+                    'Only an Admin can declare the computed dividend.',
+                    'Review the member schedule carefully before clicking <b>Declare & credit members</b>.',
+                    'Declaration credits member savings and posts to the ledger.',
+                    'A declared dividend is part of the audit record and should not be treated like a draft preview.',
+                ],
+            },
+            {
+                'head':  'Review and export',
+                'steps': [
+                    'Open a declared dividend from the history table.',
+                    'Review appropriation totals and member-level allocations.',
+                    'Use PDF or Excel export for committee minutes, audit files, and member communication.',
+                ],
+            },
+            {
+                'head':  'Controls',
+                'tips':  [
+                    'Declare dividends only after financial statements and trial balance have been reviewed.',
+                    'Confirm net surplus is positive before distribution.',
+                    'Keep board/committee approval outside the system before posting the declaration.',
+                    'If a declaration was wrong, correct it through controlled accounting adjustment rather than editing history.',
+                ],
+            },
+        ],
+    },
+
+    {
         'slug':      'financial-reporting-center',
         'title':     'Financial Reporting Center',
         'category':  'Reports',

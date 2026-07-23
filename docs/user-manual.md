@@ -98,6 +98,27 @@ Period close:
 - Closed periods should not receive new backdated postings.
 - Correct closed periods using controlled reversal and adjustment entries.
 
+## Dividends and Patronage
+
+The Dividends page is used after period review to appropriate net surplus and credit members.
+
+Workflow:
+
+1. Select the surplus period using From and To dates.
+2. Enter the split for dividend, reserve, honorarium, and other allocation.
+3. Enter patronage split percentage if part of the dividend pool should be allocated by loan-interest patronage.
+4. Click Compute.
+5. Review surplus appropriation and member dividend schedule.
+6. Admin clicks Declare and credit members when approved.
+7. Open the declaration detail to export PDF or Excel for committee records and audit files.
+
+Controls:
+
+- Declare dividends only after financial statements, trial balance, and member savings control have been reviewed.
+- A declaration posts to member savings and the ledger.
+- Keep board or committee approval outside the system before posting.
+- Correct mistakes through controlled accounting adjustment rather than editing declaration history.
+
 ## Financial Reporting
 
 Reports include:
