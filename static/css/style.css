@@ -119,23 +119,32 @@ a:hover {
 .sidebar-menu {
     padding: 1.5rem 0;
 }
-.sidebar-menu a {
+.sidebar-menu a,
+.sidebar-menu .sidebar-form-link {
     display: flex;
     align-items: center;
+    width: 100%;
     padding: 0.875rem 1.5rem;
     color: rgba(255,255,255,0.8);
     font-weight: 500;
     transition: var(--transition);
     border-left: 3px solid transparent;
+    background: transparent;
+    border-top: 0;
+    border-right: 0;
+    border-bottom: 0;
+    text-align: left;
 }
-.sidebar-menu a i {
+.sidebar-menu a i,
+.sidebar-menu .sidebar-form-link i {
     width: 24px;
     font-size: 1.25rem;
     margin-right: 12px;
     color: rgba(255,255,255,0.6);
     transition: var(--transition);
 }
-.sidebar-menu a:hover {
+.sidebar-menu a:hover,
+.sidebar-menu .sidebar-form-link:hover {
     background-color: rgba(255,255,255,0.1);
     color: white;
     transform: translateX(5px);

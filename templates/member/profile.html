@@ -4,180 +4,176 @@
 
 {% block content %}
 <div class="container-fluid">
-    <div class="row mb-4">
-        <div class="col-md-8">
-            <h2><i class="fas fa-user-circle"></i> My Profile</h2>
-            <p class="text-muted">View and manage your personal information</p>
+  <style>
+    .profile-hero { border:1px solid #e2e8f0; border-radius:8px; background:#fff; padding:1rem; }
+    .profile-photo { width:120px; height:120px; object-fit:cover; border:4px solid #e2e8f0; }
+    .profile-avatar { width:120px; height:120px; border:4px solid #e2e8f0; }
+    .profile-stat { border:1px solid #e2e8f0; border-radius:8px; padding:.85rem; background:#fff; min-height:78px; }
+    .profile-stat small { display:block; color:#64748b; text-transform:uppercase; font-weight:700; }
+    .profile-stat strong { color:#0f172a; font-size:1.05rem; }
+    .readiness-card { border:1px solid #dbeafe; border-radius:8px; background:#eff6ff; }
+    .certified-badge { display:inline-flex; align-items:center; gap:.4rem; border-radius:999px; padding:.45rem .7rem; font-weight:800; background:#dcfce7; color:#166534; }
+    .not-certified-badge { display:inline-flex; align-items:center; gap:.4rem; border-radius:999px; padding:.45rem .7rem; font-weight:800; background:#fff7ed; color:#9a3412; }
+    .section-meter { border:1px solid #e2e8f0; border-radius:8px; padding:.75rem; background:#fff; }
+    .info-card { border:1px solid #e2e8f0; border-radius:8px; overflow:hidden; }
+    .info-card .card-header { background:#f8fafc; }
+    .info-row { display:flex; justify-content:space-between; gap:1rem; padding:.65rem 0; border-bottom:1px solid #eef2f7; }
+    .info-row:last-child { border-bottom:0; }
+    .info-row span { color:#64748b; }
+    .info-row strong { text-align:right; overflow-wrap:anywhere; }
+  </style>
+
+  <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
+    <div>
+      <h2 class="mb-1"><i class="fas fa-user-circle"></i> My Profile</h2>
+      <p class="text-muted mb-0">Complete your member information and readiness requirements.</p>
+    </div>
+    <div class="d-flex flex-wrap gap-2">
+      <a href="{{ url_for('portal.edit_profile') }}" class="btn btn-primary">
+        <i class="fas fa-edit"></i> Update Profile
+      </a>
+      <a href="{{ url_for('portal.change_password') }}" class="btn btn-outline-secondary">
+        <i class="fas fa-key"></i> Change Password
+      </a>
+    </div>
+  </div>
+
+  <div class="profile-hero mb-3">
+    <div class="row g-3 align-items-center">
+      <div class="col-auto">
+        {% if member.photo_path %}
+        <img src="{{ url_for('static', filename=member.photo_path.replace('static/', '')) }}"
+             class="rounded-circle profile-photo" alt="Profile photo">
+        {% else %}
+        <div class="rounded-circle profile-avatar bg-light d-flex align-items-center justify-content-center">
+          <i class="fas fa-user fa-4x text-secondary"></i>
         </div>
-        <div class="col-md-4 text-end">
-            <a href="{{ url_for('portal.edit_profile') }}" class="btn btn-primary">
-                <i class="fas fa-edit"></i> Edit Profile
-            </a>
-            <a href="{{ url_for('portal.change_password') }}" class="btn btn-warning">
-                <i class="fas fa-key"></i> Change Password
-            </a>
+        {% endif %}
+      </div>
+      <div class="col">
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+          <h3 class="mb-0">{{ member.full_name }}</h3>
+          {% if member.is_certified_member %}
+          <span class="certified-badge"><i class="fas fa-certificate"></i> Certified Member</span>
+          {% else %}
+          <span class="not-certified-badge"><i class="fas fa-hourglass-half"></i> Profile In Progress</span>
+          {% endif %}
         </div>
+        <div class="text-muted">Member #{{ member.member_number }} · Joined {{ member.date_joined.strftime('%B %Y') }}</div>
+      </div>
+      <div class="col-lg-4">
+        <div class="readiness-card p-3">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <strong>Readiness to transact</strong>
+            <span class="fw-bold">{{ member.profile_completion.percent }}%</span>
+          </div>
+          <div class="progress" style="height:12px;">
+            <div class="progress-bar {% if member.is_certified_member %}bg-success{% else %}bg-primary{% endif %}"
+                 style="width: {{ member.profile_completion.percent }}%"></div>
+          </div>
+          <div class="small text-muted mt-2">
+            {{ member.profile_completion.done }} of {{ member.profile_completion.total }} requirements completed.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-3">
+    <div class="col-md-4">
+      <div class="profile-stat">
+        <small>Membership</small>
+        <strong>{{ member.status|title }}</strong>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="profile-stat">
+        <small>Card Status</small>
+        <strong>{{ member.card_status|title }}</strong>
+      </div>
+    </div>
+    <div class="col-md-4">
+      <div class="profile-stat">
+        <small>KYC/Profile Status</small>
+        <strong>{% if member.is_certified_member %}Complete{% else %}Incomplete{% endif %}</strong>
+      </div>
+    </div>
+  </div>
+
+  {% if not member.is_certified_member %}
+  <div class="alert alert-warning">
+    <strong>Missing requirements:</strong>
+    {{ member.profile_completion.missing|map(attribute='label')|join(', ') }}.
+  </div>
+  {% endif %}
+
+  <div class="row g-3 mb-3">
+    {% for label, section in member.profile_completion.sections.items() %}
+    <div class="col-md-4 col-xl-2">
+      <div class="section-meter">
+        <div class="small text-muted fw-bold">{{ label }}</div>
+        <div class="d-flex justify-content-between align-items-center">
+          <strong>{{ section.percent }}%</strong>
+          <span class="small text-muted">{{ section.done }}/{{ section.total }}</span>
+        </div>
+        <div class="progress mt-1" style="height:6px;">
+          <div class="progress-bar bg-success" style="width: {{ section.percent }}%"></div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="row g-3">
+    <div class="col-lg-6">
+      <div class="card info-card">
+        <div class="card-header"><h5 class="mb-0">Personal and Contact Information</h5></div>
+        <div class="card-body">
+          <div class="info-row"><span>Email</span><strong>{{ member.email or 'Not provided' }}</strong></div>
+          <div class="info-row"><span>Phone</span><strong>{{ member.phone or 'Not provided' }}</strong></div>
+          <div class="info-row"><span>Date of Birth</span><strong>{{ member.date_of_birth.strftime('%d %B %Y') if member.date_of_birth and member.date_of_birth.strftime else member.date_of_birth or 'Not provided' }}</strong></div>
+          <div class="info-row"><span>Occupation</span><strong>{{ member.occupation or 'Not provided' }}</strong></div>
+          <div class="info-row"><span>Address</span><strong>{{ member.address or 'Not provided' }}</strong></div>
+          <div class="info-row"><span>Location</span><strong>{{ [member.city, member.state, member.country]|select|join(', ') or 'Not provided' }}</strong></div>
+        </div>
+      </div>
     </div>
 
-    <div class="row">
-        <!-- Profile Card -->
-        <div class="col-md-4">
-            <div class="card text-center">
-                <div class="card-body">
-                    {% if member.photo_path %}
-                    <img src="{{ url_for('static', filename=member.photo_path) }}" 
-                         class="rounded-circle img-fluid mb-3" style="width: 150px; height: 150px; object-fit: cover;">
-                    {% else %}
-                    <div class="bg-light rounded-circle d-inline-flex align-items-center justify-content-center mb-3" 
-                         style="width: 150px; height: 150px;">
-                        <i class="fas fa-user fa-5x text-secondary"></i>
-                    </div>
-                    {% endif %}
-                    <h4>{{ member.full_name }}</h4>
-                    <p class="text-muted">Member since {{ member.date_joined.strftime('%B %Y') }}</p>
-                    <span class="badge bg-success p-2">Member #{{ member.member_number }}</span>
-                </div>
-            </div>
-
-            <div class="card mt-3">
-                <div class="card-header">
-                    <h5 class="mb-0">Account Status</h5>
-                </div>
-                <div class="card-body">
-                    <ul class="list-group list-group-flush">
-                        <li class="list-group-item d-flex justify-content-between">
-                            <span>Membership:</span>
-                            <strong class="text-success">{{ member.status|title }}</strong>
-                        </li>
-                        <li class="list-group-item d-flex justify-content-between">
-                            <span>Card Status:</span>
-                            <strong class="{% if member.card_status == 'active' %}text-success{% else %}text-danger{% endif %}">
-                                {{ member.card_status|title }}
-                            </strong>
-                        </li>
-                        <li class="list-group-item d-flex justify-content-between">
-                            <span>KYC Status:</span>
-                            <strong class="text-warning">Pending</strong>
-                        </li>
-                    </ul>
-                </div>
-            </div>
+    <div class="col-lg-6">
+      <div class="card info-card">
+        <div class="card-header"><h5 class="mb-0">Bank and Identification</h5></div>
+        <div class="card-body">
+          <div class="info-row"><span>Bank Name</span><strong>{{ member.bank_name or 'Not provided' }}</strong></div>
+          <div class="info-row"><span>Account Name</span><strong>{{ member.account_name or 'Not provided' }}</strong></div>
+          <div class="info-row"><span>Account Number</span><strong>{{ member.account_number or 'Not provided' }}</strong></div>
+          <div class="info-row"><span>BVN</span><strong>{{ member.bvn|default('Not provided', true) }}</strong></div>
+          <div class="info-row"><span>NIN</span><strong>{{ member.nin|default('Not provided', true) }}</strong></div>
         </div>
-
-        <!-- Personal Information -->
-        <div class="col-md-8">
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="mb-0">Personal Information</h5>
-                </div>
-                <div class="card-body">
-                    <div class="row">
-                        <div class="col-md-6">
-                            <table class="table table-borderless">
-                                <tr>
-                                    <th>First Name:</th>
-                                    <td>{{ member.first_name }}</td>
-                                </tr>
-                                <tr>
-                                    <th>Last Name:</th>
-                                    <td>{{ member.last_name }}</td>
-                                </tr>
-                                <tr>
-                                    <th>Email:</th>
-                                    <td>{{ member.email }}</td>
-                                </tr>
-                                <tr>
-                                    <th>Phone:</th>
-                                    <td>{{ member.phone }}</td>
-                                </tr>
-                                <tr>
-                                    <th>Date of Birth:</th>
-                                    <td>{{ member.date_of_birth.strftime('%d %B %Y') if member.date_of_birth else 'Not provided' }}</td>
-                                </tr>
-                            </table>
-                        </div>
-                        <div class="col-md-6">
-                            <table class="table table-borderless">
-                                <tr>
-                                    <th>Occupation:</th>
-                                    <td>{{ member.occupation or 'Not provided' }}</td>
-                                </tr>
-                                <tr>
-                                    <th>Address:</th>
-                                    <td>{{ member.address or 'Not provided' }}</td>
-                                </tr>
-                                <tr>
-                                    <th>BVN:</th>
-                                    <td>{{ member.bvn|default('Not provided', true) }}</td>
-                                </tr>
-                                <tr>
-                                    <th>NIN:</th>
-                                    <td>{{ member.nin|default('Not provided', true) }}</td>
-                                </tr>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Bank Information -->
-            <div class="card mt-3">
-                <div class="card-header">
-                    <h5 class="mb-0">Bank Information</h5>
-                </div>
-                <div class="card-body">
-                    <div class="row">
-                        <div class="col-md-6">
-                            <table class="table table-borderless">
-                                <tr>
-                                    <th>Bank Name:</th>
-                                    <td>{{ member.bank_name or 'Not provided' }}</td>
-                                </tr>
-                                <tr>
-                                    <th>Account Name:</th>
-                                    <td>{{ member.account_name or 'Not provided' }}</td>
-                                </tr>
-                            </table>
-                        </div>
-                        <div class="col-md-6">
-                            <table class="table table-borderless">
-                                <tr>
-                                    <th>Account Number:</th>
-                                    <td>{{ member.account_number or 'Not provided' }}</td>
-                                </tr>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Emergency Contact -->
-            <div class="card mt-3">
-                <div class="card-header">
-                    <h5 class="mb-0">Emergency Contact</h5>
-                </div>
-                <div class="card-body">
-                    <div class="row">
-                        <div class="col-md-6">
-                            <table class="table table-borderless">
-                                <tr>
-                                    <th>Contact Name:</th>
-                                    <td>{{ member.emergency_contact_name or 'Not provided' }}</td>
-                                </tr>
-                            </table>
-                        </div>
-                        <div class="col-md-6">
-                            <table class="table table-borderless">
-                                <tr>
-                                    <th>Contact Phone:</th>
-                                    <td>{{ member.emergency_contact_phone or 'Not provided' }}</td>
-                                </tr>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
+      </div>
     </div>
+
+    <div class="col-lg-6">
+      <div class="card info-card">
+        <div class="card-header"><h5 class="mb-0">Emergency Contact</h5></div>
+        <div class="card-body">
+          <div class="info-row"><span>Name</span><strong>{{ member.emergency_contact_name or 'Not provided' }}</strong></div>
+          <div class="info-row"><span>Phone</span><strong>{{ member.emergency_contact_phone or 'Not provided' }}</strong></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-6">
+      <div class="card info-card">
+        <div class="card-header"><h5 class="mb-0">Nominee / Beneficiary</h5></div>
+        <div class="card-body">
+          <div class="info-row"><span>Name</span><strong>{{ member.nominee_name or 'Not provided' }}</strong></div>
+          <div class="info-row"><span>Relationship</span><strong>{{ member.nominee_relationship or 'Not provided' }}</strong></div>
+          <div class="info-row"><span>Phone</span><strong>{{ member.nominee_phone or 'Not provided' }}</strong></div>
+          <div class="info-row"><span>Email</span><strong>{{ member.nominee_email or 'Not provided' }}</strong></div>
+          <div class="info-row"><span>Address</span><strong>{{ member.nominee_address or 'Not provided' }}</strong></div>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 {% endblock %}

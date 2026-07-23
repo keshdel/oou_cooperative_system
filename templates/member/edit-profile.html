@@ -1,133 +1,191 @@
 {% extends "base.html" %}
 
-{% block title %}Edit Profile - {{ coop_name }}{% endblock %}
+{% block title %}Update Profile - {{ coop_name }}{% endblock %}
 
 {% block content %}
 <div class="container-fluid">
-    <div class="row mb-4">
-        <div class="col-md-8">
-            <h2><i class="fas fa-user-edit"></i> Edit Profile</h2>
-            <p class="text-muted">Update your personal information</p>
+  <style>
+    .profile-form-card { border:1px solid #e2e8f0; border-radius:8px; overflow:hidden; }
+    .profile-form-card .card-header { background:#f8fafc; }
+    .completion-panel { border:1px solid #dbeafe; border-radius:8px; background:#eff6ff; padding:1rem; position:sticky; top:1rem; }
+    .required-dot { color:#dc2626; font-weight:800; }
+  </style>
+
+  <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
+    <div>
+      <h2 class="mb-1"><i class="fas fa-user-edit"></i> Update Profile</h2>
+      <p class="text-muted mb-0">Keep your cooperative record complete and ready for transactions.</p>
+    </div>
+    <a href="{{ url_for('portal.profile') }}" class="btn btn-outline-secondary">
+      <i class="fas fa-arrow-left"></i> Back to Profile
+    </a>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-lg-3">
+      <div class="completion-panel">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <strong>Profile completion</strong>
+          <span class="fw-bold">{{ member.profile_completion.percent }}%</span>
         </div>
-        <div class="col-md-4 text-end">
-            <a href="{{ url_for('portal.profile') }}" class="btn btn-secondary">
-                <i class="fas fa-arrow-left"></i> Back to Profile
-            </a>
+        <div class="progress" style="height:12px;">
+          <div class="progress-bar {% if member.is_certified_member %}bg-success{% else %}bg-primary{% endif %}"
+               style="width: {{ member.profile_completion.percent }}%"></div>
         </div>
+        <div class="small text-muted mt-2">
+          Complete all required fields to receive the Certified Member badge.
+        </div>
+        {% if member.profile_completion.missing %}
+        <hr>
+        <div class="small fw-bold mb-2">Still needed</div>
+        <ul class="small mb-0 ps-3">
+          {% for item in member.profile_completion.missing[:8] %}
+          <li>{{ item.label }}</li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+      </div>
     </div>
 
-    <div class="row">
-        <div class="col-md-8 mx-auto">
-            <div class="card">
-                <div class="card-header bg-primary text-white">
-                    <h5 class="mb-0">Edit Your Information</h5>
-                </div>
-                <div class="card-body">
-                    <form method="POST" action="{{ url_for('portal.edit_profile') }}" enctype="multipart/form-data">
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">First Name</label>
-                                <input type="text" class="form-control" name="first_name" value="{{ member.first_name }}" required>
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Last Name</label>
-                                <input type="text" class="form-control" name="last_name" value="{{ member.last_name }}" required>
-                            </div>
-                        </div>
-
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Email</label>
-                                <input type="email" class="form-control" name="email" value="{{ member.email }}" required>
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Phone</label>
-                                <input type="tel" class="form-control" name="phone" value="{{ member.phone }}" required>
-                            </div>
-                        </div>
-
-                        <div class="mb-3">
-                            <label class="form-label">Address</label>
-                            <textarea class="form-control" name="address" rows="2">{{ member.address }}</textarea>
-                        </div>
-
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Occupation</label>
-                                <input type="text" class="form-control" name="occupation" value="{{ member.occupation }}">
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Date of Birth</label>
-                                <input type="date" class="form-control" name="date_of_birth" 
-                                       value="{{ member.date_of_birth.strftime('%Y-%m-%d') if member.date_of_birth }}">
-                            </div>
-                        </div>
-
-                        <hr>
-                        <h5 class="mb-3">Bank Details</h5>
-
-                        <div class="row">
-                            <div class="col-md-4 mb-3">
-                                <label class="form-label">Bank Name</label>
-                                <input type="text" class="form-control" name="bank_name" value="{{ member.bank_name }}">
-                            </div>
-                            <div class="col-md-4 mb-3">
-                                <label class="form-label">Account Name</label>
-                                <input type="text" class="form-control" name="account_name" value="{{ member.account_name }}">
-                            </div>
-                            <div class="col-md-4 mb-3">
-                                <label class="form-label">Account Number</label>
-                                <input type="text" class="form-control" name="account_number" value="{{ member.account_number }}">
-                            </div>
-                        </div>
-
-                        <hr>
-                        <h5 class="mb-3">Emergency Contact</h5>
-
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Contact Name</label>
-                                <input type="text" class="form-control" name="emergency_contact_name" value="{{ member.emergency_contact_name }}">
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Contact Phone</label>
-                                <input type="tel" class="form-control" name="emergency_contact_phone" value="{{ member.emergency_contact_phone }}">
-                            </div>
-                        </div>
-
-                        <hr>
-                        <h5 class="mb-3">Profile Photo</h5>
-
-                        <div class="mb-3">
-                            <label class="form-label">Upload New Photo</label>
-                            <input type="file" class="form-control" name="photo" accept="image/*">
-                            <small class="text-muted">Leave empty to keep current photo</small>
-                        </div>
-
-                        <hr>
-                        <h5 class="mb-3">Identification (Optional)</h5>
-
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">BVN</label>
-                                <input type="text" class="form-control" name="bvn" value="{{ member.bvn }}" maxlength="11">
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">NIN</label>
-                                <input type="text" class="form-control" name="nin" value="{{ member.nin }}" maxlength="11">
-                            </div>
-                        </div>
-
-                        <div class="text-center mt-4">
-                            <button type="submit" class="btn btn-primary btn-lg">
-                                <i class="fas fa-save"></i> Save Changes
-                            </button>
-                            <a href="{{ url_for('portal.profile') }}" class="btn btn-secondary btn-lg">Cancel</a>
-                        </div>
-                    </form>
-                </div>
+    <div class="col-lg-9">
+      <form method="POST" action="{{ url_for('portal.edit_profile') }}" enctype="multipart/form-data">
+        <div class="card profile-form-card mb-3">
+          <div class="card-header"><h5 class="mb-0">Identity and Contact</h5></div>
+          <div class="card-body">
+            <div class="row">
+              <div class="col-md-6 mb-3">
+                <label class="form-label">First Name <span class="required-dot">*</span></label>
+                <input type="text" class="form-control" name="first_name" value="{{ member.first_name or '' }}" required>
+              </div>
+              <div class="col-md-6 mb-3">
+                <label class="form-label">Last Name <span class="required-dot">*</span></label>
+                <input type="text" class="form-control" name="last_name" value="{{ member.last_name or '' }}" required>
+              </div>
+              <div class="col-md-6 mb-3">
+                <label class="form-label">Email <span class="required-dot">*</span></label>
+                <input type="email" class="form-control" name="email" value="{{ member.email or '' }}" required>
+              </div>
+              <div class="col-md-6 mb-3">
+                <label class="form-label">Phone <span class="required-dot">*</span></label>
+                <input type="tel" class="form-control" name="phone" value="{{ member.phone or '' }}" required>
+              </div>
+              <div class="col-md-6 mb-3">
+                <label class="form-label">Date of Birth</label>
+                <input type="date" class="form-control" name="date_of_birth"
+                       value="{{ member.date_of_birth.strftime('%Y-%m-%d') if member.date_of_birth and member.date_of_birth.strftime else member.date_of_birth or '' }}">
+              </div>
+              <div class="col-md-6 mb-3">
+                <label class="form-label">Occupation</label>
+                <input type="text" class="form-control" name="occupation" value="{{ member.occupation or '' }}">
+              </div>
             </div>
+          </div>
         </div>
+
+        <div class="card profile-form-card mb-3">
+          <div class="card-header"><h5 class="mb-0">Location</h5></div>
+          <div class="card-body">
+            <div class="mb-3">
+              <label class="form-label">Residential Address</label>
+              <textarea class="form-control" name="address" rows="2">{{ member.address or '' }}</textarea>
+            </div>
+            <div class="row">
+              <div class="col-md-4 mb-3">
+                <label class="form-label">City / Town</label>
+                <input type="text" class="form-control" name="city" value="{{ member.city or '' }}">
+              </div>
+              <div class="col-md-4 mb-3">
+                <label class="form-label">State</label>
+                <input type="text" class="form-control" name="state" value="{{ member.state or '' }}">
+              </div>
+              <div class="col-md-4 mb-3">
+                <label class="form-label">Country</label>
+                <input type="text" class="form-control" name="country" value="{{ member.country or 'Nigeria' }}">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card profile-form-card mb-3">
+          <div class="card-header"><h5 class="mb-0">Bank and Identification</h5></div>
+          <div class="card-body">
+            <div class="row">
+              <div class="col-md-4 mb-3">
+                <label class="form-label">Bank Name</label>
+                <input type="text" class="form-control" name="bank_name" value="{{ member.bank_name or '' }}">
+              </div>
+              <div class="col-md-4 mb-3">
+                <label class="form-label">Account Name</label>
+                <input type="text" class="form-control" name="account_name" value="{{ member.account_name or '' }}">
+              </div>
+              <div class="col-md-4 mb-3">
+                <label class="form-label">Account Number</label>
+                <input type="text" class="form-control" name="account_number" value="{{ member.account_number or '' }}" maxlength="10" inputmode="numeric">
+              </div>
+              <div class="col-md-6 mb-3">
+                <label class="form-label">BVN</label>
+                <input type="text" class="form-control" name="bvn" value="{{ member.bvn or '' }}" maxlength="11" inputmode="numeric">
+              </div>
+              <div class="col-md-6 mb-3">
+                <label class="form-label">NIN</label>
+                <input type="text" class="form-control" name="nin" value="{{ member.nin or '' }}" maxlength="11" inputmode="numeric">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card profile-form-card mb-3">
+          <div class="card-header"><h5 class="mb-0">Emergency Contact and Nominee</h5></div>
+          <div class="card-body">
+            <div class="row">
+              <div class="col-md-6 mb-3">
+                <label class="form-label">Emergency Contact Name</label>
+                <input type="text" class="form-control" name="emergency_contact_name" value="{{ member.emergency_contact_name or '' }}">
+              </div>
+              <div class="col-md-6 mb-3">
+                <label class="form-label">Emergency Contact Phone</label>
+                <input type="tel" class="form-control" name="emergency_contact_phone" value="{{ member.emergency_contact_phone or '' }}">
+              </div>
+              <div class="col-md-4 mb-3">
+                <label class="form-label">Nominee Name</label>
+                <input type="text" class="form-control" name="nominee_name" value="{{ member.nominee_name or '' }}">
+              </div>
+              <div class="col-md-4 mb-3">
+                <label class="form-label">Nominee Relationship</label>
+                <input type="text" class="form-control" name="nominee_relationship" value="{{ member.nominee_relationship or '' }}">
+              </div>
+              <div class="col-md-4 mb-3">
+                <label class="form-label">Nominee Phone</label>
+                <input type="tel" class="form-control" name="nominee_phone" value="{{ member.nominee_phone or '' }}">
+              </div>
+              <div class="col-md-6 mb-3">
+                <label class="form-label">Nominee Email</label>
+                <input type="email" class="form-control" name="nominee_email" value="{{ member.nominee_email or '' }}">
+              </div>
+              <div class="col-md-6 mb-3">
+                <label class="form-label">Nominee Address</label>
+                <input type="text" class="form-control" name="nominee_address" value="{{ member.nominee_address or '' }}">
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card profile-form-card mb-3">
+          <div class="card-header"><h5 class="mb-0">Profile Photo</h5></div>
+          <div class="card-body">
+            <input type="file" class="form-control" name="photo" accept="image/*">
+            <div class="form-text">PNG, JPG, GIF, or WEBP. Maximum 5 MB.</div>
+          </div>
+        </div>
+
+        <div class="d-flex justify-content-end gap-2 mb-4">
+          <a href="{{ url_for('portal.profile') }}" class="btn btn-outline-secondary">Cancel</a>
+          <button type="submit" class="btn btn-primary">
+            <i class="fas fa-save"></i> Save Profile
+          </button>
+        </div>
+      </form>
     </div>
+  </div>
 </div>
 {% endblock %}

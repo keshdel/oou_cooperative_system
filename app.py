@@ -5,12 +5,12 @@ import os
 import re
 from datetime import datetime
 
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, session
 from flask_login import LoginManager, current_user
 
 from database import init_db, get_db, close_db
 from extensions import csrf
-from utils import User
+from utils import User, member_for_user
 
 # ── App factory ──────────────────────────────────────────────────────────────
 
@@ -137,7 +137,17 @@ def utility_processor():
 
     unread_count = 0
     pending_savings_requests = 0
+    linked_member_profile = False
+    can_switch_to_member_view = False
+    active_member_view = False
     if current_user.is_authenticated:
+        role = getattr(current_user, 'role', '')
+        try:
+            linked_member_profile = bool(member_for_user(db))
+        except Exception:
+            linked_member_profile = False
+        can_switch_to_member_view = role in ('admin', 'treasurer', 'secretary', 'exco') and linked_member_profile
+        active_member_view = role == 'member' or (can_switch_to_member_view and session.get('view_mode') == 'member')
         try:
             row = db.execute(
                 'SELECT COUNT(*) FROM notifications WHERE user_id = ? AND is_read = 0',
@@ -146,7 +156,7 @@ def utility_processor():
             unread_count = row[0] if row else 0
         except Exception:
             pass
-        if getattr(current_user, 'role', '') in ('admin', 'secretary', 'treasurer'):
+        if role in ('admin', 'secretary', 'treasurer'):
             try:
                 row = db.execute(
                     "SELECT COUNT(*) FROM savings_change_requests WHERE status = 'pending'"
@@ -162,6 +172,9 @@ def utility_processor():
         'coop_short_name':          coop_short['value'] if coop_short else 'Coop',
         'unread_notifications_count': unread_count,
         'pending_savings_requests': pending_savings_requests,
+        'linked_member_profile':    linked_member_profile,
+        'can_switch_to_member_view': can_switch_to_member_view,
+        'active_member_view':       active_member_view,
     }
 
 

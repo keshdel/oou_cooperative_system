@@ -2,7 +2,7 @@ import hmac
 import os
 from datetime import datetime
 
-from flask import Blueprint, render_template, redirect, url_for, request, flash
+from flask import Blueprint, render_template, redirect, url_for, request, flash, session
 from flask_login import login_user, login_required, logout_user
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -99,6 +99,7 @@ def login():
                 user['must_change_password'] if 'must_change_password' in keys else 0,
             )
             login_user(user_obj)
+            session.pop('view_mode', None)
             log_audit(db, user['id'], user['username'], 'LOGIN', 'auth', 'User logged in', ip, ua)
             db.commit()
             if user_obj.must_change_password:
@@ -200,6 +201,7 @@ def logout():
     from utils import audit
     audit(db, 'LOGOUT', 'auth', 'User logged out')
     db.commit()
+    session.pop('view_mode', None)
     logout_user()
     flash('You have been logged out', 'info')
     return redirect(url_for('auth.index'))

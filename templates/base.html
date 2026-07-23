@@ -30,11 +30,15 @@
                 </div>
 
                 <div class="sidebar-menu">
-                {% if current_user.role == 'member' %}
+                {% if active_member_view %}
                     {# ── Member-only navigation (portal pages only) ── #}
                     <a href="{{ url_for('portal.member_portal') }}"
                        class="{% if request.endpoint == 'portal.member_portal' %}active{% endif %}">
                         <i class="fas fa-home"></i> My Dashboard
+                    </a>
+                    <a href="{{ url_for('portal.profile') }}"
+                       class="{% if request.endpoint in ['portal.profile', 'portal.edit_profile'] %}active{% endif %}">
+                        <i class="fas fa-user-check"></i> My Profile
                     </a>
                     <a href="{{ url_for('portal.my_savings') }}"
                        class="{% if request.endpoint == 'portal.my_savings' %}active{% endif %}">
@@ -76,6 +80,14 @@
                        class="{% if request.blueprint == 'help_bp' %}active{% endif %}">
                         <i class="fas fa-question-circle"></i> Help
                     </a>
+                    {% if can_switch_to_member_view %}
+                    <form method="post" action="{{ url_for('portal.back_to_admin') }}" class="m-0">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="sidebar-form-link">
+                            <i class="fas fa-briefcase"></i> Back to Admin
+                        </button>
+                    </form>
+                    {% endif %}
                     <a href="{{ url_for('auth.logout') }}">
                         <i class="fas fa-sign-out-alt"></i> Logout
                     </a>
@@ -86,10 +98,14 @@
                        class="{% if request.endpoint == 'main.dashboard' %}active{% endif %}">
                         <i class="fas fa-tachometer-alt"></i> Dashboard
                     </a>
-                    <a href="{{ url_for('portal.member_portal') }}"
-                       class="{% if request.blueprint == 'portal' %}active{% endif %}">
-                        <i class="fas fa-user-circle"></i> My Account
-                    </a>
+                    {% if can_switch_to_member_view %}
+                    <form method="post" action="{{ url_for('portal.view_as_member') }}" class="m-0">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="sidebar-form-link">
+                            <i class="fas fa-user-circle"></i> My Member Portal
+                        </button>
+                    </form>
+                    {% endif %}
                     {% if current_user.role in ['admin', 'secretary', 'exco'] %}
                     <a href="{{ url_for('members.members_list') }}"
                        class="{% if request.blueprint == 'members' %}active{% endif %}">
@@ -200,8 +216,27 @@
                                 <i class="fas fa-user-circle"></i> {{ current_user.username }}
                             </button>
                             <ul class="dropdown-menu dropdown-menu-end">
-                                {% if current_user.role == 'member' %}
+                                {% if active_member_view %}
                                 <li><a class="dropdown-item" href="{{ url_for('portal.profile') }}"><i class="fas fa-user"></i> Profile</a></li>
+                                {% elif can_switch_to_member_view %}
+                                <li>
+                                    <form method="post" action="{{ url_for('portal.view_as_member') }}" class="px-3 py-1">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <button type="submit" class="btn btn-link dropdown-item p-0">
+                                            <i class="fas fa-user-circle"></i> My Member Portal
+                                        </button>
+                                    </form>
+                                </li>
+                                {% endif %}
+                                {% if can_switch_to_member_view and active_member_view %}
+                                <li>
+                                    <form method="post" action="{{ url_for('portal.back_to_admin') }}" class="px-3 py-1">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <button type="submit" class="btn btn-link dropdown-item p-0">
+                                            <i class="fas fa-briefcase"></i> Back to Admin
+                                        </button>
+                                    </form>
+                                </li>
                                 {% endif %}
                                 <li><a class="dropdown-item" href="{{ url_for('portal.notifications') }}">
                                     <i class="fas fa-bell"></i> Notifications

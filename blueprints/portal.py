@@ -1,20 +1,24 @@
 import json
+import os
 import random
+import secrets
 from datetime import datetime, timedelta
 from io import BytesIO
 from types import SimpleNamespace
 
-from flask import Blueprint, render_template, redirect, url_for, request, flash, make_response, jsonify
+from flask import Blueprint, render_template, redirect, url_for, request, flash, make_response, jsonify, session
 from flask_login import login_required, current_user, logout_user
 from werkzeug.security import check_password_hash, generate_password_hash
+from werkzeug.utils import secure_filename
 
 from database import get_db, last_insert_id
 from security import validate_password_strength
 from utils import (audit, notify_member, notify, compute_loan_schedule, METHOD_LABELS,
-                   member_for_user, member_savings_balance)
+                   member_for_user, member_savings_balance, validate_image)
 import loan_workflow as lw
 
 portal = Blueprint('portal', __name__)
+STAFF_ROLES = {'admin', 'treasurer', 'secretary', 'exco'}
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────────
@@ -37,7 +41,67 @@ def _member_extras(member, db):
             d['date_joined'] = datetime.fromisoformat(dj.split('.')[0])
         except Exception:
             d['date_joined'] = datetime.now()
+    dob = d.get('date_of_birth')
+    if isinstance(dob, str) and dob:
+        try:
+            d['date_of_birth'] = datetime.fromisoformat(dob.split()[0])
+        except Exception:
+            pass
+    completion = _profile_completion(d)
+    d['profile_completion'] = completion
+    d['profile_completion_percent'] = completion['percent']
+    d['is_certified_member'] = completion['percent'] == 100
     return d
+
+
+def _profile_completion(member):
+    """Return profile readiness score and missing requirements for self-service onboarding."""
+    requirements = [
+        ('first_name', 'First name', 'Identity'),
+        ('last_name', 'Last name', 'Identity'),
+        ('email', 'Email address', 'Contact'),
+        ('phone', 'Phone number', 'Contact'),
+        ('date_of_birth', 'Date of birth', 'Identity'),
+        ('address', 'Residential address', 'Location'),
+        ('city', 'City or town', 'Location'),
+        ('state', 'State', 'Location'),
+        ('country', 'Country', 'Location'),
+        ('occupation', 'Occupation', 'Employment'),
+        ('bank_name', 'Bank name', 'Banking'),
+        ('account_name', 'Account name', 'Banking'),
+        ('account_number', 'Account number', 'Banking'),
+        ('emergency_contact_name', 'Emergency contact name', 'Emergency contact'),
+        ('emergency_contact_phone', 'Emergency contact phone', 'Emergency contact'),
+        ('nominee_name', 'Nominee name', 'Beneficiary'),
+        ('nominee_relationship', 'Nominee relationship', 'Beneficiary'),
+        ('nominee_phone', 'Nominee phone', 'Beneficiary'),
+    ]
+    completed = []
+    missing = []
+    sections = {}
+    for field, label, section in requirements:
+        value = member.get(field)
+        is_done = value is not None and str(value).strip() != ''
+        item = {'field': field, 'label': label, 'section': section, 'complete': is_done}
+        sections.setdefault(section, {'total': 0, 'done': 0})
+        sections[section]['total'] += 1
+        if is_done:
+            completed.append(item)
+            sections[section]['done'] += 1
+        else:
+            missing.append(item)
+    percent = round((len(completed) / len(requirements)) * 100) if requirements else 100
+    for section in sections.values():
+        section['percent'] = round((section['done'] / section['total']) * 100) if section['total'] else 100
+    return {
+        'percent': percent,
+        'completed': completed,
+        'missing': missing,
+        'sections': sections,
+        'total': len(requirements),
+        'done': len(completed),
+        'ready_to_transact': percent == 100,
+    }
 
 
 def _interest_rates(db):
@@ -76,6 +140,37 @@ def _parse_dt(val):
 
 
 # ── Member Portal Dashboard ───────────────────────────────────────────────────────
+
+@portal.route('/member/view-as-member', methods=['POST'])
+@login_required
+def view_as_member():
+    db = get_db()
+    if current_user.role == 'member':
+        return redirect(url_for('portal.member_portal'))
+    if current_user.role not in STAFF_ROLES:
+        flash('Member view is only available to staff users linked to a member profile.', 'warning')
+        return redirect(url_for('main.dashboard'))
+    member = member_for_user(db)
+    if not member:
+        flash('No member profile is linked to this login email.', 'warning')
+        return redirect(url_for('main.dashboard'))
+    session['view_mode'] = 'member'
+    audit(db, 'ENTER_MEMBER_VIEW', 'portal',
+          f"User {current_user.id} entered member view for member {member['id']}")
+    db.commit()
+    flash('You are now viewing your member portal.', 'info')
+    return redirect(url_for('portal.member_portal'))
+
+
+@portal.route('/member/back-to-admin', methods=['POST'])
+@login_required
+def back_to_admin():
+    if current_user.role in STAFF_ROLES:
+        session.pop('view_mode', None)
+        flash('Returned to admin view.', 'info')
+        return redirect(url_for('main.dashboard'))
+    return redirect(url_for('portal.member_portal'))
+
 
 @portal.route('/member/portal')
 @login_required
@@ -829,18 +924,100 @@ def edit_profile():
         return redirect(url_for('main.dashboard'))
 
     if request.method == 'POST':
-        phone   = request.form.get('phone', '').strip()
+        first_name = request.form.get('first_name', '').strip()
+        last_name = request.form.get('last_name', '').strip()
+        email = request.form.get('email', '').strip().lower()
+        phone = request.form.get('phone', '').strip()
         address = request.form.get('address', '').strip()
+        city = request.form.get('city', '').strip()
+        state = request.form.get('state', '').strip()
+        country = request.form.get('country', '').strip() or 'Nigeria'
         occupation = request.form.get('occupation', '').strip()
-        nok_name   = request.form.get('nok_name', '').strip()
-        nok_phone  = request.form.get('nok_phone', '').strip()
+        date_of_birth = request.form.get('date_of_birth', '').strip() or None
+        bank_name = request.form.get('bank_name', '').strip()
+        account_name = request.form.get('account_name', '').strip()
+        account_number = request.form.get('account_number', '').strip()
+        emergency_contact_name = request.form.get('emergency_contact_name', '').strip()
+        emergency_contact_phone = request.form.get('emergency_contact_phone', '').strip()
+        nominee_name = request.form.get('nominee_name', '').strip()
+        nominee_relationship = request.form.get('nominee_relationship', '').strip()
+        nominee_phone = request.form.get('nominee_phone', '').strip()
+        nominee_email = request.form.get('nominee_email', '').strip()
+        nominee_address = request.form.get('nominee_address', '').strip()
+        bvn = request.form.get('bvn', '').strip()
+        nin = request.form.get('nin', '').strip()
 
+        if not all([first_name, last_name, email, phone]):
+            flash('First name, last name, email, and phone are required.', 'danger')
+            return redirect(url_for('portal.edit_profile'))
+        duplicate_member = db.execute(
+            'SELECT id FROM members WHERE email = ? AND id <> ?',
+            (email, member['id'])
+        ).fetchone()
+        duplicate_user = db.execute(
+            'SELECT id FROM users WHERE email = ? AND id <> ?',
+            (email, current_user.id)
+        ).fetchone()
+        if duplicate_member or duplicate_user:
+            flash('That email address is already assigned to another account.', 'danger')
+            return redirect(url_for('portal.edit_profile'))
+        if date_of_birth:
+            try:
+                datetime.strptime(date_of_birth, '%Y-%m-%d')
+            except ValueError:
+                flash('Date of birth must be a valid date.', 'danger')
+                return redirect(url_for('portal.edit_profile'))
+        if account_number and (not account_number.isdigit() or len(account_number) != 10):
+            flash('Account number must be 10 digits.', 'danger')
+            return redirect(url_for('portal.edit_profile'))
+        if bvn and (not bvn.isdigit() or len(bvn) != 11):
+            flash('BVN must be 11 digits.', 'danger')
+            return redirect(url_for('portal.edit_profile'))
+        if nin and (not nin.isdigit() or len(nin) != 11):
+            flash('NIN must be 11 digits.', 'danger')
+            return redirect(url_for('portal.edit_profile'))
+
+        photo_path = member['photo_path']
+        if 'photo' in request.files:
+            photo = request.files['photo']
+            if photo and photo.filename:
+                ok, err = validate_image(photo)
+                if not ok:
+                    flash(err, 'danger')
+                    return redirect(url_for('portal.edit_profile'))
+                ext = secure_filename(photo.filename).rsplit('.', 1)[1].lower()
+                unique_name = f"{member['id']}_{secrets.token_hex(8)}.{ext}"
+                photo_path = os.path.join('static/uploads/member-photos', unique_name)
+                os.makedirs('static/uploads/member-photos', exist_ok=True)
+                photo.save(photo_path)
         db.execute('''
-            UPDATE members SET phone = ?, address = ?, occupation = ?,
-                               nok_name = ?, nok_phone = ?
+            UPDATE members SET
+                first_name = ?, last_name = ?, email = ?, phone = ?,
+                address = ?, city = ?, state = ?, country = ?,
+                occupation = ?, date_of_birth = ?,
+                bank_name = ?, account_name = ?, account_number = ?,
+                emergency_contact_name = ?, emergency_contact_phone = ?,
+                nominee_name = ?, nominee_relationship = ?, nominee_phone = ?,
+                nominee_email = ?, nominee_address = ?,
+                bvn = ?, nin = ?, photo_path = ?
             WHERE id = ?
-        ''', (phone, address, occupation, nok_name, nok_phone, member['id']))
+        ''', (
+            first_name, last_name, email, phone,
+            address, city, state, country,
+            occupation, date_of_birth,
+            bank_name, account_name, account_number,
+            emergency_contact_name, emergency_contact_phone,
+            nominee_name, nominee_relationship, nominee_phone,
+            nominee_email, nominee_address,
+            bvn, nin, photo_path, member['id'],
+        ))
+        db.execute(
+            'UPDATE users SET username = ?, email = ?, full_name = ?, phone = ? WHERE id = ?',
+            (email, email, f'{first_name} {last_name}', phone, current_user.id)
+        )
         db.commit()
+        current_user.email = email
+        current_user.username = email
         audit(db, 'MEMBER_PROFILE_UPDATE', 'members', f"Member {member['id']} updated profile")
         flash('Profile updated successfully!', 'success')
         return redirect(url_for('portal.profile'))

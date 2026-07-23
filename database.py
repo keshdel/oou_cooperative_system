@@ -306,6 +306,9 @@ def init_db():
     _add_col(db, 'members', 'card_token', 'TEXT')
     _add_col(db, 'members', 'card_path',  'TEXT')
     _add_col(db, 'members', 'employee_id', 'TEXT')
+    _add_col(db, 'members', 'city', 'TEXT')
+    _add_col(db, 'members', 'state', 'TEXT')
+    _add_col(db, 'members', 'country', "TEXT DEFAULT 'Nigeria'")
 
     # Savings table
     db.execute(_adapt('''

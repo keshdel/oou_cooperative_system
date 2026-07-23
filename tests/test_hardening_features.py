@@ -770,6 +770,86 @@ class HardeningFeatureTests(unittest.TestCase):
             db.execute('DELETE FROM journal_entries WHERE id = ?', (entry_id,))
             db.commit()
 
+    def test_member_profile_completion_and_certified_badge(self):
+        member_id = self.create_member()
+        self.create_member_user(member_id)
+        self.login_member()
+
+        incomplete = self.client.get('/profile')
+        self.assertEqual(incomplete.status_code, 200)
+        self.assertIn(b'Profile In Progress', incomplete.data)
+        self.assertIn(b'Readiness to transact', incomplete.data)
+
+        response = self.client.post(
+            '/edit-profile',
+            data={
+                'first_name': 'Ada',
+                'last_name': 'Audit',
+                'email': 'ada.audit@example.com',
+                'phone': '08000000001',
+                'date_of_birth': '1990-01-02',
+                'occupation': 'Accountant',
+                'address': '12 Cooperative Road',
+                'city': 'Ago-Iwoye',
+                'state': 'Ogun',
+                'country': 'Nigeria',
+                'bank_name': 'Test Bank',
+                'account_name': 'Ada Audit',
+                'account_number': '1234567890',
+                'emergency_contact_name': 'Bola Audit',
+                'emergency_contact_phone': '08000000002',
+                'nominee_name': 'Tunde Audit',
+                'nominee_relationship': 'Brother',
+                'nominee_phone': '08000000003',
+                'nominee_email': 'tunde.audit@example.com',
+                'nominee_address': '13 Cooperative Road',
+                'bvn': '12345678901',
+                'nin': '10987654321',
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'Certified Member', response.data)
+        self.assertIn(b'100%', response.data)
+
+        with self.app.app_context():
+            db = get_db()
+            member = db.execute('SELECT * FROM members WHERE id = ?', (member_id,)).fetchone()
+            self.assertEqual(member['city'], 'Ago-Iwoye')
+            self.assertEqual(member['state'], 'Ogun')
+            self.assertEqual(member['bank_name'], 'Test Bank')
+            user = db.execute('SELECT * FROM users WHERE email = ?', ('ada.audit@example.com',)).fetchone()
+            self.assertEqual(user['phone'], '08000000001')
+
+    def test_staff_user_can_switch_between_admin_and_member_views(self):
+        member_id = self.create_member()
+        with self.app.app_context():
+            db = get_db()
+            db.execute(
+                "UPDATE users SET email = ?, phone = ? WHERE username = 'admin'",
+                ('ada.audit@example.com', '08000000001')
+            )
+            db.commit()
+
+        self.login_admin()
+        admin_page = self.client.get('/dashboard')
+        self.assertEqual(admin_page.status_code, 200)
+        self.assertIn(b'My Member Portal', admin_page.data)
+        self.assertIn(b'Dashboard', admin_page.data)
+
+        member_view = self.client.post('/member/view-as-member', follow_redirects=True)
+        self.assertEqual(member_view.status_code, 200)
+        self.assertIn(b'My Profile', member_view.data)
+        self.assertIn(b'Back to Admin', member_view.data)
+        self.assertNotIn(b'Data Migration', member_view.data)
+
+        protected_admin = self.client.get('/members')
+        self.assertEqual(protected_admin.status_code, 200)
+
+        admin_view = self.client.post('/member/back-to-admin', follow_redirects=True)
+        self.assertEqual(admin_view.status_code, 200)
+        self.assertIn(b'Data Migration', admin_view.data)
+
     def test_chart_of_accounts_creates_detail_account_under_parent(self):
         self.login_admin()
         with self.app.app_context():
