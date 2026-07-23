@@ -242,6 +242,8 @@ def _exec_ignore(db, sql):
 
 def init_db():
     db = get_db()
+    if USE_POSTGRES:
+        db.execute('SELECT pg_advisory_lock(2026072301)')
 
     # Users table
     db.execute(_adapt('''
@@ -976,6 +978,9 @@ def init_db():
     print(f"{'=' * 60}\n")
 
     db.commit()
+    if USE_POSTGRES:
+        db.execute('SELECT pg_advisory_unlock(2026072301)')
+        db.commit()
     db.close()
     print(f"Database ({backend}) initialised successfully!")
 
