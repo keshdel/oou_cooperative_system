@@ -813,6 +813,61 @@ class HardeningFeatureTests(unittest.TestCase):
             db.execute("DELETE FROM accounts WHERE code = '1096'")
             db.commit()
 
+    def test_admin_can_reclassify_savings_bank_lines_to_detail_bank(self):
+        self.login_admin()
+        with self.app.app_context():
+            from ledger import MEMBER_DEPOSITS, post_journal
+            db = get_db()
+            db.execute("DELETE FROM accounts WHERE code = '1095'")
+            db.execute('''
+                INSERT INTO accounts (code, name, type, normal_balance, parent_code, is_active)
+                VALUES ('1095', 'Zenith Test Bank', 'asset', 'debit', '1000', 1)
+            ''')
+            entry_id = post_journal(
+                db,
+                'Savings posted to header account',
+                [
+                    {'account': '1000', 'debit': 7500, 'memo': 'Savings cash side'},
+                    {'account': MEMBER_DEPOSITS, 'credit': 7500, 'memo': 'Member savings'},
+                ],
+                date='2026-07-15',
+                reference='TEST/SAV/RECLASS',
+                source_module='savings_deposit',
+            )
+            db.commit()
+
+        response = self.client.post(
+            '/accounting/bank-accounts/reclassify-savings',
+            data={
+                'from_account': '1000',
+                'to_account': '1095',
+                'from_date': '2026-07-01',
+                'to_date': '2026-07-31',
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'Moved 1 savings bank line', response.data)
+
+        with self.app.app_context():
+            db = get_db()
+            moved = db.execute('''
+                SELECT account_code, debit, credit
+                FROM journal_lines
+                WHERE entry_id = ? AND debit > 0
+            ''', (entry_id,)).fetchone()
+            liability = db.execute('''
+                SELECT account_code, debit, credit
+                FROM journal_lines
+                WHERE entry_id = ? AND credit > 0
+            ''', (entry_id,)).fetchone()
+            self.assertEqual(moved['account_code'], '1095')
+            self.assertEqual(liability['account_code'], MEMBER_DEPOSITS)
+            db.execute('DELETE FROM journal_lines WHERE entry_id = ?', (entry_id,))
+            db.execute('DELETE FROM journal_entries WHERE id = ?', (entry_id,))
+            db.execute("DELETE FROM accounts WHERE code = '1095'")
+            db.commit()
+
     def test_journal_quick_view_drawer_endpoint_and_register_link(self):
         self.login_admin()
         with self.app.app_context():

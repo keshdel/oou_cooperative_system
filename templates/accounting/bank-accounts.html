@@ -9,6 +9,7 @@
   .bank-kpi strong { display:block; color:#0f172a; font-size:1.1rem; margin-top:.2rem; }
   .bank-card { border:1px solid #e2e8f0; border-radius:8px; overflow:hidden; }
   .bank-card .card-header { background:#f8fafc; }
+  .bank-tool { border:1px solid #fde68a; border-radius:8px; background:#fffbeb; }
   .bank-table th { background:#0f172a; color:#fff; border-color:#0f172a; }
   .bank-table td, .bank-table th { vertical-align:middle; }
   @media (max-width: 992px) { .bank-kpis { grid-template-columns:repeat(2,minmax(0,1fr)); } }
@@ -75,6 +76,58 @@ NGN {{ "{:,.2f}".format(value|default(0)) }}
       <strong>{{ money(totals.closing_balance) }}</strong>
     </div>
   </div>
+
+  {% if current_user.role == 'admin' %}
+  <div class="card bank-tool mb-3">
+    <div class="card-header bg-transparent">
+      <h6 class="mb-0"><i class="fas fa-arrow-right-arrow-left"></i> Move Savings Bank Lines</h6>
+    </div>
+    <div class="card-body">
+      <p class="small text-muted mb-3">
+        Use this when historical savings were posted to the Cash &amp; Bank header account but should sit in a specific bank detail account.
+        This changes only the bank-side journal line; member savings and income/liability lines are not changed.
+      </p>
+      <div class="alert alert-light border py-2">
+        Preview for {{ from_date }} to {{ to_date }}:
+        <strong>{{ reclass_preview.line_count }}</strong> line(s),
+        debits <strong>{{ money(reclass_preview.debit_total) }}</strong>,
+        credits <strong>{{ money(reclass_preview.credit_total) }}</strong>.
+      </div>
+      <form method="post" action="{{ url_for('accounting.reclassify_savings_bank_account') }}"
+            class="row g-2 align-items-end"
+            onsubmit="return confirm('Move matching savings bank-side journal lines to the selected target bank account? This preserves balanced entries but changes the GL account used for the cash side.');">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="from_date" value="{{ from_date }}">
+        <input type="hidden" name="to_date" value="{{ to_date }}">
+        <div class="col-md-4">
+          <label class="form-label small mb-0">From account</label>
+          <select name="from_account" class="form-select form-select-sm" required>
+            {% for account in bank_accounts %}
+            <option value="{{ account.code }}" {% if account.code == reclass_from %}selected{% endif %}>
+              {{ account.code }} - {{ account.name }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label class="form-label small mb-0">To account</label>
+          <select name="to_account" class="form-select form-select-sm" required>
+            {% for account in bank_accounts %}
+            <option value="{{ account.code }}" {% if account.is_default %}selected{% endif %}>
+              {{ account.code }} - {{ account.name }}{% if account.is_default %} (default){% endif %}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-auto">
+          <button type="submit" class="btn btn-warning btn-sm">
+            <i class="fas fa-arrow-right-arrow-left"></i> Move Savings Lines
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+  {% endif %}
 
   <div class="card bank-card">
     <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">

@@ -85,6 +85,38 @@ def _bank_positions(db, from_date, to_date):
     return positions, totals, default_cash_account
 
 
+def _savings_bank_line_scope(from_account, from_date=None, to_date=None):
+    where = [
+        'jl.account_code = ?',
+        "je.source_module IN ('savings_deposit', 'savings')",
+    ]
+    params = [from_account]
+    if from_date:
+        where.append('je.date >= ?')
+        params.append(from_date)
+    if to_date:
+        where.append('je.date <= ?')
+        params.append(f'{to_date} 23:59:59')
+    return ' AND '.join(where), params
+
+
+def _savings_bank_reclass_preview(db, from_account, from_date=None, to_date=None):
+    where, params = _savings_bank_line_scope(from_account, from_date, to_date)
+    row = db.execute(f'''
+        SELECT COUNT(*) AS line_count,
+               COALESCE(SUM(jl.debit), 0) AS debit_total,
+               COALESCE(SUM(jl.credit), 0) AS credit_total
+        FROM journal_lines jl
+        JOIN journal_entries je ON je.id = jl.entry_id
+        WHERE {where}
+    ''', tuple(params)).fetchone()
+    return {
+        'line_count': int(row['line_count'] or 0) if row else 0,
+        'debit_total': float(row['debit_total'] or 0) if row else 0.0,
+        'credit_total': float(row['credit_total'] or 0) if row else 0.0,
+    }
+
+
 @accounting.route('/chart')
 @login_required
 @role_required('admin', 'treasurer')
@@ -299,6 +331,11 @@ def bank_accounts():
     from_date = request.args.get('from_date') or _year_start()
     to_date = request.args.get('to_date') or _today()
     positions, totals, default_cash_account = _bank_positions(db, from_date, to_date)
+    bank_accounts_list = _bank_account_rows(db)
+    for account in bank_accounts_list:
+        account['is_default'] = account['code'] == default_cash_account
+    reclass_from = request.args.get('reclass_from', '1000')
+    reclass_preview = _savings_bank_reclass_preview(db, reclass_from, from_date, to_date)
 
     if request.args.get('format') == 'csv':
         out = io.StringIO()
@@ -329,8 +366,69 @@ def bank_accounts():
     return render_template('accounting/bank-accounts.html',
                            positions=positions, totals=totals,
                            default_cash_account=default_cash_account,
+                           bank_accounts=bank_accounts_list,
+                           reclass_from=reclass_from,
+                           reclass_preview=reclass_preview,
                            from_date=from_date, to_date=to_date,
                            generated_on=datetime.now())
+
+
+@accounting.route('/bank-accounts/reclassify-savings', methods=['POST'])
+@login_required
+@role_required('admin')
+def reclassify_savings_bank_account():
+    db = get_db()
+    from_account = request.form.get('from_account', '').strip()
+    to_account = request.form.get('to_account', '').strip()
+    from_date = request.form.get('from_date', '').strip() or None
+    to_date = request.form.get('to_date', '').strip() or None
+
+    if not from_account or not to_account or from_account == to_account:
+        flash('Choose different source and target bank accounts.', 'danger')
+        return redirect(url_for('accounting.bank_accounts', from_date=from_date or _year_start(), to_date=to_date or _today()))
+
+    accounts = {
+        r['code']: r for r in db.execute('''
+            SELECT code, name, type, is_active
+            FROM accounts
+            WHERE code IN (?, ?) AND type = 'asset' AND is_active = 1
+        ''', (from_account, to_account)).fetchall()
+    }
+    if from_account not in accounts or to_account not in accounts:
+        flash('Both source and target must be active asset bank/cash accounts.', 'danger')
+        return redirect(url_for('accounting.bank_accounts', from_date=from_date or _year_start(), to_date=to_date or _today()))
+
+    preview = _savings_bank_reclass_preview(db, from_account, from_date, to_date)
+    if preview['line_count'] == 0:
+        flash('No savings bank-side journal lines found for the selected source account and period.', 'info')
+        return redirect(url_for('accounting.bank_accounts', from_date=from_date or _year_start(), to_date=to_date or _today()))
+
+    where, params = _savings_bank_line_scope(from_account, from_date, to_date)
+    try:
+        db.execute(f'''
+            UPDATE journal_lines
+               SET account_code = ?
+             WHERE id IN (
+                SELECT jl.id
+                FROM journal_lines jl
+                JOIN journal_entries je ON je.id = jl.entry_id
+                WHERE {where}
+             )
+        ''', tuple([to_account] + params))
+        db.commit()
+        audit(db, 'RECLASSIFY_SAVINGS_BANK', 'accounting',
+              f"Moved {preview['line_count']} savings bank line(s) from {from_account} to {to_account}"
+              f" for {from_date or 'beginning'} to {to_date or 'today'}")
+        flash(
+            f"Moved {preview['line_count']} savings bank line(s) from "
+            f"{from_account} - {accounts[from_account]['name']} to "
+            f"{to_account} - {accounts[to_account]['name']}.",
+            'success',
+        )
+    except Exception as e:
+        db.rollback()
+        flash(f'Could not reclassify savings bank lines: {e}', 'danger')
+    return redirect(url_for('accounting.bank_accounts', from_date=from_date or _year_start(), to_date=to_date or _today()))
 
 
 @accounting.route('/bank-accounts/<code>')
