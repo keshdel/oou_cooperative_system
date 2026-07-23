@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% block title %}Bank Accounts - {{ coop_name }}{% endblock %}
+{% block content %}
+<style>
+  .bank-actions { display:flex; gap:.5rem; flex-wrap:wrap; justify-content:flex-end; align-items:center; }
+  .bank-kpis { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:1rem; }
+  .bank-kpi { border:1px solid #e2e8f0; border-radius:8px; padding:.9rem; background:#fff; }
+  .bank-kpi small { display:block; color:#64748b; font-weight:700; text-transform:uppercase; }
+  .bank-kpi strong { display:block; color:#0f172a; font-size:1.1rem; margin-top:.2rem; }
+  .bank-card { border:1px solid #e2e8f0; border-radius:8px; overflow:hidden; }
+  .bank-card .card-header { background:#f8fafc; }
+  .bank-table th { background:#0f172a; color:#fff; border-color:#0f172a; }
+  .bank-table td, .bank-table th { vertical-align:middle; }
+  @media (max-width: 992px) { .bank-kpis { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+  @media (max-width: 576px) { .bank-kpis { grid-template-columns:1fr; } .bank-actions { justify-content:flex-start; } }
+</style>
+
+{% macro money(value) -%}
+NGN {{ "{:,.2f}".format(value|default(0)) }}
+{%- endmacro %}
+
+<div class="container-fluid">
+  <div class="row mb-3 g-3 align-items-start">
+    <div class="col-lg-7">
+      <h2 class="mb-1"><i class="fas fa-building-columns"></i> Bank Accounts</h2>
+      <p class="text-muted mb-0">Period bank position by GL cash/bank account for reconciliation and cash control.</p>
+    </div>
+    <div class="col-lg-5 bank-actions">
+      <a href="{{ url_for('accounting.bank_accounts', from_date=from_date, to_date=to_date, format='csv') }}"
+         class="btn btn-outline-success btn-sm">
+        <i class="fas fa-file-csv"></i> Export CSV
+      </a>
+      <a href="{{ url_for('accounting.chart_of_accounts') }}" class="btn btn-outline-secondary btn-sm">
+        <i class="fas fa-list"></i> Chart of Accounts
+      </a>
+      <a href="{{ url_for('accounting.reconciliation') }}" class="btn btn-outline-secondary btn-sm">
+        <i class="fas fa-check-double"></i> Reconciliation
+      </a>
+    </div>
+  </div>
+
+  <div class="card bank-card mb-3">
+    <div class="card-body py-2">
+      <form method="get" class="row g-2 align-items-end">
+        <div class="col-md-3 col-lg-2">
+          <label class="form-label small mb-0">From</label>
+          <input type="date" name="from_date" value="{{ from_date }}" class="form-control form-control-sm">
+        </div>
+        <div class="col-md-3 col-lg-2">
+          <label class="form-label small mb-0">To</label>
+          <input type="date" name="to_date" value="{{ to_date }}" class="form-control form-control-sm">
+        </div>
+        <div class="col-auto">
+          <button class="btn btn-primary btn-sm"><i class="fas fa-filter"></i> Apply</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="bank-kpis mb-3">
+    <div class="bank-kpi">
+      <small>Opening Position</small>
+      <strong>{{ money(totals.opening_balance) }}</strong>
+    </div>
+    <div class="bank-kpi">
+      <small>Cash In</small>
+      <strong class="text-success">{{ money(totals.cash_in) }}</strong>
+    </div>
+    <div class="bank-kpi">
+      <small>Cash Out</small>
+      <strong class="text-danger">{{ money(totals.cash_out) }}</strong>
+    </div>
+    <div class="bank-kpi">
+      <small>Closing Position</small>
+      <strong>{{ money(totals.closing_balance) }}</strong>
+    </div>
+  </div>
+
+  <div class="card bank-card">
+    <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+      <h6 class="mb-0">Bank Position: {{ from_date }} to {{ to_date }}</h6>
+      <span class="small text-muted">Default posting account: <strong>{{ default_cash_account }}</strong></span>
+    </div>
+    <div class="card-body p-0">
+      {% if positions %}
+      <div class="table-responsive">
+        <table class="table table-hover mb-0 bank-table">
+          <thead>
+            <tr>
+              <th>Account</th>
+              <th class="text-end">Opening</th>
+              <th class="text-end">Cash In</th>
+              <th class="text-end">Cash Out</th>
+              <th class="text-end">Closing</th>
+              <th class="text-end">Entries</th>
+              <th style="width:180px;">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in positions %}
+            <tr>
+              <td>
+                <a class="fw-bold" href="{{ url_for('accounting.bank_account_detail', code=row.code, from_date=from_date, to_date=to_date) }}">
+                  {{ row.code }} - {{ row.name }}
+                </a>
+                {% if row.is_default %}<span class="badge bg-success ms-1">Default</span>{% endif %}
+                {% if row.parent_code %}<div class="small text-muted">Parent: {{ row.parent_code }}</div>{% endif %}
+              </td>
+              <td class="text-end">{{ money(row.opening_balance) }}</td>
+              <td class="text-end text-success">{{ money(row.cash_in) }}</td>
+              <td class="text-end text-danger">{{ money(row.cash_out) }}</td>
+              <td class="text-end fw-bold">{{ money(row.closing_balance) }}</td>
+              <td class="text-end">{{ row.entries }}</td>
+              <td>
+                <a class="btn btn-primary btn-sm" href="{{ url_for('accounting.bank_account_detail', code=row.code, from_date=from_date, to_date=to_date) }}">
+                  <i class="fas fa-eye"></i> Reconcile
+                </a>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot class="table-light fw-bold">
+            <tr>
+              <td>Total Bank Position</td>
+              <td class="text-end">{{ money(totals.opening_balance) }}</td>
+              <td class="text-end">{{ money(totals.cash_in) }}</td>
+              <td class="text-end">{{ money(totals.cash_out) }}</td>
+              <td class="text-end">{{ money(totals.closing_balance) }}</td>
+              <td class="text-end">{{ totals.entries }}</td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      {% else %}
+      <div class="p-4 text-center text-muted">
+        <i class="fas fa-building-columns fa-2x mb-2"></i><br>
+        No active cash/bank GL accounts found. Create a bank detail account under Cash & Bank in the Chart of Accounts.
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <p class="text-muted small mt-2">Generated {{ generated_on.strftime('%Y-%m-%d %H:%M') }}</p>
+</div>
+{% endblock %}

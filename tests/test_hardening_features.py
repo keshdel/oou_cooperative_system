@@ -727,6 +727,85 @@ class HardeningFeatureTests(unittest.TestCase):
                 db.execute('DELETE FROM journal_entries WHERE id = ?', (journal['id'],))
                 db.commit()
 
+    def test_bank_accounts_position_and_reconciliation_exports(self):
+        self.login_admin()
+        with self.app.app_context():
+            from ledger import OPERATING_EXPENSES, post_journal
+            db = get_db()
+            db.execute("DELETE FROM accounts WHERE code = '1096'")
+            db.execute('''
+                INSERT INTO accounts (code, name, type, normal_balance, parent_code, is_active)
+                VALUES ('1096', 'Test Reconciliation Bank', 'asset', 'debit', '1000', 1)
+            ''')
+            entry_ids = []
+            entry_ids.append(post_journal(
+                db,
+                'Opening bank test movement',
+                [
+                    {'account': '1096', 'debit': 1000, 'memo': 'Opening bank'},
+                    {'account': OPERATING_EXPENSES, 'credit': 1000, 'memo': 'Offset'},
+                ],
+                date='2025-12-31',
+                reference='TEST/BANK/OPEN',
+                source_module='manual',
+            ))
+            entry_ids.append(post_journal(
+                db,
+                'Period bank inflow',
+                [
+                    {'account': '1096', 'debit': 2500, 'memo': 'Inflow'},
+                    {'account': OPERATING_EXPENSES, 'credit': 2500, 'memo': 'Offset'},
+                ],
+                date='2026-07-10',
+                reference='TEST/BANK/IN',
+                source_module='manual',
+            ))
+            entry_ids.append(post_journal(
+                db,
+                'Period bank outflow',
+                [
+                    {'account': OPERATING_EXPENSES, 'debit': 400, 'memo': 'Expense'},
+                    {'account': '1096', 'credit': 400, 'memo': 'Outflow'},
+                ],
+                date='2026-07-12',
+                reference='TEST/BANK/OUT',
+                source_module='manual',
+            ))
+            db.commit()
+
+        page = self.client.get('/accounting/bank-accounts?from_date=2026-01-01&to_date=2026-07-31')
+        self.assertEqual(page.status_code, 200)
+        self.assertIn(b'Test Reconciliation Bank', page.data)
+        self.assertIn(b'Bank Position', page.data)
+
+        csv_page = self.client.get('/accounting/bank-accounts?from_date=2026-01-01&to_date=2026-07-31&format=csv')
+        self.assertEqual(csv_page.status_code, 200)
+        self.assertIn(b'account_code,account_name,opening_balance,cash_in', csv_page.data)
+        self.assertIn(b'1096,Test Reconciliation Bank,1000.00,2500.00,400.00,3100.00', csv_page.data)
+
+        detail = self.client.get(
+            '/accounting/bank-accounts/1096?from_date=2026-01-01&to_date=2026-07-31&statement_balance=3100'
+        )
+        self.assertEqual(detail.status_code, 200)
+        self.assertIn(b'Bank Reconciliation', detail.data)
+        self.assertIn(b'Variance', detail.data)
+        self.assertIn(b'TEST/BANK/IN', detail.data)
+
+        detail_csv = self.client.get(
+            '/accounting/bank-accounts/1096?from_date=2026-01-01&to_date=2026-07-31&statement_balance=3100&format=csv'
+        )
+        self.assertEqual(detail_csv.status_code, 200)
+        self.assertIn(b'gl_closing_balance,3100.00', detail_csv.data)
+        self.assertIn(b'TEST/BANK/OUT', detail_csv.data)
+
+        with self.app.app_context():
+            db = get_db()
+            for entry_id in entry_ids:
+                db.execute('DELETE FROM journal_lines WHERE entry_id = ?', (entry_id,))
+                db.execute('DELETE FROM journal_entries WHERE id = ?', (entry_id,))
+            db.execute("DELETE FROM accounts WHERE code = '1096'")
+            db.commit()
+
     def test_journal_quick_view_drawer_endpoint_and_register_link(self):
         self.login_admin()
         with self.app.app_context():

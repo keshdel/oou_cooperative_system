@@ -20,6 +20,71 @@ from ledger import (get_accounts, trial_balance, backfill_from_transactions,
 accounting = Blueprint('accounting', __name__, url_prefix='/accounting')
 
 
+def _today():
+    return datetime.now().strftime('%Y-%m-%d')
+
+
+def _year_start():
+    return datetime.now().replace(month=1, day=1).strftime('%Y-%m-%d')
+
+
+def _bank_account_rows(db):
+    """Return active cash/bank GL accounts used for bank-position reporting."""
+    rows = db.execute('''
+        SELECT code, name, type, normal_balance, parent_code, is_active
+        FROM accounts
+        WHERE is_active = 1
+          AND type = 'asset'
+          AND (
+                code = '1000'
+             OR parent_code = '1000'
+             OR LOWER(name) LIKE '%bank%'
+             OR LOWER(name) LIKE '%cash%'
+             OR LOWER(name) LIKE '%wallet%'
+          )
+        ORDER BY
+          CASE WHEN parent_code = '1000' THEN 0 WHEN code = '1000' THEN 1 ELSE 2 END,
+          code
+    ''').fetchall()
+    return [dict(r) for r in rows]
+
+
+def _bank_positions(db, from_date, to_date):
+    default_cash_account = get_default_cash_account(db)
+    positions = []
+    totals = {
+        'opening_balance': 0.0,
+        'cash_in': 0.0,
+        'cash_out': 0.0,
+        'closing_balance': 0.0,
+        'entries': 0,
+    }
+    for account in _bank_account_rows(db):
+        data = account_ledger(db, account['code'], from_date, to_date)
+        if not data:
+            continue
+        row = {
+            'code': account['code'],
+            'name': account['name'],
+            'parent_code': account.get('parent_code'),
+            'is_default': account['code'] == default_cash_account,
+            'opening_balance': data['opening_balance'],
+            'cash_in': data['total_debit'],
+            'cash_out': data['total_credit'],
+            'closing_balance': data['closing_balance'],
+            'entries': data['count'],
+        }
+        positions.append(row)
+        totals['opening_balance'] += row['opening_balance']
+        totals['cash_in'] += row['cash_in']
+        totals['cash_out'] += row['cash_out']
+        totals['closing_balance'] += row['closing_balance']
+        totals['entries'] += row['entries']
+    for key in ('opening_balance', 'cash_in', 'cash_out', 'closing_balance'):
+        totals[key] = round(totals[key], 2)
+    return positions, totals, default_cash_account
+
+
 @accounting.route('/chart')
 @login_required
 @role_required('admin', 'treasurer')
@@ -224,6 +289,126 @@ def reconciliation():
     db = get_db()
     rec = ledger_reconciliation(db)
     return render_template('accounting/reconciliation.html', rec=rec)
+
+
+@accounting.route('/bank-accounts')
+@login_required
+@role_required('admin', 'treasurer')
+def bank_accounts():
+    db = get_db()
+    from_date = request.args.get('from_date') or _year_start()
+    to_date = request.args.get('to_date') or _today()
+    positions, totals, default_cash_account = _bank_positions(db, from_date, to_date)
+
+    if request.args.get('format') == 'csv':
+        out = io.StringIO()
+        writer = csv.writer(out)
+        writer.writerow([
+            'account_code', 'account_name', 'opening_balance', 'cash_in',
+            'cash_out', 'closing_balance', 'entries', 'is_default',
+            'from_date', 'to_date',
+        ])
+        for row in positions:
+            writer.writerow([
+                row['code'], row['name'], f"{row['opening_balance']:.2f}",
+                f"{row['cash_in']:.2f}", f"{row['cash_out']:.2f}",
+                f"{row['closing_balance']:.2f}", row['entries'],
+                'yes' if row['is_default'] else 'no', from_date, to_date,
+            ])
+        writer.writerow([])
+        writer.writerow([
+            'TOTAL', '', f"{totals['opening_balance']:.2f}",
+            f"{totals['cash_in']:.2f}", f"{totals['cash_out']:.2f}",
+            f"{totals['closing_balance']:.2f}", totals['entries'], '', from_date, to_date,
+        ])
+        resp = make_response(out.getvalue())
+        resp.headers['Content-Type'] = 'text/csv; charset=utf-8'
+        resp.headers['Content-Disposition'] = 'attachment; filename=bank_accounts_position.csv'
+        return resp
+
+    return render_template('accounting/bank-accounts.html',
+                           positions=positions, totals=totals,
+                           default_cash_account=default_cash_account,
+                           from_date=from_date, to_date=to_date,
+                           generated_on=datetime.now())
+
+
+@accounting.route('/bank-accounts/<code>')
+@login_required
+@role_required('admin', 'treasurer')
+def bank_account_detail(code):
+    db = get_db()
+    account = db.execute('''
+        SELECT code FROM accounts
+        WHERE code = ? AND is_active = 1 AND type = 'asset'
+          AND (
+                code = '1000'
+             OR parent_code = '1000'
+             OR LOWER(name) LIKE '%bank%'
+             OR LOWER(name) LIKE '%cash%'
+             OR LOWER(name) LIKE '%wallet%'
+          )
+    ''', (code,)).fetchone()
+    if not account:
+        flash('Bank/cash account not found.', 'danger')
+        return redirect(url_for('accounting.bank_accounts'))
+
+    from_date = request.args.get('from_date') or _year_start()
+    to_date = request.args.get('to_date') or _today()
+    data = account_ledger(db, code, from_date, to_date)
+    statement_balance_raw = request.args.get('statement_balance', '').strip()
+    statement_balance = None
+    variance = None
+    if statement_balance_raw:
+        try:
+            statement_balance = float(statement_balance_raw.replace(',', ''))
+            variance = round(statement_balance - data['closing_balance'], 2)
+        except ValueError:
+            flash('Statement balance must be a valid number.', 'warning')
+
+    if request.args.get('format') == 'csv':
+        out = io.StringIO()
+        writer = csv.writer(out)
+        writer.writerow(['account_code', data['account']['code']])
+        writer.writerow(['account_name', data['account']['name']])
+        writer.writerow(['from_date', from_date])
+        writer.writerow(['to_date', to_date])
+        writer.writerow(['opening_balance', f"{data['opening_balance']:.2f}"])
+        writer.writerow(['cash_in', f"{data['total_debit']:.2f}"])
+        writer.writerow(['cash_out', f"{data['total_credit']:.2f}"])
+        writer.writerow(['gl_closing_balance', f"{data['closing_balance']:.2f}"])
+        if statement_balance is not None:
+            writer.writerow(['statement_balance', f"{statement_balance:.2f}"])
+            writer.writerow(['variance', f"{variance:.2f}"])
+        writer.writerow([])
+        writer.writerow([
+            'date', 'entry_number', 'description', 'reference', 'source_module',
+            'memo', 'cash_in', 'cash_out', 'running_balance',
+        ])
+        for e in data['entries']:
+            writer.writerow([
+                str(e.get('date') or '')[:10],
+                e.get('entry_number') or f"JE-{e.get('entry_id')}",
+                e.get('description') or '',
+                e.get('reference') or '',
+                e.get('source_module') or '',
+                e.get('memo') or '',
+                f"{float(e.get('debit') or 0):.2f}",
+                f"{float(e.get('credit') or 0):.2f}",
+                f"{float(e.get('balance') or 0):.2f}",
+            ])
+        resp = make_response(out.getvalue())
+        resp.headers['Content-Type'] = 'text/csv; charset=utf-8'
+        resp.headers['Content-Disposition'] = f'attachment; filename=bank_account_{code}.csv'
+        return resp
+
+    return render_template('accounting/bank-account-detail.html',
+                           data=data, account=data['account'],
+                           from_date=from_date, to_date=to_date,
+                           statement_balance=statement_balance,
+                           statement_balance_raw=statement_balance_raw,
+                           variance=variance,
+                           generated_on=datetime.now())
 
 
 def _pct(source, name, default):

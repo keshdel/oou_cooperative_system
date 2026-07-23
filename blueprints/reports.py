@@ -89,6 +89,15 @@ def _report_center_groups(year_start, today):
                     'roles': ['admin', 'treasurer'],
                 },
                 {
+                    'title': 'Bank Accounts Position',
+                    'summary': 'Separate bank/cash account balances, period movements, and reconciliation variance.',
+                    'icon': 'fas fa-building-columns',
+                    'view_url': url_for('accounting.bank_accounts', from_date=year_start, to_date=today),
+                    'export_url': url_for('accounting.bank_accounts', from_date=year_start, to_date=today, format='csv'),
+                    'status': 'Ready',
+                    'roles': ['admin', 'treasurer'],
+                },
+                {
                     'title': 'Member Savings Control',
                     'summary': 'Member-level savings balances for reconciliation to member deposits.',
                     'icon': 'fas fa-piggy-bank',

@@ -10,6 +10,7 @@
         </div>
         <div class="col-md-4 text-end">
             <a href="{{ url_for('accounting.trial_balance_view') }}" class="btn btn-outline-secondary btn-sm">Trial Balance</a>
+            <a href="{{ url_for('accounting.bank_accounts') }}" class="btn btn-outline-secondary btn-sm">Bank Accounts</a>
             <a href="{{ url_for('accounting.journal_register') }}" class="btn btn-outline-secondary btn-sm">Journal</a>
             {% if current_user.role == 'admin' %}
             <form method="post" action="{{ url_for('accounting.backfill') }}" class="d-inline"
