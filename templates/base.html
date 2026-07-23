@@ -113,6 +113,12 @@
                     </a>
                     {% endif %}
                     {% if current_user.role in ['admin', 'secretary'] %}
+                    <a href="{{ url_for('communications.index') }}"
+                       class="{% if request.blueprint == 'communications' %}active{% endif %}">
+                        <i class="fas fa-paper-plane"></i> Communications
+                    </a>
+                    {% endif %}
+                    {% if current_user.role in ['admin', 'secretary'] %}
                     <a href="{{ url_for('governance.manage') }}"
                        class="{% if request.blueprint == 'governance' %}active{% endif %}">
                         <i class="fas fa-bullhorn"></i> Events &amp; Minutes

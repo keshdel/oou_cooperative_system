@@ -868,6 +868,59 @@ class HardeningFeatureTests(unittest.TestCase):
             db.execute("DELETE FROM accounts WHERE code = '1095'")
             db.commit()
 
+    def test_admin_can_send_member_email_campaign_with_logs(self):
+        member_id = self.create_member()
+        self.login_admin()
+        composer = self.client.get('/communications/new')
+        self.assertEqual(composer.status_code, 200)
+        self.assertIn(b'Monthly savings reminder', composer.data)
+        self.assertIn(b'Loan repayment reminder', composer.data)
+
+        sent_messages = []
+
+        def fake_send(to, subject, html, text=''):
+            sent_messages.append((to, subject, html))
+            return True
+
+        with patch('blueprints.communications.send_email', side_effect=fake_send):
+            response = self.client.post(
+                '/communications/new',
+                data={
+                    'title': 'Profile reminder',
+                    'audience': 'selected',
+                    'channel': 'email',
+                    'member_ids': [str(member_id)],
+                    'subject': 'Hello {first_name}',
+                    'body': 'Dear {first_name}, your balance is {savings_balance}. Portal: {portal_link}',
+                },
+                follow_redirects=True,
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'Campaign sent: 1 sent, 0 failed, 0 skipped', response.data)
+        self.assertEqual(len(sent_messages), 1)
+        self.assertEqual(sent_messages[0][0], 'ada.audit@example.com')
+        self.assertIn('Hello Ada', sent_messages[0][1])
+        self.assertIn('Dear Ada', sent_messages[0][2])
+        self.assertIn('NGN', sent_messages[0][2])
+        self.assertIn('CoopMS Member Communication', sent_messages[0][2])
+        self.assertIn('Member Portal Notice', sent_messages[0][2])
+
+        with self.app.app_context():
+            db = get_db()
+            campaign = db.execute(
+                "SELECT * FROM communication_campaigns WHERE title = 'Profile reminder'"
+            ).fetchone()
+            self.assertIsNotNone(campaign)
+            self.assertEqual(campaign['sent_count'], 1)
+            recipient = db.execute(
+                'SELECT * FROM communication_recipients WHERE campaign_id = ?',
+                (campaign['id'],),
+            ).fetchone()
+            self.assertEqual(recipient['status'], 'sent')
+            db.execute('DELETE FROM communication_recipients WHERE campaign_id = ?', (campaign['id'],))
+            db.execute('DELETE FROM communication_campaigns WHERE id = ?', (campaign['id'],))
+            db.commit()
+
     def test_journal_quick_view_drawer_endpoint_and_register_link(self):
         self.login_admin()
         with self.app.app_context():

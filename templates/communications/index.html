@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Communications - {{ coop_name }}{% endblock %}
+{% block content %}
+<style>
+  .comm-actions { display:flex; gap:.5rem; flex-wrap:wrap; justify-content:flex-end; align-items:center; }
+  .comm-card { border:1px solid #e2e8f0; border-radius:8px; overflow:hidden; }
+  .comm-card .card-header { background:#f8fafc; }
+  .comm-table th { background:#0f172a; color:#fff; border-color:#0f172a; }
+  .comm-band { border:1px solid #dbeafe; border-radius:8px; background:linear-gradient(90deg,#f8fafc,#eef6ff); padding:1rem; }
+  .comm-chip { display:inline-flex; align-items:center; gap:.35rem; padding:.35rem .6rem; border-radius:999px; background:#ecfdf5; color:#047857; font-weight:700; font-size:.8rem; }
+</style>
+
+<div class="container-fluid">
+  <div class="row mb-3 g-3 align-items-start comm-band">
+    <div class="col-lg-7">
+      <span class="comm-chip"><i class="fas fa-shield-alt"></i> Audited delivery</span>
+      <h2 class="mb-1 mt-2"><i class="fas fa-paper-plane"></i> Member Communications</h2>
+      <p class="text-muted mb-0">CoopMS email workspace for member notices, profile reminders, balance prompts, and service updates.</p>
+    </div>
+    <div class="col-lg-5 comm-actions">
+      <a href="{{ url_for('communications.new_campaign') }}" class="btn btn-primary">
+        <i class="fas fa-plus"></i> Compose Email
+      </a>
+    </div>
+  </div>
+
+  <div class="card comm-card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <h6 class="mb-0"><i class="fas fa-clipboard-list"></i> Campaign Register</h6>
+      <span class="small text-muted">{{ campaigns|length }} shown</span>
+    </div>
+    <div class="card-body p-0">
+      {% if campaigns %}
+      <div class="table-responsive">
+        <table class="table table-hover mb-0 comm-table">
+          <thead>
+            <tr>
+              <th>Campaign</th>
+              <th>Audience</th>
+              <th>Channel</th>
+              <th>Delivery Status</th>
+              <th class="text-end">Sent</th>
+              <th class="text-end">Failed</th>
+              <th class="text-end">Skipped</th>
+              <th>Created</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for c in campaigns %}
+            <tr>
+              <td><a class="fw-bold" href="{{ url_for('communications.campaign_detail', campaign_id=c.id) }}">{{ c.title }}</a></td>
+              <td>{{ c.audience|replace('_', ' ')|title }}</td>
+              <td>{{ c.channel|title }}</td>
+              <td><span class="badge bg-light text-dark">{{ c.status|title }}</span></td>
+              <td class="text-end text-success">{{ c.sent_count or 0 }}</td>
+              <td class="text-end text-danger">{{ c.failed_count or 0 }}</td>
+              <td class="text-end text-muted">{{ c.skipped_count or 0 }}</td>
+              <td class="small">{{ (c.created_at|string)[:19] }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="p-4 text-center text-muted">
+        <i class="fas fa-inbox fa-2x mb-2"></i><br>
+        No campaigns yet.
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

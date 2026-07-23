@@ -590,6 +590,44 @@ def init_db():
         )
     '''))
 
+    # Member communication campaigns and delivery attempts.
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS communication_campaigns (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            audience TEXT NOT NULL,
+            channel TEXT DEFAULT 'email',
+            subject TEXT,
+            body TEXT NOT NULL,
+            status TEXT DEFAULT 'draft',
+            recipient_count INTEGER DEFAULT 0,
+            sent_count INTEGER DEFAULT 0,
+            failed_count INTEGER DEFAULT 0,
+            skipped_count INTEGER DEFAULT 0,
+            created_by INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            sent_at TIMESTAMP,
+            FOREIGN KEY (created_by) REFERENCES users (id)
+        )
+    '''))
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS communication_recipients (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            campaign_id INTEGER NOT NULL,
+            member_id INTEGER,
+            channel TEXT DEFAULT 'email',
+            destination TEXT,
+            status TEXT DEFAULT 'pending',
+            error TEXT,
+            sent_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (campaign_id) REFERENCES communication_campaigns (id),
+            FOREIGN KEY (member_id) REFERENCES members (id)
+        )
+    '''))
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_comm_recip_campaign ON communication_recipients(campaign_id)')
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_comm_campaign_created ON communication_campaigns(created_at)')
+
     # Pending payments table
     db.execute(_adapt('''
         CREATE TABLE IF NOT EXISTS pending_payments (

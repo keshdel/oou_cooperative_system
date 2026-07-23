@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% block title %}New Communication - {{ coop_name }}{% endblock %}
+{% block content %}
+<style>
+  .comm-card { border:1px solid #e2e8f0; border-radius:8px; overflow:hidden; }
+  .comm-card .card-header { background:#f8fafc; }
+  .token-list code { display:inline-block; margin:.15rem .2rem .15rem 0; }
+  .member-picker { max-height:280px; overflow:auto; border:1px solid #e2e8f0; border-radius:8px; padding:.75rem; }
+  .compose-shell { border:1px solid #dbeafe; border-radius:8px; background:#f8fafc; padding:1rem; }
+  .notice-strip { border-left:4px solid #0f766e; background:#f0fdfa; padding:.85rem 1rem; border-radius:6px; color:#134e4a; }
+  .token-list code { background:#eef6ff; color:#0f172a; border:1px solid #dbeafe; border-radius:5px; padding:.25rem .4rem; }
+</style>
+
+<div class="container-fluid">
+  <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3 compose-shell">
+    <div>
+      <h2 class="mb-1"><i class="fas fa-envelope"></i> Compose Member Email</h2>
+      <p class="text-muted mb-0">Send a branded CoopMS notice with member-specific balances, profile status, and portal links.</p>
+    </div>
+    <a href="{{ url_for('communications.index') }}" class="btn btn-outline-secondary">
+      <i class="fas fa-arrow-left"></i> Communications
+    </a>
+  </div>
+
+  <form method="post" action="{{ url_for('communications.new_campaign') }}"
+        onsubmit="return confirm('Send this message now? Delivery attempts will be logged for every recipient.');">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="row g-3">
+      <div class="col-lg-8">
+        <div class="card comm-card mb-3">
+          <div class="card-header"><h6 class="mb-0"><i class="fas fa-pen"></i> Campaign Brief</h6></div>
+          <div class="card-body">
+            <div class="mb-3">
+              <label class="form-label">Message Type</label>
+              <select class="form-select" id="presetSelect">
+                {% for key, preset in presets.items() %}
+                <option value="{{ key }}" {% if key == 'profile_update' %}selected{% endif %}>{{ preset.label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Campaign Title</label>
+              <input name="title" id="campaignTitle" class="form-control" value="{{ default_preset.title }}" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Email Subject</label>
+              <input name="subject" id="campaignSubject" class="form-control" value="{{ default_preset.subject }}" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Message Body</label>
+              <textarea name="body" id="campaignBody" rows="13" class="form-control" required>{{ default_preset.body }}</textarea>
+              <div class="form-text">The final email uses the CoopMS member communication theme and logs each delivery attempt.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-lg-4">
+        <div class="card comm-card mb-3">
+          <div class="card-header"><h6 class="mb-0"><i class="fas fa-users"></i> Audience Control</h6></div>
+          <div class="card-body">
+            <div class="mb-3">
+              <label class="form-label">Channel</label>
+              <select name="channel" class="form-select">
+                <option value="email">Email</option>
+                <option value="whatsapp" disabled>WhatsApp (coming after consent/templates)</option>
+              </select>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Audience</label>
+              <select name="audience" class="form-select" id="audienceSelect">
+                {% for key, label in audiences.items() %}
+                <option value="{{ key }}" {% if key == default_preset.audience %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div id="selectedMembers" class="d-none">
+              <label class="form-label">Selected Members</label>
+              <div class="member-picker">
+                {% for m in members %}
+                <div class="form-check">
+                  <input class="form-check-input" type="checkbox" name="member_ids" value="{{ m.id }}" id="member{{ m.id }}">
+                  <label class="form-check-label small" for="member{{ m.id }}">
+                    {{ m.first_name }} {{ m.last_name }} - {{ m.member_number or 'No #' }}
+                    <span class="text-muted">{{ m.email or 'No email' }}</span>
+                  </label>
+                </div>
+                {% endfor %}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card comm-card">
+          <div class="card-header"><h6 class="mb-0"><i class="fas fa-tags"></i> CoopMS Merge Tags</h6></div>
+          <div class="card-body token-list small">
+            <code>{first_name}</code>
+            <code>{last_name}</code>
+            <code>{full_name}</code>
+            <code>{member_number}</code>
+            <code>{savings_balance}</code>
+            <code>{monthly_savings}</code>
+            <code>{savings_due_day}</code>
+            <code>{loan_balance}</code>
+            <code>{loan_monthly_payment}</code>
+            <code>{loan_next_payment_date}</code>
+            <code>{profile_completion}</code>
+            <code>{portal_link}</code>
+          </div>
+        </div>
+
+        <div class="notice-strip mt-3 small">
+          <strong>Governance:</strong> send only cooperative business messages. Delivery records are retained for audit review.
+        </div>
+      </div>
+    </div>
+
+    <div class="d-flex justify-content-end gap-2 mb-4">
+      <a href="{{ url_for('communications.index') }}" class="btn btn-outline-secondary">Cancel</a>
+      <button class="btn btn-primary"><i class="fas fa-paper-plane"></i> Send Email</button>
+    </div>
+  </form>
+</div>
+
+<script>
+  (function () {
+    const presets = {{ presets|tojson }};
+    const presetSelect = document.getElementById('presetSelect');
+    const title = document.getElementById('campaignTitle');
+    const subject = document.getElementById('campaignSubject');
+    const body = document.getElementById('campaignBody');
+    const audience = document.getElementById('audienceSelect');
+    const selected = document.getElementById('selectedMembers');
+    function syncPicker() {
+      selected.classList.toggle('d-none', audience.value !== 'selected');
+    }
+    function applyPreset() {
+      const preset = presets[presetSelect.value];
+      if (!preset) return;
+      title.value = preset.title;
+      subject.value = preset.subject;
+      body.value = preset.body;
+      audience.value = preset.audience;
+      syncPicker();
+    }
+    presetSelect.addEventListener('change', applyPreset);
+    audience.addEventListener('change', syncPicker);
+    syncPicker();
+  })();
+</script>
+{% endblock %}
