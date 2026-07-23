@@ -729,6 +729,8 @@ class HardeningFeatureTests(unittest.TestCase):
 
     def test_bank_accounts_position_and_reconciliation_exports(self):
         self.login_admin()
+        with open(os.path.join(os.getcwd(), 'blueprints', 'accounting.py'), encoding='utf-8') as f:
+            self.assertNotIn("LIKE '%", f.read())
         with self.app.app_context():
             from ledger import OPERATING_EXPENSES, post_journal
             db = get_db()

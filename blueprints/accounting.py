@@ -38,14 +38,14 @@ def _bank_account_rows(db):
           AND (
                 code = '1000'
              OR parent_code = '1000'
-             OR LOWER(name) LIKE '%bank%'
-             OR LOWER(name) LIKE '%cash%'
-             OR LOWER(name) LIKE '%wallet%'
+             OR LOWER(name) LIKE ?
+             OR LOWER(name) LIKE ?
+             OR LOWER(name) LIKE ?
           )
         ORDER BY
           CASE WHEN parent_code = '1000' THEN 0 WHEN code = '1000' THEN 1 ELSE 2 END,
           code
-    ''').fetchall()
+    ''', ('%bank%', '%cash%', '%wallet%')).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -344,11 +344,11 @@ def bank_account_detail(code):
           AND (
                 code = '1000'
              OR parent_code = '1000'
-             OR LOWER(name) LIKE '%bank%'
-             OR LOWER(name) LIKE '%cash%'
-             OR LOWER(name) LIKE '%wallet%'
+             OR LOWER(name) LIKE ?
+             OR LOWER(name) LIKE ?
+             OR LOWER(name) LIKE ?
           )
-    ''', (code,)).fetchone()
+    ''', (code, '%bank%', '%cash%', '%wallet%')).fetchone()
     if not account:
         flash('Bank/cash account not found.', 'danger')
         return redirect(url_for('accounting.bank_accounts'))
