@@ -1016,7 +1016,7 @@ class HardeningFeatureTests(unittest.TestCase):
                 follow_redirects=True,
             )
         self.assertEqual(response.status_code, 200)
-        self.assertIn(b'Campaign sent: 1 sent, 0 failed, 0 skipped', response.data)
+        self.assertIn(b'Campaign queued', response.data)
         self.assertEqual(len(sent_messages), 1)
         self.assertEqual(sent_messages[0][0], 'ada.audit@example.com')
         self.assertIn('Hello Ada', sent_messages[0][1])
@@ -1369,6 +1369,42 @@ class HardeningFeatureTests(unittest.TestCase):
             os.environ.clear()
             os.environ.update(original_env)
             email_service.smtplib.SMTP = original_smtp
+
+    def test_email_service_background_send_dispatches_wrapped_delivery(self):
+        import email_service
+
+        original_env = os.environ.copy()
+        original_deliver = email_service._deliver
+        calls = []
+
+        def fake_deliver(to, subject, html, text=''):
+            calls.append((to, subject, html, text))
+            return True
+
+        try:
+            for key in ('MAIL_ENABLED', 'RESEND_API_KEY', 'BREVO_API_KEY', 'SMTP_HOST'):
+                os.environ.pop(key, None)
+            os.environ['ENABLE_EMAIL_NOTIFICATIONS'] = 'true'
+            email_service._deliver = fake_deliver
+
+            with self.app.app_context():
+                result = email_service.send_email(
+                    'member@example.test', 'Async subject', '<p>Async body</p>',
+                    background=True,
+                )
+
+            # A background send returns True immediately (queued). In TESTING it
+            # runs inline, so delivery has already happened once by now.
+            self.assertTrue(result)
+            self.assertEqual(len(calls), 1)
+            self.assertEqual(calls[0][0], 'member@example.test')
+            self.assertEqual(calls[0][1], 'Async subject')
+            # The branded shell is built in-request, before dispatch.
+            self.assertIn('data-coopms-email', calls[0][2])
+        finally:
+            os.environ.clear()
+            os.environ.update(original_env)
+            email_service._deliver = original_deliver
 
     def test_email_service_falls_back_to_smtp_when_resend_fails(self):
         import email_service

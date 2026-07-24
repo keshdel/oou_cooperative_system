@@ -5,7 +5,7 @@ from flask import Blueprint, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
 from database import get_db, last_insert_id
-from email_service import send_email
+from email_service import send_email, run_in_background
 from utils import audit, member_savings_balance, role_required
 
 communications = Blueprint('communications', __name__, url_prefix='/communications')
@@ -329,6 +329,68 @@ def index():
     return render_template('communications/index.html', campaigns=campaigns)
 
 
+def _process_campaign(campaign_id):
+    """Send every queued recipient of a campaign and record the outcome.
+
+    Runs in the background (see run_in_background) so a large member list never
+    blocks the web request. Each recipient's status is committed as it is sent,
+    so the campaign detail page shows delivery progress live on refresh.
+    """
+    db = get_db()
+    campaign = db.execute(
+        'SELECT * FROM communication_campaigns WHERE id = ?', (campaign_id,)
+    ).fetchone()
+    if not campaign:
+        return
+    subject = campaign['subject']
+    body = campaign['body']
+
+    recipients = db.execute('''
+        SELECT r.id AS recipient_id, r.destination AS destination, m.*
+          FROM communication_recipients r
+          JOIN members m ON m.id = r.member_id
+         WHERE r.campaign_id = ? AND r.status = 'queued'
+    ''', (campaign_id,)).fetchall()
+
+    sent = failed = 0
+    for r in recipients:
+        destination = (r['destination'] or '').strip()
+        ctx = _member_context(db, r)
+        member_subject = _render_message(subject, ctx)
+        member_body = _render_message(body, ctx)
+        ok = send_email(destination, member_subject, _body_to_html(member_body))
+        status = 'sent' if ok else 'failed'
+        if ok:
+            sent += 1
+        else:
+            failed += 1
+        db.execute('''
+            UPDATE communication_recipients
+               SET status = ?, error = ?, sent_at = ?
+             WHERE id = ?
+        ''', (
+            status,
+            '' if ok else 'Email provider returned failure',
+            datetime.now() if ok else None,
+            r['recipient_id'],
+        ))
+        db.commit()
+
+    skipped = db.execute(
+        "SELECT COUNT(*) AS c FROM communication_recipients "
+        "WHERE campaign_id = ? AND status = 'skipped'", (campaign_id,)
+    ).fetchone()['c']
+    final_status = 'sent' if failed == 0 else ('partial' if sent else 'failed')
+    db.execute('''
+        UPDATE communication_campaigns
+           SET status = ?, sent_count = ?, failed_count = ?, skipped_count = ?, sent_at = ?
+         WHERE id = ?
+    ''', (final_status, sent, failed, skipped, datetime.now(), campaign_id))
+    db.commit()
+    audit(db, 'SEND_COMMUNICATION', 'communications',
+          f'Campaign {campaign_id}: {sent} sent, {failed} failed, {skipped} skipped')
+
+
 @communications.route('/new', methods=['GET', 'POST'])
 @login_required
 @role_required('admin', 'secretary')
@@ -356,7 +418,8 @@ def new_campaign():
             return redirect(url_for('communications.new_campaign'))
 
         members = _members_for_audience(db, audience, selected_ids)
-        sent = failed = skipped = 0
+        skipped = 0
+        queued = 0
         campaign_id = None
         try:
             db.execute('''
@@ -366,6 +429,9 @@ def new_campaign():
             ''', (title, audience, channel, subject, body, len(members), current_user.id, datetime.now()))
             campaign_id = last_insert_id(db)
 
+            # Record each recipient up front. Members without an email are
+            # skipped immediately; the rest are marked 'queued' and the actual
+            # sending happens in the background so the request returns at once.
             for member in members:
                 destination = (member['email'] or '').strip()
                 if not destination:
@@ -376,35 +442,30 @@ def new_campaign():
                         VALUES (?, ?, 'email', '', 'skipped', 'Missing email address', ?)
                     ''', (campaign_id, member['id'], datetime.now()))
                     continue
-                ctx = _member_context(db, member)
-                member_subject = _render_message(subject, ctx)
-                member_body = _render_message(body, ctx)
-                ok = send_email(destination, member_subject, _body_to_html(member_body))
-                status = 'sent' if ok else 'failed'
-                if ok:
-                    sent += 1
-                else:
-                    failed += 1
+                queued += 1
                 db.execute('''
                     INSERT INTO communication_recipients
-                        (campaign_id, member_id, channel, destination, status, error, sent_at, created_at)
-                    VALUES (?, ?, 'email', ?, ?, ?, ?, ?)
-                ''', (
-                    campaign_id, member['id'], destination, status,
-                    '' if ok else 'Email provider returned failure',
-                    datetime.now() if ok else None, datetime.now(),
-                ))
+                        (campaign_id, member_id, channel, destination, status, error, created_at)
+                    VALUES (?, ?, 'email', ?, 'queued', '', ?)
+                ''', (campaign_id, member['id'], destination, datetime.now()))
 
-            final_status = 'sent' if failed == 0 else ('partial' if sent else 'failed')
             db.execute('''
-                UPDATE communication_campaigns
-                   SET status = ?, sent_count = ?, failed_count = ?, skipped_count = ?, sent_at = ?
-                 WHERE id = ?
-            ''', (final_status, sent, failed, skipped, datetime.now(), campaign_id))
+                UPDATE communication_campaigns SET skipped_count = ? WHERE id = ?
+            ''', (skipped, campaign_id))
             db.commit()
-            audit(db, 'SEND_COMMUNICATION', 'communications',
-                  f'Campaign {campaign_id}: {sent} sent, {failed} failed, {skipped} skipped')
-            flash(f'Campaign sent: {sent} sent, {failed} failed, {skipped} skipped.', 'success' if failed == 0 else 'warning')
+            audit(db, 'QUEUE_COMMUNICATION', 'communications',
+                  f'Campaign {campaign_id}: {queued} queued, {skipped} skipped')
+
+            # Hand the sending loop to a background worker (runs inline in tests).
+            run_in_background(_process_campaign, campaign_id)
+
+            if queued:
+                flash(f'Campaign queued: sending to {queued} member(s) in the '
+                      f'background{f", {skipped} skipped" if skipped else ""}. '
+                      f'Refresh this page to watch delivery progress.', 'success')
+            else:
+                flash(f'Nothing to send — {skipped} member(s) had no email address.',
+                      'warning')
             return redirect(url_for('communications.campaign_detail', campaign_id=campaign_id))
         except Exception as e:
             db.rollback()

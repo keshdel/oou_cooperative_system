@@ -12,6 +12,7 @@ Priority:  Resend is tried first if RESEND_API_KEY is set.
 All send_* helpers are fire-and-forget: they log failures but never raise,
 so an email error never crashes the main request.
 """
+import atexit
 import os
 import json
 import logging
@@ -19,12 +20,70 @@ import smtplib
 import ssl
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from email.utils import parseaddr
 from email.mime.multipart import MIMEMultipart
 from email.mime.text      import MIMEText
 
 log = logging.getLogger(__name__)
+
+
+# ── Background sender ───────────────────────────────────────────────────────────
+#
+# Sending email over HTTP/SMTP can take several seconds — or block on a timeout
+# if a provider is slow. Doing that inside the web request ties up a gunicorn
+# worker (we only run 2 per client) and can time out the user's browser, which
+# is worst for bulk sends. We hand the actual delivery to a small thread pool so
+# the request returns immediately. Each task re-enters a fresh Flask app context
+# so get_db()/settings lookups keep working after the request has ended.
+
+_MAX_EMAIL_WORKERS = int(os.environ.get('EMAIL_WORKERS', '2') or '2')
+_executor = ThreadPoolExecutor(max_workers=_MAX_EMAIL_WORKERS,
+                               thread_name_prefix='email')
+atexit.register(lambda: _executor.shutdown(wait=False))
+
+
+def run_in_background(fn, *args, **kwargs):
+    """Run fn(*args, **kwargs) off the request thread on the email pool.
+
+    If called within a Flask request/app context, the task re-enters a fresh
+    app context so database and settings lookups keep working after the request
+    ends. Exceptions are logged, never raised (fire-and-forget).
+
+    In TESTING mode the task runs inline (synchronously) so tests stay
+    deterministic.
+    """
+    app = None
+    testing = False
+    try:
+        from flask import current_app, has_app_context
+        if has_app_context():
+            app = current_app._get_current_object()
+            testing = bool(app.config.get('TESTING'))
+    except Exception:
+        app = None
+
+    # In tests, run inline within the current app context so behaviour is
+    # deterministic (no thread races) and errors surface immediately rather
+    # than being swallowed. This reuses the request's database connection.
+    if testing:
+        return fn(*args, **kwargs)
+
+    def _task():
+        try:
+            if app is not None:
+                with app.app_context():
+                    return fn(*args, **kwargs)
+            return fn(*args, **kwargs)
+        except Exception:
+            log.exception('Background email task failed')
+
+    try:
+        _executor.submit(_task)
+    except RuntimeError:
+        # Pool already shut down (interpreter exiting) — run inline as a fallback.
+        _task()
 
 
 # ── Config helpers ─────────────────────────────────────────────────────────────
@@ -245,18 +304,9 @@ def _wrap_email(inner_html: str) -> str:
 </html>"""
 
 
-def send_email(to: str, subject: str, html: str, text: str = '') -> bool:
-    """
-    Send one transactional email, wrapped in the branded shell.
-    Tries Resend if configured, falls back to SMTP.
-    Returns True on success, False on failure / not configured.
-    """
-    if not _is_enabled():
-        log.debug('Email disabled — skipped: "%s"', subject)
-        return False
-
-    html = _wrap_email(html)
-
+def _deliver(to: str, subject: str, html: str, text: str = '') -> bool:
+    """Try each configured provider in order (Resend → Brevo → SMTP).
+    Expects `html` already wrapped in the branded shell."""
     if _cfg('RESEND_API_KEY', 'resend_api_key'):
         if _send_via_resend(to, subject, html):
             return True
@@ -274,6 +324,33 @@ def send_email(to: str, subject: str, html: str, text: str = '') -> bool:
     return False
 
 
+def send_email(to: str, subject: str, html: str, text: str = '',
+               background: bool = False) -> bool:
+    """
+    Send one transactional email, wrapped in the branded shell.
+    Tries Resend if configured, falls back to Brevo, then SMTP.
+
+    When background=False (default) the send is synchronous and the return value
+    reflects the real delivery result — use this when the caller needs to know
+    (e.g. a "send test email" button, or a password-reset link).
+
+    When background=True the branded HTML is built now (in the request, where the
+    database is available) but the provider call is dispatched to a worker thread
+    so the request returns immediately. Returns True to mean "queued" — the real
+    outcome is logged. Use this for fire-and-forget notifications and bulk sends.
+    """
+    if not _is_enabled():
+        log.debug('Email disabled — skipped: "%s"', subject)
+        return False
+
+    html = _wrap_email(html)
+
+    if background:
+        run_in_background(_deliver, to, subject, html, text)
+        return True
+    return _deliver(to, subject, html, text)
+
+
 # ── Public send helpers ────────────────────────────────────────────────────────
 
 def send_welcome_email(recipient: str, member: dict) -> None:
@@ -288,7 +365,7 @@ def send_welcome_email(recipient: str, member: dict) -> None:
             f'<p>Welcome to {_coop_name()}! Your member number is <strong>{num}</strong>.</p>'
             f'<p>Please log in to your member portal to view your account.</p>'
         )
-    send_email(recipient, f'Welcome to {_coop_name()}!', html)
+    send_email(recipient, f'Welcome to {_coop_name()}!', html, background=True)
 
 
 def send_member_onboarding_email(recipient: str, member: dict, username: str,
@@ -318,7 +395,8 @@ def send_member_onboarding_email(recipient: str, member: dict, username: str,
         f'Set up your password: {setup_url}\n\n'
         f'This link can be used once and expires after 24 hours.\n'
     )
-    send_email(recipient, 'Set up your Cooperative Portal Account', html, text)
+    send_email(recipient, 'Set up your Cooperative Portal Account', html, text,
+               background=True)
 
 
 def send_loan_approval_email(recipient: str, member: dict,
@@ -335,7 +413,7 @@ def send_loan_approval_email(recipient: str, member: dict,
             f'has been <strong>approved</strong>.</p>'
             f'<p>The funds will be disbursed shortly. Log in to your portal for details.</p>'
         )
-    send_email(recipient, 'Your Loan Has Been Approved!', html)
+    send_email(recipient, 'Your Loan Has Been Approved!', html, background=True)
 
 
 def send_loan_rejection_email(recipient: str, member: dict,
@@ -356,7 +434,7 @@ def send_loan_rejection_email(recipient: str, member: dict,
             f'{reason_line}'
             f'<p>Please contact us if you have any questions.</p>'
         )
-    send_email(recipient, 'Update on Your Loan Application', html)
+    send_email(recipient, 'Update on Your Loan Application', html, background=True)
 
 
 def send_payment_confirmation_email(recipient: str, member: dict,
@@ -375,7 +453,8 @@ def send_payment_confirmation_email(recipient: str, member: dict,
             f'has been recorded successfully.</p>'
             f'<p>Log in to your portal to view your updated balance.</p>'
         )
-    send_email(recipient, f'Payment Confirmation - {_coop_name()}', html)
+    send_email(recipient, f'Payment Confirmation - {_coop_name()}', html,
+               background=True)
 
 
 def send_loan_repayment_email(recipient: str, member: dict, loan: dict,
@@ -416,7 +495,8 @@ def send_loan_repayment_email(recipient: str, member: dict, loan: dict,
         f'Amount paid: NGN {amount:,.2f}\nPrincipal: NGN {principal:,.2f}\n'
         f'Interest: NGN {interest:,.2f}\nOutstanding balance: NGN {balance:,.2f}\n'
     )
-    send_email(recipient, f'Loan Repayment Recorded - {_coop_name()}', html, text)
+    send_email(recipient, f'Loan Repayment Recorded - {_coop_name()}', html, text,
+               background=True)
 
 
 def send_guarantor_request_email(recipient: str, guarantor: dict, applicant: dict,
@@ -431,7 +511,8 @@ def send_guarantor_request_email(recipient: str, guarantor: dict, applicant: dic
         f'loan of <strong>&#8358;{float(amount):,.2f}</strong> (ref {loan_number}).</p>'
         f'<p>Please log in to your member portal to <strong>accept or decline</strong> this request.</p>'
     )
-    send_email(recipient, f'Guarantor Request - {_coop_name()}', html)
+    send_email(recipient, f'Guarantor Request - {_coop_name()}', html,
+               background=True)
 
 
 def send_loan_stage_email(recipient: str, member: dict, loan_number: str,
@@ -445,7 +526,8 @@ def send_loan_stage_email(recipient: str, member: dict, loan_number: str,
         f'<strong>{stage_label}</strong>.</p>'
         f'<p>Log in to your member portal for details.</p>'
     )
-    send_email(recipient, f'Loan Application Update - {_coop_name()}', html)
+    send_email(recipient, f'Loan Application Update - {_coop_name()}', html,
+               background=True)
 
 
 def send_password_reset_email(recipient: str, user: dict, reset_url: str) -> bool:
