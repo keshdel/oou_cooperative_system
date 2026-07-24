@@ -29,7 +29,7 @@ from ledger import backfill_from_transactions, ledger_reconciliation  # noqa: E4
 from mobile_api import JWT_AUDIENCE  # noqa: E402
 from reports_engine import income_statement  # noqa: E402
 from security import generate_compliant_password, validate_password_strength  # noqa: E402
-from utils import clear_login_attempts  # noqa: E402
+from utils import clear_login_attempts, is_rate_limited, record_failed_login  # noqa: E402
 
 
 class HardeningFeatureTests(unittest.TestCase):
@@ -1679,6 +1679,138 @@ class HardeningFeatureTests(unittest.TestCase):
             self.assertNotIn('REV/OPERATIONAL/MEMO/1', sample_refs)
             self.assertGreaterEqual(posted, 0)
             db.rollback()
+
+
+    # ── Two-factor authentication + DB-backed rate limiting ──────────────────
+
+    def _reset_2fa_state(self):
+        """2FA tests share one DB file — start each from a known clean state."""
+        with self.app.app_context():
+            db = get_db()
+            db.execute("UPDATE users SET two_factor_secret = NULL, two_factor_enabled = 0 "
+                       "WHERE username = 'admin'")
+            db.execute("DELETE FROM user_backup_codes")
+            db.execute("UPDATE settings SET value = '0' WHERE key = 'require_2fa'")
+            db.execute("DELETE FROM login_attempts")
+            db.commit()
+
+    def _enable_admin_2fa(self):
+        """Enable 2FA for the admin via the real setup route and return the
+        TOTP secret plus the issued backup codes."""
+        import pyotp
+        self.login_admin()
+        self.client.get('/security/2fa/setup')
+        with self.client.session_transaction() as sess:
+            secret = sess['2fa_setup_secret']
+        resp = self.client.post('/security/2fa/setup',
+                                data={'code': pyotp.TOTP(secret).now()},
+                                follow_redirects=False)
+        self.assertIn(resp.status_code, (302, 303))
+        with self.app.app_context():
+            db = get_db()
+            row = db.execute("SELECT two_factor_enabled FROM users WHERE username = 'admin'").fetchone()
+            self.assertEqual(row['two_factor_enabled'], 1)
+            codes = db.execute(
+                "SELECT COUNT(*) AS c FROM user_backup_codes b "
+                "JOIN users u ON u.id = b.user_id WHERE u.username = 'admin'"
+            ).fetchone()['c']
+            self.assertEqual(codes, 10)
+        return secret
+
+    def test_login_rate_limit_is_shared_via_database(self):
+        self._reset_2fa_state()
+        ip = '198.51.100.77'
+        with self.app.app_context():
+            for _ in range(5):
+                record_failed_login(ip, 'attacker')
+            self.assertTrue(is_rate_limited(ip))
+            rows = get_db().execute(
+                'SELECT COUNT(*) AS c FROM login_attempts WHERE ip = ?', (ip,)
+            ).fetchone()['c']
+            self.assertEqual(rows, 5)  # persisted, not held in process memory
+
+            clear_login_attempts(ip)
+            self.assertFalse(is_rate_limited(ip))
+            rows = get_db().execute(
+                'SELECT COUNT(*) AS c FROM login_attempts WHERE ip = ?', (ip,)
+            ).fetchone()['c']
+            self.assertEqual(rows, 0)
+
+    def test_two_factor_setup_then_login_requires_code(self):
+        import pyotp
+        self._reset_2fa_state()
+        secret = self._enable_admin_2fa()
+        self.client.get('/logout')
+
+        # Correct password alone must NOT log in — it should defer to the code.
+        resp = self.client.post('/login',
+                                data={'username': 'admin', 'password': 'TestAdmin123'},
+                                follow_redirects=False)
+        self.assertIn(resp.status_code, (302, 303))
+        self.assertIn('/login/verify', resp.headers.get('Location', ''))
+
+        # Not actually logged in yet.
+        dash = self.client.get('/dashboard', follow_redirects=False)
+        self.assertIn(dash.status_code, (302, 303))
+        self.assertIn('/login', dash.headers.get('Location', ''))
+
+        # A wrong code is rejected.
+        bad = self.client.post('/login/verify', data={'code': '000000'},
+                               follow_redirects=False)
+        self.assertEqual(bad.status_code, 200)
+
+        # The current TOTP code completes the login.
+        good = self.client.post('/login/verify', data={'code': pyotp.TOTP(secret).now()},
+                                follow_redirects=False)
+        self.assertIn(good.status_code, (302, 303))
+        self.assertIn('/dashboard', good.headers.get('Location', ''))
+        self.assertEqual(self.client.get('/dashboard').status_code, 200)
+        self._reset_2fa_state()
+
+    def test_backup_code_can_be_used_once_at_login(self):
+        self._reset_2fa_state()
+        self._enable_admin_2fa()
+        # Grab a real backup code hash and craft a known code by regenerating
+        # through the helper so we know the plaintext.
+        from security import regenerate_backup_codes
+        with self.app.app_context():
+            db = get_db()
+            uid = db.execute("SELECT id FROM users WHERE username = 'admin'").fetchone()['id']
+            codes = regenerate_backup_codes(db, uid)
+            db.commit()
+        self.client.get('/logout')
+
+        self.client.post('/login',
+                         data={'username': 'admin', 'password': 'TestAdmin123'},
+                         follow_redirects=False)
+        # First use of a backup code works.
+        first = self.client.post('/login/verify', data={'code': codes[0]},
+                                 follow_redirects=False)
+        self.assertIn('/dashboard', first.headers.get('Location', ''))
+
+        # The same code cannot be reused.
+        self.client.get('/logout')
+        self.client.post('/login',
+                         data={'username': 'admin', 'password': 'TestAdmin123'},
+                         follow_redirects=False)
+        reuse = self.client.post('/login/verify', data={'code': codes[0]},
+                                 follow_redirects=False)
+        self.assertEqual(reuse.status_code, 200)  # rejected, stays on verify page
+        self._reset_2fa_state()
+
+    def test_2fa_enforcement_redirects_staff_without_2fa_to_setup(self):
+        self._reset_2fa_state()
+        with self.app.app_context():
+            db = get_db()
+            db.execute("UPDATE settings SET value = '1' WHERE key = 'require_2fa'")
+            db.commit()
+        self.login_admin()
+        resp = self.client.get('/dashboard', follow_redirects=False)
+        self.assertIn(resp.status_code, (302, 303))
+        self.assertIn('/security/2fa/setup', resp.headers.get('Location', ''))
+        # The setup page itself must stay reachable while enforced.
+        self.assertEqual(self.client.get('/security/2fa/setup').status_code, 200)
+        self._reset_2fa_state()
 
 
 if __name__ == '__main__':

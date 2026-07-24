@@ -3,8 +3,7 @@ Shared helpers used across all blueprints.
 Import from here — never from app.py — to avoid circular imports.
 """
 
-import time
-from collections import defaultdict
+from datetime import datetime, timedelta
 from functools import wraps
 from io import BytesIO
 
@@ -85,18 +84,40 @@ def can_access_member(db, member_id: int) -> bool:
 
 # ── Login rate limiting ───────────────────────────────────────────────────────
 
-_login_attempts: dict = defaultdict(list)
-_RATE_WINDOW = 300   # 5 minutes sliding window
-_RATE_MAX    = 5     # failures before block
-_RATE_BLOCK  = 900   # block duration in seconds (15 min)
+_RATE_MAX   = 5     # failures before block
+_RATE_BLOCK = 900   # window / block duration in seconds (15 min)
+
+# Failed logins are tracked in the login_attempts table (not process memory), so
+# the limit is shared across all gunicorn workers and survives a restart. The
+# old per-process dict let an attacker get N attempts per worker and reset the
+# counter with any redeploy.
+
+
+def _to_dt(value) -> datetime:
+    """Normalise a stored timestamp (datetime on Postgres, ISO string on SQLite)."""
+    if isinstance(value, datetime):
+        return value
+    try:
+        return datetime.fromisoformat(str(value))
+    except Exception:
+        return datetime.now()
 
 
 def _recent_attempts(ip: str) -> list:
-    """Return timestamps of failed attempts still within the block window."""
-    now = time.time()
-    attempts = [t for t in _login_attempts[ip] if now - t < _RATE_BLOCK]
-    _login_attempts[ip] = attempts
-    return attempts
+    """Timestamps of failed attempts for `ip` still within the block window."""
+    from database import get_db
+    db = get_db()
+    cutoff = datetime.now() - timedelta(seconds=_RATE_BLOCK)
+    try:
+        rows = db.execute(
+            'SELECT attempted_at FROM login_attempts '
+            'WHERE ip = ? AND attempted_at >= ? ORDER BY attempted_at',
+            (ip, cutoff),
+        ).fetchall()
+        return [_to_dt(r['attempted_at']) for r in rows]
+    except Exception:
+        # Never let a throttle-store hiccup block a legitimate login.
+        return []
 
 
 def is_rate_limited(ip: str) -> bool:
@@ -109,16 +130,34 @@ def lockout_seconds_remaining(ip: str) -> int:
     if len(attempts) < _RATE_MAX:
         return 0
     oldest = min(attempts)
-    remaining = int(_RATE_BLOCK - (time.time() - oldest))
+    remaining = int(_RATE_BLOCK - (datetime.now() - oldest).total_seconds())
     return max(remaining, 0)
 
 
-def record_failed_login(ip: str) -> None:
-    _login_attempts[ip].append(time.time())
+def record_failed_login(ip: str, username: str = '') -> None:
+    from database import get_db
+    db = get_db()
+    try:
+        db.execute(
+            'INSERT INTO login_attempts (ip, username, attempted_at) VALUES (?, ?, ?)',
+            (ip, username, datetime.now()),
+        )
+        # Prune expired rows on the write path so reads stay lock-free.
+        db.execute('DELETE FROM login_attempts WHERE attempted_at < ?',
+                   (datetime.now() - timedelta(seconds=_RATE_BLOCK),))
+        db.commit()
+    except Exception:
+        pass
 
 
 def clear_login_attempts(ip: str) -> None:
-    _login_attempts.pop(ip, None)
+    from database import get_db
+    db = get_db()
+    try:
+        db.execute('DELETE FROM login_attempts WHERE ip = ?', (ip,))
+        db.commit()
+    except Exception:
+        pass
 
 
 # ── Loan interest computation ─────────────────────────────────────────────────

@@ -66,6 +66,36 @@
                 
                 <!-- 1. GENERAL SETTINGS TAB -->
                 <div class="tab-pane fade show active" id="general" role="tabpanel">
+
+                    <!-- Security: 2FA enforcement (separate form — do not nest) -->
+                    <div class="card border-warning mb-4">
+                        <div class="card-body">
+                            <h5 class="text-primary mb-2">
+                                <i class="fas fa-shield-halved me-2"></i>Two-Factor Authentication
+                            </h5>
+                            <p class="text-muted mb-3" style="font-size:14px;">
+                                When required, all staff (admin, treasurer, secretary, exco) must
+                                set up an authenticator app before they can use the system.
+                                <strong>Set up your own 2FA first</strong> on the
+                                <a href="{{ url_for('security.index') }}">Account Security</a> page,
+                                confirm it works, then turn this on.
+                            </p>
+                            <form method="POST" action="{{ url_for('admin_panel.update_security_settings') }}"
+                                  class="d-flex align-items-center gap-3 flex-wrap">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <div class="form-check form-switch">
+                                    <input type="checkbox" class="form-check-input" role="switch"
+                                           name="require_2fa" id="require_2fa" value="1"
+                                           {% if settings.require_2fa == '1' %}checked{% endif %}>
+                                    <label class="form-check-label" for="require_2fa">
+                                        Require 2FA for all staff
+                                    </label>
+                                </div>
+                                <button type="submit" class="btn btn-warning btn-sm">Save</button>
+                            </form>
+                        </div>
+                    </div>
+
                     <form method="POST" action="{{ url_for('admin_panel.update_settings') }}"
                           enctype="multipart/form-data">
 
@@ -1009,6 +1039,9 @@
                                         {% if user.must_change_password %}
                                         <span class="badge bg-warning text-dark ms-1">Setup pending</span>
                                         {% endif %}
+                                        {% if user.two_factor_enabled %}
+                                        <span class="badge bg-info text-dark ms-1" title="Two-factor authentication is on"><i class="fas fa-shield-halved"></i> 2FA</span>
+                                        {% endif %}
                                     </td>
                                     <td class="text-nowrap">
                                         {# Edit/disable blocked for super admins unless current user is also super admin #}
@@ -1033,6 +1066,14 @@
                                             onclick="openResetPassword(this)">
                                             <i class="fas fa-key"></i>
                                         </button>
+                                        {% if user.two_factor_enabled %}
+                                        <form method="POST" action="/api/reset_user_2fa/{{ user.id }}" class="d-inline"
+                                              onsubmit="return confirm('Reset two-factor authentication for {{ user.username }}? They will need to set it up again on next sign-in.')">
+                                            <button type="submit" class="btn btn-sm btn-outline-danger" title="Reset 2FA (lockout recovery)">
+                                                <i class="fas fa-shield-halved"></i>
+                                            </button>
+                                        </form>
+                                        {% endif %}
                                         <form method="POST" action="/api/resend_setup_link/{{ user.id }}" class="d-inline"
                                               onsubmit="return confirm('Send a new account setup link to {{ user.username }}?')">
                                             <button type="submit" class="btn btn-sm btn-info" title="Resend setup link"

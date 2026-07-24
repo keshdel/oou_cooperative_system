@@ -299,6 +299,29 @@ def init_db():
     '''))
     _add_col(db, 'users', 'must_change_password', 'INTEGER DEFAULT 0')
     _add_col(db, 'users', 'is_super_admin',       'INTEGER DEFAULT 0')
+    _add_col(db, 'users', 'two_factor_enabled',   'INTEGER DEFAULT 0')
+
+    # One-time backup codes for 2FA recovery (stored hashed, never in clear).
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS user_backup_codes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            code_hash TEXT NOT NULL,
+            used_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    '''))
+
+    # Failed-login throttle — shared across app workers and persistent across
+    # restarts (replaces the old per-process in-memory counter).
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS login_attempts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ip TEXT NOT NULL,
+            username TEXT,
+            attempted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    '''))
 
     # Members table
     db.execute(_adapt('''
@@ -923,6 +946,7 @@ def init_db():
         ('password_require_number', '1', 'Require numbers in passwords'),
         ('password_require_special', '0', 'Require special characters in passwords'),
         ('maintenance_mode', '0', 'Maintenance mode'),
+        ('require_2fa', '0', 'Require staff (admin, treasurer, secretary, exco) to set up two-factor authentication before using the system'),
         ('min_savings', '5000', 'Minimum monthly savings'),
         ('share_capital_pct', '0', 'Percent of each savings contribution allocated to member share capital (0 = off)'),
         ('savings_due_day', '10', 'Savings due day of month'),

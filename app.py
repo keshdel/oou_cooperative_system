@@ -12,7 +12,7 @@ from flask_login import LoginManager, current_user, logout_user
 from database import init_db, get_db, close_db
 from extensions import csrf
 from crypto import encryption_enabled
-from security import log_audit
+from security import log_audit, STAFF_ROLES, two_factor_enforced
 from utils import User, member_for_user
 
 # ── App factory ──────────────────────────────────────────────────────────────
@@ -117,6 +117,7 @@ from blueprints.help_bp     import help_bp
 from blueprints.accounting  import accounting
 from blueprints.governance  import governance
 from blueprints.communications import communications
+from blueprints.security     import security_bp
 from mobile_api             import mobile_api
 
 app.register_blueprint(auth)
@@ -135,6 +136,7 @@ app.register_blueprint(help_bp)
 app.register_blueprint(accounting)
 app.register_blueprint(governance)
 app.register_blueprint(communications)
+app.register_blueprint(security_bp)
 app.register_blueprint(mobile_api)
 
 csrf.exempt(mobile_api)
@@ -233,7 +235,7 @@ def _check_billing_status():
 
 # Endpoints accessible even when subscription is expired
 _BILLING_EXEMPT = {
-    'auth.login', 'auth.logout', 'auth.setup_password',
+    'auth.login', 'auth.logout', 'auth.setup_password', 'auth.verify_2fa',
     'auth.forgot_password', 'auth.reset_password', 'static',
     'admin_panel.subscription_page',
     'admin_panel.subscription_callback',
@@ -248,7 +250,18 @@ _IDLE_EXEMPT = {
     'auth.setup_password',
     'auth.forgot_password',
     'auth.reset_password',
+    'auth.verify_2fa',
     'static',
+}
+
+# When 2FA enforcement is on, a staff member who has not set up 2FA yet is
+# redirected to the setup page. These endpoints must stay reachable so they can
+# actually complete setup (or log out).
+_2FA_SETUP_EXEMPT = {
+    'auth.login', 'auth.logout', 'auth.verify_2fa', 'static',
+    'security.index', 'security.setup_2fa', 'security.show_backup_codes',
+    'portal.change_password',
+    'help_bp.knowledge_base', 'help_bp.article', 'help_bp.panel_api',
 }
 
 
@@ -334,6 +347,31 @@ def enforce_password_change():
     from flask import redirect, url_for, flash
     flash('You must set a new password before continuing.', 'warning')
     return redirect(url_for('portal.change_password'))
+
+
+# ── Two-factor enforcement gate ───────────────────────────────────────────────
+
+@app.before_request
+def enforce_2fa_setup():
+    """When the cooperative requires 2FA, a staff member who hasn't set it up
+    yet is redirected to the setup page until they do."""
+    if not current_user.is_authenticated:
+        return
+    if request.endpoint in _2FA_SETUP_EXEMPT:
+        return
+    if getattr(current_user, 'role', None) not in STAFF_ROLES:
+        return
+    db = get_db()
+    if not two_factor_enforced(db):
+        return
+    row = db.execute(
+        'SELECT two_factor_enabled FROM users WHERE id = ?', (current_user.id,)
+    ).fetchone()
+    if row and row['two_factor_enabled']:
+        return
+    flash('Your cooperative now requires two-factor authentication. '
+          'Please set it up to continue.', 'warning')
+    return redirect(url_for('security.setup_2fa'))
 
 
 # ── Error handlers ────────────────────────────────────────────────────────────

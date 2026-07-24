@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Set up 2FA — {{ coop_name }}{% endblock %}
+{% block content %}
+<div class="container-fluid py-3" style="max-width:640px;">
+  <h3 class="mb-1"><i class="fas fa-shield-halved text-primary me-2"></i>Set up two-factor authentication</h3>
+  <p class="text-muted">Three quick steps. You'll need an authenticator app on your phone.</p>
+
+  <div class="card shadow-sm">
+    <div class="card-body">
+      <ol class="mb-0" style="line-height:1.7;">
+        <li class="mb-3">
+          <strong>Install an authenticator app</strong> if you don't have one —
+          Google Authenticator, Microsoft Authenticator or Authy.
+        </li>
+        <li class="mb-3">
+          <strong>Scan this QR code</strong> with the app:
+          <div class="text-center my-3">
+            <div style="display:inline-block; background:#fff; padding:10px; border:1px solid #e2e8f0; border-radius:10px; width:220px;">
+              {{ qr_svg|safe }}
+            </div>
+          </div>
+          <div class="text-muted small">
+            Can't scan? Enter this key manually:
+            <code class="user-select-all d-inline-block mt-1" style="font-size:14px; letter-spacing:.1em;">{{ secret }}</code>
+          </div>
+        </li>
+        <li>
+          <strong>Enter the 6-digit code</strong> the app shows to confirm:
+          <form method="POST" action="{{ url_for('security.setup_2fa') }}" class="mt-2">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="input-group" style="max-width:280px;">
+              <input type="text" name="code" class="form-control form-control-lg text-center"
+                     inputmode="numeric" autocomplete="one-time-code" maxlength="6"
+                     placeholder="000000" autofocus style="letter-spacing:.3em;">
+              <button type="submit" class="btn btn-primary">Verify</button>
+            </div>
+          </form>
+        </li>
+      </ol>
+    </div>
+  </div>
+  <div class="mt-3">
+    <a href="{{ url_for('security.index') }}" class="text-muted small">Cancel</a>
+  </div>
+</div>
+{% endblock %}

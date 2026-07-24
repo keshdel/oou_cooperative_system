@@ -238,7 +238,7 @@ def settings():
         users = db.execute(
             '''
             SELECT id, username, full_name, email, role, is_active, last_login,
-                   is_super_admin, must_change_password
+                   is_super_admin, must_change_password, two_factor_enabled
             FROM users
             ORDER BY id
             '''
@@ -257,6 +257,7 @@ def settings():
                 'last_login':     u['last_login'] or 'Never',
                 'is_super_admin': bool(u['is_super_admin'] if 'is_super_admin' in u.keys() else 0),
                 'must_change_password': bool(u['must_change_password'] if 'must_change_password' in u.keys() else 0),
+                'two_factor_enabled': bool(u['two_factor_enabled'] if 'two_factor_enabled' in u.keys() else 0),
             }
             for u in users
         ]
@@ -347,6 +348,25 @@ def update_settings():
         db.rollback()
         flash(f'Error saving settings: {str(e)}', 'danger')
 
+    return redirect(url_for('admin_panel.settings'))
+
+
+@admin_panel.route('/settings/security', methods=['POST'])
+@login_required
+@role_required('admin')
+def update_security_settings():
+    db = get_db()
+    require = '1' if request.form.get('require_2fa') == '1' else '0'
+    _upsert_setting(db, 'require_2fa', require)
+    audit(db, 'UPDATE_SECURITY_SETTINGS', 'settings',
+          f'2FA enforcement turned {"on" if require == "1" else "off"}')
+    db.commit()
+    if require == '1':
+        flash('Two-factor authentication is now required for all staff (admin, '
+              'treasurer, secretary, exco). They will be asked to set it up on '
+              'their next page load.', 'success')
+    else:
+        flash('Two-factor authentication is now optional for staff.', 'success')
     return redirect(url_for('admin_panel.settings'))
 
 
@@ -658,6 +678,29 @@ def reset_user_password(user_id):
     except Exception as e:
         db.rollback()
         flash(f'Error resetting password: {e}', 'danger')
+    return redirect(url_for('admin_panel.settings') + '#users')
+
+
+@admin_panel.route('/api/reset_user_2fa/<int:user_id>', methods=['POST'])
+@login_required
+@role_required('admin')
+def reset_user_2fa(user_id):
+    """Clear a user's two-factor setup so they can enrol again from scratch —
+    the recovery path when someone loses their authenticator and backup codes."""
+    from security import disable_user_2fa
+    db = get_db()
+    try:
+        user = db.execute('SELECT username FROM users WHERE id = ?', (user_id,)).fetchone()
+        uname = user['username'] if user else str(user_id)
+        disable_user_2fa(db, user_id)
+        db.commit()
+        audit(db, 'RESET_2FA', 'users', f'Admin reset two-factor authentication for user {uname}')
+        flash(f'Two-factor authentication for "{uname}" has been reset. '
+              f'They will be asked to set it up again on their next sign-in '
+              f'(if it is required for their role).', 'success')
+    except Exception as e:
+        db.rollback()
+        flash(f'Error resetting two-factor authentication: {e}', 'danger')
     return redirect(url_for('admin_panel.settings') + '#users')
 
 

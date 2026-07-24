@@ -10,7 +10,8 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 from database import get_db
 from email_service import send_password_reset_email
-from security import generate_account_setup_token, hash_account_setup_token, log_audit, validate_password_strength
+from security import (generate_account_setup_token, hash_account_setup_token, log_audit,
+                      validate_password_strength, user_2fa_secret, verify_2fa_code)
 from utils import User, is_rate_limited, lockout_seconds_remaining, record_failed_login, clear_login_attempts
 
 auth = Blueprint('auth', __name__)
@@ -155,20 +156,18 @@ def login():
         elif user and check_password_hash(user['password_hash'], password):
             clear_login_attempts(ip)
             keys = user.keys()
-            user_obj = User(
-                user['id'], user['username'], user['password_hash'], user['role'],
-                user['email'] if 'email' in keys else '',
-                user['must_change_password'] if 'must_change_password' in keys else 0,
-            )
-            login_user(user_obj)
-            session.pop('view_mode', None)
-            log_audit(db, user['id'], user['username'], 'LOGIN', 'auth', 'User logged in', ip, ua)
-            db.commit()
-            if user_obj.must_change_password:
-                flash('Welcome! You must set a new password before you can continue.', 'warning')
-                return redirect(url_for('portal.change_password'))
-            flash('Login successful!', 'success')
-            return redirect(url_for('main.dashboard'))
+            has_2fa = ('two_factor_enabled' in keys and user['two_factor_enabled']
+                       and user_2fa_secret(db, user['id']))
+            if has_2fa:
+                # Password is correct but 2FA is on — defer the actual login
+                # until the second factor is verified.
+                session['pending_2fa_user'] = user['id']
+                session['pending_2fa_at'] = time.time()
+                log_audit(db, user['id'], user['username'], 'LOGIN_2FA_CHALLENGE',
+                          'auth', '2FA challenge issued', ip, ua)
+                db.commit()
+                return redirect(url_for('auth.verify_2fa'))
+            return _finalize_login(db, user, ip, ua)
         else:
             record_failed_login(ip)
             remaining_attempts = 5 - len([1 for _ in range(1)])  # recalculate
@@ -199,6 +198,82 @@ def login():
                 flash('Incorrect username or password. Please try again.', 'danger')
 
     return render_template('login.html')
+
+
+def _finalize_login(db, user, ip, ua):
+    """Complete a login once all factors are satisfied. Shared by the direct
+    (no-2FA) path and the 2FA verification path."""
+    keys = user.keys()
+    user_obj = User(
+        user['id'], user['username'], user['password_hash'], user['role'],
+        user['email'] if 'email' in keys else '',
+        user['must_change_password'] if 'must_change_password' in keys else 0,
+    )
+    login_user(user_obj)
+    session.pop('view_mode', None)
+    session.pop('pending_2fa_user', None)
+    session.pop('pending_2fa_at', None)
+    log_audit(db, user['id'], user['username'], 'LOGIN', 'auth', 'User logged in', ip, ua)
+    db.commit()
+    if user_obj.must_change_password:
+        flash('Welcome! You must set a new password before you can continue.', 'warning')
+        return redirect(url_for('portal.change_password'))
+    flash('Login successful!', 'success')
+    return redirect(url_for('main.dashboard'))
+
+
+# How long a passed-password 2FA challenge stays valid before the user must
+# re-enter their password (seconds).
+_2FA_CHALLENGE_TTL = 300
+
+
+@auth.route('/login/verify', methods=['GET', 'POST'])
+def verify_2fa():
+    user_id = session.get('pending_2fa_user')
+    if not user_id:
+        return redirect(url_for('auth.login'))
+
+    # Expire the challenge so a stale pending session can't linger.
+    if time.time() - session.get('pending_2fa_at', 0) > _2FA_CHALLENGE_TTL:
+        session.pop('pending_2fa_user', None)
+        session.pop('pending_2fa_at', None)
+        flash('Your verification window expired. Please sign in again.', 'warning')
+        return redirect(url_for('auth.login'))
+
+    db = get_db()
+    user = db.execute('SELECT * FROM users WHERE id = ?', (user_id,)).fetchone()
+    if not user:
+        session.pop('pending_2fa_user', None)
+        session.pop('pending_2fa_at', None)
+        return redirect(url_for('auth.login'))
+
+    if request.method == 'POST':
+        ip = request.remote_addr or '0.0.0.0'
+        ua = request.user_agent.string if request.user_agent else ''
+
+        if is_rate_limited(ip):
+            secs = lockout_seconds_remaining(ip)
+            mins = max(1, round(secs / 60))
+            flash(
+                f'Too many failed attempts. Please try again in '
+                f'<strong>{mins} minute{"s" if mins != 1 else ""}</strong>.',
+                'lockout'
+            )
+            return render_template('auth/verify-2fa.html', username=user['username'])
+
+        code = request.form.get('code', '')
+        if verify_2fa_code(db, user_id, code):
+            clear_login_attempts(ip)
+            return _finalize_login(db, user, ip, ua)
+
+        record_failed_login(ip, user['username'])
+        log_audit(db, user_id, user['username'], 'FAILED_2FA', 'auth',
+                  'Invalid 2FA code at login', ip, ua)
+        db.commit()
+        flash('That code was not valid. Enter the current 6-digit code from your '
+              'authenticator app, or one of your backup codes.', 'danger')
+
+    return render_template('auth/verify-2fa.html', username=user['username'])
 
 
 @auth.route('/forgot-password', methods=['GET', 'POST'])

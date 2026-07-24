@@ -2,11 +2,15 @@
 Security utilities: audit logging, 2FA helpers.
 """
 
+import io
 import pyotp
 import hashlib
 import secrets
 import string
 from datetime import datetime, timedelta
+
+import qrcode
+import qrcode.image.svg
 
 
 DEFAULT_PASSWORD_POLICY = {
@@ -148,3 +152,138 @@ class SecurityManager:
     def get_totp_uri(self, secret, username, issuer='CoopMS'):
         """Return an otpauth:// URI for QR-code provisioning."""
         return pyotp.TOTP(secret).provisioning_uri(name=username, issuer_name=issuer)
+
+
+security_manager = SecurityManager()
+
+
+# ── 2FA persistence + enforcement ────────────────────────────────────────────
+#
+# The staff roles that can be forced to use 2FA (gated by the require_2fa
+# setting). Ordinary members are never forced.
+STAFF_ROLES = ('admin', 'treasurer', 'secretary', 'exco')
+
+
+def two_factor_enforced(db) -> bool:
+    """True when the require_2fa setting is on for this cooperative."""
+    return _setting(db, 'require_2fa', '0') == '1'
+
+
+def role_requires_2fa(role, db) -> bool:
+    """True when a user of this role must have 2FA set up (enforcement on)."""
+    return bool(role) and role in STAFF_ROLES and two_factor_enforced(db)
+
+
+def totp_qr_svg(uri) -> str:
+    """Render an otpauth URI as an inline SVG QR code (no Pillow needed)."""
+    img = qrcode.make(uri, image_factory=qrcode.image.svg.SvgPathImage,
+                      box_size=9, border=2)
+    buf = io.BytesIO()
+    img.save(buf)
+    return buf.getvalue().decode('utf-8')
+
+
+def _normalize_backup_code(code) -> str:
+    """Backup codes are shown grouped/spaced; compare on the bare characters."""
+    return ''.join((code or '').split()).replace('-', '').strip().upper()
+
+
+def _hash_backup_code(code) -> str:
+    return hashlib.sha256(_normalize_backup_code(code).encode('utf-8')).hexdigest()
+
+
+def encrypt_2fa_secret(secret) -> str:
+    """Encrypt the TOTP secret at rest (no-op if no encryption key configured)."""
+    try:
+        from crypto import encrypt_field
+        return encrypt_field(secret or '')
+    except Exception:
+        return secret or ''
+
+
+def decrypt_2fa_secret(stored) -> str:
+    try:
+        from crypto import decrypt_field
+        return decrypt_field(stored or '')
+    except Exception:
+        return stored or ''
+
+
+def user_2fa_secret(db, user_id) -> str:
+    """Return the decrypted TOTP secret for a user, or '' if 2FA is not set up."""
+    row = db.execute(
+        'SELECT two_factor_secret FROM users WHERE id = ?', (user_id,)
+    ).fetchone()
+    if not row or not row['two_factor_secret']:
+        return ''
+    return decrypt_2fa_secret(row['two_factor_secret'])
+
+
+def enable_user_2fa(db, user_id, secret) -> list:
+    """Persist a confirmed TOTP secret (encrypted), mark 2FA enabled, and issue a
+    fresh set of one-time backup codes. Returns the plaintext backup codes to
+    show the user once."""
+    db.execute(
+        'UPDATE users SET two_factor_secret = ?, two_factor_enabled = 1 WHERE id = ?',
+        (encrypt_2fa_secret(secret), user_id),
+    )
+    return regenerate_backup_codes(db, user_id)
+
+
+def disable_user_2fa(db, user_id) -> None:
+    """Turn off 2FA for a user and destroy their secret + backup codes."""
+    db.execute(
+        'UPDATE users SET two_factor_secret = NULL, two_factor_enabled = 0 WHERE id = ?',
+        (user_id,),
+    )
+    db.execute('DELETE FROM user_backup_codes WHERE user_id = ?', (user_id,))
+
+
+def regenerate_backup_codes(db, user_id, count=10) -> list:
+    """Replace a user's backup codes with a fresh set; return the plaintext codes."""
+    db.execute('DELETE FROM user_backup_codes WHERE user_id = ?', (user_id,))
+    codes = []
+    for _ in range(count):
+        raw = secrets.token_hex(5).upper()           # 10 hex chars
+        code = f'{raw[:5]}-{raw[5:]}'                 # e.g. A1B2C-3D4E5
+        codes.append(code)
+        db.execute(
+            'INSERT INTO user_backup_codes (user_id, code_hash, created_at) VALUES (?, ?, ?)',
+            (user_id, _hash_backup_code(code), datetime.now()),
+        )
+    return codes
+
+
+def count_unused_backup_codes(db, user_id) -> int:
+    row = db.execute(
+        'SELECT COUNT(*) AS c FROM user_backup_codes WHERE user_id = ? AND used_at IS NULL',
+        (user_id,),
+    ).fetchone()
+    return int(row['c']) if row else 0
+
+
+def consume_backup_code(db, user_id, code) -> bool:
+    """If `code` matches an unused backup code, mark it used and return True."""
+    code_hash = _hash_backup_code(code)
+    row = db.execute(
+        'SELECT id FROM user_backup_codes '
+        'WHERE user_id = ? AND code_hash = ? AND used_at IS NULL',
+        (user_id, code_hash),
+    ).fetchone()
+    if not row:
+        return False
+    db.execute('UPDATE user_backup_codes SET used_at = ? WHERE id = ?',
+               (datetime.now(), row['id']))
+    return True
+
+
+def verify_2fa_code(db, user_id, code) -> bool:
+    """Verify a login 2FA challenge: accept a valid TOTP code, or fall back to a
+    one-time backup code (which is then consumed). Returns True on success."""
+    code = (code or '').strip()
+    if not code:
+        return False
+    secret = user_2fa_secret(db, user_id)
+    if secret and pyotp.TOTP(secret).verify(code, valid_window=1):
+        return True
+    return consume_backup_code(db, user_id, code)
