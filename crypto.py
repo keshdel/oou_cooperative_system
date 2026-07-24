@@ -6,11 +6,21 @@
 # If the key is absent, encrypt/decrypt are no-ops so the app still starts in
 # development without the variable set. Set the key in production.
 
+import logging
 import os
 from cryptography.fernet import Fernet, InvalidToken
 
+log = logging.getLogger(__name__)
+
 _raw_key = os.environ.get('FIELD_ENCRYPTION_KEY', '').encode()
-_fernet = Fernet(_raw_key) if _raw_key else None
+try:
+    # A malformed key (wrong length / not base64) must NOT crash the app at
+    # import — degrade to a no-op so the app still boots. Set a valid key to
+    # actually enable encryption.
+    _fernet = Fernet(_raw_key) if _raw_key else None
+except Exception as exc:
+    log.error('Invalid FIELD_ENCRYPTION_KEY — field encryption disabled: %s', exc)
+    _fernet = None
 ENCRYPTED_PREFIX = 'enc:'
 SENSITIVE_MEMBER_FIELDS = ('bank_name', 'account_name', 'account_number', 'bvn', 'nin')
 

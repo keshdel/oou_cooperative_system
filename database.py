@@ -239,10 +239,18 @@ def _exec_ignore(db, sql):
 
 
 def _encrypt_existing_member_sensitive_fields(db):
-    """Encrypt existing plaintext member PII once FIELD_ENCRYPTION_KEY is set."""
+    """Encrypt existing plaintext member PII once FIELD_ENCRYPTION_KEY is set.
+
+    Wrapped in a SAVEPOINT on PostgreSQL so any failure here (e.g. a missing
+    column) cannot abort the surrounding init transaction and crash boot.
+    """
+    if USE_POSTGRES:
+        db.execute('SAVEPOINT enc_backfill')
     try:
         from crypto import SENSITIVE_MEMBER_FIELDS, encrypt_field, encryption_enabled, is_encrypted
         if not encryption_enabled():
+            if USE_POSTGRES:
+                db.execute('RELEASE SAVEPOINT enc_backfill')
             return
         rows = db.execute(
             'SELECT id, bank_name, account_name, account_number, bvn, nin FROM members'
@@ -257,7 +265,11 @@ def _encrypt_existing_member_sensitive_fields(db):
                 assignments = ', '.join(f'{field} = ?' for field in updates)
                 params = list(updates.values()) + [row['id']]
                 db.execute(f'UPDATE members SET {assignments} WHERE id = ?', params)
+        if USE_POSTGRES:
+            db.execute('RELEASE SAVEPOINT enc_backfill')
     except Exception as exc:
+        if USE_POSTGRES:
+            db.execute('ROLLBACK TO SAVEPOINT enc_backfill')
         print(f"[security] skipped sensitive field encryption pass: {exc}")
 
 
@@ -334,6 +346,11 @@ def init_db():
     _add_col(db, 'members', 'city', 'TEXT')
     _add_col(db, 'members', 'state', 'TEXT')
     _add_col(db, 'members', 'country', "TEXT DEFAULT 'Nigeria'")
+    # Sensitive ID fields (encrypted at rest). These are written by the profile
+    # form and read by the encryption backfill; without the columns, PostgreSQL
+    # aborts the init transaction and the app fails to boot.
+    _add_col(db, 'members', 'bvn', 'TEXT')
+    _add_col(db, 'members', 'nin', 'TEXT')
     _encrypt_existing_member_sensitive_fields(db)
 
     # Savings table
