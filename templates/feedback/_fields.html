@@ -1,0 +1,78 @@
+{% macro survey_fields(feat_list, improve_list, email_val) %}
+  <div class="mb-3">
+    <label class="form-label fw-semibold">1. How would you rate your overall experience with the app?</label>
+    <div class="btn-group w-100" role="group" aria-label="Overall experience">
+      {% for n, lbl in [(1,'Poor'),(2,'Fair'),(3,'Good'),(4,'Very good'),(5,'Excellent')] %}
+      <input type="radio" class="btn-check" name="overall_experience" id="exp{{ n }}" value="{{ n }}" {% if n == 4 %}required{% endif %}>
+      <label class="btn btn-outline-primary" for="exp{{ n }}">{{ lbl }}</label>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label fw-semibold" for="most_loved_feature">2. Which feature do you value the most?</label>
+    <select class="form-select" name="most_loved_feature" id="most_loved_feature">
+      <option value="">— Select —</option>
+      {% for f in feat_list %}<option value="{{ f }}">{{ f }}</option>{% endfor %}
+    </select>
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label fw-semibold" for="improve_feature">3. Which area needs the most improvement?</label>
+    <select class="form-select" name="improve_feature" id="improve_feature">
+      <option value="">— Select —</option>
+      {% for f in improve_list %}<option value="{{ f }}">{{ f }}</option>{% endfor %}
+    </select>
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label fw-semibold" for="recommend_score">4. How likely are you to recommend the app to another cooperative?</label>
+    <select class="form-select" name="recommend_score" id="recommend_score">
+      <option value="">— Select —</option>
+      {% for n in range(0, 11) %}
+      <option value="{{ n }}">{{ n }}{% if n == 0 %} — Not at all likely{% elif n == 10 %} — Extremely likely{% endif %}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div class="mb-3">
+    <label class="form-label fw-semibold" for="comments">5. Anything else? <span class="text-muted fw-normal">(optional)</span></label>
+    <textarea class="form-control" name="comments" id="comments" rows="2" maxlength="1000"
+              placeholder="One or two lines, if you like"></textarea>
+  </div>
+
+  <div class="border rounded p-3 bg-light">
+    <div class="form-check">
+      <input class="form-check-input feedback-optin" type="checkbox" name="referral_optin" value="1" id="referral_optin">
+      <label class="form-check-label fw-semibold" for="referral_optin">
+        💸 I'd like to earn commission by referring other cooperatives
+      </label>
+      <div class="text-muted small mt-1">
+        Join our referral programme — introduce another cooperative and earn a commission
+        on every successful sign-up. Leave your name and email and we'll be in touch.
+      </div>
+    </div>
+    <div class="feedback-referral-fields row g-2 mt-2" style="display:none;">
+      <div class="col-md-6">
+        <input type="text" class="form-control" name="referral_name" placeholder="Your name">
+      </div>
+      <div class="col-md-6">
+        <input type="email" class="form-control" name="referral_email" placeholder="Your email"
+               value="{{ email_val }}">
+      </div>
+    </div>
+  </div>
+{% endmacro %}
+
+{% macro survey_toggle_script() %}
+<script>
+(function(){
+  document.querySelectorAll('.feedback-optin').forEach(function(cb){
+    cb.addEventListener('change', function(){
+      var box = cb.closest('.form-check').parentElement.querySelector('.feedback-referral-fields');
+      if (box) box.style.display = cb.checked ? '' : 'none';
+    });
+  });
+})();
+</script>
+{% endmacro %}

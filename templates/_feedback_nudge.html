@@ -1,0 +1,60 @@
+{% from 'feedback/_fields.html' import survey_fields, survey_toggle_script %}
+
+<div class="feedback-nudge">
+  <div class="feedback-nudge-card">
+    <div class="feedback-nudge-close">
+      <form method="POST" action="{{ url_for('feedback.dismiss') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn-nudge-x" title="Not now">&times;</button>
+      </form>
+    </div>
+    <div class="feedback-nudge-emoji">💬</div>
+    <div class="feedback-nudge-title">Got a minute?</div>
+    <div class="feedback-nudge-text">Tell us how the app is working for you.</div>
+    <button type="button" class="btn btn-light btn-sm w-100 mt-2" data-bs-toggle="modal" data-bs-target="#feedbackModal">
+      Share feedback
+    </button>
+  </div>
+</div>
+
+<!-- Feedback modal -->
+<div class="modal fade" id="feedbackModal" tabindex="-1" aria-labelledby="feedbackModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <form method="POST" action="{{ url_for('feedback.submit') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="modal-header">
+          <h5 class="modal-title" id="feedbackModalLabel"><i class="fas fa-comment-dots text-primary me-2"></i>Share your feedback</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <p class="text-muted small">Takes under a minute. Your answers help us improve the app.</p>
+          {{ survey_fields(feedback_features, feedback_improve_options, (current_user.email or '') if current_user.is_authenticated else '') }}
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-link text-muted me-auto" data-bs-dismiss="modal">Close</button>
+          <button type="submit" class="btn btn-primary">Submit feedback</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+{{ survey_toggle_script() }}
+
+<style>
+  .feedback-nudge { padding: 10px 12px; }
+  .feedback-nudge-card {
+    position: relative; background: linear-gradient(135deg,#1e4d8c,#22c55e);
+    color: #fff; border-radius: 12px; padding: 16px 14px 14px; text-align: center;
+    box-shadow: 0 6px 16px rgba(0,0,0,.18);
+  }
+  .feedback-nudge-close { position: absolute; top: 4px; right: 6px; }
+  .btn-nudge-x { background: transparent; border: none; color: rgba(255,255,255,.8);
+    font-size: 20px; line-height: 1; cursor: pointer; padding: 2px 6px; }
+  .btn-nudge-x:hover { color: #fff; }
+  .feedback-nudge-emoji { font-size: 26px; }
+  .feedback-nudge-title { font-weight: 700; font-size: 15px; margin-top: 2px; }
+  .feedback-nudge-text { font-size: 12.5px; opacity: .92; line-height: 1.4; margin-top: 2px; }
+  .feedback-nudge-card .btn-light { font-weight: 600; }
+</style>

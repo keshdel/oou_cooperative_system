@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% block title %}Feedback — {{ coop_name }}{% endblock %}
+{% block content %}
+<div class="container-fluid py-3">
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <div>
+      <h3 class="mb-0"><i class="fas fa-comment-dots text-primary me-2"></i>User Feedback</h3>
+      <p class="text-muted mb-0">What members and staff think of the app, and referral sign-ups.</p>
+    </div>
+    <a href="{{ url_for('feedback.export_referrals') }}" class="btn btn-success">
+      <i class="fas fa-download me-1"></i>Export referral sign-ups (CSV)
+    </a>
+  </div>
+
+  <div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+      <div class="card text-center h-100"><div class="card-body">
+        <div class="text-muted small">Responses</div>
+        <div class="h3 mb-0">{{ stats.total or 0 }}</div>
+      </div></div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card text-center h-100"><div class="card-body">
+        <div class="text-muted small">Avg. experience</div>
+        <div class="h3 mb-0">{{ '%.1f'|format(stats.avg_experience) if stats.avg_experience else '—' }}<span class="fs-6 text-muted">/5</span></div>
+      </div></div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card text-center h-100"><div class="card-body">
+        <div class="text-muted small">Net Promoter Score</div>
+        <div class="h3 mb-0">{{ nps if nps is not none else '—' }}</div>
+      </div></div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card text-center h-100"><div class="card-body">
+        <div class="text-muted small">Referral sign-ups</div>
+        <div class="h3 mb-0 text-success">{{ stats.referrals or 0 }}</div>
+      </div></div>
+    </div>
+  </div>
+
+  <div class="row g-3 mb-4">
+    <div class="col-md-6">
+      <div class="card h-100"><div class="card-body">
+        <h6 class="text-success"><i class="fas fa-heart me-1"></i>Most valued features</h6>
+        {% if loved %}
+        <ul class="list-group list-group-flush">
+          {% for r in loved %}
+          <li class="list-group-item d-flex justify-content-between px-0">
+            <span>{{ r.feature }}</span><span class="badge bg-success">{{ r.c }}</span>
+          </li>{% endfor %}
+        </ul>
+        {% else %}<p class="text-muted mb-0">No responses yet.</p>{% endif %}
+      </div></div>
+    </div>
+    <div class="col-md-6">
+      <div class="card h-100"><div class="card-body">
+        <h6 class="text-warning"><i class="fas fa-screwdriver-wrench me-1"></i>Areas to improve</h6>
+        {% if improve %}
+        <ul class="list-group list-group-flush">
+          {% for r in improve %}
+          <li class="list-group-item d-flex justify-content-between px-0">
+            <span>{{ r.feature }}</span><span class="badge bg-warning text-dark">{{ r.c }}</span>
+          </li>{% endfor %}
+        </ul>
+        {% else %}<p class="text-muted mb-0">No responses yet.</p>{% endif %}
+      </div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><strong>Recent responses</strong></div>
+    <div class="table-responsive">
+      <table class="table table-sm mb-0 align-middle">
+        <thead class="table-light">
+          <tr>
+            <th>Date</th><th>User</th><th>Role</th>
+            <th class="text-center">Exp.</th><th class="text-center">Recommend</th>
+            <th>Most valued</th><th>Improve</th><th>Comment</th><th>Referral</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in responses %}
+          <tr>
+            <td class="text-nowrap small">{{ (r.created_at|string)[:16] }}</td>
+            <td>{{ r.username }}</td>
+            <td><span class="badge bg-secondary">{{ (r.role or '')|upper }}</span></td>
+            <td class="text-center">{{ r.overall_experience or '—' }}</td>
+            <td class="text-center">{{ r.recommend_score if r.recommend_score is not none else '—' }}</td>
+            <td class="small">{{ r.most_loved_feature or '' }}</td>
+            <td class="small">{{ r.improve_feature or '' }}</td>
+            <td class="small text-muted">{{ r.comments or '' }}</td>
+            <td>
+              {% if r.referral_optin %}
+                <span class="badge bg-success" title="{{ r.referral_name }} · {{ r.referral_email }}">
+                  <i class="fas fa-user-plus"></i> {{ r.referral_email }}
+                </span>
+              {% else %}—{% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="9" class="text-center text-muted py-4">No feedback yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

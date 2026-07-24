@@ -323,6 +323,26 @@ def init_db():
         )
     '''))
 
+    # In-app feedback / NPS survey (also recruits referral / sales partners).
+    _add_col(db, 'users', 'feedback_dismissed_at', 'TIMESTAMP')
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS feedback_responses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            username TEXT,
+            role TEXT,
+            overall_experience INTEGER,
+            most_loved_feature TEXT,
+            improve_feature TEXT,
+            recommend_score INTEGER,
+            comments TEXT,
+            referral_optin INTEGER DEFAULT 0,
+            referral_name TEXT,
+            referral_email TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    '''))
+
     # Members table
     db.execute(_adapt('''
         CREATE TABLE IF NOT EXISTS members (

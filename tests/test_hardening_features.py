@@ -1826,5 +1826,107 @@ class HardeningFeatureTests(unittest.TestCase):
             self.assertIsNotNone(row['last_login'])
 
 
+    # ── Feedback / NPS survey ────────────────────────────────────────────────
+
+    def _reset_feedback_state(self):
+        with self.app.app_context():
+            db = get_db()
+            db.execute("DELETE FROM feedback_responses")
+            db.execute("UPDATE users SET feedback_dismissed_at = NULL WHERE username = 'admin'")
+            db.commit()
+
+    def test_feedback_nudge_shows_until_submitted_then_hidden(self):
+        from blueprints.feedback import feedback_due
+        self._reset_feedback_state()
+        self.login_admin()
+        with self.app.app_context():
+            db = get_db()
+            uid = db.execute("SELECT id FROM users WHERE username = 'admin'").fetchone()['id']
+            self.assertTrue(feedback_due(db, uid))  # never asked -> due
+
+        # The nudge card renders on the dashboard.
+        page = self.client.get('/dashboard')
+        self.assertIn(b'Share feedback', page.data)
+
+        # Submit the survey with a referral opt-in.
+        resp = self.client.post('/feedback/', data={
+            'overall_experience': '5',
+            'most_loved_feature': 'Loans',
+            'improve_feature': 'Speed / performance',
+            'recommend_score': '9',
+            'comments': 'Great tool',
+            'referral_optin': '1',
+            'referral_name': 'Ada Referrer',
+            'referral_email': 'ada.ref@example.com',
+        }, follow_redirects=False)
+        self.assertIn(resp.status_code, (302, 303))
+
+        with self.app.app_context():
+            db = get_db()
+            uid = db.execute("SELECT id FROM users WHERE username = 'admin'").fetchone()['id']
+            row = db.execute(
+                "SELECT * FROM feedback_responses WHERE user_id = ? ORDER BY id DESC", (uid,)
+            ).fetchone()
+            self.assertEqual(row['overall_experience'], 5)
+            self.assertEqual(row['recommend_score'], 9)
+            self.assertEqual(row['most_loved_feature'], 'Loans')
+            self.assertEqual(row['referral_optin'], 1)
+            self.assertEqual(row['referral_email'], 'ada.ref@example.com')
+            self.assertFalse(feedback_due(db, uid))  # submitted -> not due
+
+        # Nudge no longer rendered after submitting.
+        page = self.client.get('/dashboard')
+        self.assertNotIn(b'Share feedback', page.data)
+        self._reset_feedback_state()
+
+    def test_feedback_dismiss_snoozes_the_nudge(self):
+        from blueprints.feedback import feedback_due
+        self._reset_feedback_state()
+        self.login_admin()
+        resp = self.client.post('/feedback/dismiss', follow_redirects=False)
+        self.assertIn(resp.status_code, (302, 303))
+        with self.app.app_context():
+            db = get_db()
+            uid = db.execute("SELECT id FROM users WHERE username = 'admin'").fetchone()['id']
+            self.assertFalse(feedback_due(db, uid))
+        self._reset_feedback_state()
+
+    def test_feedback_referral_not_captured_without_optin(self):
+        self._reset_feedback_state()
+        self.login_admin()
+        self.client.post('/feedback/', data={
+            'overall_experience': '4',
+            'recommend_score': '7',
+            'referral_name': 'Should Ignore',
+            'referral_email': 'ignore@example.com',
+        }, follow_redirects=False)
+        with self.app.app_context():
+            db = get_db()
+            row = db.execute(
+                "SELECT referral_optin, referral_email FROM feedback_responses ORDER BY id DESC"
+            ).fetchone()
+            self.assertEqual(row['referral_optin'], 0)
+            self.assertEqual(row['referral_email'] or '', '')  # dropped when not opted in
+        self._reset_feedback_state()
+
+    def test_feedback_admin_and_referral_csv_export(self):
+        self._reset_feedback_state()
+        self.login_admin()
+        self.client.post('/feedback/', data={
+            'overall_experience': '5', 'recommend_score': '10',
+            'referral_optin': '1', 'referral_name': 'Ref Person',
+            'referral_email': 'ref@example.com',
+        })
+        admin_page = self.client.get('/feedback/admin')
+        self.assertEqual(admin_page.status_code, 200)
+        self.assertIn(b'Net Promoter Score', admin_page.data)
+
+        csv_resp = self.client.get('/feedback/admin/referrals.csv')
+        self.assertEqual(csv_resp.status_code, 200)
+        self.assertIn('text/csv', csv_resp.headers.get('Content-Type', ''))
+        self.assertIn(b'ref@example.com', csv_resp.data)
+        self._reset_feedback_state()
+
+
 if __name__ == '__main__':
     unittest.main()

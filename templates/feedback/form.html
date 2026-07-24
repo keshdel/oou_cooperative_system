@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% from 'feedback/_fields.html' import survey_fields, survey_toggle_script %}
+{% block title %}Share feedback — {{ coop_name }}{% endblock %}
+{% block content %}
+<div class="container-fluid py-3" style="max-width:640px;">
+  <h3 class="mb-1"><i class="fas fa-comment-dots text-primary me-2"></i>Share your feedback</h3>
+  <p class="text-muted">Takes under a minute. Your answers help us improve the app.</p>
+
+  <div class="card shadow-sm">
+    <div class="card-body">
+      <form method="POST" action="{{ url_for('feedback.submit') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {{ survey_fields(features, improve_options, default_email) }}
+        <div class="d-flex gap-2 mt-3">
+          <button type="submit" class="btn btn-primary">Submit feedback</button>
+          <a href="{{ url_for('main.dashboard') }}" class="btn btn-outline-secondary">Cancel</a>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{{ survey_toggle_script() }}
+{% endblock %}

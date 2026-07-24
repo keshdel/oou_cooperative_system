@@ -118,6 +118,7 @@ from blueprints.accounting  import accounting
 from blueprints.governance  import governance
 from blueprints.communications import communications
 from blueprints.security     import security_bp
+from blueprints.feedback     import feedback_bp
 from mobile_api             import mobile_api
 
 app.register_blueprint(auth)
@@ -137,6 +138,7 @@ app.register_blueprint(accounting)
 app.register_blueprint(governance)
 app.register_blueprint(communications)
 app.register_blueprint(security_bp)
+app.register_blueprint(feedback_bp)
 app.register_blueprint(mobile_api)
 
 csrf.exempt(mobile_api)
@@ -157,8 +159,18 @@ def utility_processor():
     linked_member_profile = False
     can_switch_to_member_view = False
     active_member_view = False
+    show_feedback_nudge = False
+    feedback_features = []
+    feedback_improve_options = []
     if current_user.is_authenticated:
         role = getattr(current_user, 'role', '')
+        try:
+            from blueprints.feedback import feedback_due, FEATURE_OPTIONS, IMPROVE_OPTIONS
+            show_feedback_nudge = feedback_due(db, current_user.id)
+            feedback_features = FEATURE_OPTIONS
+            feedback_improve_options = IMPROVE_OPTIONS
+        except Exception:
+            show_feedback_nudge = False
         try:
             linked_member_profile = bool(member_for_user(db))
         except Exception:
@@ -192,6 +204,9 @@ def utility_processor():
         'linked_member_profile':    linked_member_profile,
         'can_switch_to_member_view': can_switch_to_member_view,
         'active_member_view':       active_member_view,
+        'show_feedback_nudge':      show_feedback_nudge,
+        'feedback_features':        feedback_features,
+        'feedback_improve_options': feedback_improve_options,
     }
 
 

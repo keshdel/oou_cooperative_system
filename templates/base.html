@@ -170,6 +170,10 @@
                        class="{% if request.blueprint == 'migration' %}active{% endif %}">
                         <i class="fas fa-database"></i> Data Migration
                     </a>
+                    <a href="{{ url_for('feedback.admin') }}"
+                       class="{% if request.blueprint == 'feedback' %}active{% endif %}">
+                        <i class="fas fa-comment-dots"></i> Feedback
+                    </a>
                     {% endif %}
                     {% if current_user.role in ['admin', 'treasurer'] %}
                     <a href="{{ url_for('admin_panel.subscription_page') }}"
@@ -186,6 +190,10 @@
                     </a>
                 {% endif %}
                 </div>
+
+                {% if show_feedback_nudge %}
+                    {% include '_feedback_nudge.html' %}
+                {% endif %}
 
                 <div class="sidebar-footer">
                     <small>&copy; {{ now().year }} Adekail Professional Services</small>
