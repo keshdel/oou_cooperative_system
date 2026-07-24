@@ -532,15 +532,9 @@
                         <input type="checkbox" name="remember" id="remember">
                         Remember me
                     </label>
-                    <a href="#" class="forgot-link" onclick="showForgotHint(); return false;">
+                    <a href="{{ url_for('auth.forgot_password') }}" class="forgot-link">
                         Forgot password?
                     </a>
-                </div>
-
-                <!-- Forgot-password hint (hidden by default) -->
-                <div class="alert alert-info" id="forgotHint" style="display:none; margin-top:-12px;">
-                    <i class="fas fa-info-circle alert-icon"></i>
-                    <div>Contact your administrator to reset your password. They can do it from <strong>Settings → User Management</strong>.</div>
                 </div>
 
                 <!-- Submit -->
@@ -583,12 +577,6 @@ function togglePwd() {
         f.type = 'password';
         i.className = 'fas fa-eye';
     }
-}
-
-// ── Forgot password hint ─────────────────────────────────────────────────────
-function showForgotHint() {
-    const hint = document.getElementById('forgotHint');
-    hint.style.display = hint.style.display === 'none' ? 'flex' : 'none';
 }
 
 // ── Loading state on submit ──────────────────────────────────────────────────
@@ -637,7 +625,7 @@ document.addEventListener('keydown', function(e) {
 });
 
 // ── Auto-dismiss alerts after 8 seconds ──────────────────────────────────
-document.querySelectorAll('.alert:not(#forgotHint)').forEach(el => {
+document.querySelectorAll('.alert').forEach(el => {
     if (el.classList.contains('alert-lockout')) return; // keep lockout visible
     setTimeout(() => {
         el.style.transition = 'opacity .5s';

@@ -657,6 +657,97 @@ class HardeningFeatureTests(unittest.TestCase):
             self.assertEqual(token_counts['bulk.inactive@example.com'], 0)
             self.assertEqual(token_counts['bulk.noemail@example.com'], 0)
 
+    def test_user_can_request_and_complete_password_reset(self):
+        email = 'reset.member@example.com'
+        username = 'reset.member'
+        with self.app.app_context():
+            db = get_db()
+            db.execute('DELETE FROM account_setup_tokens WHERE user_id IN (SELECT id FROM users WHERE username = ?)', (username,))
+            db.execute('DELETE FROM users WHERE username = ?', (username,))
+            db.execute('''
+                INSERT INTO users
+                    (username, password_hash, role, full_name, email,
+                     is_active, must_change_password, created_at)
+                VALUES (?, ?, 'member', 'Reset Member', ?, 1, 0, CURRENT_TIMESTAMP)
+            ''', (username, generate_password_hash('OldPass123'), email))
+            db.commit()
+
+        with patch('blueprints.auth.send_password_reset_email', return_value=True) as reset_email:
+            response = self.client.post(
+                '/forgot-password',
+                data={'identifier': email},
+                follow_redirects=False,
+            )
+
+        self.assertIn(response.status_code, (302, 303))
+        reset_email.assert_called_once()
+        reset_url = reset_email.call_args.args[2]
+        token = urlparse(reset_url).path.rsplit('/', 1)[-1]
+        self.assertTrue(token)
+
+        with self.app.app_context():
+            db = get_db()
+            token_row = db.execute('''
+                SELECT t.*
+                FROM account_setup_tokens t
+                JOIN users u ON u.id = t.user_id
+                WHERE u.username = ? AND t.purpose = 'password_reset'
+            ''', (username,)).fetchone()
+            self.assertIsNotNone(token_row)
+            self.assertIsNone(token_row['used_at'])
+
+        reset_response = self.client.post(
+            f'/reset-password/{token}',
+            data={'new_password': 'NewPass123!', 'confirm_password': 'NewPass123!'},
+            follow_redirects=False,
+        )
+        self.assertIn(reset_response.status_code, (302, 303))
+        self.assertIn('/login', reset_response.headers.get('Location', ''))
+
+        login_response = self.client.post(
+            '/login',
+            data={'username': username, 'password': 'NewPass123!'},
+            follow_redirects=False,
+        )
+        self.assertIn(login_response.status_code, (302, 303))
+
+        reuse_response = self.client.get(f'/reset-password/{token}', follow_redirects=False)
+        self.assertIn(reuse_response.status_code, (302, 303))
+        self.assertIn('/forgot-password', reuse_response.headers.get('Location', ''))
+
+    def test_password_reset_token_cannot_be_used_for_account_setup(self):
+        email = 'reset.notsetup@example.com'
+        username = 'reset.notsetup'
+        with self.app.app_context():
+            db = get_db()
+            db.execute('DELETE FROM account_setup_tokens WHERE user_id IN (SELECT id FROM users WHERE username = ?)', (username,))
+            db.execute('DELETE FROM users WHERE username = ?', (username,))
+            db.execute('''
+                INSERT INTO users
+                    (username, password_hash, role, full_name, email,
+                     is_active, must_change_password, created_at)
+                VALUES (?, ?, 'member', 'Reset Not Setup', ?, 1, 1, CURRENT_TIMESTAMP)
+            ''', (username, generate_password_hash('OldPass123'), email))
+            db.commit()
+
+        with patch('blueprints.auth.send_password_reset_email', return_value=True) as reset_email:
+            self.client.post('/forgot-password', data={'identifier': username})
+
+        token = urlparse(reset_email.call_args.args[2]).path.rsplit('/', 1)[-1]
+        response = self.client.post(
+            f'/setup-password/{token}',
+            data={'new_password': 'WrongRoute123!', 'confirm_password': 'WrongRoute123!'},
+            follow_redirects=False,
+        )
+        self.assertIn(response.status_code, (302, 303))
+        self.assertIn('/login', response.headers.get('Location', ''))
+
+        with self.app.app_context():
+            db = get_db()
+            user = db.execute('SELECT password_hash, must_change_password FROM users WHERE username = ?', (username,)).fetchone()
+            self.assertFalse(check_password_hash(user['password_hash'], 'WrongRoute123!'))
+            self.assertEqual(user['must_change_password'], 1)
+
     def test_admin_readiness_endpoint_reports_core_services(self):
         self.login_admin()
         response = self.client.get('/api/readiness')

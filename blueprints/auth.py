@@ -1,16 +1,23 @@
 import hmac
 import os
-from datetime import datetime
+from collections import defaultdict
+from datetime import datetime, timedelta
+import time
 
 from flask import Blueprint, current_app, render_template, redirect, url_for, request, flash, session
 from flask_login import login_user, login_required, logout_user
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from database import get_db
-from security import hash_account_setup_token, log_audit, validate_password_strength
+from email_service import send_password_reset_email
+from security import generate_account_setup_token, hash_account_setup_token, log_audit, validate_password_strength
 from utils import User, is_rate_limited, lockout_seconds_remaining, record_failed_login, clear_login_attempts
 
 auth = Blueprint('auth', __name__)
+
+_password_reset_attempts = defaultdict(list)
+_PASSWORD_RESET_WINDOW = 900
+_PASSWORD_RESET_MAX = 5
 
 
 def _support_routes_enabled():
@@ -29,6 +36,16 @@ def _parse_db_datetime(value):
     return datetime.fromisoformat(str(value).split('.')[0].replace('T', ' '))
 
 
+def _reset_request_limited(key):
+    now = time.time()
+    attempts = [t for t in _password_reset_attempts[key] if now - t < _PASSWORD_RESET_WINDOW]
+    _password_reset_attempts[key] = attempts
+    if len(attempts) >= _PASSWORD_RESET_MAX:
+        return True
+    attempts.append(now)
+    return False
+
+
 def _account_setup_token_row(db, token):
     token_hash = hash_account_setup_token(token)
     row = db.execute('''
@@ -44,6 +61,7 @@ def _account_setup_token_row(db, token):
         FROM account_setup_tokens t
         JOIN users u ON u.id = t.user_id
         WHERE t.token_hash = ?
+          AND COALESCE(t.purpose, 'member_onboarding') IN ('member_onboarding', 'admin_reissue')
     ''', (token_hash,)).fetchone()
     if not row or row['used_at'] or not row['is_active']:
         return None
@@ -53,6 +71,50 @@ def _account_setup_token_row(db, token):
     except Exception:
         return None
     return row
+
+
+def _password_reset_token_row(db, token):
+    token_hash = hash_account_setup_token(token)
+    row = db.execute('''
+        SELECT
+            t.id AS token_id,
+            t.user_id,
+            t.expires_at,
+            t.used_at,
+            u.username,
+            u.email,
+            u.full_name,
+            u.is_active
+        FROM account_setup_tokens t
+        JOIN users u ON u.id = t.user_id
+        WHERE t.token_hash = ?
+          AND t.purpose = 'password_reset'
+    ''', (token_hash,)).fetchone()
+    if not row or row['used_at'] or not row['is_active']:
+        return None
+    try:
+        if _parse_db_datetime(row['expires_at']) <= datetime.now():
+            return None
+    except Exception:
+        return None
+    return row
+
+
+def _issue_password_reset_link(db, user):
+    token, token_hash = generate_account_setup_token()
+    db.execute('''
+        UPDATE account_setup_tokens
+        SET used_at = ?
+        WHERE user_id = ?
+          AND purpose = 'password_reset'
+          AND used_at IS NULL
+    ''', (datetime.now(), user['id']))
+    db.execute('''
+        INSERT INTO account_setup_tokens
+            (user_id, token_hash, purpose, expires_at)
+        VALUES (?, ?, 'password_reset', ?)
+    ''', (user['id'], token_hash, datetime.now() + timedelta(hours=1)))
+    return url_for('auth.reset_password', token=token, _external=True)
 
 
 @auth.route('/')
@@ -137,6 +199,120 @@ def login():
                 flash('Incorrect username or password. Please try again.', 'danger')
 
     return render_template('login.html')
+
+
+@auth.route('/forgot-password', methods=['GET', 'POST'])
+def forgot_password():
+    if request.method == 'POST':
+        identifier = request.form.get('identifier', '').strip()
+        ip = request.remote_addr or '0.0.0.0'
+        ua = request.user_agent.string if request.user_agent else ''
+        generic_message = (
+            'If an active account exists for those details, a password reset link '
+            'will be sent to the registered email address.'
+        )
+
+        if not identifier:
+            flash('Enter your username or email address.', 'danger')
+            return redirect(url_for('auth.forgot_password'))
+
+        reset_key = f'{ip}:{identifier.lower()}'
+        if _reset_request_limited(reset_key):
+            flash('Too many reset requests. Please wait a few minutes before trying again.', 'warning')
+            return redirect(url_for('auth.forgot_password'))
+
+        db = get_db()
+        user = db.execute('''
+            SELECT id, username, email, full_name, is_active
+            FROM users
+            WHERE lower(username) = lower(?)
+               OR lower(COALESCE(email, '')) = lower(?)
+            LIMIT 1
+        ''', (identifier, identifier)).fetchone()
+
+        if user and user['is_active'] and (user['email'] or '').strip():
+            reset_url = _issue_password_reset_link(db, user)
+            sent = send_password_reset_email(user['email'], dict(user), reset_url)
+            log_audit(
+                db,
+                user['id'],
+                user['username'],
+                'PASSWORD_RESET_REQUEST',
+                'auth',
+                'Password reset link requested' + ('' if sent else ' but email delivery failed'),
+                ip,
+                ua,
+            )
+        else:
+            log_audit(
+                db,
+                None,
+                identifier,
+                'PASSWORD_RESET_REQUEST',
+                'auth',
+                'Password reset requested for unknown, inactive, or email-less account',
+                ip,
+                ua,
+            )
+        db.commit()
+        flash(generic_message, 'success')
+        return redirect(url_for('auth.login'))
+
+    return render_template('forgot-password.html')
+
+
+@auth.route('/reset-password/<token>', methods=['GET', 'POST'])
+def reset_password(token):
+    db = get_db()
+    reset_row = _password_reset_token_row(db, token)
+    if not reset_row:
+        flash('This password reset link is invalid, expired, or has already been used.', 'danger')
+        return redirect(url_for('auth.forgot_password'))
+
+    if request.method == 'POST':
+        new_password = request.form.get('new_password', '')
+        confirm_password = request.form.get('confirm_password', '')
+
+        if not new_password or not confirm_password:
+            flash('Please enter and confirm your new password.', 'danger')
+            return redirect(url_for('auth.reset_password', token=token))
+        if new_password != confirm_password:
+            flash('New passwords do not match.', 'danger')
+            return redirect(url_for('auth.reset_password', token=token))
+
+        ok, errors = validate_password_strength(new_password, db)
+        if not ok:
+            flash(' '.join(errors), 'danger')
+            return redirect(url_for('auth.reset_password', token=token))
+
+        try:
+            db.execute(
+                'UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?',
+                (generate_password_hash(new_password), reset_row['user_id'])
+            )
+            db.execute(
+                'UPDATE account_setup_tokens SET used_at = ? WHERE id = ?',
+                (datetime.now(), reset_row['token_id'])
+            )
+            log_audit(
+                db,
+                reset_row['user_id'],
+                reset_row['username'],
+                'PASSWORD_RESET_COMPLETE',
+                'auth',
+                'User reset password using emailed reset link',
+                request.remote_addr or '',
+                request.user_agent.string if request.user_agent else '',
+            )
+            db.commit()
+            flash('Password reset successfully. Please sign in with your new password.', 'success')
+            return redirect(url_for('auth.login'))
+        except Exception:
+            db.rollback()
+            flash('Unable to reset password. Please request a new reset link.', 'danger')
+            return redirect(url_for('auth.forgot_password'))
+
+    return render_template('reset-password.html', token=token, user=reset_row)
 
 
 @auth.route('/setup-password/<token>', methods=['GET', 'POST'])

@@ -448,7 +448,7 @@ def send_loan_stage_email(recipient: str, member: dict, loan_number: str,
     send_email(recipient, f'Loan Application Update - {_coop_name()}', html)
 
 
-def send_password_reset_email(recipient: str, user: dict, reset_url: str) -> None:
+def send_password_reset_email(recipient: str, user: dict, reset_url: str) -> bool:
     try:
         from flask import render_template
         html = render_template('emails/password-reset.html',
@@ -460,4 +460,4 @@ def send_password_reset_email(recipient: str, user: dict, reset_url: str) -> Non
             f'<p><a href="{reset_url}">{reset_url}</a></p>'
             f'<p>If you did not request this, you can ignore this email.</p>'
         )
-    send_email(recipient, f'Reset Your Password - {_coop_name()}', html)
+    return send_email(recipient, f'Reset Your Password - {_coop_name()}', html)
