@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CoopMS — Cooperative Management Software</title>
+<meta name="description" content="CoopMS is the all-in-one platform to run a cooperative society: members, savings, shares, loans, investments and real double-entry accounting in one place.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏦</text></svg>">
+<style>
+  :root{ --blue:#1e4d8c; --blue2:#2563eb; --dark:#0f2a5c; --ink:#1f2937; --muted:#64748b; --bg:#f6f8fc; --line:#e2e8f0; }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  body{ font-family:'Segoe UI',system-ui,-apple-system,Roboto,Arial,sans-serif; color:var(--ink); background:#fff; line-height:1.6; }
+  a{ color:var(--blue2); text-decoration:none; }
+  .wrap{ max-width:1080px; margin:0 auto; padding:0 20px; }
+  .btn{ display:inline-block; padding:12px 26px; border-radius:8px; font-weight:700; font-size:15px; }
+  .btn-primary{ background:#22c55e; color:#fff; }
+  .btn-primary:hover{ background:#16a34a; }
+  .btn-ghost{ background:transparent; color:#fff; border:1px solid rgba(255,255,255,.5); }
+  .btn-ghost:hover{ background:rgba(255,255,255,.1); }
+
+  header{ position:sticky; top:0; background:rgba(255,255,255,.95); backdrop-filter:blur(6px); border-bottom:1px solid var(--line); z-index:10; }
+  .nav{ display:flex; align-items:center; justify-content:space-between; height:64px; }
+  .brand{ font-weight:800; font-size:20px; color:var(--blue); letter-spacing:.3px; }
+  .brand span{ color:var(--blue2); }
+  .nav-links a{ color:var(--ink); margin-left:22px; font-weight:600; font-size:14px; }
+  .nav-links a:hover{ color:var(--blue2); }
+  @media(max-width:640px){ .nav-links{ display:none; } }
+
+  .hero{ background:linear-gradient(135deg,var(--dark),var(--blue)); color:#fff; padding:78px 0 88px; }
+  .hero h1{ font-size:42px; line-height:1.15; font-weight:800; max-width:760px; }
+  .hero p{ font-size:19px; opacity:.92; max-width:620px; margin:20px 0 32px; }
+  .hero .cta a{ margin-right:12px; }
+  .pill{ display:inline-block; background:rgba(255,255,255,.14); color:#dbeafe; padding:6px 14px; border-radius:999px; font-size:13px; font-weight:600; margin-bottom:20px; }
+  @media(max-width:640px){ .hero h1{ font-size:32px; } }
+
+  section{ padding:64px 0; }
+  .eyebrow{ color:var(--blue2); font-weight:700; text-transform:uppercase; letter-spacing:.08em; font-size:13px; }
+  h2{ font-size:30px; font-weight:800; margin:8px 0 8px; }
+  .lead{ color:var(--muted); font-size:17px; max-width:640px; }
+
+  .grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:22px; margin-top:36px; }
+  @media(max-width:840px){ .grid{ grid-template-columns:repeat(2,1fr); } }
+  @media(max-width:560px){ .grid{ grid-template-columns:1fr; } }
+  .card{ border:1px solid var(--line); border-radius:12px; padding:24px; background:#fff; transition:.2s; }
+  .card:hover{ box-shadow:0 12px 28px rgba(15,42,92,.10); transform:translateY(-3px); }
+  .ic{ width:46px; height:46px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:22px; background:#eaf1fb; margin-bottom:14px; }
+  .card h3{ font-size:18px; margin-bottom:6px; }
+  .card p{ color:var(--muted); font-size:15px; }
+
+  .alt{ background:var(--bg); }
+  .steps{ display:grid; grid-template-columns:repeat(3,1fr); gap:22px; margin-top:36px; }
+  @media(max-width:640px){ .steps{ grid-template-columns:1fr; } }
+  .step .num{ width:34px; height:34px; border-radius:50%; background:var(--blue); color:#fff; font-weight:800; display:flex; align-items:center; justify-content:center; margin-bottom:12px; }
+
+  .ctaband{ background:linear-gradient(135deg,var(--blue2),var(--blue)); color:#fff; text-align:center; border-radius:16px; padding:48px 24px; margin:0 auto; }
+  .ctaband h2{ color:#fff; }
+  .ctaband p{ opacity:.92; margin:8px auto 24px; max-width:520px; }
+
+  footer{ border-top:1px solid var(--line); padding:32px 0; color:var(--muted); font-size:14px; }
+  .foot{ display:flex; justify-content:space-between; flex-wrap:wrap; gap:12px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap nav">
+    <div class="brand">Coop<span>MS</span></div>
+    <nav class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#how">How it works</a>
+      <a href="#contact">Contact</a>
+      <a href="#contact" class="btn btn-primary" style="padding:8px 18px;">Request a demo</a>
+    </nav>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="wrap">
+    <span class="pill">Built for cooperative societies</span>
+    <h1>Run your entire cooperative on one platform.</h1>
+    <p>Members, savings, shares, loans, investments and real double-entry accounting — digitised and centralised, so your society runs on numbers you can trust.</p>
+    <div class="cta">
+      <a href="#contact" class="btn btn-primary">Request a demo</a>
+      <a href="#features" class="btn btn-ghost">See features</a>
+    </div>
+  </div>
+</section>
+
+<section id="features">
+  <div class="wrap">
+    <div class="eyebrow">Everything in one place</div>
+    <h2>One system for the whole society</h2>
+    <p class="lead">Stop juggling spreadsheets and standalone accounting software. CoopMS handles the member-facing workflow and the books together.</p>
+    <div class="grid">
+      <div class="card"><div class="ic">👥</div><h3>Member management</h3><p>Digital member records, ID cards, self-service profiles and a member portal for balances and statements.</p></div>
+      <div class="card"><div class="ic">🐖</div><h3>Savings &amp; shares</h3><p>Monthly contributions, salary-deduction batch uploads, share capital, and per-member statements from inception.</p></div>
+      <div class="card"><div class="ic">💵</div><h3>Loans</h3><p>Applications with guarantors, multi-level approval, repayment schedules, and automatic delinquency ageing.</p></div>
+      <div class="card"><div class="ic">📊</div><h3>Real accounting</h3><p>A true double-entry general ledger — trial balance, income statement, balance sheet and cash flow that always balance.</p></div>
+      <div class="card"><div class="ic">🔎</div><h3>Full audit trail</h3><p>Trace any figure to its journal entry and source document. Period locking and reversals keep the books clean.</p></div>
+      <div class="card"><div class="ic">📣</div><h3>Governance &amp; comms</h3><p>AGM/meeting notices, minutes repository, dividend declarations and bulk member email — all built in.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="how" class="alt">
+  <div class="wrap">
+    <div class="eyebrow">Simple to adopt</div>
+    <h2>Live in days, not months</h2>
+    <div class="steps">
+      <div class="step"><div class="num">1</div><h3>Migrate your data</h3><p>We bring in your members, savings and opening balances — reconciled against your existing trial balance.</p></div>
+      <div class="step"><div class="num">2</div><h3>Go live</h3><p>Your society gets its own secure site and login. Staff manage operations; members self-serve from the portal.</p></div>
+      <div class="step"><div class="num">3</div><h3>Run with confidence</h3><p>Every transaction posts to the ledger automatically, so your statements are always accurate and audit-ready.</p></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <div class="ctaband" id="contact">
+      <h2>Ready to digitise your cooperative?</h2>
+      <p>Tell us about your society and we'll set you up with a demo and a migration plan.</p>
+      <a href="mailto:hello@cooperativems.com?subject=CoopMS%20demo%20request" class="btn btn-primary">Email hello@cooperativems.com</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap foot">
+    <div><strong style="color:var(--blue);">CoopMS</strong> — Cooperative Management Software</div>
+    <div>&copy; <span id="yr"></span> CoopMS. All rights reserved.</div>
+  </div>
+</footer>
+<script>document.getElementById('yr').textContent=new Date().getFullYear();</script>
+</body>
+</html>

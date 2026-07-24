@@ -30,6 +30,7 @@ services:
       - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./landing:/srv/landing:ro          # static marketing page for the apex domain
       - caddy_data:/data
       - caddy_config:/config
 

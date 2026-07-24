@@ -54,3 +54,5 @@ deploy/vps/backups/
 deploy/vps/COMMANDS.txt
 
 deploy/vps/.backup-remote
+
+deploy/vps/.landing-domain
