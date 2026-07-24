@@ -213,6 +213,7 @@ def _finalize_login(db, user, ip, ua):
     session.pop('view_mode', None)
     session.pop('pending_2fa_user', None)
     session.pop('pending_2fa_at', None)
+    db.execute('UPDATE users SET last_login = ? WHERE id = ?', (datetime.now(), user['id']))
     log_audit(db, user['id'], user['username'], 'LOGIN', 'auth', 'User logged in', ip, ua)
     db.commit()
     if user_obj.must_change_password:

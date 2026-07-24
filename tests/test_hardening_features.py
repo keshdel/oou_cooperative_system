@@ -1813,5 +1813,18 @@ class HardeningFeatureTests(unittest.TestCase):
         self._reset_2fa_state()
 
 
+    def test_login_records_last_login_timestamp(self):
+        with self.app.app_context():
+            db = get_db()
+            db.execute("UPDATE users SET last_login = NULL WHERE username = 'admin'")
+            db.commit()
+        self.login_admin()
+        with self.app.app_context():
+            row = get_db().execute(
+                "SELECT last_login FROM users WHERE username = 'admin'"
+            ).fetchone()
+            self.assertIsNotNone(row['last_login'])
+
+
 if __name__ == '__main__':
     unittest.main()

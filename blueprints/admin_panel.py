@@ -108,6 +108,19 @@ _PASSWORD_POLICY_BOOLEAN_KEYS = {
 }
 
 
+def _format_last_login(value):
+    """Present a stored last_login (datetime on Postgres, ISO string on SQLite)
+    as a clean 'YYYY-MM-DD HH:MM', or 'Never' if the user has not logged in."""
+    if not value:
+        return 'Never'
+    if isinstance(value, datetime):
+        return value.strftime('%Y-%m-%d %H:%M')
+    try:
+        return datetime.fromisoformat(str(value)).strftime('%Y-%m-%d %H:%M')
+    except (TypeError, ValueError):
+        return str(value)[:16]
+
+
 def _upsert_setting(db, key, value, description=None):
     existing = db.execute('SELECT id FROM settings WHERE key = ?', (key,)).fetchone()
     if existing:
@@ -254,7 +267,7 @@ def settings():
                 'email':          u['email'] or '',
                 'role':           u['role'],
                 'is_active':      u['is_active'] if u['is_active'] is not None else 1,
-                'last_login':     u['last_login'] or 'Never',
+                'last_login':     _format_last_login(u['last_login']),
                 'is_super_admin': bool(u['is_super_admin'] if 'is_super_admin' in u.keys() else 0),
                 'must_change_password': bool(u['must_change_password'] if 'must_change_password' in u.keys() else 0),
                 'two_factor_enabled': bool(u['two_factor_enabled'] if 'two_factor_enabled' in u.keys() else 0),

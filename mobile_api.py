@@ -167,6 +167,9 @@ def mobile_login():
         return jsonify({'success': False, 'error': 'Invalid credentials'}), 401
 
     clear_login_attempts(login_key)
+    db.execute('UPDATE users SET last_login = ? WHERE id = ?',
+               (datetime.datetime.now(), user['id']))
+    db.commit()
     token = _generate_token(user['id'], user['username'], user['role'])
     return jsonify({
         'success': True,
