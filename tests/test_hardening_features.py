@@ -1928,5 +1928,38 @@ class HardeningFeatureTests(unittest.TestCase):
         self._reset_feedback_state()
 
 
+    def test_loan_import_keeps_explicit_zero_balance(self):
+        """A blank balance defaults to the full amount, but an explicit 0 must
+        stick — needed to migrate fully-repaid (closed) loans."""
+        self.login_admin()
+        self.create_member()
+        csv_body = (
+            'member_number,loan_number,amount,purpose,tenure,total_repayment,balance,status\n'
+            'OOU/TEST/0001,LN-ZERO-1,500000,Regular,12,560000,0,completed\n'
+            'OOU/TEST/0001,LN-BLANK-1,500000,Regular,12,560000,,active\n'
+        )
+        resp = self.client.post(
+            '/migration/loans',
+            data={'file': (BytesIO(csv_body.encode('utf-8')), 'loans.csv')},
+            content_type='multipart/form-data',
+            follow_redirects=False,
+        )
+        self.assertIn(resp.status_code, (302, 303))
+        with self.app.app_context():
+            db = get_db()
+            z = db.execute(
+                "SELECT balance, status FROM loans WHERE loan_number = 'LN-ZERO-1'"
+            ).fetchone()
+            self.assertIsNotNone(z)
+            self.assertEqual(float(z['balance']), 0.0)       # the fix: explicit 0 kept
+            self.assertEqual(z['status'], 'completed')
+            b = db.execute(
+                "SELECT balance FROM loans WHERE loan_number = 'LN-BLANK-1'"
+            ).fetchone()
+            self.assertEqual(float(b['balance']), 560000.0)  # blank still defaults to total
+            db.execute("DELETE FROM loans WHERE loan_number IN ('LN-ZERO-1','LN-BLANK-1')")
+            db.commit()
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -684,7 +684,10 @@ def import_loans():
                     tenure     = int(row.get('tenure', '12').strip() or 12)
                     int_rate   = float(row.get('interest_rate', '11').strip() or 11)
                     total_rep  = float(row.get('total_repayment', '0').strip() or 0) or amount
-                    balance    = float(row.get('balance', '0').strip() or 0) or total_rep
+                    # A blank balance defaults to the full amount owed, but an
+                    # explicit 0 must stick (e.g. migrating a fully-repaid loan).
+                    bal_raw    = row.get('balance', '').strip()
+                    balance    = float(bal_raw) if bal_raw else total_rep
                     status     = _normalize_loan_status(row.get('status', ''), fallback='pending')
                     notes      = row.get('notes', '').strip() or None
 
