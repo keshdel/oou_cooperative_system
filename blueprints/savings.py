@@ -1,14 +1,17 @@
 import csv
+import os
 import random
 from datetime import datetime
 from io import StringIO, TextIOWrapper
 
 from flask import Blueprint, render_template, redirect, url_for, request, flash, make_response
 from flask_login import login_required, current_user
+from werkzeug.utils import secure_filename
 
 from database import get_db, last_insert_id
 from email_service import send_payment_confirmation_email
-from utils import role_required, audit, notify_member, record_revenue, share_capital_split
+from utils import (role_required, audit, notify_member, record_revenue, share_capital_split,
+                   member_savings_balance)
 from ledger import post_journal_safe, get_default_cash_account, MEMBER_DEPOSITS, FEE_INCOME, SHARE_CAPITAL
 
 savings = Blueprint('savings', __name__)
@@ -420,3 +423,124 @@ def add_saving():
         flash(f'Error recording savings: {str(e)}', 'danger')
 
     return redirect(url_for('members.member_details', member_id=member_id))
+
+
+_PAYOUT_EVIDENCE_EXTS = {'pdf', 'png', 'jpg', 'jpeg'}
+
+
+def _save_payout_evidence(f):
+    """Validate + save a payout evidence file under static/uploads/payouts/.
+    Returns (True, db_path) or (False, error_message)."""
+    name = secure_filename(f.filename or '')
+    if '.' not in name:
+        return False, 'file must be a PDF or image (PDF, PNG, JPG).'
+    ext = name.rsplit('.', 1)[1].lower()
+    if ext not in _PAYOUT_EVIDENCE_EXTS:
+        return False, 'only PDF, PNG or JPG files are allowed.'
+    f.seek(0, os.SEEK_END)
+    size = f.tell()
+    f.seek(0)
+    if size > 8 * 1024 * 1024:
+        return False, 'file is larger than 8 MB.'
+    unique = f"payout_{datetime.now().strftime('%Y%m%d%H%M%S')}_{random.randint(1000, 9999)}.{ext}"
+    rel = f"uploads/payouts/{unique}"
+    disk = os.path.join('static', 'uploads', 'payouts', unique)
+    os.makedirs(os.path.dirname(disk), exist_ok=True)
+    f.save(disk)
+    return True, rel
+
+
+@savings.route('/savings/payout', methods=['POST'])
+@login_required
+@role_required('admin', 'treasurer')
+def record_payout():
+    member_id = request.form.get('member_id')
+    db = get_db()
+    member = db.execute('SELECT * FROM members WHERE id = ?', (member_id,)).fetchone()
+    if not member:
+        flash('Member not found.', 'danger')
+        return redirect(url_for('members.members_list'))
+    back = redirect(url_for('members.member_details', member_id=member_id))
+
+    # Hard rule: no payout while any loan is still outstanding.
+    outstanding = db.execute(
+        "SELECT COALESCE(SUM(balance), 0) FROM loans WHERE member_id = ? AND status = 'active'",
+        (member_id,)).fetchone()[0] or 0
+    if float(outstanding) > 0.005:
+        flash(f'Payout blocked: {member["first_name"]} {member["last_name"]} still has an '
+              f'outstanding loan balance of ₦{float(outstanding):,.2f}. The loan must be '
+              f'cleared before any savings can be paid out.', 'danger')
+        return back
+
+    balance = member_savings_balance(db, member_id)
+    full = request.form.get('full_payout') == '1'
+    try:
+        amount = balance if full else float(request.form.get('amount') or 0)
+    except ValueError:
+        flash('Enter a valid payout amount.', 'danger')
+        return back
+    if amount <= 0:
+        flash('Payout amount must be greater than zero.', 'danger')
+        return back
+    if amount > balance + 0.005:
+        flash(f'Payout (₦{amount:,.2f}) exceeds the savings balance (₦{balance:,.2f}).', 'danger')
+        return back
+
+    reason = request.form.get('reason', '').strip()
+    if not reason:
+        flash('A reason for the payout is required.', 'danger')
+        return back
+
+    evidence = request.files.get('evidence')
+    if not evidence or not evidence.filename:
+        flash('Payout evidence (PDF or image) is required.', 'danger')
+        return back
+    ok, res = _save_payout_evidence(evidence)
+    if not ok:
+        flash(f'Evidence not accepted: {res}', 'danger')
+        return back
+    evidence_path = res
+
+    method = request.form.get('payment_method', 'bank').strip() or 'bank'
+    date = _parse_date(request.form.get('date', '')) or datetime.now()
+    try:
+        receipt = f"PAYOUT/{datetime.now().strftime('%Y%m%d')}/{random.randint(1000, 9999)}"
+        # Withdrawal recorded as a negative savings row so the balance (SUM) drops.
+        db.execute('''
+            INSERT INTO savings
+                (member_id, amount, month, payment_type, payment_method,
+                 receipt_number, notes, evidence_path, date, created_by)
+            VALUES (?, ?, ?, 'withdrawal', ?, ?, ?, ?, ?, ?)
+        ''', (member_id, -amount, date.strftime('%Y-%m'), method, receipt,
+              reason, evidence_path, date, current_user.id))
+        sav_id = last_insert_id(db)
+        db.execute('UPDATE members SET total_savings = total_savings - ? WHERE id = ?',
+                   (amount, member_id))
+
+        # Double-entry: the deposit liability falls and cash goes out.
+        cash_account = get_default_cash_account(db)
+        post_journal_safe(db, f'Savings payout — {member["first_name"]} {member["last_name"]}',
+                          [{'account': MEMBER_DEPOSITS, 'debit': amount, 'memo': reason},
+                           {'account': cash_account, 'credit': amount,
+                            'memo': f'Payout to member {member["member_number"]}'}],
+                          reference=receipt, source_module='savings_payout',
+                          source_id=sav_id, created_by=current_user.id, date=date)
+
+        # A full payout can double as an exit — archive the member.
+        if full and request.form.get('mark_former') == '1':
+            db.execute(
+                "UPDATE members SET status = 'former', exit_date = ?, exit_reason = ?, "
+                "exit_note = ? WHERE id = ?",
+                (date, (request.form.get('exit_reason') or 'Resigned').strip(),
+                 f'Savings paid out in full: {reason}', member_id))
+
+        db.commit()
+        audit(db, 'SAVINGS_PAYOUT', 'savings',
+              f'Paid out ₦{amount:,.2f} to {member["member_number"]} '
+              f'{member["first_name"]} {member["last_name"]} ({reason}); receipt {receipt}')
+        flash(f'Payout of ₦{amount:,.2f} recorded for {member["first_name"]} '
+              f'{member["last_name"]}. Receipt: {receipt}', 'success')
+    except Exception as e:
+        db.rollback()
+        flash(f'Could not record payout: {e}', 'danger')
+    return back

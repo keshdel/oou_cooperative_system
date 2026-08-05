@@ -48,10 +48,14 @@ def member_details(member_id):
     loans        = db.execute('SELECT * FROM loans WHERE member_id = ? ORDER BY date_applied DESC', (member_id,)).fetchall()
     total_savings = db.execute('SELECT SUM(amount) FROM savings WHERE member_id = ?', (member_id,)).fetchone()[0] or 0
     total_loans   = db.execute("SELECT SUM(amount) FROM loans WHERE member_id = ? AND status = 'active'", (member_id,)).fetchone()[0] or 0
+    outstanding_loan = db.execute(
+        "SELECT COALESCE(SUM(balance), 0) FROM loans WHERE member_id = ? AND status = 'active'",
+        (member_id,)).fetchone()[0] or 0
 
     return render_template('admin/member-detail.html',
                            member=member, savings=savings, loans=loans,
                            total_savings=total_savings, total_loans=total_loans,
+                           outstanding_loan=outstanding_loan,
                            exit_reasons=EXIT_REASONS)
 
 

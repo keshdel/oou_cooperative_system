@@ -2053,5 +2053,84 @@ class HardeningFeatureTests(unittest.TestCase):
             db.commit()
 
 
+    def _seed_savings(self, member_id, amount):
+        with self.app.app_context():
+            db = get_db()
+            # Start clean — other tests share this member and may leave savings/loans.
+            db.execute("DELETE FROM savings WHERE member_id = ?", (member_id,))
+            db.execute("DELETE FROM loans WHERE member_id = ?", (member_id,))
+            db.execute("INSERT INTO savings (member_id, amount, month, payment_type, "
+                       "receipt_number, date) VALUES (?, ?, '2026-06', 'opening', ?, '2026-06-15')",
+                       (member_id, amount, f'TST-OPEN-{member_id}'))
+            db.execute("UPDATE members SET total_savings = ? WHERE id = ?", (amount, member_id))
+            db.commit()
+
+    def _cleanup_member_financials(self, member_id):
+        with self.app.app_context():
+            db = get_db()
+            for je in db.execute("SELECT id FROM journal_entries WHERE source_module = 'savings_payout'").fetchall():
+                db.execute("DELETE FROM journal_lines WHERE entry_id = ?", (je['id'],))
+                db.execute("DELETE FROM journal_entries WHERE id = ?", (je['id'],))
+            db.execute("DELETE FROM savings WHERE member_id = ?", (member_id,))
+            db.execute("DELETE FROM loans WHERE member_id = ?", (member_id,))
+            db.execute("UPDATE members SET total_savings = 0 WHERE id = ?", (member_id,))
+            db.commit()
+
+    def test_savings_payout_reduces_balance_and_posts_ledger(self):
+        self.login_admin()
+        mid = self.create_member()
+        self._seed_savings(mid, 100000)
+        resp = self.client.post('/savings/payout', data={
+            'member_id': str(mid), 'amount': '40000', 'payment_method': 'bank',
+            'reason': 'approved partial withdrawal',
+            'evidence': (BytesIO(b'%PDF-1.4 test voucher'), 'voucher.pdf'),
+        }, content_type='multipart/form-data', follow_redirects=False)
+        self.assertIn(resp.status_code, (302, 303))
+        with self.app.app_context():
+            db = get_db()
+            bal = db.execute("SELECT COALESCE(SUM(amount),0) AS b FROM savings WHERE member_id = ?", (mid,)).fetchone()['b']
+            self.assertAlmostEqual(float(bal), 60000.0)          # 100k - 40k
+            je = db.execute("SELECT id FROM journal_entries WHERE source_module = 'savings_payout' ORDER BY id DESC").fetchone()
+            self.assertIsNotNone(je)                              # ledger entry posted
+            w = db.execute("SELECT evidence_path FROM savings WHERE payment_type = 'withdrawal' AND member_id = ?", (mid,)).fetchone()
+            self.assertTrue(w['evidence_path'])                  # evidence stored
+        self._cleanup_member_financials(mid)
+
+    def test_savings_payout_blocked_with_outstanding_loan(self):
+        self.login_admin()
+        mid = self.create_member()
+        self._seed_savings(mid, 50000)
+        with self.app.app_context():
+            db = get_db()
+            db.execute("INSERT INTO loans (loan_number, member_id, amount, total_repayment, "
+                       "balance, status, tenure, date_applied) VALUES ('TST-LN-PAY', ?, 100000, "
+                       "110000, 50000, 'active', 12, '2026-01-01')", (mid,))
+            db.commit()
+        resp = self.client.post('/savings/payout', data={
+            'member_id': str(mid), 'amount': '10000', 'reason': 'x',
+            'evidence': (BytesIO(b'%PDF-1.4'), 'v.pdf'),
+        }, content_type='multipart/form-data', follow_redirects=True)
+        self.assertIn(b'outstanding loan', resp.data)
+        with self.app.app_context():
+            db = get_db()
+            bal = db.execute("SELECT COALESCE(SUM(amount),0) AS b FROM savings WHERE member_id = ?", (mid,)).fetchone()['b']
+            self.assertAlmostEqual(float(bal), 50000.0)          # unchanged — payout blocked
+        self._cleanup_member_financials(mid)
+
+    def test_savings_payout_requires_evidence(self):
+        self.login_admin()
+        mid = self.create_member()
+        self._seed_savings(mid, 30000)
+        resp = self.client.post('/savings/payout', data={
+            'member_id': str(mid), 'amount': '5000', 'reason': 'test',
+        }, content_type='multipart/form-data', follow_redirects=True)
+        self.assertIn(b'evidence', resp.data.lower())
+        with self.app.app_context():
+            db = get_db()
+            bal = db.execute("SELECT COALESCE(SUM(amount),0) AS b FROM savings WHERE member_id = ?", (mid,)).fetchone()['b']
+            self.assertAlmostEqual(float(bal), 30000.0)          # unchanged
+        self._cleanup_member_financials(mid)
+
+
 if __name__ == '__main__':
     unittest.main()

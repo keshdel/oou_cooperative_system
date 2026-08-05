@@ -428,6 +428,8 @@ def init_db():
     _add_col(db, 'savings', 'receipt_number', 'TEXT')
     _add_col(db, 'savings', 'notes', 'TEXT')
     _add_col(db, 'savings', 'created_by', 'INTEGER')
+    # Supporting document for a payout/withdrawal (path under static/).
+    _add_col(db, 'savings', 'evidence_path', 'TEXT')
     _add_col(db, 'savings', 'verified_by', 'INTEGER')
     _add_col(db, 'savings', 'verified_at', 'TIMESTAMP')
     _add_col(db, 'savings', 'import_batch', 'TEXT')
