@@ -2150,5 +2150,35 @@ class HardeningFeatureTests(unittest.TestCase):
             self.assertIsNone(m['date_of_birth'])   # blank -> NULL, not ''
 
 
+    def test_edit_member_can_change_number_and_rejects_duplicate(self):
+        self.login_admin()
+        # Use dedicated members so the shared test member isn't disturbed.
+        with self.app.app_context():
+            db = get_db()
+            db.execute("DELETE FROM members WHERE member_number IN ('NUMEDIT/1','STAFF-DUP','STAFF-999')")
+            db.execute("INSERT INTO members (member_number, first_name, last_name, phone, status, "
+                       "date_joined) VALUES ('NUMEDIT/1','Num','Edit','08000000009','active','2024-01-01')")
+            db.execute("INSERT INTO members (member_number, first_name, last_name, status, "
+                       "date_joined) VALUES ('STAFF-DUP','X','Y','active','2024-01-01')")
+            db.commit()
+            mid = db.execute("SELECT id FROM members WHERE member_number = 'NUMEDIT/1'").fetchone()['id']
+        base = {'first_name': 'Num', 'last_name': 'Edit', 'phone': '08000000009',
+                'monthly_savings': '15000', 'status': 'active'}
+        # a number already in use is rejected
+        r1 = self.client.post(f'/members/edit/{mid}', data={**base, 'member_number': 'STAFF-DUP'},
+                              follow_redirects=True)
+        self.assertIn(b'already used', r1.data)
+        # a unique number is accepted
+        r2 = self.client.post(f'/members/edit/{mid}', data={**base, 'member_number': 'STAFF-999'},
+                              follow_redirects=True)
+        self.assertNotIn(b'already used', r2.data)
+        with self.app.app_context():
+            db = get_db()
+            m = db.execute("SELECT member_number FROM members WHERE id = ?", (mid,)).fetchone()
+            self.assertEqual(m['member_number'], 'STAFF-999')
+            db.execute("DELETE FROM members WHERE member_number IN ('STAFF-DUP','STAFF-999','NUMEDIT/1')")
+            db.commit()
+
+
 if __name__ == '__main__':
     unittest.main()

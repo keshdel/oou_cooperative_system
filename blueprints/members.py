@@ -256,6 +256,20 @@ def edit_member(member_id):
 
     if request.method == 'POST':
         try:
+            # Only touch the member number when one is actually supplied — a blank
+            # field must never wipe the existing number.
+            member_number = request.form.get('member_number', '').strip()
+            if member_number:
+                clash = db.execute(
+                    'SELECT id FROM members WHERE member_number = ? AND id != ?',
+                    (member_number, member_id)).fetchone()
+                if clash:
+                    flash(f'Member number "{member_number}" is already used by another '
+                          f'member. Choose a unique number.', 'danger')
+                    return redirect(url_for('members.edit_member', member_id=member_id))
+                db.execute('UPDATE members SET member_number = ? WHERE id = ?',
+                           (member_number, member_id))
+
             db.execute('''
                 UPDATE members SET
                     first_name = ?, last_name = ?, email = ?, phone = ?,
