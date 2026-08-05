@@ -141,12 +141,21 @@ def loans_list():
         ORDER BY l.date_applied DESC
     ''').fetchall()
     active_loans = db.execute("SELECT SUM(amount) FROM loans WHERE status = 'active'").fetchone()[0] or 0
+    # Total outstanding = what members still owe on active loans (sum of balances),
+    # as opposed to the principal originally disbursed.
+    summary = db.execute(
+        "SELECT COUNT(*) AS c, COALESCE(SUM(balance), 0) AS outstanding "
+        "FROM loans WHERE status = 'active'"
+    ).fetchone()
+    active_count = summary['c']
+    total_outstanding = summary['outstanding']
 
     # Real delinquency: compare each active loan's expected repayments-to-date
     # against what has actually been repaid, and age the shortfall.
     ageing = portfolio_delinquency(db)
 
     return render_template('admin/loans.html', loans=all_loans, active_loans=active_loans,
+                           active_count=active_count, total_outstanding=total_outstanding,
                            overdue_loans=ageing['loans'], ageing=ageing)
 
 

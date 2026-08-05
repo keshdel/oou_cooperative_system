@@ -29,8 +29,9 @@
                 <div class="card-body d-flex align-items-center">
                     <span class="metric-icon me-3" style="background:rgba(37,99,235,.12);color:#2563eb;"><i class="fas fa-hand-holding-usd"></i></span>
                     <div>
-                        <div class="metric-label">Active Loans</div>
-                        <div class="metric-value">₦{{ "{:,.2f}".format(active_loans) }}</div>
+                        <div class="metric-label">Total Outstanding</div>
+                        <div class="metric-value">₦{{ "{:,.2f}".format(total_outstanding) }}</div>
+                        <div class="text-muted small">{{ active_count }} active · ₦{{ "{:,.0f}".format(active_loans) }} disbursed</div>
                     </div>
                 </div>
             </div>
