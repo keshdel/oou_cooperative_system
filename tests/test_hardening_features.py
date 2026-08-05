@@ -2017,5 +2017,41 @@ class HardeningFeatureTests(unittest.TestCase):
             db.commit()
 
 
+    def test_savings_import_duplicate_receipt_does_not_abort_rest(self):
+        """A duplicate receipt_number must be skipped, and rows AFTER it must
+        still import — regression for the PostgreSQL 'current transaction is
+        aborted' cascade where one bad row failed every following row."""
+        self.login_admin()
+        self.create_member()  # OOU/TEST/0001
+
+        def imp(body):
+            return self.client.post(
+                '/migration/savings',
+                data={'file': (BytesIO(body.encode('utf-8')), 's.csv')},
+                content_type='multipart/form-data', follow_redirects=True)
+
+        imp('member_number,amount,month,receipt_number\n'
+            'OOU/TEST/0001,1000,2026-06,SP-RCPT-A\n')
+        # Re-import: the duplicate first, then a brand-new row that MUST still land.
+        imp('member_number,amount,month,receipt_number\n'
+            'OOU/TEST/0001,1000,2026-06,SP-RCPT-A\n'
+            'OOU/TEST/0001,2500,2026-07,SP-RCPT-B\n')
+
+        with self.app.app_context():
+            db = get_db()
+            b = db.execute("SELECT amount FROM savings WHERE receipt_number = 'SP-RCPT-B'").fetchone()
+            self.assertIsNotNone(b)                       # row after the duplicate imported
+            self.assertEqual(float(b['amount']), 2500.0)
+            a = db.execute("SELECT COUNT(*) AS c FROM savings WHERE receipt_number = 'SP-RCPT-A'").fetchone()['c']
+            self.assertEqual(a, 1)                         # duplicate not double-inserted
+            db.execute("DELETE FROM savings WHERE receipt_number IN ('SP-RCPT-A','SP-RCPT-B')")
+            db.execute(
+                "UPDATE members SET total_savings = COALESCE("
+                "(SELECT SUM(amount) FROM savings WHERE member_id = "
+                "(SELECT id FROM members WHERE member_number = 'OOU/TEST/0001')), 0) "
+                "WHERE member_number = 'OOU/TEST/0001'")
+            db.commit()
+
+
 if __name__ == '__main__':
     unittest.main()

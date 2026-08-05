@@ -6,6 +6,7 @@ All imports use atomic transactions — the whole file succeeds or rolls back.
 import csv
 import random
 import secrets
+from contextlib import contextmanager
 from datetime import datetime
 from io import StringIO, TextIOWrapper
 
@@ -39,6 +40,29 @@ def _resolve_member(db, row):
 
 def _ref(prefix):
     return f"{prefix}/{datetime.now().strftime('%Y%m%d')}/{random.randint(1000, 9999)}"
+
+
+class _SkipRow(Exception):
+    """Raise inside an import row to skip it without recording an error
+    (e.g. a duplicate that already exists)."""
+
+
+@contextmanager
+def _row_savepoint(db):
+    """Wrap one import row in a SAVEPOINT so a single failing row rolls back on
+    its own instead of aborting the whole batch. PostgreSQL aborts the entire
+    transaction on any error ('current transaction is aborted, commands ignored
+    until end of transaction block'), which otherwise turns one bad row into a
+    failure for every row after it. Works on SQLite too."""
+    db.execute('SAVEPOINT import_row')
+    try:
+        yield
+    except Exception:
+        db.execute('ROLLBACK TO SAVEPOINT import_row')
+        db.execute('RELEASE SAVEPOINT import_row')
+        raise
+    else:
+        db.execute('RELEASE SAVEPOINT import_row')
 
 
 # Canonical loan purpose names (lower-case key → canonical value)
@@ -525,64 +549,71 @@ def import_savings():
                 flash('CSV must have at least one of: member_number, email', 'danger')
                 return redirect(request.url)
 
-            success, errors = 0, []
+            success, skipped, errors = 0, 0, []
 
             for row_num, row in enumerate(reader, start=2):
                 try:
-                    member = _resolve_member(db, row)
-                    if not member:
-                        errors.append(f"Row {row_num}: member not found "
-                                      f"(member_number={row.get('member_number','')!r}, "
-                                      f"email={row.get('email','')!r}).")
-                        continue
+                    with _row_savepoint(db):
+                        member = _resolve_member(db, row)
+                        if not member:
+                            raise ValueError(
+                                f"member not found (member_number="
+                                f"{row.get('member_number','')!r}, email={row.get('email','')!r})")
 
-                    amount_raw = row.get('amount', '').strip()
-                    if not amount_raw:
-                        errors.append(f"Row {row_num}: amount is required.")
-                        continue
-                    amount = float(amount_raw)
+                        amount_raw = row.get('amount', '').strip()
+                        if not amount_raw:
+                            raise ValueError("amount is required.")
+                        amount = float(amount_raw)
 
-                    month = row.get('month', '').strip()
-                    if not month:
-                        errors.append(f"Row {row_num}: month is required (format YYYY-MM).")
-                        continue
+                        month = row.get('month', '').strip()
+                        if not month:
+                            raise ValueError("month is required (format YYYY-MM).")
 
-                    # Multiple savings per month are allowed (salary + personal etc.)
-                    payment_type   = row.get('payment_type', 'monthly').strip() or 'monthly'
-                    late_fee       = float(row.get('late_fee', '0').strip() or 0)
-                    payment_method = row.get('payment_method', 'cash').strip() or 'cash'
-                    receipt_number = row.get('receipt_number', '').strip() or _ref('RCPT')
-                    notes          = row.get('notes', '').strip() or None
+                        # Multiple savings per month are allowed (salary + personal etc.)
+                        payment_type   = row.get('payment_type', 'monthly').strip() or 'monthly'
+                        late_fee       = float(row.get('late_fee', '0').strip() or 0)
+                        payment_method = row.get('payment_method', 'cash').strip() or 'cash'
+                        given_receipt  = row.get('receipt_number', '').strip()
+                        receipt_number = given_receipt or _ref('RCPT')
+                        # Idempotent: skip a receipt we already have so re-running
+                        # the same file doesn't error or double-count.
+                        if given_receipt and db.execute(
+                            'SELECT id FROM savings WHERE receipt_number = ?', (receipt_number,)
+                        ).fetchone():
+                            raise _SkipRow()
+                        notes          = row.get('notes', '').strip() or None
 
-                    date_raw = row.get('date', '').strip()
-                    date = _parse_date(date_raw) or datetime.now()
+                        date_raw = row.get('date', '').strip()
+                        date = _parse_date(date_raw) or datetime.now()
 
-                    db.execute('''
-                        INSERT INTO savings
-                            (member_id, amount, month, payment_type, late_fee,
-                             payment_method, receipt_number, notes, date)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (member['id'], amount, month, payment_type, late_fee,
-                          payment_method, receipt_number, notes, date))
+                        db.execute('''
+                            INSERT INTO savings
+                                (member_id, amount, month, payment_type, late_fee,
+                                 payment_method, receipt_number, notes, date)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ''', (member['id'], amount, month, payment_type, late_fee,
+                              payment_method, receipt_number, notes, date))
 
-                    db.execute(
-                        'UPDATE members SET total_savings = total_savings + ? WHERE id = ?',
-                        (amount, member['id'])
-                    )
+                        db.execute(
+                            'UPDATE members SET total_savings = total_savings + ? WHERE id = ?',
+                            (amount, member['id'])
+                        )
                     success += 1
+                except _SkipRow:
+                    skipped += 1
                 except Exception as e:
                     errors.append(f"Row {row_num}: {e}")
 
             db.commit()
             audit(db, 'IMPORT_SAVINGS', 'migration',
-                  f"Imported {success} savings records, {len(errors)} errors")
+                  f"Imported {success} savings records, {skipped} skipped, {len(errors)} errors")
 
         except Exception as e:
             db.rollback()
             flash(f'File processing error: {e}', 'danger')
             return redirect(request.url)
 
-        _flash_result(success, 0, errors, 'savings record')
+        _flash_result(success, skipped, errors, 'savings record')
         return redirect(url_for('migration.index'))
 
     return render_template('admin/migration/import.html',
@@ -673,55 +704,55 @@ def import_loans():
 
             for row_num, row in enumerate(reader, start=2):
                 try:
-                    member = _resolve_member(db, row)
-                    if not member:
-                        errors.append(f"Row {row_num}: member not found.")
-                        continue
+                    with _row_savepoint(db):
+                        member = _resolve_member(db, row)
+                        if not member:
+                            raise ValueError("member not found.")
 
-                    loan_number = row.get('loan_number', '').strip() or _ref('LOAN')
-                    dup = db.execute(
-                        'SELECT id FROM loans WHERE loan_number = ?', (loan_number,)
-                    ).fetchone()
-                    if dup:
-                        skipped += 1
-                        continue
+                        loan_number = row.get('loan_number', '').strip() or _ref('LOAN')
+                        dup = db.execute(
+                            'SELECT id FROM loans WHERE loan_number = ?', (loan_number,)
+                        ).fetchone()
+                        if dup:
+                            raise _SkipRow()
 
-                    amount = float(row.get('amount', 0))
-                    if amount <= 0:
-                        errors.append(f"Row {row_num}: amount must be > 0.")
-                        continue
+                        amount = float(row.get('amount', 0))
+                        if amount <= 0:
+                            raise ValueError("amount must be > 0.")
 
-                    purpose    = _normalize_purpose(row.get('purpose', ''))
-                    tenure     = int(row.get('tenure', '12').strip() or 12)
-                    int_rate   = float(row.get('interest_rate', '11').strip() or 11)
-                    total_rep  = float(row.get('total_repayment', '0').strip() or 0) or amount
-                    # A blank balance defaults to the full amount owed, but an
-                    # explicit 0 must stick (e.g. migrating a fully-repaid loan).
-                    bal_raw    = row.get('balance', '').strip()
-                    balance    = float(bal_raw) if bal_raw else total_rep
-                    status     = _normalize_loan_status(row.get('status', ''), fallback='pending')
-                    notes      = row.get('notes', '').strip() or None
+                        purpose    = _normalize_purpose(row.get('purpose', ''))
+                        tenure     = int(row.get('tenure', '12').strip() or 12)
+                        int_rate   = float(row.get('interest_rate', '11').strip() or 11)
+                        total_rep  = float(row.get('total_repayment', '0').strip() or 0) or amount
+                        # A blank balance defaults to the full amount owed, but an
+                        # explicit 0 must stick (e.g. migrating a fully-repaid loan).
+                        bal_raw    = row.get('balance', '').strip()
+                        balance    = float(bal_raw) if bal_raw else total_rep
+                        status     = _normalize_loan_status(row.get('status', ''), fallback='pending')
+                        notes      = row.get('notes', '').strip() or None
 
-                    date_applied      = _parse_date(row.get('date_applied', '')) or datetime.now()
-                    date_approved     = _parse_date(row.get('date_approved', ''))
-                    disbursement_date = _parse_date(row.get('disbursement_date', ''))
-                    disbursed_raw     = row.get('disbursed_amount', '').strip()
-                    disbursed_amount  = float(disbursed_raw) if disbursed_raw else None
+                        date_applied      = _parse_date(row.get('date_applied', '')) or datetime.now()
+                        date_approved     = _parse_date(row.get('date_approved', ''))
+                        disbursement_date = _parse_date(row.get('disbursement_date', ''))
+                        disbursed_raw     = row.get('disbursed_amount', '').strip()
+                        disbursed_amount  = float(disbursed_raw) if disbursed_raw else None
 
-                    # If disbursement_date given but no disbursed_amount, default to loan amount
-                    if disbursement_date and disbursed_amount is None:
-                        disbursed_amount = amount
+                        # If disbursement_date given but no disbursed_amount, default to loan amount
+                        if disbursement_date and disbursed_amount is None:
+                            disbursed_amount = amount
 
-                    db.execute('''
-                        INSERT INTO loans
-                            (loan_number, member_id, amount, purpose, tenure, interest_rate,
-                             total_repayment, balance, status, notes, date_applied, approved_at,
-                             disbursement_date, disbursed_amount)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (loan_number, member['id'], amount, purpose, tenure, int_rate,
-                          total_rep, balance, status, notes, date_applied, date_approved,
-                          disbursement_date, disbursed_amount))
+                        db.execute('''
+                            INSERT INTO loans
+                                (loan_number, member_id, amount, purpose, tenure, interest_rate,
+                                 total_repayment, balance, status, notes, date_applied, approved_at,
+                                 disbursement_date, disbursed_amount)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ''', (loan_number, member['id'], amount, purpose, tenure, int_rate,
+                              total_rep, balance, status, notes, date_applied, date_approved,
+                              disbursement_date, disbursed_amount))
                     success += 1
+                except _SkipRow:
+                    skipped += 1
                 except Exception as e:
                     errors.append(f"Row {row_num}: {e}")
 
