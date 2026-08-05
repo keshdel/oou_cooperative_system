@@ -77,6 +77,7 @@
                     <li><a class="dropdown-item filter-option" href="#" data-filter="active">Active Only</a></li>
                     <li><a class="dropdown-item filter-option" href="#" data-filter="inactive">Inactive Only</a></li>
                     <li><a class="dropdown-item filter-option" href="#" data-filter="pending">Pending Only</a></li>
+                    <li><a class="dropdown-item filter-option" href="#" data-filter="former">Former Only</a></li>
                 </ul>
             </div>
         </div>
@@ -118,6 +119,12 @@
                         <span class="badge bg-warning ms-1">{{ members|selectattr('status', 'equalto', 'pending')|list|length }}</span>
                     </a>
                 </li>
+                <li class="nav-item">
+                    <a class="nav-link" id="former-tab" data-bs-toggle="tab" href="#former" role="tab">
+                        <i class="fas fa-box-archive"></i> Former
+                        <span class="badge bg-secondary ms-1">{{ members|selectattr('status', 'equalto', 'former')|list|length }}</span>
+                    </a>
+                </li>
             </ul>
         </div>
         
@@ -145,6 +152,13 @@
                 <!-- Pending Members Tab -->
                 <div class="tab-pane fade" id="pending" role="tabpanel">
                     {% with filtered_members = members|selectattr('status', 'equalto', 'pending')|list %}
+                        {% include 'admin/_member_table.html' with context %}
+                    {% endwith %}
+                </div>
+
+                <!-- Former Members Tab (archive) -->
+                <div class="tab-pane fade" id="former" role="tabpanel">
+                    {% with filtered_members = members|selectattr('status', 'equalto', 'former')|list %}
                         {% include 'admin/_member_table.html' with context %}
                     {% endwith %}
                 </div>

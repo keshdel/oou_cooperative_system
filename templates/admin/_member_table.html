@@ -52,6 +52,8 @@
                     <span class="badge bg-secondary">Inactive</span>
                     {% elif member.status == 'pending' %}
                     <span class="badge bg-warning">Pending</span>
+                    {% elif member.status == 'former' %}
+                    <span class="badge bg-dark" title="{{ member.exit_reason or '' }}">Former</span>
                     {% else %}
                     <span class="badge bg-danger">{{ member.status }}</span>
                     {% endif %}

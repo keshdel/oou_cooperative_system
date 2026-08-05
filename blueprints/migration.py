@@ -264,9 +264,12 @@ MEMBERS_COLUMNS = [
     'nominee_name', 'nominee_relationship', 'nominee_phone',
     'bank_name', 'account_number', 'account_name',
     'emergency_contact_name', 'emergency_contact_phone',
+    'exit_date', 'exit_reason', 'exit_note',
 ]
 
-MEMBERS_REQUIRED = {'first_name', 'last_name', 'phone'}
+# Phone is optional so historical / former members (who often have no phone on
+# file) can still be migrated for the archive.
+MEMBERS_REQUIRED = {'first_name', 'last_name'}
 
 
 @migration.route('/members', methods=['GET', 'POST'])
@@ -298,9 +301,9 @@ def import_members():
                 try:
                     first_name = row.get('first_name', '').strip()
                     last_name  = row.get('last_name', '').strip()
-                    phone      = row.get('phone', '').strip()
-                    if not all([first_name, last_name, phone]):
-                        errors.append(f"Row {row_num}: first_name, last_name, phone are required.")
+                    phone      = row.get('phone', '').strip() or None
+                    if not all([first_name, last_name]):
+                        errors.append(f"Row {row_num}: first_name and last_name are required.")
                         continue
 
                     email = row.get('email', '').strip() or None
@@ -342,14 +345,20 @@ def import_members():
                         year = (date_joined or datetime.now()).year
                         member_number = f"{member_prefix(db)}/{year}/{seq:04d}"
 
+                    status_value = row.get('status', 'active').strip() or 'active'
+                    exit_date = _parse_date(row.get('exit_date', ''))
+                    exit_reason = row.get('exit_reason', '').strip() or None
+                    exit_note = row.get('exit_note', '').strip() or None
+
                     db.execute('''
                         INSERT INTO members (
                             member_number, first_name, last_name, email, phone,
                             address, occupation, date_of_birth, date_joined, monthly_savings,
                             status, nominee_name, nominee_relationship, nominee_phone,
                             bank_name, account_number, account_name,
-                            emergency_contact_name, emergency_contact_phone
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            emergency_contact_name, emergency_contact_phone,
+                            exit_date, exit_reason, exit_note
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ''', (
                         member_number,
                         first_name,
@@ -361,7 +370,7 @@ def import_members():
                         row.get('date_of_birth', '').strip() or None,
                         date_joined or datetime.now(),
                         monthly_savings,
-                        row.get('status', 'active').strip() or 'active',
+                        status_value,
                         row.get('nominee_name', '').strip() or None,
                         row.get('nominee_relationship', '').strip() or None,
                         row.get('nominee_phone', '').strip() or None,
@@ -370,10 +379,12 @@ def import_members():
                         encrypt_field(row.get('account_name', '').strip()) or None,
                         row.get('emergency_contact_name', '').strip() or None,
                         row.get('emergency_contact_phone', '').strip() or None,
+                        exit_date, exit_reason, exit_note,
                     ))
 
-                    # Auto-create a member portal user account if email is available
-                    if email:
+                    # Auto-create a member portal user account if email is available.
+                    # Never create login accounts for former/archived members.
+                    if email and status_value != 'former':
                         existing_user = db.execute(
                             'SELECT id FROM users WHERE email = ?', (email,)
                         ).fetchone()

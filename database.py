@@ -394,6 +394,11 @@ def init_db():
     # aborts the init transaction and the app fails to boot.
     _add_col(db, 'members', 'bvn', 'TEXT')
     _add_col(db, 'members', 'nin', 'TEXT')
+    # Member-departure archive: status='former' plus who/when/why they left,
+    # kept for audit & reconciliation (never deleted).
+    _add_col(db, 'members', 'exit_date', 'DATE')
+    _add_col(db, 'members', 'exit_reason', 'TEXT')
+    _add_col(db, 'members', 'exit_note', 'TEXT')
     _encrypt_existing_member_sensitive_fields(db)
 
     # Savings table

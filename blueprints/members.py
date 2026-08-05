@@ -17,6 +17,9 @@ from utils import role_required, validate_image, audit, notify_member, member_pr
 
 members = Blueprint('members', __name__)
 
+# Reasons a member's record moves to the Former Members archive.
+EXIT_REASONS = ('Resigned', 'Deceased', 'Retired', 'Relocated', 'Expelled', 'Other')
+
 
 @members.route('/members')
 @login_required
@@ -48,7 +51,8 @@ def member_details(member_id):
 
     return render_template('admin/member-detail.html',
                            member=member, savings=savings, loans=loans,
-                           total_savings=total_savings, total_loans=total_loans)
+                           total_savings=total_savings, total_loans=total_loans,
+                           exit_reasons=EXIT_REASONS)
 
 
 @members.route('/members/<int:member_id>/savings-statement')
@@ -312,7 +316,9 @@ def delete_member(member_id):
     savings_count = db.execute('SELECT COUNT(*) FROM savings WHERE member_id = ?', (member_id,)).fetchone()[0]
     loans_count   = db.execute('SELECT COUNT(*) FROM loans WHERE member_id = ?', (member_id,)).fetchone()[0]
     if savings_count > 0 or loans_count > 0:
-        flash('Cannot delete member with existing savings or loans. Mark them as inactive instead.', 'danger')
+        flash('Cannot delete a member with savings or loan history — that would '
+              'break the audit trail. Use "Mark as Former Member" instead to '
+              'archive them while keeping their records.', 'danger')
         return redirect(url_for('members.member_details', member_id=member_id))
 
     db.execute('DELETE FROM members WHERE id = ?', (member_id,))
@@ -321,6 +327,72 @@ def delete_member(member_id):
           f"Deleted member {member['member_number']} – {member['first_name']} {member['last_name']}")
     flash('Member deleted successfully.', 'success')
     return redirect(url_for('members.members_list'))
+
+
+def _parse_exit_date(raw):
+    for fmt in ('%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y', '%d-%m-%Y'):
+        try:
+            return datetime.strptime(raw, fmt).date()
+        except ValueError:
+            pass
+    return None
+
+
+@members.route('/members/<int:member_id>/mark-former', methods=['POST'])
+@login_required
+@role_required('admin', 'secretary')
+def mark_former(member_id):
+    """Move a member to the Former Members archive (status='former'). Keeps all
+    savings, loan and share history intact for audit and reconciliation."""
+    db = get_db()
+    member = db.execute('SELECT * FROM members WHERE id = ?', (member_id,)).fetchone()
+    if not member:
+        flash('Member not found.', 'danger')
+        return redirect(url_for('members.members_list'))
+
+    reason = (request.form.get('exit_reason') or '').strip() or 'Other'
+    if reason not in EXIT_REASONS:
+        reason = 'Other'
+    note = (request.form.get('exit_note') or '').strip()
+    exit_date = _parse_exit_date((request.form.get('exit_date') or '').strip()) or datetime.now().date()
+
+    db.execute(
+        "UPDATE members SET status = 'former', exit_date = ?, exit_reason = ?, exit_note = ? "
+        "WHERE id = ?",
+        (exit_date, reason, note, member_id),
+    )
+    db.commit()
+    audit(db, 'ARCHIVE_MEMBER', 'members',
+          f"Marked {member['member_number']} {member['first_name']} {member['last_name']} "
+          f"as former ({reason}, {exit_date})")
+    flash(f"{member['first_name']} {member['last_name']} has been moved to Former "
+          f"Members ({reason}). Their history is preserved.", 'success')
+    return redirect(url_for('members.member_details', member_id=member_id))
+
+
+@members.route('/members/<int:member_id>/reinstate', methods=['POST'])
+@login_required
+@role_required('admin', 'secretary')
+def reinstate_member(member_id):
+    """Return a former member to active status (e.g. they rejoined, or it was a
+    mistake), clearing the exit details."""
+    db = get_db()
+    member = db.execute('SELECT * FROM members WHERE id = ?', (member_id,)).fetchone()
+    if not member:
+        flash('Member not found.', 'danger')
+        return redirect(url_for('members.members_list'))
+
+    db.execute(
+        "UPDATE members SET status = 'active', exit_date = NULL, exit_reason = NULL, "
+        "exit_note = NULL WHERE id = ?",
+        (member_id,),
+    )
+    db.commit()
+    audit(db, 'REINSTATE_MEMBER', 'members',
+          f"Reinstated {member['member_number']} {member['first_name']} {member['last_name']}")
+    flash(f"{member['first_name']} {member['last_name']} has been reinstated as an "
+          f"active member.", 'success')
+    return redirect(url_for('members.member_details', member_id=member_id))
 
 
 @members.route('/members/bulk-upload', methods=['GET', 'POST'])

@@ -6,7 +6,11 @@
 <div class="container-fluid">
     <div class="row mb-4">
         <div class="col-md-8">
-            <h2>{{ member.first_name }} {{ member.last_name }}</h2>
+            <h2>{{ member.first_name }} {{ member.last_name }}
+                {% if member.status == 'former' %}
+                <span class="badge bg-secondary align-middle" style="font-size:.5em;">Former member</span>
+                {% endif %}
+            </h2>
             <p class="text-muted">Member #: {{ member.member_number }} | Joined: {{ member.date_joined[:10] }}</p>
         </div>
         <div class="col-md-4 text-end d-flex gap-2 justify-content-end flex-wrap">
@@ -20,8 +24,31 @@
                target="_blank" class="btn btn-primary">
                 <i class="fas fa-id-card"></i> Print Card
             </a>
+            {% if member.status == 'former' %}
+            <form method="POST" action="{{ url_for('members.reinstate_member', member_id=member.id) }}"
+                  onsubmit="return confirm('Reinstate {{ member.first_name }} {{ member.last_name }} as an active member?')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-success"><i class="fas fa-rotate-left"></i> Reinstate</button>
+            </form>
+            {% else %}
+            <button type="button" class="btn btn-outline-dark" data-bs-toggle="modal" data-bs-target="#formerModal">
+                <i class="fas fa-box-archive"></i> Mark as Former
+            </button>
+            {% endif %}
         </div>
     </div>
+
+    {% if member.status == 'former' %}
+    <div class="alert alert-secondary d-flex align-items-center" role="alert">
+        <i class="fas fa-box-archive me-2"></i>
+        <div>
+            This member has left the cooperative — reason: <strong>{{ member.exit_reason or 'Not stated' }}</strong>{% if member.exit_date %},
+            on <strong>{{ member.exit_date|string|truncate(10, true, '') }}</strong>{% endif %}.
+            Their records are kept for audit and reconciliation.
+            {% if member.exit_note %}<br><span class="text-muted">Note: {{ member.exit_note }}</span>{% endif %}
+        </div>
+    </div>
+    {% endif %}
 
     <!-- Member Summary Cards -->
     <div class="row g-3 mb-4">
@@ -117,6 +144,7 @@
                 <thead>
                     <tr>
                         <th>Loan Number</th>
+                        <th>Type</th>
                         <th>Amount</th>
                         <th>Balance</th>
                         <th>Status</th>
@@ -126,6 +154,7 @@
                     {% for l in loans %}
                     <tr>
                         <td>{{ l.loan_number }}</td>
+                        <td>{{ l.purpose or '—' }}</td>
                         <td>₦{{ "{:,.2f}".format(l.amount) }}</td>
                         <td>₦{{ "{:,.2f}".format(l.balance) }}</td>
                         <td>{{ l.status|title }}</td>
@@ -187,6 +216,48 @@
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                     <button type="submit" class="btn btn-primary">Record Savings</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Mark as Former Member Modal -->
+<div class="modal fade" id="formerModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('members.mark_former', member_id=member.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="fas fa-box-archive text-dark me-2"></i>Move to Former Members</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted small">
+                        This archives {{ member.first_name }} {{ member.last_name }} as a former member.
+                        Nothing is deleted — all savings, share and loan history stays intact for audit and
+                        reconciliation, and they drop out of active member counts and reports.
+                    </p>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Reason for leaving</label>
+                        <select class="form-select" name="exit_reason" required>
+                            {% for r in exit_reasons %}<option value="{{ r }}">{{ r }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Date left</label>
+                        <input type="date" class="form-control" name="exit_date">
+                        <small class="text-muted">Leave blank to use today.</small>
+                    </div>
+                    <div class="mb-1">
+                        <label class="form-label fw-bold">Note <span class="text-muted fw-normal">(optional)</span></label>
+                        <textarea class="form-control" name="exit_note" rows="2"
+                                  placeholder="e.g. settlement paid, forwarding details, etc."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-dark"><i class="fas fa-box-archive me-1"></i>Archive member</button>
                 </div>
             </form>
         </div>

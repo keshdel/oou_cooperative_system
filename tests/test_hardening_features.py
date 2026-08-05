@@ -1961,5 +1961,61 @@ class HardeningFeatureTests(unittest.TestCase):
             db.commit()
 
 
+    def test_mark_member_former_and_reinstate(self):
+        self.login_admin()
+        mid = self.create_member()
+        resp = self.client.post(
+            f'/members/{mid}/mark-former',
+            data={'exit_reason': 'Resigned', 'exit_date': '2026-06-30',
+                  'exit_note': 'left for a new job'},
+            follow_redirects=False,
+        )
+        self.assertIn(resp.status_code, (302, 303))
+        with self.app.app_context():
+            m = get_db().execute(
+                'SELECT status, exit_reason, exit_note FROM members WHERE id = ?', (mid,)
+            ).fetchone()
+            self.assertEqual(m['status'], 'former')
+            self.assertEqual(m['exit_reason'], 'Resigned')
+            self.assertEqual(m['exit_note'], 'left for a new job')
+
+        resp = self.client.post(f'/members/{mid}/reinstate', follow_redirects=False)
+        self.assertIn(resp.status_code, (302, 303))
+        with self.app.app_context():
+            m = get_db().execute(
+                'SELECT status, exit_reason FROM members WHERE id = ?', (mid,)
+            ).fetchone()
+            self.assertEqual(m['status'], 'active')
+            self.assertIsNone(m['exit_reason'])
+
+    def test_member_import_allows_former_without_phone_and_skips_login(self):
+        self.login_admin()
+        csv_body = (
+            'first_name,last_name,email,member_number,status,exit_reason,exit_date\n'
+            'Gone,Member,gone.member@example.com,SMT/FORMER/1,former,Deceased,2023-01-15\n'
+        )
+        resp = self.client.post(
+            '/migration/members',
+            data={'file': (BytesIO(csv_body.encode('utf-8')), 'm.csv')},
+            content_type='multipart/form-data',
+            follow_redirects=False,
+        )
+        self.assertIn(resp.status_code, (302, 303))
+        with self.app.app_context():
+            db = get_db()
+            m = db.execute(
+                "SELECT * FROM members WHERE member_number = 'SMT/FORMER/1'"
+            ).fetchone()
+            self.assertIsNotNone(m)                          # imported with no phone
+            self.assertEqual(m['status'], 'former')
+            self.assertEqual(m['exit_reason'], 'Deceased')
+            u = db.execute(
+                "SELECT id FROM users WHERE email = 'gone.member@example.com'"
+            ).fetchone()
+            self.assertIsNone(u)                             # no login account for a former member
+            db.execute("DELETE FROM members WHERE member_number = 'SMT/FORMER/1'")
+            db.commit()
+
+
 if __name__ == '__main__':
     unittest.main()
