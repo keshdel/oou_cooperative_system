@@ -917,6 +917,7 @@ def init_db():
         ('1100', 'Loans Receivable',           'asset',     'debit',  None),
         ('1200', 'Investments',                'asset',     'debit',  None),
         ('2000', 'Member Deposits (Savings)',  'liability', 'credit', None),
+        ('2110', 'Insurance Payable',          'liability', 'credit', None),
         ('3000', 'Accumulated Surplus',        'equity',    'credit', None),
         ('3100', 'Statutory Reserve',          'equity',    'credit', None),
         ('3200', 'Member Share Capital',       'equity',    'credit', None),

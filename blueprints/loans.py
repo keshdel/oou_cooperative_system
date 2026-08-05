@@ -14,7 +14,7 @@ from utils import (role_required, audit, notify_member, notify, compute_loan_sch
                    PURPOSE_SETTING_KEY, METHOD_LABELS, record_revenue, split_repayment,
                    member_savings_balance)
 from ledger import (post_journal_safe, get_default_cash_account, LOANS_RECEIVABLE, FEE_INCOME,
-                    LOAN_INTEREST_INCOME)
+                    LOAN_INTEREST_INCOME, INSURANCE_PAYABLE)
 import loan_workflow as lw
 from delinquency import portfolio_delinquency
 
@@ -93,9 +93,9 @@ def _disburse_loan(db, loan):
         WHERE id = ?
     ''', (datetime.now(), current_user.id, insurance, application_fee, disbursed,
           datetime.now(), datetime.now() + timedelta(days=30), loan['id']))
-    record_revenue(db, 'Loan Insurance', insurance,
-                   description=f"Insurance premium on loan {loan['loan_number']}",
-                   source=f"Loan {loan['loan_number']}", received_by=current_user.id)
+    # The application fee is the cooperative's income. The 1% insurance is withheld
+    # on behalf of the insurer — a pass-through liability, not income — so it posts
+    # to Insurance Payable and is NOT logged in the revenue table.
     record_revenue(db, 'Loan Application Fee', application_fee,
                    description=f"Application fee on loan {loan['loan_number']}",
                    source=f"Loan {loan['loan_number']}", received_by=current_user.id)
@@ -103,7 +103,8 @@ def _disburse_loan(db, loan):
     post_journal_safe(db, f"Loan disbursement — {loan['loan_number']}", [
         {'account': LOANS_RECEIVABLE, 'debit': loan['amount'], 'memo': loan['loan_number']},
         {'account': cash_account, 'credit': disbursed, 'memo': 'Net disbursed'},
-        {'account': FEE_INCOME, 'credit': insurance + application_fee, 'memo': 'Loan fees'},
+        {'account': FEE_INCOME, 'credit': application_fee, 'memo': 'Application fee'},
+        {'account': INSURANCE_PAYABLE, 'credit': insurance, 'memo': 'Insurance premium held for insurer'},
     ], reference=loan['loan_number'], source_module='loan_disbursement',
        source_id=loan['id'], created_by=current_user.id)
     member = db.execute('SELECT * FROM members WHERE id = ?', (loan['member_id'],)).fetchone()

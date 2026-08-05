@@ -553,6 +553,93 @@ class HardeningFeatureTests(unittest.TestCase):
             db.execute('DELETE FROM members WHERE id = ?', (member_id,))
             db.commit()
 
+    def test_loan_insurance_posts_to_payable_not_income(self):
+        """The 1% loan insurance is money held for the insurer — a pass-through
+        liability, not income. On disbursement it must credit Insurance Payable
+        (2110), leave Fee Income to the application fee only, and never be logged
+        in the revenue table."""
+        from ledger import INSURANCE_PAYABLE, FEE_INCOME
+        self.login_admin()
+        with self.app.app_context():
+            db = get_db()
+            db.execute('''
+                INSERT INTO members
+                    (member_number, employee_id, first_name, last_name, email,
+                     phone, status, monthly_savings, total_savings, date_joined)
+                VALUES
+                    ('OOU/TEST/INS1', 'EMP-INS1', 'Ivy', 'Insure',
+                     'ivy.insure@example.com', '08000000031', 'active',
+                     15000, 100000, '2024-01-01')
+            ''')
+            member_id = db.execute(
+                "SELECT id FROM members WHERE member_number = 'OOU/TEST/INS1'"
+            ).fetchone()['id']
+            db.execute('''
+                INSERT INTO loans
+                    (loan_number, member_id, amount, purpose, tenure, interest_rate,
+                     interest_method, total_repayment, balance, status, approval_stage,
+                     loan_applicant_type, hr_affordability_consent, hr_affordability_status,
+                     payment_collateral_type, payment_collateral_status, date_applied)
+                VALUES
+                    ('LOAN/INS/0001', ?, 50000, 'Regular', 6, 11,
+                     'reducing_annual', 52000, 52000, 'pending', 'president',
+                     'staff', 1, 'pending', 'standing_order', 'pending', '2026-07-20')
+            ''', (member_id,))
+            db.commit()
+            loan_id = db.execute(
+                "SELECT id FROM loans WHERE loan_number = 'LOAN/INS/0001'"
+            ).fetchone()['id']
+
+        self.client.post(
+            f'/loans/{loan_id}/due-diligence',
+            data={
+                'hr_affordability_confirmed': '1',
+                'payment_collateral_verified': '1',
+                'comment': 'HR confirmed salary deduction capacity.',
+            },
+            follow_redirects=False,
+        )
+        approved = self.client.post(
+            f'/loans/{loan_id}/act',
+            data={'action': 'approve'},
+            follow_redirects=False,
+        )
+        self.assertIn(approved.status_code, (302, 303))
+
+        with self.app.app_context():
+            db = get_db()
+            entry = db.execute(
+                "SELECT id FROM journal_entries WHERE reference = 'LOAN/INS/0001'"
+            ).fetchone()
+            self.assertIsNotNone(entry, 'disbursement should post a GL entry')
+            lines = db.execute(
+                "SELECT account_code, debit, credit FROM journal_lines WHERE entry_id = ?",
+                (entry['id'],)
+            ).fetchall()
+            by_code = {row['account_code']: row for row in lines}
+            # Insurance (1% of 50000 = 500) is a payable, not income.
+            self.assertIn(INSURANCE_PAYABLE, by_code)
+            self.assertAlmostEqual(by_code[INSURANCE_PAYABLE]['credit'], 500, places=2)
+            # Fee Income carries only the application fee (500), not insurance + fee.
+            self.assertAlmostEqual(by_code[FEE_INCOME]['credit'], 500, places=2)
+            # Insurance is not booked as revenue.
+            rev = db.execute(
+                "SELECT COUNT(*) AS c FROM revenue "
+                "WHERE category = 'Loan Insurance' AND source = 'Loan LOAN/INS/0001'"
+            ).fetchone()
+            self.assertEqual(rev['c'], 0)
+            # The whole entry still balances.
+            self.assertAlmostEqual(sum(r['debit'] for r in lines),
+                                   sum(r['credit'] for r in lines), places=2)
+
+            db.execute('DELETE FROM journal_lines WHERE entry_id = ?', (entry['id'],))
+            db.execute('DELETE FROM journal_entries WHERE id = ?', (entry['id'],))
+            db.execute("DELETE FROM revenue WHERE source = 'Loan LOAN/INS/0001'")
+            db.execute('DELETE FROM loan_approvals WHERE loan_id = ?', (loan_id,))
+            db.execute('DELETE FROM loans WHERE id = ?', (loan_id,))
+            db.execute('DELETE FROM members WHERE id = ?', (member_id,))
+            db.commit()
+
     def test_admin_can_resend_and_revoke_setup_links(self):
         self.login_admin()
         email = 'resend.setup@example.com'

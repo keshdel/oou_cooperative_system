@@ -18,6 +18,7 @@ CASH            = '1000'
 LOANS_RECEIVABLE = '1100'
 INVESTMENTS     = '1200'
 MEMBER_DEPOSITS = '2000'
+INSURANCE_PAYABLE = '2110'   # loan insurance withheld on behalf of the insurer (pass-through)
 ACCUM_SURPLUS   = '3000'
 STATUTORY_RESERVE = '3100'
 SHARE_CAPITAL   = '3200'
