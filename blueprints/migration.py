@@ -16,7 +16,7 @@ from werkzeug.security import generate_password_hash
 
 from crypto import encrypt_field
 from database import get_db
-from utils import role_required, audit, member_prefix
+from utils import role_required, audit, member_prefix, share_capital_split
 from ledger import get_accounts, post_journal, account_exists, ACCUM_SURPLUS
 
 migration = Blueprint('migration', __name__, url_prefix='/migration')
@@ -586,17 +586,23 @@ def import_savings():
                         date_raw = row.get('date', '').strip()
                         date = _parse_date(date_raw) or datetime.now()
 
+                        # Carve out the share-capital portion per the setting, same
+                        # as the savings form does (0% by default = whole amount stays
+                        # as a deposit).
+                        deposit_amount, share_amount = share_capital_split(db, amount)
+
                         db.execute('''
                             INSERT INTO savings
-                                (member_id, amount, month, payment_type, late_fee,
+                                (member_id, amount, share_capital, month, payment_type, late_fee,
                                  payment_method, receipt_number, notes, date)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        ''', (member['id'], amount, month, payment_type, late_fee,
-                              payment_method, receipt_number, notes, date))
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ''', (member['id'], deposit_amount, share_amount, month, payment_type,
+                              late_fee, payment_method, receipt_number, notes, date))
 
                         db.execute(
-                            'UPDATE members SET total_savings = total_savings + ? WHERE id = ?',
-                            (amount, member['id'])
+                            'UPDATE members SET total_savings = total_savings + ?, '
+                            'shares_value = COALESCE(shares_value, 0) + ? WHERE id = ?',
+                            (deposit_amount, share_amount, member['id'])
                         )
                     success += 1
                 except _SkipRow:
