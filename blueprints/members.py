@@ -152,10 +152,11 @@ def add_member():
                 request.form['phone'],
                 request.form.get('address', ''),
                 request.form.get('occupation', ''),
-                request.form.get('date_of_birth', None),
+                # A blank date must be NULL — PostgreSQL rejects '' for a date column.
+                request.form.get('date_of_birth', '').strip() or None,
                 request.form.get('nominee_name', ''),
                 request.form.get('nominee_relationship', ''),
-                float(request.form.get('monthly_savings', 5000)),
+                float(request.form.get('monthly_savings') or 5000),
                 'active'
             ))
             db.commit()
@@ -269,10 +270,11 @@ def edit_member(member_id):
                 request.form['phone'],
                 request.form.get('address', ''),
                 request.form.get('occupation', ''),
-                request.form.get('date_of_birth', None),
+                # A blank date must be NULL — PostgreSQL rejects '' for a date column.
+                request.form.get('date_of_birth', '').strip() or None,
                 request.form.get('nominee_name', ''),
                 request.form.get('nominee_relationship', ''),
-                float(request.form.get('monthly_savings', 5000)),
+                float(request.form.get('monthly_savings') or 5000),
                 request.form.get('status', 'active'),
                 member_id
             ))

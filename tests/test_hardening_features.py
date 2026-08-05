@@ -2132,5 +2132,23 @@ class HardeningFeatureTests(unittest.TestCase):
         self._cleanup_member_financials(mid)
 
 
+    def test_edit_member_blank_date_of_birth_saved_as_null(self):
+        """A blank date of birth must be stored as NULL, not '' — PostgreSQL
+        rejects '' for a date column (broke editing migrated members)."""
+        self.login_admin()
+        mid = self.create_member()
+        resp = self.client.post(f'/members/edit/{mid}', data={
+            'first_name': 'Ada', 'last_name': 'Audit',
+            'email': 'ada.audit@example.com', 'phone': '08000000001',
+            'date_of_birth': '', 'monthly_savings': '15000', 'status': 'active',
+        }, follow_redirects=True)
+        self.assertEqual(resp.status_code, 200)
+        self.assertNotIn(b'Error updating member', resp.data)
+        with self.app.app_context():
+            m = get_db().execute(
+                "SELECT date_of_birth FROM members WHERE id = ?", (mid,)).fetchone()
+            self.assertIsNone(m['date_of_birth'])   # blank -> NULL, not ''
+
+
 if __name__ == '__main__':
     unittest.main()
