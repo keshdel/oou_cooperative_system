@@ -6,6 +6,7 @@ from flask import Blueprint, flash, make_response, redirect, render_template, re
 from flask_login import login_required
 
 from database import get_db
+from delinquency import loan_delinquency
 from ledger import account_ledger, get_default_cash_account, trial_balance
 from reports_engine import balance_sheet, cash_flow, income_statement, surplus_appropriation
 from utils import role_required
@@ -371,16 +372,10 @@ def loan_portfolio_report():
     rows_db = db.execute('''
         SELECT l.loan_number, l.amount, l.total_repayment, l.balance, l.status,
                l.interest_rate, l.tenure, l.next_payment_date, l.date_applied,
-               m.member_number, m.first_name, m.last_name,
-               COALESCE(SUM(r.amount), 0) AS total_repaid,
-               COALESCE(SUM(r.principal_paid), 0) AS principal_repaid,
-               COALESCE(SUM(r.interest_paid), 0) AS interest_repaid
+               l.disbursement_date,
+               m.member_number, m.first_name, m.last_name
         FROM loans l
         JOIN members m ON m.id = l.member_id
-        LEFT JOIN repayments r ON r.loan_id = l.id AND r.reversed_at IS NULL
-        GROUP BY l.id, l.loan_number, l.amount, l.total_repayment, l.balance, l.status,
-                 l.interest_rate, l.tenure, l.next_payment_date, l.date_applied,
-                 m.member_number, m.first_name, m.last_name
         ORDER BY l.status, l.next_payment_date, l.loan_number
     ''').fetchall()
 
@@ -397,32 +392,32 @@ def loan_portfolio_report():
         {'key': 'aging_bucket', 'label': 'Aging'},
     ]
     rows = []
-    today_dt = datetime.strptime(as_of, '%Y-%m-%d').date()
+    as_of_dt = datetime.strptime(as_of, '%Y-%m-%d')
     for r in rows_db:
-        due_text = str(r['next_payment_date'] or '')[:10]
-        bucket = 'Not due'
-        if r['status'] == 'active' and due_text:
-            try:
-                days = (today_dt - datetime.strptime(due_text, '%Y-%m-%d').date()).days
-                if days > 90:
-                    bucket = 'Over 90 days'
-                elif days > 60:
-                    bucket = '61-90 days'
-                elif days > 30:
-                    bucket = '31-60 days'
-                elif days > 0:
-                    bucket = '1-30 days'
-            except ValueError:
-                bucket = 'Date check'
+        total_repayment = float(r['total_repayment'] or 0)
+        balance = float((r['balance'] if r['balance'] is not None else r['amount']) or 0)
+        # Total repaid = what's been cleared off the balance. Derived so it's
+        # correct for migrated loans too (which have no per-repayment rows).
+        total_repaid = max(0.0, total_repayment - balance)
+
+        if r['status'] == 'active':
+            d = loan_delinquency(r, as_of=as_of_dt)
+            due_text = str(d['next_due_date'] or '')[:10] if d['next_due_date'] else \
+                str(r['next_payment_date'] or '')[:10]
+            bucket = d['bucket']
+        else:
+            due_text = ''
+            bucket = '—'
+
         rows.append({
             'loan_number': r['loan_number'] or '',
             'member_number': r['member_number'] or '',
             'member_name': f"{r['first_name']} {r['last_name']}",
             'status': r['status'] or '',
             'amount': f"{float(r['amount'] or 0):.2f}",
-            'total_repayment': f"{float(r['total_repayment'] or 0):.2f}",
-            'total_repaid': f"{float(r['total_repaid'] or 0):.2f}",
-            'balance': f"{float((r['balance'] if r['balance'] is not None else r['amount']) or 0):.2f}",
+            'total_repayment': f"{total_repayment:.2f}",
+            'total_repaid': f"{total_repaid:.2f}",
+            'balance': f"{balance:.2f}",
             'next_payment_date': due_text,
             'aging_bucket': bucket,
         })
