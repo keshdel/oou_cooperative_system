@@ -71,7 +71,7 @@
                     <tbody>
                         {% for tx in transactions %}
                         <tr>
-                            <td>{{ tx.date.strftime('%d/%m/%Y %H:%M') }}</td>
+                            <td>{{ tx.date|fmtdt('%d/%m/%Y %H:%M') }}</td>
                             <td>{{ tx.transaction_number }}</td>
                             <td>{{ tx.description }}</td>
                             <td>

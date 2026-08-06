@@ -54,7 +54,7 @@
           <div class="text-muted">Email: {{ member.email or 'Not provided' }}</div>
         </div>
         <div class="col-md-6 text-md-end">
-          <div><strong>Generated:</strong> {{ generated_on.strftime('%d %b %Y %H:%M') }}</div>
+          <div><strong>Generated:</strong> {{ generated_on|fmtdt('%d %b %Y %H:%M') }}</div>
           <div><strong>Period:</strong> {{ from_date or 'Inception' }} to {{ to_date or 'Today' }}</div>
           <div><strong>Closing Balance:</strong> &#8358;{{ "{:,.2f}".format(closing_balance) }}</div>
         </div>
@@ -136,7 +136,7 @@
           {% for s in statement %}
           <tr>
             <td>{{ loop.index }}</td>
-            <td>{{ s.date_parsed.strftime('%d %b %Y') }}</td>
+            <td>{{ s.date_parsed|fmtdt('%d %b %Y') }}</td>
             <td>{{ s.month }}</td>
             <td class="font-monospace small">{{ s.receipt_number or s.reference or ('SAV-%06d' % s.id) }}</td>
             <td>{{ (s.payment_type or 'monthly')|replace('_', ' ')|title }}</td>

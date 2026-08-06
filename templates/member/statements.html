@@ -78,7 +78,7 @@
           </a>
         </div>
         <div class="col-12 col-md-2">
-          <a href="{{ url_for('portal.statements', from_date='2000-01-01', to_date=now().strftime('%Y-%m-%d')) }}"
+          <a href="{{ url_for('portal.statements', from_date='2000-01-01', to_date=now()|fmtdt('%Y-%m-%d')) }}"
              class="btn btn-outline-secondary btn-sm w-100">
             <i class="fas fa-history me-1"></i>All Time
           </a>
@@ -101,7 +101,7 @@
         </div>
         <div class="col-4 text-end">
           <div class="text-muted small">Generated</div>
-          <div class="fw-semibold">{{ generated_on.strftime('%d %B %Y, %H:%M') }}</div>
+          <div class="fw-semibold">{{ generated_on|fmtdt('%d %B %Y, %H:%M') }}</div>
         </div>
       </div>
 
@@ -135,7 +135,7 @@
             </tr>
             <tr>
               <td class="fw-semibold">Date Joined:</td>
-              <td>{{ member.date_joined.strftime('%d %b %Y') if member.date_joined and member.date_joined is not string else (member.date_joined or '—') }}</td>
+              <td>{{ member.date_joined|fmtdt('%d %b %Y') if member.date_joined and member.date_joined is not string else (member.date_joined or '—') }}</td>
             </tr>
             <tr>
               <td class="fw-semibold">Lifetime Savings:</td>
@@ -211,7 +211,7 @@
           {% for e in ledger %}
           <tr class="entry-{{ e.entry_type }}">
             <td class="ps-3 text-muted small">{{ loop.index }}</td>
-            <td class="small">{{ e.date.strftime('%d %b %Y') }}</td>
+            <td class="small">{{ e.date|fmtdt('%d %b %Y') }}</td>
             <td class="small font-monospace">{{ e.ref }}</td>
             <td>
               {{ e.description }}
@@ -328,7 +328,7 @@
       I, <strong>{{ member.full_name }}</strong> (Member No. <strong>{{ member.member_number }}</strong>),
       hereby confirm that I have reviewed the above Statement of Account for the period
       <strong>{{ from_date }}</strong> to <strong>{{ to_date }}</strong>, issued by
-      <strong>{{ coop_name }}</strong> on <strong>{{ generated_on.strftime('%d %B %Y') }}</strong>.
+      <strong>{{ coop_name }}</strong> on <strong>{{ generated_on|fmtdt('%d %B %Y') }}</strong>.
     </p>
     <p style="font-size:.95rem; line-height:1.8" class="mb-4">
       The statement <span style="border-bottom:1px solid #999">
@@ -353,7 +353,7 @@
     <div class="mt-4 pt-3 border-top text-center">
       <small class="text-muted">
         This statement was generated electronically by the {{ coop_name }} Management System
-        on {{ generated_on.strftime('%d %B %Y at %H:%M') }}.
+        on {{ generated_on|fmtdt('%d %B %Y at %H:%M') }}.
         For queries contact the cooperative office.
       </small>
     </div>

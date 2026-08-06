@@ -43,15 +43,15 @@
                                 </tr>
                                 <tr>
                                     <th>Application Date:</th>
-                                    <td>{{ loan.date_applied.strftime('%d %B, %Y') }}</td>
+                                    <td>{{ loan.date_applied|fmtdt('%d %B, %Y') }}</td>
                                 </tr>
                                 <tr>
                                     <th>Approval Date:</th>
-                                    <td>{{ loan.date_approved.strftime('%d %B, %Y') if loan.date_approved else 'Pending' }}</td>
+                                    <td>{{ loan.date_approved|fmtdt('%d %B, %Y') if loan.date_approved else 'Pending' }}</td>
                                 </tr>
                                 <tr>
                                     <th>Disbursement Date:</th>
-                                    <td>{{ loan.disbursement_date.strftime('%d %B, %Y') if loan.disbursement_date else 'Not disbursed' }}</td>
+                                    <td>{{ loan.disbursement_date|fmtdt('%d %B, %Y') if loan.disbursement_date else 'Not disbursed' }}</td>
                                 </tr>
                             </table>
                         </div>
@@ -195,7 +195,7 @@
                                 {% for installment in schedule %}
                                 <tr class="{{ 'table-success' if installment.paid }}">
                                     <td>{{ installment.month }}</td>
-                                    <td>{{ installment.due_date.strftime('%d/%m/%Y') }}</td>
+                                    <td>{{ installment.due_date|fmtdt('%d/%m/%Y') }}</td>
                                     <td>₦{{ "{:,.2f}".format(installment.payment) }}</td>
                                     <td>₦{{ "{:,.2f}".format(installment.principal) }}</td>
                                     <td>₦{{ "{:,.2f}".format(installment.interest) }}</td>
@@ -239,7 +239,7 @@
                             <tbody>
                                 {% for payment in payments %}
                                 <tr>
-                                    <td>{{ payment.date.strftime('%d/%m/%Y') }}</td>
+                                    <td>{{ payment.date|fmtdt('%d/%m/%Y') }}</td>
                                     <td>₦{{ "{:,.2f}".format(payment.amount) }}</td>
                                     <td>₦{{ "{:,.2f}".format(payment.principal_paid) }}</td>
                                     <td>₦{{ "{:,.2f}".format(payment.interest_paid) }}</td>
@@ -313,7 +313,7 @@
                         <li class="list-group-item d-flex justify-content-between">
                             <span>Next Due:</span>
                             <strong class="{{ 'text-danger' if loan.is_overdue }}">
-                                {{ loan.next_payment_date.strftime('%d/%m/%Y') if loan.next_payment_date else 'N/A' }}
+                                {{ loan.next_payment_date|fmtdt('%d/%m/%Y') if loan.next_payment_date else 'N/A' }}
                             </strong>
                         </li>
                     </ul>

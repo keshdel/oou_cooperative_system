@@ -59,7 +59,7 @@
           <span class="not-certified-badge"><i class="fas fa-hourglass-half"></i> Profile In Progress</span>
           {% endif %}
         </div>
-        <div class="text-muted">Member #{{ member.member_number }} · Joined {{ member.date_joined.strftime('%B %Y') }}</div>
+        <div class="text-muted">Member #{{ member.member_number }} · Joined {{ member.date_joined|fmtdt('%B %Y') }}</div>
       </div>
       <div class="col-lg-4">
         <div class="readiness-card p-3">
@@ -131,7 +131,7 @@
         <div class="card-body">
           <div class="info-row"><span>Email</span><strong>{{ member.email or 'Not provided' }}</strong></div>
           <div class="info-row"><span>Phone</span><strong>{{ member.phone or 'Not provided' }}</strong></div>
-          <div class="info-row"><span>Date of Birth</span><strong>{{ member.date_of_birth.strftime('%d %B %Y') if member.date_of_birth and member.date_of_birth.strftime else member.date_of_birth or 'Not provided' }}</strong></div>
+          <div class="info-row"><span>Date of Birth</span><strong>{{ member.date_of_birth|fmtdt('%d %B %Y') if member.date_of_birth and member.date_of_birth.strftime else member.date_of_birth or 'Not provided' }}</strong></div>
           <div class="info-row"><span>Occupation</span><strong>{{ member.occupation or 'Not provided' }}</strong></div>
           <div class="info-row"><span>Address</span><strong>{{ member.address or 'Not provided' }}</strong></div>
           <div class="info-row"><span>Location</span><strong>{{ [member.city, member.state, member.country]|select|join(', ') or 'Not provided' }}</strong></div>

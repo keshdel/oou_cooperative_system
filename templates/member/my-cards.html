@@ -54,11 +54,11 @@
                             <div class="row mt-4">
                                 <div class="col-6">
                                     <small class="opacity-75">Issue Date</small>
-                                    <p class="mb-0">{{ active_card.issue_date.strftime('%d/%m/%Y') }}</p>
+                                    <p class="mb-0">{{ active_card.issue_date|fmtdt('%d/%m/%Y') }}</p>
                                 </div>
                                 <div class="col-6">
                                     <small class="opacity-75">Expiry Date</small>
-                                    <p class="mb-0">{{ active_card.expiry_date.strftime('%d/%m/%Y') }}</p>
+                                    <p class="mb-0">{{ active_card.expiry_date|fmtdt('%d/%m/%Y') }}</p>
                                 </div>
                             </div>
                         </div>
@@ -106,8 +106,8 @@
                                 <tr>
                                     <td>{{ card.card_number }}</td>
                                     <td>{{ card.type|title }}</td>
-                                    <td>{{ card.issue_date.strftime('%d/%m/%Y') }}</td>
-                                    <td>{{ card.expiry_date.strftime('%d/%m/%Y') }}</td>
+                                    <td>{{ card.issue_date|fmtdt('%d/%m/%Y') }}</td>
+                                    <td>{{ card.expiry_date|fmtdt('%d/%m/%Y') }}</td>
                                     <td>
                                         {% if card.status == 'active' %}
                                         <span class="badge bg-success">Active</span>

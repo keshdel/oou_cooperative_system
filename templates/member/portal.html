@@ -42,7 +42,7 @@
                             <p class="mb-0 opacity-75">
                                 <i class="fas fa-id-card me-2"></i>Member #{{ member.member_number }}
                                 <span class="mx-3">|</span>
-                                <i class="fas fa-calendar me-2"></i>Joined: {{ member.date_joined.strftime('%B %d, %Y') }}
+                                <i class="fas fa-calendar me-2"></i>Joined: {{ member.date_joined|fmtdt('%B %d, %Y') }}
                             </p>
                         </div>
                         <div class="text-end">
@@ -213,7 +213,7 @@
                             <tbody>
                                 {% for saving in recent_savings %}
                                 <tr>
-                                    <td>{{ saving.date.strftime('%d/%m/%Y') }}</td>
+                                    <td>{{ saving.date|fmtdt('%d/%m/%Y') }}</td>
                                     <td>{{ saving.month }}</td>
                                     <td>₦{{ "{:,.2f}".format(saving.amount) }}</td>
                                     <td>
@@ -266,7 +266,7 @@
                         </div>
                         <div class="d-flex justify-content-between">
                             <small>{{ loan.progress_percentage|round }}% paid</small>
-                            <small>Next: {{ loan.next_payment_date.strftime('%d/%m/%Y') if loan.next_payment_date else 'N/A' }}</small>
+                            <small>Next: {{ loan.next_payment_date|fmtdt('%d/%m/%Y') if loan.next_payment_date else 'N/A' }}</small>
                         </div>
                         <a href="{{ url_for('portal.loan_detail', loan_id=loan.id) }}" class="btn btn-sm btn-outline-primary mt-2 w-100">
                             View Details
@@ -323,11 +323,11 @@
                                 <div class="row mt-3">
                                     <div class="col-6">
                                         <small class="opacity-75">Valid From</small>
-                                        <p class="mb-0">{{ member.card_issued_date.strftime('%d/%m/%Y') if member.card_issued_date }}</p>
+                                        <p class="mb-0">{{ member.card_issued_date|fmtdt('%d/%m/%Y') if member.card_issued_date }}</p>
                                     </div>
                                     <div class="col-6">
                                         <small class="opacity-75">Valid Until</small>
-                                        <p class="mb-0">{{ member.card_expiry_date.strftime('%d/%m/%Y') if member.card_expiry_date }}</p>
+                                        <p class="mb-0">{{ member.card_expiry_date|fmtdt('%d/%m/%Y') if member.card_expiry_date }}</p>
                                     </div>
                                 </div>
                             </div>

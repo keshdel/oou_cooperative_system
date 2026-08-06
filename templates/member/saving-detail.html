@@ -37,7 +37,7 @@
                         <div class="col-6 text-end">
                             <h3 class="text-primary">RECEIPT</h3>
                             <p class="mb-0"><strong>Receipt No:</strong> {{ saving.receipt_number }}</p>
-                            <p class="mb-0"><strong>Date:</strong> {{ saving.date.strftime('%d/%m/%Y %H:%M') }}</p>
+                            <p class="mb-0"><strong>Date:</strong> {{ saving.date|fmtdt('%d/%m/%Y %H:%M') }}</p>
                         </div>
                     </div>
 
@@ -73,7 +73,7 @@
                                 </tr>
                                 <tr>
                                     <th>Payment Date</th>
-                                    <td>{{ saving.date.strftime('%d %B, %Y') }}</td>
+                                    <td>{{ saving.date|fmtdt('%d %B, %Y') }}</td>
                                 </tr>
                                 <tr>
                                     <th>Payment Method</th>
@@ -204,11 +204,11 @@
                         </li>
                         <li class="list-group-item d-flex justify-content-between">
                             <span>Date:</span>
-                            <strong>{{ saving.date.strftime('%d/%m/%Y') }}</strong>
+                            <strong>{{ saving.date|fmtdt('%d/%m/%Y') }}</strong>
                         </li>
                         <li class="list-group-item d-flex justify-content-between">
                             <span>Time:</span>
-                            <strong>{{ saving.date.strftime('%H:%M:%S') }}</strong>
+                            <strong>{{ saving.date|fmtdt('%H:%M:%S') }}</strong>
                         </li>
                     </ul>
                 </div>
@@ -242,7 +242,7 @@
                            class="list-group-item list-group-item-action">
                             <div class="d-flex justify-content-between">
                                 <div>
-                                    <small>{{ trans.date.strftime('%d/%m/%Y') }}</small>
+                                    <small>{{ trans.date|fmtdt('%d/%m/%Y') }}</small>
                                     <p class="mb-0">{{ trans.month }}</p>
                                 </div>
                                 <div class="text-end">

@@ -30,7 +30,7 @@
       <div class="col-4 text-end">
         <strong>{{ member.full_name }}</strong><br>
         <span class="text-muted">{{ member.member_number }}</span><br>
-        <small>Printed: {{ now().strftime('%d %b %Y %H:%M') }}</small>
+        <small>Printed: {{ now()|fmtdt('%d %b %Y %H:%M') }}</small>
       </div>
     </div>
     {% if from_date or to_date %}
@@ -201,7 +201,7 @@
             <td class="ps-3 text-muted small">{{ loop.index + (page-1)*20 }}</td>
             <td>
               {% if s.date_parsed %}
-                {{ s.date_parsed.strftime('%d %b %Y') }}
+                {{ s.date_parsed|fmtdt('%d %b %Y') }}
               {% elif s.date %}
                 {{ s.date[:10] }}
               {% else %}—{% endif %}
@@ -384,7 +384,7 @@ if (ctx) {
           <div class="mb-3">
             <label class="form-label fw-semibold">Month <span class="text-danger">*</span></label>
             <input type="month" class="form-control" name="month" required
-                   value="{{ now().strftime('%Y-%m') }}">
+                   value="{{ now()|fmtdt('%Y-%m') }}">
             <div class="form-text">The savings month you are paying for (YYYY-MM).</div>
           </div>
           <div class="mb-3">
