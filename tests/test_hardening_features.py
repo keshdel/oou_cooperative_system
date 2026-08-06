@@ -744,6 +744,77 @@ class HardeningFeatureTests(unittest.TestCase):
                        (admin_id,))
             db.commit()
 
+    def test_member_share_capital_sums_savings_rows(self):
+        """member_share_capital totals the carved-out share_capital portion per
+        member (the figure shown on the dashboard/statement), independent of the
+        deposit balance."""
+        from datetime import datetime
+        from utils import member_share_capital, member_savings_balance
+        with self.app.app_context():
+            db = get_db()
+            db.execute('''
+                INSERT INTO members
+                    (member_number, employee_id, first_name, last_name, email,
+                     phone, status, monthly_savings, total_savings, date_joined)
+                VALUES ('OOU/TEST/SCAP1', 'EMP-SCAP1', 'Sha', 'Capital',
+                        'sha.capital@example.com', '08000000051', 'active',
+                        15000, 0, '2024-01-01')
+            ''')
+            member_id = db.execute(
+                "SELECT id FROM members WHERE member_number = 'OOU/TEST/SCAP1'"
+            ).fetchone()['id']
+            # Two contributions: deposit 95% in `amount`, 5% in `share_capital`.
+            db.execute("INSERT INTO savings (member_id, amount, share_capital, month) "
+                       "VALUES (?, 95000, 5000, '2026-01')", (member_id,))
+            db.execute("INSERT INTO savings (member_id, amount, share_capital, month) "
+                       "VALUES (?, 190000, 10000, '2026-02')", (member_id,))
+            db.commit()
+
+            self.assertAlmostEqual(member_share_capital(db, member_id), 15000, places=2)
+            # Savings balance stays the deposit portion only.
+            self.assertAlmostEqual(member_savings_balance(db, member_id), 285000, places=2)
+
+            db.execute('DELETE FROM savings WHERE member_id = ?', (member_id,))
+            db.execute('DELETE FROM members WHERE id = ?', (member_id,))
+            db.commit()
+
+    def test_member_dashboard_and_statement_render_share_capital(self):
+        """The member dashboard and savings statement must render (200) and
+        surface the share-capital figure so members see the 5% wasn't lost."""
+        email = 'scap.render@example.com'
+        with self.app.app_context():
+            db = get_db()
+            db.execute('''
+                INSERT INTO members
+                    (member_number, employee_id, first_name, last_name, email,
+                     phone, status, monthly_savings, total_savings, date_joined)
+                VALUES ('OOU/TEST/SCAP2', 'EMP-SCAP2', 'Ren', 'Der', ?,
+                        '08000000052', 'active', 15000, 0, '2024-01-01')
+            ''', (email,))
+            member_id = db.execute(
+                "SELECT id FROM members WHERE member_number = 'OOU/TEST/SCAP2'"
+            ).fetchone()['id']
+            db.execute("INSERT INTO savings (member_id, amount, share_capital, month) "
+                       "VALUES (?, 95000, 5000, '2026-01')", (member_id,))
+            db.commit()
+        self.create_member_user(member_id, email=email)
+        self.login_member(email=email)
+
+        dash = self.client.get('/member/portal')
+        self.assertEqual(dash.status_code, 200)
+        self.assertIn(b'Share Capital', dash.data)
+
+        stmt = self.client.get('/my-savings')
+        self.assertEqual(stmt.status_code, 200)
+        self.assertIn(b'Share Capital', stmt.data)
+
+        with self.app.app_context():
+            db = get_db()
+            db.execute('DELETE FROM savings WHERE member_id = ?', (member_id,))
+            db.execute('DELETE FROM users WHERE email = ?', (email,))
+            db.execute('DELETE FROM members WHERE id = ?', (member_id,))
+            db.commit()
+
     def test_admin_can_resend_and_revoke_setup_links(self):
         self.login_admin()
         email = 'resend.setup@example.com'

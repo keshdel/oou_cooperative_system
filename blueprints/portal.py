@@ -15,7 +15,8 @@ from database import get_db, last_insert_id
 from crypto import decrypt_member_sensitive_fields, encrypt_field, mask_member_sensitive_fields
 from security import validate_password_strength
 from utils import (audit, notify_member, notify, compute_loan_schedule, METHOD_LABELS,
-                   member_for_user, member_savings_balance, validate_image)
+                   member_for_user, member_savings_balance, member_share_capital,
+                   validate_image)
 import loan_workflow as lw
 
 portal = Blueprint('portal', __name__)
@@ -34,6 +35,10 @@ def _member_extras(member, db):
     ledger_balance     = member_savings_balance(db, member['id'])
     d['total_savings'] = ledger_balance
     d['loan_eligibility_amount'] = round(ledger_balance * 2, 2)
+    # Share capital carved from contributions (see share_capital_split); shown
+    # separately so members see the 5% wasn't lost, just reclassified to equity.
+    d['share_capital'] = member_share_capital(db, member['id'])
+    d['total_contributions'] = round(ledger_balance + d['share_capital'], 2)
     keys = member.keys() if hasattr(member, 'keys') else d.keys()
     d['shares']      = d.get('shares') or 0
     d['shares_value'] = d['shares'] * 100   # ₦100 per share unit
@@ -336,6 +341,10 @@ def my_savings():
     filt_principal  = sum(float(s['amount'] or 0) - float(s['late_fee'] or 0) for s in filtered)
     filt_late_fees  = sum(float(s['late_fee'] or 0) for s in filtered)
     filt_total      = filt_principal + filt_late_fees
+    # Share capital: per-row portion is on each savings row; totals for the
+    # statement footer (filtered) and the full-history figure.
+    filt_share_capital  = sum(float(s['share_capital'] or 0) for s in filtered)
+    total_share_capital = sum(float(s['share_capital'] or 0) for s in all_savings)
 
     # ── Pagination over filtered set ───────────────────────────────────────
     per_page    = 20
@@ -356,6 +365,8 @@ def my_savings():
                            total_principal=filt_principal,
                            total_late_fees=filt_late_fees,
                            total_amount=filt_total,
+                           filt_share_capital=filt_share_capital,
+                           total_share_capital=total_share_capital,
                            yearly_summaries=yearly_summaries,
                            next_milestone=next_milestone,
                            from_date=from_date_str,

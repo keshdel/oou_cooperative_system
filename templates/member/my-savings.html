@@ -66,9 +66,21 @@
         <div class="card-body d-flex align-items-center">
           <span class="metric-icon me-3" style="background:rgba(37,99,235,.12);color:#2563eb;"><i class="fas fa-piggy-bank"></i></span>
           <div>
-            <div class="metric-label">Total Savings (All Time)</div>
+            <div class="metric-label">Savings Balance</div>
             <div class="metric-value">₦{{ "{:,.2f}".format(total_savings) }}</div>
-            <div class="text-muted small">Lifetime contributions</div>
+            <div class="text-muted small">Deposit balance (excl. share capital)</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="col-6 col-md-3">
+      <div class="card h-100 border-0 shadow-sm">
+        <div class="card-body d-flex align-items-center">
+          <span class="metric-icon me-3" style="background:rgba(139,92,246,.14);color:#7c3aed;"><i class="fas fa-chart-pie"></i></span>
+          <div>
+            <div class="metric-label">Share Capital</div>
+            <div class="metric-value">₦{{ "{:,.2f}".format(total_share_capital) }}</div>
+            <div class="text-muted small">Your equity stake</div>
           </div>
         </div>
       </div>
@@ -173,6 +185,20 @@
   </div>
   {% endif %}
 
+  <!-- How contributions are split -->
+  <div class="alert alert-info d-flex align-items-start gap-2 mb-3" role="alert">
+    <i class="fas fa-info-circle mt-1"></i>
+    <div class="small">
+      <strong>How your contributions are recorded:</strong> each contribution is split into a
+      <strong>savings deposit</strong> and a <strong>share&nbsp;capital</strong> portion (your equity in the
+      cooperative). Nothing is lost — your total contribution is
+      <strong>₦{{ "{:,.2f}".format(member.total_contributions) }}</strong>
+      (₦{{ "{:,.2f}".format(total_savings) }} savings + ₦{{ "{:,.2f}".format(total_share_capital) }} share capital).
+      Share capital is your stake in the cooperative and is held in the cooperative's ledger
+      (Member Share Capital, COA&nbsp;3200).
+    </div>
+  </div>
+
   <!-- Savings history table -->
   <div class="card mb-4">
     <div class="card-header d-flex justify-content-between align-items-center">
@@ -189,6 +215,7 @@
             <th class="text-end">Principal (₦)</th>
             <th class="text-end">Late Fee (₦)</th>
             <th class="text-end">Total Paid (₦)</th>
+            <th class="text-end" style="background:#ede9fe">Share Capital (₦)</th>
             <th>Method</th>
             <th>Receipt No.</th>
             <th>Status</th>
@@ -216,6 +243,7 @@
               {% endif %}
             </td>
             <td class="text-end fw-semibold">₦{{ "{:,.2f}".format(s.amount or 0) }}</td>
+            <td class="text-end" style="background:#faf8ff">₦{{ "{:,.2f}".format(s.share_capital or 0) }}</td>
             <td>
               <span class="badge bg-light text-dark border">
                 {{ (s.payment_method or 'cash')|title }}
@@ -235,7 +263,7 @@
           </tr>
           {% else %}
           <tr>
-            <td colspan="10" class="text-center py-5">
+            <td colspan="11" class="text-center py-5">
               <i class="fas fa-piggy-bank fa-3x text-muted d-block mb-2"></i>
               <span class="text-muted">No savings records found for the selected filter.</span>
             </td>
@@ -248,6 +276,7 @@
             <td class="text-end">₦{{ "{:,.2f}".format(total_principal) }}</td>
             <td class="text-end text-danger">₦{{ "{:,.2f}".format(total_late_fees) }}</td>
             <td class="text-end">₦{{ "{:,.2f}".format(total_amount) }}</td>
+            <td class="text-end" style="background:#ede9fe">₦{{ "{:,.2f}".format(filt_share_capital) }}</td>
             <td colspan="4"></td>
           </tr>
         </tfoot>

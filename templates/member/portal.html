@@ -63,9 +63,9 @@
                 <div class="card-body">
                     <div class="d-flex justify-content-between">
                         <div>
-                            <h6 class="text-white-50">Total Savings</h6>
+                            <h6 class="text-white-50">Savings Balance</h6>
                             <h3 class="text-white mb-0">₦{{ "{:,.2f}".format(member.total_savings) }}</h3>
-                            <small class="text-white-50"> Lifetime savings</small>
+                            <small class="text-white-50">₦{{ "{:,.2f}".format(member.total_contributions) }} total contributions</small>
                         </div>
                         <i class="fas fa-piggy-bank fa-3x text-white-50"></i>
                     </div>
@@ -108,9 +108,9 @@
                 <div class="card-body">
                     <div class="d-flex justify-content-between">
                         <div>
-                            <h6 class="text-white-50">Shares Value</h6>
-                            <h3 class="text-white mb-0">₦{{ "{:,.2f}".format(member.shares_value) }}</h3>
-                            <small class="text-white-50">{{ member.shares }} units</small>
+                            <h6 class="text-white-50">Share Capital</h6>
+                            <h3 class="text-white mb-0">₦{{ "{:,.2f}".format(member.share_capital) }}</h3>
+                            <small class="text-white-50">Your equity stake</small>
                         </div>
                         <i class="fas fa-chart-line fa-3x text-white-50"></i>
                     </div>

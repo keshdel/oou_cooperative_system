@@ -358,6 +358,21 @@ def member_savings_balance(db, member_id):
     return float(row[0] or 0) if row else 0.0
 
 
+def member_share_capital(db, member_id):
+    """The member's total share-capital contribution, from the savings ledger.
+
+    Each contribution is split (see share_capital_split): `amount` holds the
+    deposit portion and `share_capital` holds the carved-out share-capital
+    portion. Summing `share_capital` gives the member's equity stake, and the
+    total across all members reconciles to COA 3200 (Member Share Capital).
+    """
+    row = db.execute(
+        'SELECT COALESCE(SUM(share_capital), 0) FROM savings WHERE member_id = ?',
+        (member_id,)
+    ).fetchone()
+    return float(row[0] or 0) if row else 0.0
+
+
 def reconcile_member_savings(db, member_id=None):
     """Recompute members.total_savings from the savings ledger.
 
