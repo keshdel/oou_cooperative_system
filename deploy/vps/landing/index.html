@@ -72,8 +72,11 @@
   .mstat{ border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
   .mstat small{ color:var(--muted); font-size:11px; }
   .mstat b{ display:block; font-size:16px; margin-top:2px; }
-  .bars{ display:flex; align-items:flex-end; gap:8px; height:96px; padding:10px; border:1px solid var(--line); border-radius:10px; }
-  .bars i{ flex:1; background:linear-gradient(180deg,var(--blue2),#8fb6ff); border-radius:5px 5px 0 0; }
+  .chart{ border:1px solid var(--line); border-radius:12px; padding:12px 10px 4px; background:linear-gradient(180deg,#fbfdff,#f4f8ff); }
+  .chart svg{ display:block; width:100%; height:auto; }
+  .chart-foot{ display:flex; align-items:center; gap:14px; margin-top:12px; font-size:12px; color:var(--muted); }
+  .lg{ display:inline-flex; align-items:center; gap:6px; }
+  .lg i{ width:10px; height:10px; border-radius:3px; display:inline-block; }
 
   /* Trust band */
   .trust{ background:var(--darker); color:#cfe0ff; padding:26px 0; }
@@ -232,12 +235,32 @@
           <div class="mstat"><small>Active Loans</small><b>₦39.0m</b></div>
           <div class="mstat"><small>Members</small><b>412</b></div>
         </div>
-        <div class="bars">
-          <i style="height:40%"></i><i style="height:58%"></i><i style="height:49%"></i><i style="height:72%"></i>
-          <i style="height:63%"></i><i style="height:86%"></i><i style="height:70%"></i><i style="height:95%"></i>
+        <div class="chart">
+          <svg viewBox="0 0 336 150" role="img" aria-label="Savings and loans growth trend">
+            <defs>
+              <linearGradient id="aFill" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0" stop-color="#2563eb" stop-opacity=".26"/>
+                <stop offset="1" stop-color="#2563eb" stop-opacity="0"/>
+              </linearGradient>
+            </defs>
+            <g stroke="#e6eefb" stroke-width="1">
+              <line x1="8" y1="30" x2="330" y2="30"/><line x1="8" y1="58" x2="330" y2="58"/>
+              <line x1="8" y1="86" x2="330" y2="86"/><line x1="8" y1="114" x2="330" y2="114"/>
+            </g>
+            <path d="M14,86.2 C36,86.2 36,73.5 58,73.5 C80,73.5 80,77.7 102,77.7 C124,77.7 124,59.7 146,59.7 C168,59.7 168,65 190,65 C212,65 212,45.9 234,45.9 C256,45.9 256,51.2 278,51.2 C300,51.2 300,31.1 322,31.1 L322,118 L14,118 Z" fill="url(#aFill)"/>
+            <path d="M14,86.2 C36,86.2 36,73.5 58,73.5 C80,73.5 80,77.7 102,77.7 C124,77.7 124,59.7 146,59.7 C168,59.7 168,65 190,65 C212,65 212,45.9 234,45.9 C256,45.9 256,51.2 278,51.2 C300,51.2 300,31.1 322,31.1" fill="none" stroke="#2563eb" stroke-width="2.6" stroke-linecap="round"/>
+            <path d="M14,94.7 C36,94.7 36,88.3 58,88.3 C80,88.3 80,83 102,83 C124,83 124,75.6 146,75.6 C168,75.6 168,70.3 190,70.3 C212,70.3 212,62.9 234,62.9 C256,62.9 256,56.5 278,56.5 C300,56.5 300,48 322,48" fill="none" stroke="#10b981" stroke-width="2.4" stroke-linecap="round"/>
+            <circle cx="322" cy="31.1" r="3.6" fill="#2563eb" stroke="#fff" stroke-width="1.5"/>
+            <circle cx="322" cy="48" r="3.6" fill="#10b981" stroke="#fff" stroke-width="1.5"/>
+            <g fill="#94a3b8" font-size="9" font-family="Inter,sans-serif" text-anchor="middle">
+              <text x="14" y="134">Jan</text><text x="58" y="134">Feb</text><text x="102" y="134">Mar</text><text x="146" y="134">Apr</text><text x="190" y="134">May</text><text x="234" y="134">Jun</text><text x="278" y="134">Jul</text><text x="322" y="134">Aug</text>
+            </g>
+          </svg>
         </div>
-        <div style="margin-top:12px;display:flex;justify-content:space-between;font-size:12px;color:var(--muted)">
-          <span>Trial balance</span><span style="color:var(--green-d);font-weight:700">● Balanced</span>
+        <div class="chart-foot">
+          <span class="lg"><i style="background:#2563eb"></i>Savings</span>
+          <span class="lg"><i style="background:#10b981"></i>Loans</span>
+          <span style="margin-left:auto;color:var(--green-d);font-weight:700">● Trial balance balanced</span>
         </div>
       </div>
     </div>
