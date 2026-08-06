@@ -23,7 +23,7 @@
             <div class="sidebar" id="sidebar">
                 <div class="sidebar-header">
                     {% if coop_logo %}
-                        <img src="{{ url_for('static', filename=coop_logo) }}" alt="Logo" height="40" class="mb-2">
+                        <img src="{{ coop_logo|logo_src }}" alt="Logo" height="40" class="mb-2">
                     {% endif %}
                     <h3>{{ coop_short_name }}</h3>
                     <p class="small">{{ coop_name }}</p>
@@ -517,7 +517,7 @@
     #helpFab {
         position: fixed; bottom: 28px; right: 28px; z-index: 1050;
         width: 48px; height: 48px;
-        background: linear-gradient(135deg, #1a3a6c, #1e4d8c);
+        background: linear-gradient(135deg, #082b66, #0d3f86);
         color: #fff; border: none; border-radius: 50%;
         box-shadow: 0 4px 16px rgba(26,58,108,.45);
         font-size: 20px; cursor: pointer;
@@ -541,7 +541,7 @@
         opacity: 1; pointer-events: all;
     }
     .hd-head {
-        background: linear-gradient(135deg, #0f2a5c, #1e4d8c);
+        background: linear-gradient(135deg, #061e4a, #0d3f86);
         color: #fff; border-radius: 14px 14px 0 0;
         padding: 14px 16px 12px;
         display: flex; align-items: flex-start; gap: 10px;
@@ -559,7 +559,7 @@
     .hd-body { flex: 1; overflow-y: auto; padding: 14px 16px; }
     .hd-section { margin-bottom: 14px; }
     .hd-section-head {
-        font-size: 12px; font-weight: 700; color: #1a3a6c;
+        font-size: 12px; font-weight: 700; color: #082b66;
         text-transform: uppercase; letter-spacing: .5px;
         margin-bottom: 6px; display: flex; align-items: center; gap: 5px;
     }
@@ -575,7 +575,7 @@
     }
     .hd-steps li:last-child { border-bottom: none; }
     .hd-step-n {
-        width: 18px; height: 18px; background: #1a3a6c; color: #fff;
+        width: 18px; height: 18px; background: #082b66; color: #fff;
         border-radius: 50%; display: flex; align-items: center; justify-content: center;
         font-size: 10px; font-weight: 700; flex-shrink: 0; margin-top: 1px;
     }
@@ -594,7 +594,7 @@
         display: flex; align-items: center; justify-content: space-between;
         gap: 8px;
     }
-    .hd-foot a { font-size: 12.5px; font-weight: 600; color: #1a3a6c; text-decoration: none; }
+    .hd-foot a { font-size: 12.5px; font-weight: 600; color: #082b66; text-decoration: none; }
     .hd-foot a:hover { text-decoration: underline; }
     .hd-no-article { text-align: center; padding: 20px 0; color: #9ca3af; font-size: 13px; }
     </style>

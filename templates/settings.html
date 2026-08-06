@@ -75,7 +75,7 @@
 									<input type="file" class="form-control" name="coop_logo" accept="image/*">
 									{% if settings.coop_logo %}
 										<div class="mt-2">
-											<img src="{{ url_for('static', filename=settings.coop_logo) }}" alt="Logo" height="50">
+											<img src="{{ settings.coop_logo|logo_src }}" alt="Logo" height="50">
 											<br><small>Current logo</small>
 										</div>
 									{% endif %}

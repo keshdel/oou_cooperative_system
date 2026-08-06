@@ -148,7 +148,7 @@
                                     </label>
                                     {% if coop_logo %}
                                     <div class="mb-2 d-flex align-items-center gap-3">
-                                        <img src="{{ url_for('static', filename=coop_logo) }}"
+                                        <img src="{{ coop_logo|logo_src }}"
                                              alt="Current logo" height="60"
                                              class="border rounded p-1 bg-white">
                                         <span class="text-muted small">Current logo</span>

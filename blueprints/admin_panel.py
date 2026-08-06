@@ -10,7 +10,7 @@ from werkzeug.utils import secure_filename
 from database import USE_POSTGRES, get_db, last_insert_id
 from email_service import send_member_onboarding_email
 from security import generate_account_setup_token, validate_password_strength
-from utils import (role_required, audit, validate_image,
+from utils import (role_required, audit, validate_image, logo_data_uri,
                    member_savings_balance, reconcile_member_savings)
 from ledger import (post_journal_safe, get_default_cash_account, OPERATING_EXPENSES, FEE_INCOME,
                     HONORARIUM)
@@ -312,23 +312,13 @@ def update_settings():
             ok, err = validate_image(logo)
             if not ok:
                 flash(f'Logo not saved: {err}', 'warning')
-                logo = None
-        if logo and logo.filename:
-            ext = secure_filename(logo.filename).rsplit('.', 1)[1].lower()
-            unique_name = f"coop_logo_{int(datetime.now().timestamp())}.{ext}"
-            # db_path is relative to static/ so url_for('static', filename=db_path) works
-            db_path   = f"uploads/{unique_name}"
-            disk_path = os.path.join('static', 'uploads', unique_name)
-            os.makedirs(os.path.join('static', 'uploads'), exist_ok=True)
-            logo.save(disk_path)
-            existing = db.execute("SELECT id FROM settings WHERE key = 'coop_logo'").fetchone()
-            if existing:
-                db.execute("UPDATE settings SET value = ? WHERE key = 'coop_logo'", (db_path,))
             else:
-                db.execute(
-                    'INSERT INTO settings (key, value, description) VALUES (?, ?, ?)',
-                    ('coop_logo', db_path, 'Cooperative logo (path relative to static/)')
-                )
+                # Store the logo in the database as a compact data URI so it
+                # persists across container rebuilds (static/uploads is ephemeral).
+                try:
+                    _upsert_setting(db, 'coop_logo', logo_data_uri(logo))
+                except Exception as exc:
+                    flash(f'Logo not saved: could not process image ({exc}).', 'warning')
 
     try:
         updated = 0

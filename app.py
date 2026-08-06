@@ -170,6 +170,22 @@ def _fmt_datetime(value, fmt='%d/%m/%Y %H:%M'):
     return text
 
 
+@app.template_filter('logo_src')
+def _logo_src(value):
+    """Resolve a cooperative-logo setting to an <img> src.
+
+    The logo is stored in the database as a data URI (so it survives container
+    rebuilds). Legacy values are 'uploads/...' paths relative to static/ — those
+    still resolve via url_for. Returns '' for a blank/None value.
+    """
+    if not value:
+        return ''
+    text = str(value)
+    if text.startswith('data:') or text.startswith('http://') or text.startswith('https://'):
+        return text
+    return url_for('static', filename=text)
+
+
 @app.context_processor
 def utility_processor():
     db = get_db()

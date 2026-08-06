@@ -4,9 +4,11 @@
  */
 
 :root {
-    --primary-color: #2563eb;      /* solid blue */
-    --primary-dark: #1d4ed8;
-    --primary-light: #3b82f6;
+    --primary-color: #082b66;      /* COOPMS navy */
+    --primary-dark: #061e4a;
+    --primary-light: #0d3f86;
+    --accent-color: #f4b51c;       /* COOPMS gold */
+    --accent-dark: #d99a08;
     --secondary-color: #64748b;
     --success-color: #10b981;
     --danger-color: #ef4444;
@@ -91,7 +93,7 @@ a:hover {
 /* Sidebar */
 .sidebar {
     width: var(--sidebar-width);
-    background-color: #1e3a8a;   /* solid dark blue */
+    background-color: #082b66;   /* COOPMS navy */
     color: white;
     position: fixed;
     height: 100vh;
@@ -150,9 +152,12 @@ a:hover {
     transform: translateX(5px);
 }
 .sidebar-menu a.active {
-    background-color: rgba(255,255,255,0.2);
+    background-color: rgba(244,181,28,0.14);
     color: white;
-    border-left-color: white;
+    border-left-color: var(--accent-color);
+}
+.sidebar-menu a.active i {
+    color: var(--accent-color);
 }
 .sidebar-footer {
     padding: 1.5rem;

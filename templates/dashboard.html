@@ -27,7 +27,7 @@
         </div>
         
         <div class="col-md-3">
-            <div class="card stat-card" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+            <div class="card stat-card" style="background: linear-gradient(135deg, #0d3f86 0%, #082b66 100%);">
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
@@ -42,7 +42,7 @@
         </div>
         
         <div class="col-md-3">
-            <div class="card stat-card" style="background: linear-gradient(135deg, #5f2c82 0%, #49a09d 100%);">
+            <div class="card stat-card" style="background: linear-gradient(135deg, #0a3373 0%, #061e4a 100%);">
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
@@ -57,7 +57,7 @@
         </div>
         
         <div class="col-md-3">
-            <div class="card stat-card" style="background: linear-gradient(135deg, #f2994a 0%, #f2c94c 100%);">
+            <div class="card stat-card" style="background: linear-gradient(135deg, #123f7d 0%, #0a2b57 100%);">
                 <div class="card-body">
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
@@ -188,7 +188,7 @@ new Chart(ctx1, {
         labels: ['Savings', 'Loans', 'Investments'],
         datasets: [{
             data: [{{ total_savings }}, {{ total_loans }}, {{ total_investments }}],
-            backgroundColor: ['#667eea', '#f093fb', '#f2994a'],
+            backgroundColor: ['#082b66', '#f4b51c', '#94a3b8'],
             borderWidth: 0
         }]
     },
@@ -212,12 +212,14 @@ new Chart(ctx2, {
         datasets: [{
             label: 'Savings',
             data: [120000, 135000, 148000, 152000, 168000, 175000],
-            borderColor: '#667eea',
+            borderColor: '#082b66',
+            backgroundColor: 'rgba(8,43,102,.08)',
             tension: 0.4
         }, {
             label: 'Loans',
             data: [80000, 95000, 102000, 110000, 115000, 122000],
-            borderColor: '#f093fb',
+            borderColor: '#f4b51c',
+            backgroundColor: 'rgba(244,181,28,.08)',
             tension: 0.4
         }]
     },

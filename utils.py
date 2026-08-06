@@ -467,6 +467,26 @@ def validate_image(file) -> tuple[bool, str]:
     return True, ''
 
 
+def logo_data_uri(file, max_px: int = 240) -> str:
+    """Downscale an uploaded logo and return a compact
+    ``data:image/png;base64,...`` string.
+
+    Stored directly in the settings table so the logo lives in the database and
+    survives container rebuilds — unlike files under static/uploads, which are
+    ephemeral in the per-client Docker deployment. Downscaling keeps the value
+    small (a few KB) since it is loaded on every page via the context processor.
+    """
+    import base64
+    file.stream.seek(0)
+    img = Image.open(file.stream)
+    img = img.convert('RGBA') if img.mode in ('P', 'RGBA', 'LA') else img.convert('RGB')
+    img.thumbnail((max_px, max_px))
+    buf = BytesIO()
+    img.save(buf, format='PNG', optimize=True)
+    b64 = base64.b64encode(buf.getvalue()).decode('ascii')
+    return f'data:image/png;base64,{b64}'
+
+
 # ── In-app notification helper ────────────────────────────────────────────────
 
 def notify(db, user_id: int, title: str, message: str,

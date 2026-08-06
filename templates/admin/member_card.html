@@ -349,7 +349,7 @@
             <div class="card-header">
                 {% if coop.coop_logo %}
                 <img class="coop-logo"
-                     src="{{ url_for('static', filename=coop.coop_logo) }}"
+                     src="{{ coop.coop_logo|logo_src }}"
                      alt="Logo">
                 {% else %}
                 <div class="logo-placeholder"><i class="fas fa-building"></i></div>

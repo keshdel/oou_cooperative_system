@@ -815,6 +815,43 @@ class HardeningFeatureTests(unittest.TestCase):
             db.execute('DELETE FROM members WHERE id = ?', (member_id,))
             db.commit()
 
+    def test_cooperative_logo_persists_in_database_on_upload(self):
+        """An uploaded logo is stored in the DB as a compact data URI so it
+        survives container rebuilds (static/uploads is ephemeral). The logo_src
+        filter renders data URIs directly and legacy paths via static."""
+        from io import BytesIO
+        from PIL import Image
+        from app import _logo_src
+        self.login_admin()
+
+        buf = BytesIO()
+        Image.new('RGB', (300, 120), (8, 43, 102)).save(buf, format='PNG')
+        buf.seek(0)
+        resp = self.client.post(
+            '/settings/update',
+            data={'coop_logo': (buf, 'logo.png')},
+            content_type='multipart/form-data',
+            follow_redirects=False,
+        )
+        self.assertIn(resp.status_code, (302, 303))
+
+        with self.app.app_context():
+            db = get_db()
+            row = db.execute("SELECT value FROM settings WHERE key = 'coop_logo'").fetchone()
+            self.assertIsNotNone(row, 'coop_logo should be saved')
+            self.assertTrue(
+                str(row['value']).startswith('data:image/png;base64,'),
+                'logo must be stored in the database as a data URI',
+            )
+            db.execute("DELETE FROM settings WHERE key = 'coop_logo'")
+            db.commit()
+
+        # Filter: data URIs pass through untouched; legacy paths resolve via static.
+        self.assertTrue(_logo_src('data:image/png;base64,AAAA').startswith('data:'))
+        self.assertEqual(_logo_src(''), '')
+        with self.app.test_request_context():
+            self.assertIn('uploads/x.png', _logo_src('uploads/x.png'))
+
     def test_admin_can_resend_and_revoke_setup_links(self):
         self.login_admin()
         email = 'resend.setup@example.com'
