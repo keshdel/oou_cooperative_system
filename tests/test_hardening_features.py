@@ -640,6 +640,81 @@ class HardeningFeatureTests(unittest.TestCase):
             db.execute('DELETE FROM members WHERE id = ?', (member_id,))
             db.commit()
 
+    def test_retry_campaign_resumes_stranded_queued_recipients(self):
+        """A worker restart/redeploy can strand a campaign's recipients at
+        'queued' with the campaign stuck 'sending'. The Retry route must re-run
+        the sender so those recipients leave 'queued' and the campaign reaches a
+        terminal state — without re-sending anyone already marked 'sent'."""
+        from datetime import datetime
+        from database import last_insert_id
+        self.login_admin()
+        with self.app.app_context():
+            db = get_db()
+            db.execute('''
+                INSERT INTO members
+                    (member_number, employee_id, first_name, last_name, email,
+                     phone, status, monthly_savings, total_savings, date_joined)
+                VALUES
+                    ('OOU/TEST/CMM1', 'EMP-CMM1', 'Cam', 'Paign',
+                     'cam.paign@example.com', '08000000041', 'active',
+                     15000, 100000, '2024-01-01')
+            ''')
+            member_id = db.execute(
+                "SELECT id FROM members WHERE member_number = 'OOU/TEST/CMM1'"
+            ).fetchone()['id']
+            db.execute('''
+                INSERT INTO communication_campaigns
+                    (title, audience, channel, subject, body, status,
+                     recipient_count, created_by, created_at)
+                VALUES ('Stuck campaign', 'active', 'email', 'Hi {first_name}',
+                        'Hello', 'sending', 2, 1, ?)
+            ''', (datetime.now(),))
+            campaign_id = last_insert_id(db)
+            # One already delivered, one stranded at 'queued' by a crashed worker.
+            db.execute('''
+                INSERT INTO communication_recipients
+                    (campaign_id, member_id, channel, destination, status, error, created_at)
+                VALUES (?, ?, 'email', 'cam.paign@example.com', 'sent', '', ?)
+            ''', (campaign_id, member_id, datetime.now()))
+            db.execute('''
+                INSERT INTO communication_recipients
+                    (campaign_id, member_id, channel, destination, status, error, created_at)
+                VALUES (?, ?, 'email', 'cam.paign@example.com', 'queued', '', ?)
+            ''', (campaign_id, member_id, datetime.now()))
+            db.commit()
+
+        resp = self.client.post(f'/communications/{campaign_id}/retry',
+                                follow_redirects=False)
+        self.assertIn(resp.status_code, (302, 303))
+
+        with self.app.app_context():
+            db = get_db()
+            stuck = db.execute(
+                "SELECT COUNT(*) AS c FROM communication_recipients "
+                "WHERE campaign_id = ? AND status = 'queued'", (campaign_id,)
+            ).fetchone()['c']
+            self.assertEqual(stuck, 0, 'retry should drain all queued recipients')
+            campaign = db.execute(
+                "SELECT status FROM communication_campaigns WHERE id = ?", (campaign_id,)
+            ).fetchone()
+            self.assertNotEqual(campaign['status'], 'sending',
+                                'campaign should reach a terminal state after retry')
+
+            db.execute('DELETE FROM communication_recipients WHERE campaign_id = ?', (campaign_id,))
+            db.execute('DELETE FROM communication_campaigns WHERE id = ?', (campaign_id,))
+            db.execute('DELETE FROM members WHERE id = ?', (member_id,))
+            db.commit()
+
+    def test_portal_link_does_not_raise_without_request_context(self):
+        """The background campaign sender runs with only an app context. Building
+        an external URL there used to raise (no request context / SERVER_NAME),
+        crashing the send loop and stranding recipients at 'queued'. _portal_link
+        must degrade gracefully instead of raising."""
+        from blueprints import communications as comm
+        with self.app.app_context():   # app context only — no request context
+            link = comm._portal_link()
+            self.assertIsInstance(link, str)
+
     def test_admin_can_resend_and_revoke_setup_links(self):
         self.login_admin()
         email = 'resend.setup@example.com'

@@ -152,10 +152,24 @@ def _settings_value(db, key, default=''):
 
 
 def _portal_link():
-    return url_for('portal.member_portal', _external=True)
+    """Absolute URL to the member portal.
+
+    Building an external URL needs either a request context or SERVER_NAME.
+    The background campaign sender has neither (it runs on a worker thread with
+    only an app context), so guard against the RuntimeError url_for would raise
+    there and fall back to a relative path. Route handlers call this inside a
+    request and pass the absolute result into the background job.
+    """
+    try:
+        return url_for('portal.member_portal', _external=True)
+    except Exception:
+        try:
+            return url_for('portal.member_portal')
+        except Exception:
+            return ''
 
 
-def _member_context(db, member):
+def _member_context(db, member, portal_url=None):
     savings_balance = member_savings_balance(db, member['id'])
     loan_balance = _member_loan_balance(db, member['id'])
     loan_monthly_payment, loan_next_payment_date = _member_loan_summary(db, member['id'])
@@ -174,7 +188,7 @@ def _member_context(db, member):
         'loan_monthly_payment': f"NGN {loan_monthly_payment:,.2f}",
         'loan_next_payment_date': loan_next_payment_date,
         'profile_completion': f"{_profile_percent(member)}%",
-        'portal_link': _portal_link(),
+        'portal_link': portal_url if portal_url is not None else _portal_link(),
     }
 
 
@@ -329,14 +343,20 @@ def index():
     return render_template('communications/index.html', campaigns=campaigns)
 
 
-def _process_campaign(campaign_id):
+def _process_campaign(campaign_id, portal_url=None):
     """Send every queued recipient of a campaign and record the outcome.
 
     Runs in the background (see run_in_background) so a large member list never
     blocks the web request. Each recipient's status is committed as it is sent,
     so the campaign detail page shows delivery progress live on refresh.
+
+    ``portal_url`` is built by the calling route (which has a request context)
+    and passed in, because ``url_for(_external=True)`` cannot build a URL on the
+    worker thread without SERVER_NAME configured.
     """
     db = get_db()
+    if portal_url is None:
+        portal_url = _portal_link()
     campaign = db.execute(
         'SELECT * FROM communication_campaigns WHERE id = ?', (campaign_id,)
     ).fetchone()
@@ -355,7 +375,7 @@ def _process_campaign(campaign_id):
     sent = failed = 0
     for r in recipients:
         destination = (r['destination'] or '').strip()
-        ctx = _member_context(db, r)
+        ctx = _member_context(db, r, portal_url)
         member_subject = _render_message(subject, ctx)
         member_body = _render_message(body, ctx)
         ok = send_email(destination, member_subject, _body_to_html(member_body))
@@ -376,19 +396,35 @@ def _process_campaign(campaign_id):
         ))
         db.commit()
 
-    skipped = db.execute(
-        "SELECT COUNT(*) AS c FROM communication_recipients "
-        "WHERE campaign_id = ? AND status = 'skipped'", (campaign_id,)
-    ).fetchone()['c']
-    final_status = 'sent' if failed == 0 else ('partial' if sent else 'failed')
+    # Derive final tallies from the whole recipient set (not just this run's
+    # loop counters) so a resumed campaign keeps the sends from earlier runs.
+    totals = db.execute('''
+        SELECT
+            SUM(CASE WHEN status = 'sent'    THEN 1 ELSE 0 END) AS sent,
+            SUM(CASE WHEN status = 'failed'  THEN 1 ELSE 0 END) AS failed,
+            SUM(CASE WHEN status = 'skipped' THEN 1 ELSE 0 END) AS skipped,
+            SUM(CASE WHEN status = 'queued'  THEN 1 ELSE 0 END) AS queued
+        FROM communication_recipients WHERE campaign_id = ?
+    ''', (campaign_id,)).fetchone()
+    sent_total = totals['sent'] or 0
+    failed_total = totals['failed'] or 0
+    skipped_total = totals['skipped'] or 0
+    queued_total = totals['queued'] or 0
+    # Anything still queued means the run was interrupted again; keep 'sending'
+    # so the Retry action stays available.
+    if queued_total:
+        final_status = 'sending'
+    else:
+        final_status = 'sent' if failed_total == 0 else ('partial' if sent_total else 'failed')
     db.execute('''
         UPDATE communication_campaigns
            SET status = ?, sent_count = ?, failed_count = ?, skipped_count = ?, sent_at = ?
          WHERE id = ?
-    ''', (final_status, sent, failed, skipped, datetime.now(), campaign_id))
+    ''', (final_status, sent_total, failed_total, skipped_total, datetime.now(), campaign_id))
     db.commit()
     audit(db, 'SEND_COMMUNICATION', 'communications',
-          f'Campaign {campaign_id}: {sent} sent, {failed} failed, {skipped} skipped')
+          f'Campaign {campaign_id}: {sent} sent, {failed} failed this run '
+          f'({sent_total}/{campaign["recipient_count"]} sent total)')
 
 
 @communications.route('/new', methods=['GET', 'POST'])
@@ -457,7 +493,9 @@ def new_campaign():
                   f'Campaign {campaign_id}: {queued} queued, {skipped} skipped')
 
             # Hand the sending loop to a background worker (runs inline in tests).
-            run_in_background(_process_campaign, campaign_id)
+            # Build the portal URL here, in the request, and pass it down — the
+            # worker thread cannot build an external URL on its own.
+            run_in_background(_process_campaign, campaign_id, _portal_link())
 
             if queued:
                 flash(f'Campaign queued: sending to {queued} member(s) in the '
@@ -496,4 +534,43 @@ def campaign_detail(campaign_id):
         WHERE cr.campaign_id = ?
         ORDER BY cr.id
     ''', (campaign_id,)).fetchall()
-    return render_template('communications/detail.html', campaign=campaign, recipients=recipients)
+    queued_count = sum(1 for r in recipients if r['status'] == 'queued')
+    return render_template('communications/detail.html', campaign=campaign,
+                           recipients=recipients, queued_count=queued_count)
+
+
+@communications.route('/<int:campaign_id>/retry', methods=['POST'])
+@login_required
+@role_required('admin', 'secretary')
+def retry_campaign(campaign_id):
+    """Resume a campaign whose background sender never finished.
+
+    A worker restart, redeploy, or OOM can kill the send loop mid-flight,
+    stranding recipients at 'queued' with no way to recover from the UI.
+    Re-dispatching _process_campaign is safe: it only ever picks up recipients
+    still marked 'queued', so already-sent members are never emailed twice.
+    """
+    db = get_db()
+    campaign = db.execute(
+        'SELECT id FROM communication_campaigns WHERE id = ?', (campaign_id,)
+    ).fetchone()
+    if not campaign:
+        flash('Campaign not found.', 'danger')
+        return redirect(url_for('communications.index'))
+    pending = db.execute(
+        "SELECT COUNT(*) AS c FROM communication_recipients "
+        "WHERE campaign_id = ? AND status = 'queued'", (campaign_id,)
+    ).fetchone()['c']
+    if not pending:
+        flash('Nothing to retry — no recipients are still queued for this campaign.', 'info')
+        return redirect(url_for('communications.campaign_detail', campaign_id=campaign_id))
+    db.execute("UPDATE communication_campaigns SET status = 'sending' WHERE id = ?", (campaign_id,))
+    db.commit()
+    audit(db, 'RETRY_COMMUNICATION', 'communications',
+          f'Campaign {campaign_id}: resuming {pending} queued recipient(s)')
+    # Hand the sending loop to a background worker (runs inline in tests).
+    # Build the portal URL here, in the request, and pass it down.
+    run_in_background(_process_campaign, campaign_id, _portal_link())
+    flash(f'Resuming delivery to {pending} queued member(s) in the background. '
+          f'Refresh this page to watch progress.', 'success')
+    return redirect(url_for('communications.campaign_detail', campaign_id=campaign_id))
