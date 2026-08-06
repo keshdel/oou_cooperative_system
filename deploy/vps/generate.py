@@ -66,11 +66,20 @@ def render_compose(clients):
             f"      - ./clients/{n}.env",
             "    environment:",
             f"      DATABASE_URL: postgresql://postgres:${{POSTGRES_PASSWORD}}@postgres:5432/coop_{n}",
+            "    volumes:",
+            # Persist uploaded files (member photos, payout evidence) across
+            # rebuilds. One volume per client so societies stay isolated.
+            f"      - uploads-{n}:/app/static/uploads",
             "    depends_on:",
             "      postgres:",
             "        condition: service_healthy",
             "",
         ]
+    if clients:
+        lines.append("volumes:")
+        for c in clients:
+            lines.append(f"  uploads-{c['name']}:")
+        lines.append("")
     return "\n".join(lines) + "\n"
 
 
