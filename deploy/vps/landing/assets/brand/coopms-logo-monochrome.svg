@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 940 220" role="img" aria-labelledby="title desc">
+  <title id="title">COOPMS monochrome logo</title>
+  <desc id="desc">Single-color COOPMS logo.</desc>
+  <defs>
+    <style>
+      .ink { fill: #082b66; }
+      .stroke-ink { fill: none; stroke: #082b66; stroke-width: 17; stroke-linecap: round; stroke-linejoin: round; }
+      .wordmark {
+        fill: #082b66;
+        font-family: "Inter", "Montserrat", "Arial", sans-serif;
+        font-size: 116px;
+        font-weight: 900;
+        letter-spacing: -7px;
+      }
+    </style>
+  </defs>
+  <g transform="translate(20 10) scale(.78)">
+    <path class="stroke-ink" d="M68 64 128 30 188 64" />
+    <path class="stroke-ink" d="M44 102v70l84 48 56-32" />
+    <path class="stroke-ink" d="M212 102v70" />
+    <path class="stroke-ink" d="M82 132h36" />
+    <path class="stroke-ink" d="m98 130 30 30 54-68" />
+    <circle class="ink" cx="68" cy="64" r="24" />
+    <circle class="ink" cx="128" cy="30" r="24" />
+    <circle class="ink" cx="188" cy="64" r="24" />
+    <circle class="ink" cx="44" cy="102" r="24" />
+    <circle class="ink" cx="44" cy="172" r="24" />
+    <circle class="ink" cx="128" cy="220" r="24" />
+    <circle class="ink" cx="212" cy="102" r="24" />
+    <circle class="ink" cx="212" cy="172" r="24" />
+  </g>
+  <text class="wordmark" x="238" y="142">COOPMS</text>
+</svg>

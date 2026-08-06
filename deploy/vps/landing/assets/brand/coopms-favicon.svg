@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title">
+  <title id="title">COOPMS favicon</title>
+  <rect width="256" height="256" rx="52" fill="#082b66" />
+  <path d="M68 64 128 30 188 64" fill="none" stroke="#ffffff" stroke-width="20" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M44 102v70l84 48 56-32" fill="none" stroke="#ffffff" stroke-width="20" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M212 102v70" fill="none" stroke="#f4b51c" stroke-width="20" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M82 132h36" fill="none" stroke="#ffffff" stroke-width="20" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="m98 130 30 30 54-68" fill="none" stroke="#ffffff" stroke-width="20" stroke-linecap="round" stroke-linejoin="round" />
+  <circle fill="#ffffff" cx="68" cy="64" r="24" />
+  <circle fill="#ffffff" cx="128" cy="30" r="24" />
+  <circle fill="#f4b51c" cx="188" cy="64" r="24" />
+  <circle fill="#ffffff" cx="44" cy="102" r="24" />
+  <circle fill="#ffffff" cx="44" cy="172" r="24" />
+  <circle fill="#ffffff" cx="128" cy="220" r="24" />
+  <circle fill="#f4b51c" cx="212" cy="102" r="24" />
+  <circle fill="#f4b51c" cx="212" cy="172" r="24" />
+</svg>

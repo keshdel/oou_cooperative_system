@@ -8,14 +8,14 @@
 <meta property="og:title" content="CoopMS — The financial backbone for cooperative societies">
 <meta property="og:description" content="Members, savings, share capital, loans and investments on a real double-entry ledger. Audit-ready. A portal for every member.">
 <meta property="og:type" content="website">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Crect width='48' height='48' rx='13' fill='%232563eb'/%3E%3Cpath d='M12.5 31 24 19.5 35.5 31' fill='none' stroke='%2334d399' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3Ccircle cx='24' cy='13.5' r='3.1' fill='white'/%3E%3Ccircle cx='12.5' cy='31' r='3.1' fill='white'/%3E%3Ccircle cx='35.5' cy='31' r='3.1' fill='white'/%3E%3C/svg%3E">
+<link rel="icon" type="image/svg+xml" href="assets/brand/coopms-favicon.svg">
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
   :root{
-    --ink:#0b1a30; --head:#0c2036; --body:#3c4a60; --muted:#647089; --faint:#8a97ad;
-    --paper:#fff; --mist:#f5f8fc; --mist2:#eef3fa; --line:#e5ebf4; --line2:#d9e1ee;
-    --navy:#0d1f3a; --navy2:#122a4d; --brand:#1e4d8c; --blue:#2563eb; --blue-d:#1d4ed8;
-    --accent:#059669; --accent-l:#10b981; --accent-x:#34d399;
+    --ink:#082b66; --head:#082b66; --body:#3c4a60; --muted:#5f6d86; --faint:#8a97ad;
+    --paper:#fff; --mist:#f5f7fb; --mist2:#eef2f8; --line:#e4e9f2; --line2:#d7deeb;
+    --navy:#082b66; --navy2:#0a3373; --brand:#082b66; --blue:#082b66; --blue-d:#0a3576;
+    --accent:#f4b51c; --accent-l:#f4b51c; --accent-x:#f7c948; --gold-d:#b9820a;
     --mono:ui-monospace,'SF Mono','Cascadia Code','Roboto Mono',Menlo,Consolas,monospace;
     --r:12px; --r-lg:18px; --sh:0 1px 2px rgba(12,32,54,.04),0 12px 30px rgba(12,32,54,.08);
     --sh-sm:0 1px 2px rgba(12,32,54,.05),0 6px 16px rgba(12,32,54,.06);
@@ -34,8 +34,8 @@
   .ic{ width:22px; height:22px; stroke:currentColor; stroke-width:1.7; fill:none; stroke-linecap:round; stroke-linejoin:round; }
 
   .btn{ display:inline-flex; align-items:center; gap:8px; font-weight:600; font-size:15px; padding:12px 22px; border-radius:10px; border:1px solid transparent; cursor:pointer; transition:.16s; white-space:nowrap; }
-  .btn-primary{ background:var(--blue); color:#fff; box-shadow:0 6px 16px rgba(37,99,235,.25); }
-  .btn-primary:hover{ background:var(--blue-d); transform:translateY(-1px); }
+  .btn-primary{ background:var(--accent); color:var(--navy); font-weight:700; box-shadow:0 6px 16px rgba(244,181,28,.38); }
+  .btn-primary:hover{ background:#e2a613; transform:translateY(-1px); }
   .btn-line{ background:#fff; color:var(--head); border-color:var(--line2); }
   .btn-line:hover{ border-color:var(--blue); color:var(--blue); }
   .btn-text{ color:var(--head); font-weight:600; padding:12px 6px; }
@@ -72,11 +72,11 @@
   .hero::before{ content:""; position:absolute; inset:0; background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px); background-size:34px 34px; opacity:.4; -webkit-mask-image:radial-gradient(120% 90% at 70% 0%,#000 30%,transparent 72%); mask-image:radial-gradient(120% 90% at 70% 0%,#000 30%,transparent 72%); }
   .hero .wrap{ position:relative; display:grid; grid-template-columns:1.02fr .98fr; gap:56px; align-items:center; padding:74px 24px 82px; }
   .hero h1{ font-size:clamp(34px,4.6vw,56px); }
-  .hero h1 em{ font-style:normal; color:var(--blue); }
+  .hero h1 em{ font-style:normal; background:linear-gradient(transparent 60%,rgba(244,181,28,.5) 60%); padding:0 3px; }
   .hero .lead{ margin:22px 0 30px; max-width:540px; font-size:19px; }
   .hero-cta{ display:flex; gap:14px; flex-wrap:wrap; align-items:center; }
   .hero-note{ margin-top:26px; display:flex; align-items:center; gap:10px; color:var(--muted); font-size:14px; }
-  .hero-note .ic{ width:18px; height:18px; color:var(--accent); }
+  .hero-note .ic{ width:18px; height:18px; color:var(--brand); }
   @media(max-width:920px){ .hero .wrap{ grid-template-columns:1fr; gap:38px; padding:52px 24px 60px; } .hero-visual{ order:2; } }
 
   /* Product panel (reusable UI) */
@@ -88,9 +88,9 @@
   .ui-hd h4{ font-size:15px; }
   .ui-b{ padding:8px 18px 18px; }
   .chip{ font-size:11.5px; font-weight:700; padding:4px 10px; border-radius:999px; display:inline-flex; align-items:center; gap:6px; }
-  .chip-ok{ background:#e4f7ee; color:var(--accent); }
-  .chip-blue{ background:#e9f0fd; color:var(--blue); }
-  .chip-warn{ background:#fdf0e0; color:#b5730b; }
+  .chip-ok{ background:#e9eff8; color:var(--navy); }
+  .chip-blue{ background:#eef1f6; color:#55627d; }
+  .chip-warn{ background:#fdf3d7; color:var(--gold-d); }
   .chip .dot{ width:7px; height:7px; border-radius:50%; background:currentColor; }
   .lrow{ display:flex; justify-content:space-between; align-items:center; padding:11px 0; border-bottom:1px solid var(--mist2); font-size:14px; }
   .lrow:last-child{ border-bottom:0; }
@@ -124,7 +124,7 @@
   .tab{ display:inline-flex; align-items:center; gap:9px; padding:12px 16px; font-weight:600; font-size:14.5px; color:var(--muted); background:none; border:0; border-bottom:2px solid transparent; cursor:pointer; margin-bottom:-1px; transition:.15s; }
   .tab .ic{ width:19px; height:19px; }
   .tab:hover{ color:var(--head); }
-  .tab.active{ color:var(--blue); border-bottom-color:var(--blue); }
+  .tab.active{ color:var(--brand); border-bottom-color:var(--accent); }
   .pane{ display:none; }
   .pane.active{ display:grid; grid-template-columns:1fr 1.05fr; gap:52px; align-items:center; animation:fade .3s ease; }
   @keyframes fade{ from{ opacity:0; transform:translateY(6px); } to{ opacity:1; transform:none; } }
@@ -132,7 +132,7 @@
   .pane p{ color:var(--muted); font-size:16px; margin-bottom:20px; }
   .flist{ list-style:none; display:grid; gap:13px; }
   .flist li{ display:flex; gap:12px; font-size:15px; color:var(--head); }
-  .flist .ic{ width:22px; height:22px; flex:none; color:var(--accent); margin-top:1px; }
+  .flist .ic{ width:22px; height:22px; flex:none; color:var(--brand); margin-top:1px; }
   @media(max-width:860px){ .pane.active{ grid-template-columns:1fr; gap:30px; } .pane .ui{ order:2; } }
 
   /* Value / differentiators */
@@ -180,7 +180,7 @@
   .plan .amt b{ font-size:26px; color:var(--head); font-weight:800; }
   .plan ul{ list-style:none; display:grid; gap:11px; margin-bottom:24px; }
   .plan li{ display:flex; gap:10px; font-size:14px; color:var(--head); }
-  .plan li .ic{ width:19px; height:19px; color:var(--accent); flex:none; }
+  .plan li .ic{ width:19px; height:19px; color:var(--brand); flex:none; }
   .plan .btn{ margin-top:auto; justify-content:center; }
 
   /* FAQ */
@@ -245,7 +245,7 @@
 <!-- Utility bar -->
 <div class="util">
   <div class="wrap">
-    <div class="l"><svg class="ic" style="width:15px;height:15px;color:#34d399"><use href="#i-check-c"/></svg><span>The financial backbone for cooperative &amp; thrift societies</span></div>
+    <div class="l"><svg class="ic" style="width:15px;height:15px;color:#f7c948"><use href="#i-check-c"/></svg><span>Digital Cooperative Management Platform</span></div>
     <a href="mailto:hello@cooperativems.com">Talk to us →</a>
   </div>
 </div>
@@ -253,7 +253,7 @@
 <!-- Header -->
 <header>
   <div class="wrap nav">
-    <a class="brand" href="#top"><svg class="logo-mark" viewBox="0 0 48 48" aria-hidden="true"><rect width="48" height="48" rx="13" fill="url(#cmGrad)"/><circle cx="24" cy="24" r="13" fill="none" stroke="#fff" stroke-opacity=".28" stroke-width="2"/><path d="M12.5 31 24 19.5 35.5 31" fill="none" stroke="#34d399" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="24" cy="13.5" r="3.1" fill="#fff"/><circle cx="12.5" cy="31" r="3.1" fill="#fff"/><circle cx="35.5" cy="31" r="3.1" fill="#fff"/></svg>Coop<span>MS</span></a>
+    <a class="brand" href="#top"><svg class="logo-mark" viewBox="0 0 256 256" aria-hidden="true"><path d="M68 64 128 30 188 64" fill="none" stroke="#082b66" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/><path d="M44 102v70l84 48 56-32" fill="none" stroke="#082b66" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/><path d="M212 102v70" fill="none" stroke="#f4b51c" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/><path d="M82 132h36" fill="none" stroke="#082b66" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/><path d="m98 130 30 30 54-68" fill="none" stroke="#082b66" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/><circle fill="#082b66" cx="68" cy="64" r="24"/><circle fill="#082b66" cx="128" cy="30" r="24"/><circle fill="#f4b51c" cx="188" cy="64" r="24"/><circle fill="#082b66" cx="44" cy="102" r="24"/><circle fill="#082b66" cx="44" cy="172" r="24"/><circle fill="#082b66" cx="128" cy="220" r="24"/><circle fill="#f4b51c" cx="212" cy="102" r="24"/><circle fill="#f4b51c" cx="212" cy="172" r="24"/></svg><span class="wm">COOPMS</span></a>
     <button class="menu-btn" aria-label="Menu" onclick="document.getElementById('nav').classList.toggle('open')"><svg class="ic" style="width:26px;height:26px"><use href="#i-layers"/></svg></button>
     <nav class="nav-c" id="nav">
       <a href="#platform">Platform</a>
@@ -273,7 +273,7 @@
 <section class="hero" id="top" style="padding:0">
   <div class="wrap">
     <div>
-      <div class="kicker">Cooperative Management Platform</div>
+      <div class="kicker">Digital Cooperative Management Platform</div>
       <h1 style="margin-top:18px">The financial backbone for <em>cooperative societies</em>.</h1>
       <p class="lead">CoopMS unifies members, savings, share capital, loans and investments on a real double-entry ledger — so every naira is accounted for, your books are audit-ready, and every member can see exactly where they stand.</p>
       <div class="hero-cta">
@@ -414,7 +414,7 @@
           <div class="lrow"><span class="k">Loan interest income</span><span class="v num">₦3,887,744</span></div>
           <div class="lrow"><span class="k">Investment income</span><span class="v num">₦1,030,000</span></div>
           <div class="lrow"><span class="k">Operating expenses</span><span class="v num">(₦742,900)</span></div>
-          <div class="lrow"><span class="k">Net surplus</span><span class="v num" style="color:var(--accent)">₦4,174,844</span></div>
+          <div class="lrow"><span class="k">Net surplus</span><span class="v num" style="color:var(--brand);font-weight:700">₦4,174,844</span></div>
         </div>
       </div>
     </div>
@@ -603,7 +603,7 @@
   <div class="wrap">
     <div class="fgrid">
       <div>
-        <div class="fbrand"><svg class="logo-mark" viewBox="0 0 48 48" aria-hidden="true"><rect width="48" height="48" rx="13" fill="url(#cmGrad)"/><circle cx="24" cy="24" r="13" fill="none" stroke="#fff" stroke-opacity=".28" stroke-width="2"/><path d="M12.5 31 24 19.5 35.5 31" fill="none" stroke="#34d399" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/><circle cx="24" cy="13.5" r="3.1" fill="#fff"/><circle cx="12.5" cy="31" r="3.1" fill="#fff"/><circle cx="35.5" cy="31" r="3.1" fill="#fff"/></svg>Coop<span>MS</span></div>
+        <div class="fbrand"><svg class="logo-mark" viewBox="0 0 256 256" aria-hidden="true"><path d="M68 64 128 30 188 64" fill="none" stroke="#fff" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/><path d="M44 102v70l84 48 56-32" fill="none" stroke="#fff" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/><path d="M212 102v70" fill="none" stroke="#f4b51c" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/><path d="M82 132h36" fill="none" stroke="#fff" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/><path d="m98 130 30 30 54-68" fill="none" stroke="#fff" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/><circle fill="#fff" cx="68" cy="64" r="24"/><circle fill="#fff" cx="128" cy="30" r="24"/><circle fill="#f4b51c" cx="188" cy="64" r="24"/><circle fill="#fff" cx="44" cy="102" r="24"/><circle fill="#fff" cx="44" cy="172" r="24"/><circle fill="#fff" cx="128" cy="220" r="24"/><circle fill="#f4b51c" cx="212" cy="102" r="24"/><circle fill="#f4b51c" cx="212" cy="172" r="24"/></svg>COOPMS</div>
         <p style="font-size:14px;max-width:290px">The financial backbone for cooperative and thrift societies — members, money and the books, on one platform.</p>
       </div>
       <div>
