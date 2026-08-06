@@ -715,6 +715,35 @@ class HardeningFeatureTests(unittest.TestCase):
             link = comm._portal_link()
             self.assertIsInstance(link, str)
 
+    def test_notifications_page_renders_with_string_dates(self):
+        """DB datetimes reach templates as strings (see database._coerce), so the
+        notifications page calling .strftime on created_at 500'd once any
+        notification existed. The page must render (200) with a notification
+        present."""
+        from datetime import datetime
+        self.login_admin()
+        with self.app.app_context():
+            db = get_db()
+            admin_id = db.execute(
+                "SELECT id FROM users WHERE username = 'admin'"
+            ).fetchone()['id']
+            db.execute('''
+                INSERT INTO notifications
+                    (user_id, title, message, notification_type, is_read, action_url, created_at)
+                VALUES (?, 'Test notice', 'Body text', 'info', 0, '/dashboard', ?)
+            ''', (admin_id, datetime.now()))
+            db.commit()
+
+        resp = self.client.get('/notifications', follow_redirects=False)
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b'Test notice', resp.data)
+
+        with self.app.app_context():
+            db = get_db()
+            db.execute("DELETE FROM notifications WHERE user_id = ? AND title = 'Test notice'",
+                       (admin_id,))
+            db.commit()
+
     def test_admin_can_resend_and_revoke_setup_links(self):
         self.login_admin()
         email = 'resend.setup@example.com'

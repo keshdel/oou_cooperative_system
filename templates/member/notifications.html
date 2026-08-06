@@ -47,7 +47,7 @@
                                 {% if notification.important %}<span class="badge bg-danger me-2">Important</span>{% endif %}
                                 {{ notification.title }}
                             </h6>
-                            <small class="text-muted">{{ notification.created_at.strftime('%d/%m/%Y %H:%M') }}</small>
+                            <small class="text-muted">{{ notification.created_at|fmtdt }}</small>
                         </div>
                         <p class="mb-1">{{ notification.message|truncate(100) }}</p>
                         <small>

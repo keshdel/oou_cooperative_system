@@ -147,6 +147,29 @@ csrf.exempt(app.view_functions['payments.flutterwave_webhook'])
 
 # ── Context processor ─────────────────────────────────────────────────────────
 
+@app.template_filter('fmtdt')
+def _fmt_datetime(value, fmt='%d/%m/%Y %H:%M'):
+    """Safely format a date/datetime for display in templates.
+
+    Database date/datetime values reach templates as strings
+    ('YYYY-MM-DD[ HH:MM:SS]') because _coerce normalises them (see database.py),
+    so calling .strftime() on them raises AttributeError and 500s the page.
+    This filter accepts a str, datetime, date, or None and never raises.
+    """
+    if not value:
+        return ''
+    if hasattr(value, 'strftime'):
+        return value.strftime(fmt)
+    from datetime import datetime as _dt
+    text = str(value)
+    for parse_fmt in ('%Y-%m-%d %H:%M:%S', '%Y-%m-%d %H:%M', '%Y-%m-%d'):
+        try:
+            return _dt.strptime(text[:19], parse_fmt).strftime(fmt)
+        except ValueError:
+            continue
+    return text
+
+
 @app.context_processor
 def utility_processor():
     db = get_db()
