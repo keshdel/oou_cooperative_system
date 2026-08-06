@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">COOPMS mark</title>
+  <desc id="desc">Connected digital cooperative mark with a check motif.</desc>
+  <defs>
+    <style>
+      .navy { fill: #082b66; }
+      .yellow { fill: #f4b51c; }
+      .stroke-navy { fill: none; stroke: #082b66; stroke-width: 20; stroke-linecap: round; stroke-linejoin: round; }
+      .stroke-yellow { fill: none; stroke: #f4b51c; stroke-width: 20; stroke-linecap: round; stroke-linejoin: round; }
+    </style>
+  </defs>
+  <path class="stroke-navy" d="M68 64 128 30 188 64" />
+  <path class="stroke-navy" d="M44 102v70l84 48 56-32" />
+  <path class="stroke-yellow" d="M212 102v70" />
+  <path class="stroke-navy" d="M82 132h36" />
+  <path class="stroke-navy" d="m98 130 30 30 54-68" />
+  <circle class="navy" cx="68" cy="64" r="24" />
+  <circle class="navy" cx="128" cy="30" r="24" />
+  <circle class="yellow" cx="188" cy="64" r="24" />
+  <circle class="navy" cx="44" cy="102" r="24" />
+  <circle class="navy" cx="44" cy="172" r="24" />
+  <circle class="navy" cx="128" cy="220" r="24" />
+  <circle class="yellow" cx="212" cy="102" r="24" />
+  <circle class="yellow" cx="212" cy="172" r="24" />
+</svg>

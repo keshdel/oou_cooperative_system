@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 360" role="img" aria-labelledby="title desc">
+  <title id="title">COOPMS logo with tagline</title>
+  <desc id="desc">COOPMS logo with Digital Cooperative Management Platform tagline.</desc>
+  <defs>
+    <style>
+      .navy { fill: #082b66; }
+      .yellow { fill: #f4b51c; }
+      .white { fill: #ffffff; }
+      .stroke-navy { fill: none; stroke: #082b66; stroke-width: 17; stroke-linecap: round; stroke-linejoin: round; }
+      .stroke-yellow { fill: none; stroke: #f4b51c; stroke-width: 17; stroke-linecap: round; stroke-linejoin: round; }
+      .wordmark {
+        fill: #082b66;
+        font-family: "Inter", "Montserrat", "Arial", sans-serif;
+        font-size: 116px;
+        font-weight: 900;
+        letter-spacing: -7px;
+      }
+      .tagline {
+        fill: #ffffff;
+        font-family: "Inter", "Montserrat", "Arial", sans-serif;
+        font-size: 42px;
+        font-weight: 700;
+        letter-spacing: .2px;
+      }
+    </style>
+  </defs>
+  <g transform="translate(52 18) scale(.78)">
+    <path class="stroke-navy" d="M68 64 128 30 188 64" />
+    <path class="stroke-navy" d="M44 102v70l84 48 56-32" />
+    <path class="stroke-yellow" d="M212 102v70" />
+    <path class="stroke-navy" d="M82 132h36" />
+    <path class="stroke-navy" d="m98 130 30 30 54-68" />
+    <circle class="navy" cx="68" cy="64" r="24" />
+    <circle class="navy" cx="128" cy="30" r="24" />
+    <circle class="yellow" cx="188" cy="64" r="24" />
+    <circle class="navy" cx="44" cy="102" r="24" />
+    <circle class="navy" cx="44" cy="172" r="24" />
+    <circle class="navy" cx="128" cy="220" r="24" />
+    <circle class="yellow" cx="212" cy="102" r="24" />
+    <circle class="yellow" cx="212" cy="172" r="24" />
+  </g>
+  <text class="wordmark" x="270" y="150">COOPMS</text>
+  <rect class="navy" x="52" y="226" width="936" height="82" rx="6" />
+  <text class="tagline" x="520" y="281" text-anchor="middle">Digital Cooperative Management Platform</text>
+</svg>
