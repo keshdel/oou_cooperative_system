@@ -185,6 +185,24 @@
   .plan li .ic{ width:19px; height:19px; color:var(--brand); flex:none; }
   .plan .btn{ margin-top:auto; justify-content:center; }
 
+  /* Campaign conversion sections */
+  .campaign-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:18px; margin-top:42px; }
+  .campaign-card{ background:#fff; border:1px solid var(--line); border-radius:var(--r-lg); padding:24px; box-shadow:var(--sh-sm); display:flex; flex-direction:column; }
+  .campaign-card .tag{ width:max-content; background:#fdf3d7; color:var(--gold-d); border-radius:999px; padding:5px 10px; font-size:11px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; margin-bottom:14px; }
+  .campaign-card h3{ font-size:20px; margin-bottom:10px; }
+  .campaign-card p{ color:var(--muted); font-size:14.5px; margin-bottom:16px; }
+  .campaign-card ul{ list-style:none; display:grid; gap:9px; margin-bottom:20px; }
+  .campaign-card li{ display:flex; gap:9px; color:var(--head); font-size:14px; }
+  .campaign-card li .ic{ width:18px; height:18px; color:var(--brand); flex:none; }
+  .campaign-card .btn{ margin-top:auto; justify-content:center; }
+  .lead-magnets{ display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-top:42px; }
+  .magnet{ background:#fff; border:1px solid var(--line); border-radius:var(--r-lg); padding:24px; box-shadow:var(--sh-sm); }
+  .magnet h3{ font-size:19px; margin-bottom:8px; }
+  .magnet p{ color:var(--muted); font-size:14.5px; margin-bottom:16px; }
+  .magnet .mini{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:18px; }
+  .magnet .mini span{ background:var(--mist); border:1px solid var(--line); color:var(--head); border-radius:999px; padding:5px 10px; font-size:12px; font-weight:700; }
+  @media(max-width:920px){ .campaign-grid,.lead-magnets{ grid-template-columns:1fr; } }
+
   /* FAQ */
   .faq{ display:grid; gap:12px; margin-top:40px; max-width:860px; }
   details{ border:1px solid var(--line); border-radius:var(--r); background:#fff; padding:2px 22px; }
@@ -277,6 +295,7 @@
       <a href="#platform">Platform</a>
       <a href="#accounting">Accounting</a>
       <a href="#security">Security</a>
+      <a href="#campaigns">Use cases</a>
       <a href="#pricing">Pricing</a>
       <a href="#faq">FAQ</a>
     </nav>
@@ -586,6 +605,77 @@
   </div>
 </section>
 
+<!-- Campaign use cases -->
+<section id="campaigns">
+  <div class="wrap">
+    <div class="sec-head center">
+      <div class="kicker" style="justify-content:center">Built for your society</div>
+      <h2>Promote a cleaner, more transparent cooperative office</h2>
+      <p class="lead">Whether you run a staff cooperative, teachers society, faith-based group or multipurpose society, CoopMS gives officers the controls and members the visibility they expect.</p>
+    </div>
+    <div class="campaign-grid">
+      <div class="campaign-card">
+        <div class="tag">Staff cooperatives</div>
+        <h3>Salary deduction societies</h3>
+        <p>Move from monthly spreadsheet uploads to reconciled member savings, loan deductions, HR-backed affordability checks and member self-service.</p>
+        <ul>
+          <li><svg class="ic"><use href="#i-check"/></svg>Upload payroll deductions</li>
+          <li><svg class="ic"><use href="#i-check"/></svg>Track savings and loan repayment balances</li>
+          <li><svg class="ic"><use href="#i-check"/></svg>Give members online statements</li>
+        </ul>
+        <a class="btn btn-primary" href="?utm_source=website&utm_medium=segment_cta&utm_campaign=staff_coops&utm_content=demo&priority=Member%20portal%20rollout#contact">Book a staff coop demo</a>
+      </div>
+      <div class="campaign-card">
+        <div class="tag">Multipurpose coops</div>
+        <h3>Savings, loans and investments</h3>
+        <p>Run member deposits, share capital, investments, dividends, approvals and audit-ready financial statements from one system.</p>
+        <ul>
+          <li><svg class="ic"><use href="#i-check"/></svg>Real double-entry ledger</li>
+          <li><svg class="ic"><use href="#i-check"/></svg>Loan approval and repayment schedule</li>
+          <li><svg class="ic"><use href="#i-check"/></svg>Dividend and surplus reporting</li>
+        </ul>
+        <a class="btn btn-primary" href="?utm_source=website&utm_medium=segment_cta&utm_campaign=multipurpose_coops&utm_content=demo&priority=Audit%20and%20compliance%20reporting#contact">Book a multipurpose demo</a>
+      </div>
+      <div class="campaign-card">
+        <div class="tag">Auditors & consultants</div>
+        <h3>Cleaner client records</h3>
+        <p>Help cooperative clients reduce missing records, untraceable balances and year-end reconciliation stress with a system built for audit trail and reporting.</p>
+        <ul>
+          <li><svg class="ic"><use href="#i-check"/></svg>General ledger and subledgers</li>
+          <li><svg class="ic"><use href="#i-check"/></svg>Period locks and controlled reversals</li>
+          <li><svg class="ic"><use href="#i-check"/></svg>Exportable reports for review</li>
+        </ul>
+        <a class="btn btn-line" href="?utm_source=website&utm_medium=partner_cta&utm_campaign=auditors_consultants&utm_content=partner#contact">Discuss a partnership</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Lead magnets -->
+<section class="alt" id="resources">
+  <div class="wrap">
+    <div class="sec-head">
+      <div class="kicker">Free assessment</div>
+      <h2>Start with a practical cooperative health check</h2>
+      <p class="lead">Not every society is ready to migrate immediately. These free checks give prospects a lower-friction reason to talk to CoopMS before the demo.</p>
+    </div>
+    <div class="lead-magnets">
+      <div class="magnet">
+        <h3>Cooperative Systems Health Check</h3>
+        <p>A 20-minute review of your member records, savings ledger, loan schedule, bank reconciliation and reporting process.</p>
+        <div class="mini"><span>Records</span><span>Bank position</span><span>Audit readiness</span></div>
+        <a class="btn btn-primary" href="?utm_source=website&utm_medium=lead_magnet&utm_campaign=coop_health_check&utm_content=assessment&priority=Data%20migration%20and%20reconciliation#contact">Request health check</a>
+      </div>
+      <div class="magnet">
+        <h3>Audit & Compliance Readiness Review</h3>
+        <p>For societies preparing reports, AGM packs, dividend declarations or external audit support.</p>
+        <div class="mini"><span>Trial balance</span><span>Member balances</span><span>Loan book</span><span>Reports</span></div>
+        <a class="btn btn-line" href="?utm_source=website&utm_medium=lead_magnet&utm_campaign=audit_readiness&utm_content=review&priority=Audit%20and%20compliance%20reporting#contact">Request audit review</a>
+      </div>
+    </div>
+  </div>
+</section>
+
 <!-- FAQ -->
 <section id="faq">
   <div class="wrap">
@@ -755,6 +845,15 @@
       const field = form.querySelector('[name="' + key + '"]');
       if(field) field.value = meta[key];
     });
+    const priorityParam = params.get('priority');
+    if(priorityParam){
+      const priorityField = form.querySelector('[name="priority"]');
+      if(priorityField){
+        Array.from(priorityField.options).forEach(function(option){
+          if(option.value === priorityParam || option.text === priorityParam) priorityField.value = option.value;
+        });
+      }
+    }
     function setStatus(message, type){
       if(!status) return;
       status.className = 'form-status' + (type ? ' ' + type : '');
