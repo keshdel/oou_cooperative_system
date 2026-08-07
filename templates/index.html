@@ -14,10 +14,10 @@
 
   <style>
     :root {
-      --primary:   #1a56db;
-      --primary-d: #1341a8;
-      --accent:    #f59e0b;
-      --dark:      #0f172a;
+      --primary:   #082b66;
+      --primary-d: #061e4a;
+      --accent:    #f4b51c;
+      --dark:      #061e4a;
       --text:      #374151;
       --muted:     #6b7280;
       --surface:   #f8fafc;
@@ -54,7 +54,7 @@
     /* ── Hero ── */
     .hero {
       min-height: 100vh;
-      background: linear-gradient(135deg, #0f172a 0%, #1a3a6e 50%, #1a56db 100%);
+      background: linear-gradient(135deg, #061e4a 0%, #082b66 50%, #082b66 100%);
       display: flex; align-items: center;
       position: relative; overflow: hidden;
       padding-top: 80px;
@@ -63,15 +63,15 @@
       content: '';
       position: absolute; inset: 0;
       background:
-        radial-gradient(circle at 20% 80%, rgba(245,158,11,.12) 0%, transparent 50%),
-        radial-gradient(circle at 80% 20%, rgba(99,102,241,.15) 0%, transparent 50%);
+        radial-gradient(circle at 20% 80%, rgba(244,181,28,.12) 0%, transparent 50%),
+        radial-gradient(circle at 80% 20%, rgba(13,63,134,.15) 0%, transparent 50%);
     }
     .hero-badge {
       display: inline-flex; align-items: center; gap: .4rem;
       background: rgba(255,255,255,.12);
       border: 1px solid rgba(255,255,255,.2);
       border-radius: 50px; padding: .35rem 1rem;
-      font-size: .8rem; font-weight: 600; color: #fbbf24;
+      font-size: .8rem; font-weight: 600; color: #f4b51c;
       margin-bottom: 1.5rem;
       backdrop-filter: blur(4px);
     }
@@ -80,15 +80,15 @@
       font-weight: 800; color: #fff; line-height: 1.15;
       margin-bottom: 1.25rem;
     }
-    .hero h1 span { color: #fbbf24; }
+    .hero h1 span { color: #f4b51c; }
     .hero .lead { color: rgba(255,255,255,.78); font-size: 1.15rem; line-height: 1.7; }
     .hero-cta .btn { padding: .85rem 2rem; font-weight: 600; border-radius: 50px; font-size: 1rem; }
     .btn-hero-primary {
-      background: var(--accent); color: #fff; border: none;
-      box-shadow: 0 4px 20px rgba(245,158,11,.4);
+      background: var(--accent); color: #082b66; border: none; font-weight: 700;
+      box-shadow: 0 4px 20px rgba(244,181,28,.4);
       transition: transform .2s, box-shadow .2s;
     }
-    .btn-hero-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(245,158,11,.5); color:#fff; }
+    .btn-hero-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(244,181,28,.5); color:#082b66; }
     .btn-hero-outline {
       background: transparent; color: #fff;
       border: 2px solid rgba(255,255,255,.4);
@@ -104,7 +104,7 @@
       border-radius: 16px; padding: 1.25rem 1.5rem;
       color: #fff;
     }
-    .hero-stat-num { font-size: 2rem; font-weight: 800; color: #fbbf24; }
+    .hero-stat-num { font-size: 2rem; font-weight: 800; color: #f4b51c; }
     .hero-stat-lbl { font-size: .78rem; color: rgba(255,255,255,.65); }
 
     /* ── Stats bar ── */
@@ -150,18 +150,18 @@
     .feat-tabs .nav-link.active .tab-text-sub { color: var(--muted); }
 
     /* tab icon colours */
-    .tab-icon.blue   { background: #dbeafe; color: #1d4ed8; }
-    .tab-icon.green  { background: #dcfce7; color: #16a34a; }
-    .tab-icon.amber  { background: #fef3c7; color: #d97706; }
-    .tab-icon.indigo { background: #e0e7ff; color: #4338ca; }
-    .tab-icon.red    { background: #fee2e2; color: #dc2626; }
-    .tab-icon.purple { background: #f3e8ff; color: #7c3aed; }
-    .feat-tabs .nav-link.active .tab-icon.blue   { background: #1d4ed8; color: #fff; }
-    .feat-tabs .nav-link.active .tab-icon.green  { background: #16a34a; color: #fff; }
-    .feat-tabs .nav-link.active .tab-icon.amber  { background: #d97706; color: #fff; }
-    .feat-tabs .nav-link.active .tab-icon.indigo { background: #4338ca; color: #fff; }
-    .feat-tabs .nav-link.active .tab-icon.red    { background: #dc2626; color: #fff; }
-    .feat-tabs .nav-link.active .tab-icon.purple { background: #7c3aed; color: #fff; }
+    .tab-icon.blue   { background: #dbe4f5; color: #082b66; }
+    .tab-icon.green  { background: #e6eef8; color: #082b66; }
+    .tab-icon.amber  { background: #fbeecb; color: #b9820a; }
+    .tab-icon.indigo { background: #e6eef8; color: #082b66; }
+    .tab-icon.red    { background: #e6eef8; color: #082b66; }
+    .tab-icon.purple { background: #e6eef8; color: #082b66; }
+    .feat-tabs .nav-link.active .tab-icon.blue   { background: #082b66; color: #fff; }
+    .feat-tabs .nav-link.active .tab-icon.green  { background: #082b66; color: #fff; }
+    .feat-tabs .nav-link.active .tab-icon.amber  { background: #b9820a; color: #fff; }
+    .feat-tabs .nav-link.active .tab-icon.indigo { background: #082b66; color: #fff; }
+    .feat-tabs .nav-link.active .tab-icon.red    { background: #082b66; color: #fff; }
+    .feat-tabs .nav-link.active .tab-icon.purple { background: #082b66; color: #fff; }
 
     .tab-panel-card {
       background: #fff;
@@ -208,7 +208,7 @@
     }
 
     /* ── Compliance section ── */
-    .compliance-section { background: linear-gradient(135deg, #1e3a5f, #1a56db); }
+    .compliance-section { background: linear-gradient(135deg, #061e4a, #082b66); }
     .compliance-item {
       display: flex; gap: 1rem; align-items: flex-start;
       background: rgba(255,255,255,.08); border-radius: 12px;
@@ -217,19 +217,19 @@
     }
     .compliance-item:hover { background: rgba(255,255,255,.13); }
     .compliance-num {
-      font-size: .75rem; font-weight: 700; color: #fbbf24;
-      background: rgba(245,158,11,.15); border-radius: 6px;
+      font-size: .75rem; font-weight: 700; color: #f4b51c;
+      background: rgba(244,181,28,.15); border-radius: 6px;
       padding: .25rem .5rem; flex-shrink: 0; margin-top: .1rem;
     }
 
     /* ── CTA banner ── */
     .cta-section {
-      background: radial-gradient(circle at center, #f0f5ff, #e8efff);
+      background: radial-gradient(circle at center, #eef3fb, #eef3fb);
     }
     .cta-card {
       background: linear-gradient(135deg, var(--primary), var(--primary-d));
       border-radius: 24px; padding: 4rem 3rem;
-      box-shadow: 0 20px 60px rgba(26,86,219,.3);
+      box-shadow: 0 20px 60px rgba(8,43,102,.3);
     }
 
     /* ── Footer ── */
@@ -268,7 +268,12 @@
   <div class="container">
     <div class="d-flex align-items-center justify-content-between">
       <a class="navbar-brand text-white d-flex align-items-center gap-2" href="#">
-        <i class="fas fa-hand-holding-usd fa-lg text-warning"></i>
+        {% if coop_logo %}
+          <img src="{{ coop_logo|logo_src }}" alt="{{ coop_name }}" height="38"
+               style="background:#fff;border-radius:8px;padding:3px">
+        {% else %}
+          <i class="fas fa-hand-holding-usd fa-lg text-warning"></i>
+        {% endif %}
         <span>{{ coop_name }}</span>
       </a>
       <div class="d-flex align-items-center gap-3">
@@ -354,7 +359,7 @@
           </div>
           <div class="col-6">
             <div class="hero-card">
-              <i class="fas fa-lock mb-2" style="color:#fbbf24;font-size:1.5rem"></i>
+              <i class="fas fa-lock mb-2" style="color:#f4b51c;font-size:1.5rem"></i>
               <div style="font-size:.9rem;font-weight:600">Bank-grade security</div>
               <div class="hero-stat-lbl">Encrypted sessions</div>
             </div>
@@ -368,7 +373,7 @@
           <div class="col-12">
             <div class="hero-card d-flex align-items-center gap-3">
               <div>
-                <i class="fas fa-credit-card fa-2x" style="color:#fbbf24"></i>
+                <i class="fas fa-credit-card fa-2x" style="color:#f4b51c"></i>
               </div>
               <div>
                 <div style="font-weight:600">Paystack &amp; Flutterwave</div>
@@ -470,7 +475,7 @@
           <!-- ── Members ── -->
           <div class="tab-pane fade show active" id="panel-members" role="tabpanel">
             <div class="tab-panel-card">
-              <div class="tab-panel-icon" style="background:#dbeafe;color:#1d4ed8">
+              <div class="tab-panel-icon" style="background:#dbe4f5;color:#082b66">
                 <i class="fas fa-users"></i>
               </div>
               <h3 class="fw-700 mb-1" style="font-weight:700">Member Management</h3>
@@ -484,7 +489,7 @@
                     ('Member portal',     'Self-service login for every member with an email'),
                   ] %}
                   <div class="feature-bullet">
-                    <span class="check" style="background:#dbeafe;color:#1d4ed8"><i class="fas fa-check fa-xs"></i></span>
+                    <span class="check" style="background:#dbe4f5;color:#082b66"><i class="fas fa-check fa-xs"></i></span>
                     <p><strong>{{ item[0] }}</strong><br><span class="text-muted small">{{ item[1] }}</span></p>
                   </div>
                   {% endfor %}
@@ -497,7 +502,7 @@
                     ('Auto portal login',  'Temporary password created on import; member resets on first login'),
                   ] %}
                   <div class="feature-bullet">
-                    <span class="check" style="background:#dbeafe;color:#1d4ed8"><i class="fas fa-check fa-xs"></i></span>
+                    <span class="check" style="background:#dbe4f5;color:#082b66"><i class="fas fa-check fa-xs"></i></span>
                     <p><strong>{{ item[0] }}</strong><br><span class="text-muted small">{{ item[1] }}</span></p>
                   </div>
                   {% endfor %}
@@ -509,7 +514,7 @@
           <!-- ── Savings ── -->
           <div class="tab-pane fade" id="panel-savings" role="tabpanel">
             <div class="tab-panel-card">
-              <div class="tab-panel-icon" style="background:#dcfce7;color:#16a34a">
+              <div class="tab-panel-icon" style="background:#e6eef8;color:#082b66">
                 <i class="fas fa-piggy-bank"></i>
               </div>
               <h3 class="fw-700 mb-1" style="font-weight:700">Savings & Deposits</h3>
@@ -523,7 +528,7 @@
                     ('Date-range filters',    'Filter savings history by custom period, status, or year'),
                   ] %}
                   <div class="feature-bullet">
-                    <span class="check" style="background:#dcfce7;color:#16a34a"><i class="fas fa-check fa-xs"></i></span>
+                    <span class="check" style="background:#e6eef8;color:#082b66"><i class="fas fa-check fa-xs"></i></span>
                     <p><strong>{{ item[0] }}</strong><br><span class="text-muted small">{{ item[1] }}</span></p>
                   </div>
                   {% endfor %}
@@ -536,7 +541,7 @@
                     ('Bulk CSV import',   'Migrate years of savings history in one upload'),
                   ] %}
                   <div class="feature-bullet">
-                    <span class="check" style="background:#dcfce7;color:#16a34a"><i class="fas fa-check fa-xs"></i></span>
+                    <span class="check" style="background:#e6eef8;color:#082b66"><i class="fas fa-check fa-xs"></i></span>
                     <p><strong>{{ item[0] }}</strong><br><span class="text-muted small">{{ item[1] }}</span></p>
                   </div>
                   {% endfor %}
@@ -548,7 +553,7 @@
           <!-- ── Loans ── -->
           <div class="tab-pane fade" id="panel-loans" role="tabpanel">
             <div class="tab-panel-card">
-              <div class="tab-panel-icon" style="background:#fef3c7;color:#d97706">
+              <div class="tab-panel-icon" style="background:#fbeecb;color:#b9820a">
                 <i class="fas fa-hand-holding-usd"></i>
               </div>
               <h3 class="fw-700 mb-1" style="font-weight:700">Loan Administration</h3>
@@ -562,7 +567,7 @@
                     ('Eligibility engine',    'Auto-check savings threshold, tenure, and multiplier limits'),
                   ] %}
                   <div class="feature-bullet">
-                    <span class="check" style="background:#fef3c7;color:#d97706"><i class="fas fa-check fa-xs"></i></span>
+                    <span class="check" style="background:#fbeecb;color:#b9820a"><i class="fas fa-check fa-xs"></i></span>
                     <p><strong>{{ item[0] }}</strong><br><span class="text-muted small">{{ item[1] }}</span></p>
                   </div>
                   {% endfor %}
@@ -575,7 +580,7 @@
                     ('Bulk import',       'Migrate historical loans and repayments with CSV upload'),
                   ] %}
                   <div class="feature-bullet">
-                    <span class="check" style="background:#fef3c7;color:#d97706"><i class="fas fa-check fa-xs"></i></span>
+                    <span class="check" style="background:#fbeecb;color:#b9820a"><i class="fas fa-check fa-xs"></i></span>
                     <p><strong>{{ item[0] }}</strong><br><span class="text-muted small">{{ item[1] }}</span></p>
                   </div>
                   {% endfor %}
@@ -587,7 +592,7 @@
           <!-- ── Reports ── -->
           <div class="tab-pane fade" id="panel-reports" role="tabpanel">
             <div class="tab-panel-card">
-              <div class="tab-panel-icon" style="background:#e0e7ff;color:#4338ca">
+              <div class="tab-panel-icon" style="background:#e6eef8;color:#082b66">
                 <i class="fas fa-chart-bar"></i>
               </div>
               <h3 class="fw-700 mb-1" style="font-weight:700">Financial Reports</h3>
@@ -601,7 +606,7 @@
                     ('Surplus appropriation',  'Compute and distribute surplus per cooperative bye-laws'),
                   ] %}
                   <div class="feature-bullet">
-                    <span class="check" style="background:#e0e7ff;color:#4338ca"><i class="fas fa-check fa-xs"></i></span>
+                    <span class="check" style="background:#e6eef8;color:#082b66"><i class="fas fa-check fa-xs"></i></span>
                     <p><strong>{{ item[0] }}</strong><br><span class="text-muted small">{{ item[1] }}</span></p>
                   </div>
                   {% endfor %}
@@ -614,7 +619,7 @@
                     ('Print CSS',           '@page A4 margins, sidebar hidden, borders visible'),
                   ] %}
                   <div class="feature-bullet">
-                    <span class="check" style="background:#e0e7ff;color:#4338ca"><i class="fas fa-check fa-xs"></i></span>
+                    <span class="check" style="background:#e6eef8;color:#082b66"><i class="fas fa-check fa-xs"></i></span>
                     <p><strong>{{ item[0] }}</strong><br><span class="text-muted small">{{ item[1] }}</span></p>
                   </div>
                   {% endfor %}
@@ -626,7 +631,7 @@
           <!-- ── Investments ── -->
           <div class="tab-pane fade" id="panel-investments" role="tabpanel">
             <div class="tab-panel-card">
-              <div class="tab-panel-icon" style="background:#fee2e2;color:#dc2626">
+              <div class="tab-panel-icon" style="background:#e6eef8;color:#082b66">
                 <i class="fas fa-chart-line"></i>
               </div>
               <h3 class="fw-700 mb-1" style="font-weight:700">Investment Tracking</h3>
@@ -640,7 +645,7 @@
                     ('Institution records',   'Bank, fund manager, or broker per investment'),
                   ] %}
                   <div class="feature-bullet">
-                    <span class="check" style="background:#fee2e2;color:#dc2626"><i class="fas fa-check fa-xs"></i></span>
+                    <span class="check" style="background:#e6eef8;color:#082b66"><i class="fas fa-check fa-xs"></i></span>
                     <p><strong>{{ item[0] }}</strong><br><span class="text-muted small">{{ item[1] }}</span></p>
                   </div>
                   {% endfor %}
@@ -653,7 +658,7 @@
                     ('Audit trail',       'Every change logged with user, timestamp, and IP'),
                   ] %}
                   <div class="feature-bullet">
-                    <span class="check" style="background:#fee2e2;color:#dc2626"><i class="fas fa-check fa-xs"></i></span>
+                    <span class="check" style="background:#e6eef8;color:#082b66"><i class="fas fa-check fa-xs"></i></span>
                     <p><strong>{{ item[0] }}</strong><br><span class="text-muted small">{{ item[1] }}</span></p>
                   </div>
                   {% endfor %}
@@ -665,7 +670,7 @@
           <!-- ── Security ── -->
           <div class="tab-pane fade" id="panel-security" role="tabpanel">
             <div class="tab-panel-card">
-              <div class="tab-panel-icon" style="background:#f3e8ff;color:#7c3aed">
+              <div class="tab-panel-icon" style="background:#e6eef8;color:#082b66">
                 <i class="fas fa-shield-alt"></i>
               </div>
               <h3 class="fw-700 mb-1" style="font-weight:700">Security & Access Control</h3>
@@ -679,7 +684,7 @@
                     ('Cryptographic passwords', 'Werkzeug PBKDF2 hashing — no plaintext storage'),
                   ] %}
                   <div class="feature-bullet">
-                    <span class="check" style="background:#f3e8ff;color:#7c3aed"><i class="fas fa-check fa-xs"></i></span>
+                    <span class="check" style="background:#e6eef8;color:#082b66"><i class="fas fa-check fa-xs"></i></span>
                     <p><strong>{{ item[0] }}</strong><br><span class="text-muted small">{{ item[1] }}</span></p>
                   </div>
                   {% endfor %}
@@ -692,7 +697,7 @@
                     ('Webhook validation',      'HMAC-SHA512 (Paystack) and hash comparison (Flutterwave) on all webhooks'),
                   ] %}
                   <div class="feature-bullet">
-                    <span class="check" style="background:#f3e8ff;color:#7c3aed"><i class="fas fa-check fa-xs"></i></span>
+                    <span class="check" style="background:#e6eef8;color:#082b66"><i class="fas fa-check fa-xs"></i></span>
                     <p><strong>{{ item[0] }}</strong><br><span class="text-muted small">{{ item[1] }}</span></p>
                   </div>
                   {% endfor %}
@@ -720,11 +725,11 @@
 
     <div class="row g-4 position-relative">
       {% set steps = [
-        ('1', 'fa-database',     '#1d4ed8', '#dbeafe', 'Set up your cooperative',
+        ('1', 'fa-database',     '#082b66', '#dbe4f5', 'Set up your cooperative',
           'Create admin accounts, configure cooperative details, interest rates, loan rules, and payment gateway keys — all from the Settings page.'),
-        ('2', 'fa-users',        '#16a34a', '#dcfce7', 'Import or register members',
+        ('2', 'fa-users',        '#082b66', '#e6eef8', 'Import or register members',
           'Upload your existing member roster via CSV. Portal logins are created automatically. Each member receives a secure temporary password they must change on first login.'),
-        ('3', 'fa-chart-line',   '#d97706', '#fef3c7', 'Run your cooperative',
+        ('3', 'fa-chart-line',   '#b9820a', '#fbeecb', 'Run your cooperative',
           'Record savings, process loan applications, disburse funds, accept online repayments, generate reports, and view the live financial dashboard — every day.'),
       ] %}
       {% for num, icon, col, bg, title, desc in steps %}
@@ -799,7 +804,7 @@
   <div class="container">
     <div class="cta-card text-center text-white">
       <div class="mb-3">
-        <i class="fas fa-hand-holding-usd fa-3x" style="color:#fbbf24"></i>
+        <i class="fas fa-hand-holding-usd fa-3x" style="color:#f4b51c"></i>
       </div>
       <h2 style="font-weight:800;font-size:2rem">Ready to modernise your cooperative?</h2>
       <p style="color:rgba(255,255,255,.8);max-width:480px;margin:.75rem auto 2rem">
@@ -822,14 +827,19 @@
 <footer class="lp-footer">
   <div class="container">
     <div class="row align-items-center">
-      <div class="col-md-6 text-white-50 small">
-        <i class="fas fa-hand-holding-usd text-warning me-2"></i>
+      <div class="col-md-6 text-white-50 small d-flex align-items-center gap-2">
+        {% if coop_logo %}
+          <img src="{{ coop_logo|logo_src }}" alt="{{ coop_name }}" height="26"
+               style="background:#fff;border-radius:5px;padding:2px">
+        {% else %}
+          <i class="fas fa-hand-holding-usd" style="color:var(--accent)"></i>
+        {% endif %}
         {{ coop_name }} &mdash; Cooperative Management System
       </div>
       <div class="col-md-6 text-md-end text-white-50 small mt-2 mt-md-0">
         <i class="fas fa-shield-alt me-1"></i> Secure &nbsp;·&nbsp;
-        <i class="fas fa-database me-1"></i> SQLite &nbsp;·&nbsp;
-        <i class="fas fa-lock me-1"></i> Encrypted sessions
+        <i class="fas fa-lock me-1"></i> Encrypted sessions &nbsp;·&nbsp;
+        <i class="fas fa-clipboard-check me-1"></i> Audit trail
       </div>
     </div>
   </div>
