@@ -59,18 +59,20 @@
     position: sticky;
     top: 86px;
   }
-  .crm-side .form-label {
+  .crm-side .form-label,
+  .crm-activity-row .form-label {
     margin-bottom: 4px;
     color: #6f7d8e;
     font-size: .72rem;
     font-weight: 800;
     text-transform: uppercase;
   }
-  .crm-side .form-control, .crm-side .form-select, .crm-side .btn {
+  .crm-side .form-control, .crm-side .form-select, .crm-side .btn,
+  .crm-activity-row .form-control, .crm-activity-row .form-select, .crm-activity-row .btn {
     border-radius: 6px;
   }
   .crm-history {
-    max-height: 360px;
+    max-height: 276px;
     overflow: auto;
   }
   .crm-history .list-group-item { padding: 10px 14px; }
@@ -105,7 +107,7 @@
   </div>
 
   <div class="row g-3">
-    <div class="col-xl-8">
+    <div class="col-xl-9">
       <div class="card crm-panel mb-3">
         <div class="card-header">Lead Snapshot</div>
         <div class="card-body">
@@ -201,9 +203,57 @@
           </div>
         </div>
       </div>
+
+      <div class="row g-3 mt-0 crm-activity-row">
+        <div class="col-lg-6">
+          <div class="card crm-panel h-100">
+            <div class="card-header">Log Activity</div>
+            <div class="card-body">
+              <form method="post" action="{{ url_for('marketing.add_lead_activity', lead_id=lead.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="row g-2">
+                  <div class="col-sm-5">
+                    <label class="form-label">Type</label>
+                    <select class="form-select" name="activity_type">
+                      {% for activity_type in activity_types %}
+                      <option value="{{ activity_type }}">{{ activity_type|title }}</option>
+                      {% endfor %}
+                    </select>
+                  </div>
+                  <div class="col-sm-7">
+                    <label class="form-label">Next Follow-up</label>
+                    <input class="form-control" type="datetime-local" name="next_follow_up_at">
+                  </div>
+                  <div class="col-12">
+                    <label class="form-label">Activity Note</label>
+                    <textarea class="form-control" name="description" rows="3" required placeholder="What happened? What did the prospect say?"></textarea>
+                  </div>
+                </div>
+                <button class="btn btn-success w-100 mt-2" type="submit"><i class="fas fa-plus"></i> Add Activity</button>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-lg-6">
+          <div class="card crm-panel h-100">
+            <div class="card-header">History</div>
+            <div class="list-group list-group-flush crm-history">
+              {% for event in events %}
+              <div class="list-group-item">
+                <div class="fw-semibold small">{{ event.description or event.event_type }}</div>
+                <div class="small text-muted">{{ event.created_at }}{% if event.actor_username %} &middot; {{ event.actor_username }}{% endif %}</div>
+              </div>
+              {% else %}
+              <div class="list-group-item text-muted">No history yet.</div>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <div class="col-xl-4">
+    <div class="col-xl-3">
       <div class="crm-side">
         <div class="card crm-panel mb-3">
           <div class="card-header">Sales Controls</div>
@@ -255,47 +305,6 @@
           </div>
         </div>
 
-        <div class="card crm-panel mb-3">
-          <div class="card-header">Log Activity</div>
-          <div class="card-body">
-            <form method="post" action="{{ url_for('marketing.add_lead_activity', lead_id=lead.id) }}">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <div class="row g-2">
-                <div class="col-md-5 col-xl-12">
-                  <label class="form-label">Type</label>
-                  <select class="form-select" name="activity_type">
-                    {% for activity_type in activity_types %}
-                    <option value="{{ activity_type }}">{{ activity_type|title }}</option>
-                    {% endfor %}
-                  </select>
-                </div>
-                <div class="col-md-7 col-xl-12">
-                  <label class="form-label">Next Follow-up</label>
-                  <input class="form-control" type="datetime-local" name="next_follow_up_at">
-                </div>
-                <div class="col-12">
-                  <label class="form-label">Activity Note</label>
-                  <textarea class="form-control" name="description" rows="3" required placeholder="What happened? What did the prospect say?"></textarea>
-                </div>
-              </div>
-              <button class="btn btn-success w-100 mt-2" type="submit"><i class="fas fa-plus"></i> Add Activity</button>
-            </form>
-          </div>
-        </div>
-
-        <div class="card crm-panel">
-          <div class="card-header">History</div>
-          <div class="list-group list-group-flush crm-history">
-            {% for event in events %}
-            <div class="list-group-item">
-              <div class="fw-semibold small">{{ event.description or event.event_type }}</div>
-              <div class="small text-muted">{{ event.created_at }}{% if event.actor_username %} &middot; {{ event.actor_username }}{% endif %}</div>
-            </div>
-            {% else %}
-            <div class="list-group-item text-muted">No history yet.</div>
-            {% endfor %}
-          </div>
-        </div>
       </div>
     </div>
   </div>
