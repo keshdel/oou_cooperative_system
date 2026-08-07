@@ -22,8 +22,9 @@ from utils import audit, role_required
 
 marketing = Blueprint('marketing', __name__)
 
-LEAD_STATUSES = ('new', 'contacted', 'demo_booked', 'proposal_sent', 'won', 'lost')
+LEAD_STATUSES = ('new', 'contacted', 'demo_booked', 'demo_completed', 'proposal_sent', 'negotiation', 'won', 'lost')
 ACTIVITY_TYPES = ('call', 'email', 'whatsapp', 'demo', 'proposal', 'note')
+PROPOSAL_STATUSES = ('not_started', 'drafting', 'sent', 'accepted', 'rejected')
 _RECENT_SUBMISSIONS = {}
 
 
@@ -72,6 +73,23 @@ def _parse_datetime(value):
     return None
 
 
+def _parse_date(value):
+    value = (value or '').strip()
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, '%Y-%m-%d').date().isoformat()
+    except ValueError:
+        return None
+
+
+def _parse_money(value):
+    try:
+        return round(float(str(value or '0').replace(',', '').strip()), 2)
+    except (TypeError, ValueError):
+        return 0
+
+
 def _assignable_users(db):
     return db.execute('''
         SELECT id, username, full_name, email, role
@@ -86,7 +104,7 @@ def _lead_flags(lead, now=None):
     now = now or datetime.now()
     next_due = _parse_datetime(lead.get('next_follow_up_at'))
     last_activity = _parse_datetime(lead.get('last_activity_at')) or _parse_datetime(lead.get('updated_at')) or _parse_datetime(lead.get('created_at'))
-    open_status = lead.get('status') in ('new', 'contacted', 'demo_booked', 'proposal_sent')
+    open_status = lead.get('status') in ('new', 'contacted', 'demo_booked', 'demo_completed', 'proposal_sent', 'negotiation')
     return {
         'follow_up_due': bool(open_status and next_due and next_due <= now),
         'stale': bool(open_status and last_activity and now - last_activity > timedelta(days=3)),
@@ -297,7 +315,7 @@ def leads_inbox():
     elif focus == 'due':
         clauses.append("ml.next_follow_up_at IS NOT NULL AND ml.next_follow_up_at <= ?")
         params.append(datetime.now())
-        clauses.append("ml.status IN ('new', 'contacted', 'demo_booked', 'proposal_sent')")
+        clauses.append("ml.status IN ('new', 'contacted', 'demo_booked', 'demo_completed', 'proposal_sent', 'negotiation')")
     elif focus == 'unassigned':
         clauses.append('ml.assigned_to IS NULL')
     where = ('WHERE ' + ' AND '.join(clauses)) if clauses else ''
@@ -324,7 +342,7 @@ def leads_inbox():
     dashboard = {
         'hot': db.execute("SELECT COUNT(*) FROM marketing_leads WHERE lead_temperature = 'hot'").fetchone()[0],
         'due': db.execute(
-            "SELECT COUNT(*) FROM marketing_leads WHERE next_follow_up_at IS NOT NULL AND next_follow_up_at <= ? AND status IN ('new', 'contacted', 'demo_booked', 'proposal_sent')",
+            "SELECT COUNT(*) FROM marketing_leads WHERE next_follow_up_at IS NOT NULL AND next_follow_up_at <= ? AND status IN ('new', 'contacted', 'demo_booked', 'demo_completed', 'proposal_sent', 'negotiation')",
             (now,),
         ).fetchone()[0],
         'unassigned': db.execute('SELECT COUNT(*) FROM marketing_leads WHERE assigned_to IS NULL').fetchone()[0],
@@ -375,7 +393,7 @@ def update_lead_status(lead_id):
     audit(db, 'UPDATE_MARKETING_LEAD', 'marketing', f'Updated lead #{lead_id} to {status}')
     db.commit()
     flash('Lead updated.', 'success')
-    return redirect(url_for('marketing.leads_inbox'))
+    return redirect(url_for('marketing.lead_detail', lead_id=lead_id))
 
 
 @marketing.route('/marketing/leads/<int:lead_id>')
@@ -398,9 +416,84 @@ def lead_detail(lead_id):
         events=events,
         statuses=LEAD_STATUSES,
         activity_types=ACTIVITY_TYPES,
+        proposal_statuses=PROPOSAL_STATUSES,
         assignable_users=_assignable_users(db),
         flags=_lead_flags(dict(lead)),
     )
+
+
+@marketing.route('/marketing/leads/<int:lead_id>/pipeline', methods=['POST'])
+@login_required
+@role_required('admin', 'secretary')
+def update_lead_pipeline(lead_id):
+    _require_marketing_hq()
+    db = get_db()
+    lead = db.execute('SELECT * FROM marketing_leads WHERE id = ?', (lead_id,)).fetchone()
+    if not lead:
+        flash('Lead not found.', 'danger')
+        return redirect(url_for('marketing.leads_inbox'))
+
+    demo_scheduled_at = _parse_datetime(request.form.get('demo_scheduled_at'))
+    demo_meeting_link = _clean(request.form.get('demo_meeting_link'), 500)
+    demo_presenter = _clean(request.form.get('demo_presenter'), 120)
+    demo_outcome = _clean(request.form.get('demo_outcome'), 2000)
+    proposed_plan = _clean(request.form.get('proposed_plan'), 120)
+    proposal_status = request.form.get('proposal_status', '').strip()
+    if proposal_status not in PROPOSAL_STATUSES:
+        proposal_status = 'not_started'
+    setup_fee = _parse_money(request.form.get('setup_fee'))
+    monthly_subscription = _parse_money(request.form.get('monthly_subscription'))
+    expected_close_date = _parse_date(request.form.get('expected_close_date'))
+    decision_reason = _clean(request.form.get('decision_reason'), 1000)
+    now = datetime.now()
+
+    db.execute('''
+        UPDATE marketing_leads
+           SET demo_scheduled_at = ?,
+               demo_meeting_link = ?,
+               demo_presenter = ?,
+               demo_outcome = ?,
+               proposed_plan = ?,
+               proposal_status = ?,
+               setup_fee = ?,
+               monthly_subscription = ?,
+               expected_close_date = ?,
+               decision_reason = ?,
+               updated_at = ?
+         WHERE id = ?
+    ''', (
+        demo_scheduled_at,
+        demo_meeting_link,
+        demo_presenter,
+        demo_outcome,
+        proposed_plan,
+        proposal_status,
+        setup_fee,
+        monthly_subscription,
+        expected_close_date,
+        decision_reason,
+        now,
+        lead_id,
+    ))
+    db.execute('''
+        INSERT INTO marketing_lead_events
+            (lead_id, event_type, description, actor_user_id, actor_username, data)
+        VALUES (?, 'pipeline_update', 'Sales pipeline details updated', ?, ?, ?)
+    ''', (
+        lead_id,
+        current_user.id,
+        current_user.username,
+        json.dumps({
+            'demo_scheduled_at': str(demo_scheduled_at or ''),
+            'proposal_status': proposal_status,
+            'proposed_plan': proposed_plan,
+            'expected_close_date': expected_close_date or '',
+        }),
+    ))
+    audit(db, 'UPDATE_MARKETING_PIPELINE', 'marketing', f'Updated sales pipeline for lead #{lead_id}')
+    db.commit()
+    flash('Sales pipeline updated.', 'success')
+    return redirect(url_for('marketing.lead_detail', lead_id=lead_id))
 
 
 @marketing.route('/marketing/leads/<int:lead_id>/workflow', methods=['POST'])
@@ -493,6 +586,9 @@ def export_leads():
         'full_name', 'email', 'phone', 'society_name',
         'society_type', 'member_count', 'current_system', 'priority', 'message',
         'assigned_to', 'next_follow_up_at', 'last_activity_at',
+        'demo_scheduled_at', 'demo_meeting_link', 'demo_presenter', 'demo_outcome',
+        'proposed_plan', 'proposal_status', 'setup_fee', 'monthly_subscription',
+        'expected_close_date', 'decision_reason',
         'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
         'referrer', 'landing_page', 'consent_accepted', 'confirmation_sent_at',
         'confirmation_status', 'confirmation_provider', 'confirmation_error',

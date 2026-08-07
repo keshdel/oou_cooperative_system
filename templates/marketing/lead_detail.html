@@ -55,6 +55,18 @@
     border-radius: 6px;
     color: #334155;
   }
+  .crm-pipeline-form .form-label {
+    margin-bottom: 4px;
+    color: #6f7d8e;
+    font-size: .72rem;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+  .crm-pipeline-form .form-control,
+  .crm-pipeline-form .form-select,
+  .crm-pipeline-form .btn {
+    border-radius: 6px;
+  }
   .crm-side {
     position: sticky;
     top: 86px;
@@ -137,6 +149,65 @@
             <div class="crm-label">Message</div>
             <div class="crm-message">{{ lead.message or 'No message provided.' }}</div>
           </div>
+        </div>
+      </div>
+
+      <div class="card crm-panel mb-3">
+        <div class="card-header">Demo & Proposal Pipeline</div>
+        <div class="card-body">
+          <form class="crm-pipeline-form" method="post" action="{{ url_for('marketing.update_lead_pipeline', lead_id=lead.id) }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="row g-2">
+              <div class="col-md-4">
+                <label class="form-label">Demo Date / Time</label>
+                <input class="form-control" type="datetime-local" name="demo_scheduled_at"
+                       value="{{ (lead.demo_scheduled_at or '')[:16].replace(' ', 'T') }}">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Presenter</label>
+                <input class="form-control" name="demo_presenter" value="{{ lead.demo_presenter or '' }}" placeholder="Who will run demo?">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Meeting Link</label>
+                <input class="form-control" type="url" name="demo_meeting_link" value="{{ lead.demo_meeting_link or '' }}" placeholder="https://...">
+              </div>
+              <div class="col-md-3">
+                <label class="form-label">Proposed Plan</label>
+                <input class="form-control" name="proposed_plan" value="{{ lead.proposed_plan or '' }}" placeholder="Starter / Growth / Enterprise">
+              </div>
+              <div class="col-md-3">
+                <label class="form-label">Proposal Status</label>
+                <select class="form-select" name="proposal_status">
+                  {% for proposal_status in proposal_statuses %}
+                  <option value="{{ proposal_status }}" {% if (lead.proposal_status or 'not_started') == proposal_status %}selected{% endif %}>{{ proposal_status.replace('_', ' ')|title }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+              <div class="col-md-2">
+                <label class="form-label">Setup Fee</label>
+                <input class="form-control" type="number" min="0" step="1000" name="setup_fee" value="{{ lead.setup_fee or 0 }}">
+              </div>
+              <div class="col-md-2">
+                <label class="form-label">Monthly Fee</label>
+                <input class="form-control" type="number" min="0" step="1000" name="monthly_subscription" value="{{ lead.monthly_subscription or 0 }}">
+              </div>
+              <div class="col-md-2">
+                <label class="form-label">Close Date</label>
+                <input class="form-control" type="date" name="expected_close_date" value="{{ (lead.expected_close_date or '')[:10] }}">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Demo Outcome</label>
+                <textarea class="form-control" name="demo_outcome" rows="2" placeholder="Questions, objections, fit, next action...">{{ lead.demo_outcome or '' }}</textarea>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Won / Lost / Decision Reason</label>
+                <textarea class="form-control" name="decision_reason" rows="2" placeholder="Why won, why lost, or what decision is pending...">{{ lead.decision_reason or '' }}</textarea>
+              </div>
+              <div class="col-12">
+                <button class="btn btn-primary w-100" type="submit"><i class="fas fa-diagram-project"></i> Save Pipeline</button>
+              </div>
+            </div>
+          </form>
         </div>
       </div>
 

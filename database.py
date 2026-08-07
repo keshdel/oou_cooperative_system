@@ -762,6 +762,16 @@ def init_db():
             assigned_to INTEGER,
             next_follow_up_at TIMESTAMP,
             last_activity_at TIMESTAMP,
+            demo_scheduled_at TIMESTAMP,
+            demo_meeting_link TEXT,
+            demo_presenter TEXT,
+            demo_outcome TEXT,
+            proposed_plan TEXT,
+            proposal_status TEXT,
+            setup_fee REAL DEFAULT 0,
+            monthly_subscription REAL DEFAULT 0,
+            expected_close_date DATE,
+            decision_reason TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (assigned_to) REFERENCES users (id)
@@ -781,6 +791,16 @@ def init_db():
     _add_col(db, 'marketing_leads', 'assigned_to', 'INTEGER')
     _add_col(db, 'marketing_leads', 'next_follow_up_at', 'TIMESTAMP')
     _add_col(db, 'marketing_leads', 'last_activity_at', 'TIMESTAMP')
+    _add_col(db, 'marketing_leads', 'demo_scheduled_at', 'TIMESTAMP')
+    _add_col(db, 'marketing_leads', 'demo_meeting_link', 'TEXT')
+    _add_col(db, 'marketing_leads', 'demo_presenter', 'TEXT')
+    _add_col(db, 'marketing_leads', 'demo_outcome', 'TEXT')
+    _add_col(db, 'marketing_leads', 'proposed_plan', 'TEXT')
+    _add_col(db, 'marketing_leads', 'proposal_status', 'TEXT')
+    _add_col(db, 'marketing_leads', 'setup_fee', 'REAL DEFAULT 0')
+    _add_col(db, 'marketing_leads', 'monthly_subscription', 'REAL DEFAULT 0')
+    _add_col(db, 'marketing_leads', 'expected_close_date', 'DATE')
+    _add_col(db, 'marketing_leads', 'decision_reason', 'TEXT')
     db.execute(_adapt('''
         CREATE TABLE IF NOT EXISTS marketing_lead_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
