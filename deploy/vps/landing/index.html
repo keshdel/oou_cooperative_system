@@ -9,6 +9,8 @@
 <meta property="og:description" content="Members, savings, share capital, loans and investments on a real double-entry ledger. Audit-ready. A portal for every member.">
 <meta property="og:type" content="website">
 <link rel="icon" type="image/svg+xml" href="assets/brand/coopms-favicon.svg">
+<!-- Add GA4/GTM, Meta Pixel, LinkedIn Insight, or Microsoft Clarity tags here before paid campaigns. -->
+<!-- The demo form emits a coopms_demo_request event when those scripts are present. -->
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
   :root{
@@ -202,6 +204,22 @@
   .cta .hero-cta{ justify-content:center; }
   .cta .btn-line{ background:transparent; color:#fff; border-color:rgba(255,255,255,.35); }
   .cta .btn-line:hover{ background:rgba(255,255,255,.08); border-color:#fff; color:#fff; }
+  .lead-form{ max-width:820px; margin:34px auto 0; background:#fff; color:var(--body); border:1px solid rgba(255,255,255,.28); border-radius:var(--r-lg); padding:26px; box-shadow:var(--sh); text-align:left; }
+  .lead-form .form-grid{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+  .lead-form label{ display:grid; gap:7px; font-size:12px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; color:var(--head); }
+  .lead-form input,.lead-form select,.lead-form textarea{ width:100%; border:1px solid var(--line2); border-radius:10px; padding:12px 13px; font:inherit; color:var(--head); background:#fff; outline:none; transition:border-color .2s,box-shadow .2s; }
+  .lead-form textarea{ min-height:98px; resize:vertical; }
+  .lead-form input:focus,.lead-form select:focus,.lead-form textarea:focus{ border-color:var(--blue); box-shadow:0 0 0 3px rgba(8,43,102,.12); }
+  .lead-form .full{ grid-column:1/-1; }
+  .lead-form .form-actions{ display:flex; align-items:center; justify-content:center; gap:12px; flex-wrap:wrap; margin-top:18px; }
+  .lead-form .form-actions .btn{ cursor:pointer; font-family:inherit; }
+  .lead-form .form-actions .btn-primary{ border:0; }
+  .lead-form .form-actions .btn-line{ background:#fff; color:var(--head); border-color:var(--line2); }
+  .lead-form .form-actions .btn-line:hover{ background:var(--mist); color:var(--head); border-color:var(--blue); }
+  .form-note,.form-status{ font-size:13px; color:var(--muted); margin-top:12px; text-align:center; }
+  .form-status.ok{ color:#11814a; font-weight:700; }
+  .form-status.err{ color:#b42318; font-weight:700; }
+  @media(max-width:700px){ .lead-form{ padding:20px; } .lead-form .form-grid{ grid-template-columns:1fr; } }
 
   /* Footer */
   footer{ background:var(--navy); color:#93a6c6; padding:60px 0 30px; }
@@ -591,10 +609,80 @@
   <div class="wrap">
     <h2>Give your cooperative an institution-grade platform</h2>
     <p>Tell us about your society and we'll set up a live demo and a migration plan tailored to your books.</p>
-    <div class="hero-cta">
-      <a class="btn btn-primary" href="mailto:hello@cooperativems.com?subject=CoopMS%20demo%20request&amp;body=Society%20name%3A%0AApprox.%20members%3A%0AWhat%20you%20use%20today%3A%0APhone%3A">Book a demo <svg class="ic"><use href="#i-arrow"/></svg></a>
-      <a class="btn btn-line" href="mailto:hello@cooperativems.com?subject=CoopMS%20pricing">Get pricing</a>
-    </div>
+    <form id="demoForm" class="lead-form" data-endpoint="" data-mailto="hello@cooperativems.com">
+      <div class="form-grid">
+        <label>Full name
+          <input name="full_name" autocomplete="name" required>
+        </label>
+        <label>Work email
+          <input type="email" name="email" autocomplete="email" required>
+        </label>
+        <label>Phone / WhatsApp
+          <input name="phone" autocomplete="tel" required>
+        </label>
+        <label>Cooperative name
+          <input name="society_name" required>
+        </label>
+        <label>Cooperative type
+          <select name="society_type" required>
+            <option value="">Select type</option>
+            <option>Staff cooperative society</option>
+            <option>Multipurpose cooperative</option>
+            <option>Teachers cooperative society</option>
+            <option>Professional association cooperative</option>
+            <option>Religious cooperative society</option>
+            <option>Community cooperative society</option>
+            <option>Cooperative federation or union</option>
+          </select>
+        </label>
+        <label>Approx. members
+          <select name="member_count" required>
+            <option value="">Select range</option>
+            <option>Under 50</option>
+            <option>50 - 199</option>
+            <option>200 - 499</option>
+            <option>500 - 999</option>
+            <option>1,000+</option>
+          </select>
+        </label>
+        <label>Current records
+          <select name="current_system">
+            <option value="">Select current setup</option>
+            <option>Excel or Google Sheets</option>
+            <option>Manual ledgers</option>
+            <option>Accounting software plus spreadsheets</option>
+            <option>Existing cooperative software</option>
+            <option>Starting fresh</option>
+          </select>
+        </label>
+        <label>Priority
+          <select name="priority">
+            <option>Book a product demo</option>
+            <option>Data migration and reconciliation</option>
+            <option>Pricing for our society</option>
+            <option>Loan workflow automation</option>
+            <option>Member portal rollout</option>
+            <option>Audit and compliance reporting</option>
+          </select>
+        </label>
+        <label class="full">What should we help with?
+          <textarea name="message" placeholder="Example: We have 350 members, monthly savings, loans and old Excel records to migrate."></textarea>
+        </label>
+      </div>
+      <input type="hidden" name="utm_source">
+      <input type="hidden" name="utm_medium">
+      <input type="hidden" name="utm_campaign">
+      <input type="hidden" name="utm_term">
+      <input type="hidden" name="utm_content">
+      <input type="hidden" name="referrer">
+      <input type="hidden" name="landing_page">
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Book a demo <svg class="ic"><use href="#i-arrow"/></svg></button>
+        <a class="btn btn-line" href="mailto:hello@cooperativems.com?subject=CoopMS%20pricing">Get pricing</a>
+      </div>
+      <div class="form-note">We use these details to prepare the right demo, migration plan and pricing estimate.</div>
+      <div id="demoFormStatus" class="form-status" role="status" aria-live="polite"></div>
+    </form>
   </div>
 </section>
 
@@ -641,6 +729,82 @@
   document.querySelectorAll('#nav a').forEach(function(a){
     a.addEventListener('click', ()=>document.getElementById('nav').classList.remove('open'));
   });
+  // Lead capture and campaign attribution
+  (function(){
+    const form = document.getElementById('demoForm');
+    if(!form) return;
+    const status = document.getElementById('demoFormStatus');
+    const params = new URLSearchParams(window.location.search);
+    const meta = {
+      utm_source: params.get('utm_source') || '',
+      utm_medium: params.get('utm_medium') || '',
+      utm_campaign: params.get('utm_campaign') || '',
+      utm_term: params.get('utm_term') || '',
+      utm_content: params.get('utm_content') || '',
+      referrer: document.referrer || '',
+      landing_page: window.location.href
+    };
+    Object.keys(meta).forEach(function(key){
+      const field = form.querySelector('[name="' + key + '"]');
+      if(field) field.value = meta[key];
+    });
+    function setStatus(message, type){
+      if(!status) return;
+      status.className = 'form-status' + (type ? ' ' + type : '');
+      status.textContent = message;
+    }
+    function trackLead(payload){
+      if(window.dataLayer) window.dataLayer.push({event:'coopms_demo_request', lead:payload});
+      if(typeof window.gtag === 'function') window.gtag('event','coopms_demo_request', payload);
+      if(typeof window.fbq === 'function') window.fbq('trackCustom','CoopMSDemoRequest', payload);
+      if(typeof window.lintrk === 'function') window.lintrk('track', {conversion_id: payload.conversion_id || 0});
+    }
+    function formatLead(payload){
+      const labels = {
+        full_name:'Full name', email:'Email', phone:'Phone / WhatsApp', society_name:'Cooperative name',
+        society_type:'Cooperative type', member_count:'Approx. members', current_system:'Current records',
+        priority:'Priority', message:'Message', utm_source:'UTM source', utm_medium:'UTM medium',
+        utm_campaign:'UTM campaign', utm_term:'UTM term', utm_content:'UTM content',
+        referrer:'Referrer', landing_page:'Landing page'
+      };
+      return Object.keys(labels).map(function(key){
+        return labels[key] + ': ' + (payload[key] || '');
+      }).join('\n');
+    }
+    form.addEventListener('submit', async function(event){
+      event.preventDefault();
+      const endpoint = (form.dataset.endpoint || '').trim();
+      const mailto = (form.dataset.mailto || 'hello@cooperativems.com').trim();
+      const payload = Object.fromEntries(new FormData(form).entries());
+      payload.submitted_at = new Date().toISOString();
+      trackLead(payload);
+      if(endpoint){
+        setStatus('Sending your request...', '');
+        try{
+          const response = await fetch(endpoint, {
+            method:'POST',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify(payload)
+          });
+          if(!response.ok) throw new Error('Request failed');
+          form.reset();
+          Object.keys(meta).forEach(function(key){
+            const field = form.querySelector('[name="' + key + '"]');
+            if(field) field.value = meta[key];
+          });
+          setStatus('Thank you. We received your request and will contact you shortly.', 'ok');
+          return;
+        }catch(error){
+          setStatus('We could not submit automatically. Opening your email app instead...', 'err');
+        }
+      }else{
+        setStatus('Opening your email app with the request details...', 'ok');
+      }
+      const subject = encodeURIComponent('CoopMS demo request - ' + (payload.society_name || 'New lead'));
+      const body = encodeURIComponent(formatLead(payload));
+      window.location.href = 'mailto:' + mailto + '?subject=' + subject + '&body=' + body;
+    });
+  })();
 </script>
 </body>
 </html>
