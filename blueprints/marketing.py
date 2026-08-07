@@ -7,7 +7,7 @@ import io
 import json
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from urllib.parse import urlparse
 
 from flask import Blueprint, Response, abort, current_app, jsonify, redirect, render_template, request, url_for, flash
@@ -23,6 +23,7 @@ from utils import audit, role_required
 marketing = Blueprint('marketing', __name__)
 
 LEAD_STATUSES = ('new', 'contacted', 'demo_booked', 'proposal_sent', 'won', 'lost')
+ACTIVITY_TYPES = ('call', 'email', 'whatsapp', 'demo', 'proposal', 'note')
 _RECENT_SUBMISSIONS = {}
 
 
@@ -57,6 +58,39 @@ def _rate_limited(ip: str) -> bool:
 
 def _clean(value, limit=500):
     return (str(value or '').strip())[:limit]
+
+
+def _parse_datetime(value):
+    value = (value or '').strip()
+    if not value:
+        return None
+    for fmt in ('%Y-%m-%dT%H:%M', '%Y-%m-%d %H:%M', '%Y-%m-%d'):
+        try:
+            return datetime.strptime(value, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def _assignable_users(db):
+    return db.execute('''
+        SELECT id, username, full_name, email, role
+          FROM users
+         WHERE is_active = 1
+           AND role IN ('admin', 'secretary')
+         ORDER BY full_name, username
+    ''').fetchall()
+
+
+def _lead_flags(lead, now=None):
+    now = now or datetime.now()
+    next_due = _parse_datetime(lead.get('next_follow_up_at'))
+    last_activity = _parse_datetime(lead.get('last_activity_at')) or _parse_datetime(lead.get('updated_at')) or _parse_datetime(lead.get('created_at'))
+    open_status = lead.get('status') in ('new', 'contacted', 'demo_booked', 'proposal_sent')
+    return {
+        'follow_up_due': bool(open_status and next_due and next_due <= now),
+        'stale': bool(open_status and last_activity and now - last_activity > timedelta(days=3)),
+    }
 
 
 def _hq_base_url() -> str:
@@ -247,22 +281,32 @@ def leads_inbox():
     _require_marketing_hq()
     db = get_db()
     status = request.args.get('status', '').strip()
+    focus = request.args.get('focus', '').strip()
     q = request.args.get('q', '').strip()
     clauses = []
     params = []
     if status in LEAD_STATUSES:
-        clauses.append('status = ?')
+        clauses.append('ml.status = ?')
         params.append(status)
     if q:
         like = f'%{q}%'
-        clauses.append('(full_name LIKE ? OR email LIKE ? OR society_name LIKE ? OR phone LIKE ?)')
+        clauses.append('(ml.full_name LIKE ? OR ml.email LIKE ? OR ml.society_name LIKE ? OR ml.phone LIKE ?)')
         params.extend([like, like, like, like])
+    if focus == 'hot':
+        clauses.append("ml.lead_temperature = 'hot'")
+    elif focus == 'due':
+        clauses.append("ml.next_follow_up_at IS NOT NULL AND ml.next_follow_up_at <= ?")
+        params.append(datetime.now())
+        clauses.append("ml.status IN ('new', 'contacted', 'demo_booked', 'proposal_sent')")
+    elif focus == 'unassigned':
+        clauses.append('ml.assigned_to IS NULL')
     where = ('WHERE ' + ' AND '.join(clauses)) if clauses else ''
     leads = db.execute(f'''
-        SELECT *
-        FROM marketing_leads
+        SELECT ml.*, u.full_name AS owner_full_name, u.username AS owner_username
+        FROM marketing_leads ml
+        LEFT JOIN users u ON u.id = ml.assigned_to
         {where}
-        ORDER BY created_at DESC
+        ORDER BY ml.created_at DESC
         LIMIT 500
     ''', params).fetchall()
     stats = db.execute('''
@@ -271,12 +315,28 @@ def leads_inbox():
         GROUP BY status
     ''').fetchall()
     status_counts = {row['status']: row['count'] for row in stats}
+    now = datetime.now()
+    enriched_leads = []
+    for lead in leads:
+        item = dict(lead)
+        item.update(_lead_flags(item, now))
+        enriched_leads.append(item)
+    dashboard = {
+        'hot': db.execute("SELECT COUNT(*) FROM marketing_leads WHERE lead_temperature = 'hot'").fetchone()[0],
+        'due': db.execute(
+            "SELECT COUNT(*) FROM marketing_leads WHERE next_follow_up_at IS NOT NULL AND next_follow_up_at <= ? AND status IN ('new', 'contacted', 'demo_booked', 'proposal_sent')",
+            (now,),
+        ).fetchone()[0],
+        'unassigned': db.execute('SELECT COUNT(*) FROM marketing_leads WHERE assigned_to IS NULL').fetchone()[0],
+    }
     return render_template(
         'marketing/leads.html',
-        leads=leads,
+        leads=enriched_leads,
         statuses=LEAD_STATUSES,
         status_counts=status_counts,
         current_status=status,
+        focus=focus,
+        dashboard=dashboard,
         q=q,
     )
 
@@ -298,9 +358,9 @@ def update_lead_status(lead_id):
         return redirect(url_for('marketing.leads_inbox'))
     db.execute('''
         UPDATE marketing_leads
-           SET status = ?, notes = ?, updated_at = ?
+           SET status = ?, notes = ?, last_activity_at = ?, updated_at = ?
          WHERE id = ?
-    ''', (status, notes, datetime.now(), lead_id))
+    ''', (status, notes, datetime.now(), datetime.now(), lead_id))
     db.execute('''
         INSERT INTO marketing_lead_events
             (lead_id, event_type, description, actor_user_id, actor_username, data)
@@ -332,7 +392,91 @@ def lead_detail(lead_id):
         'SELECT * FROM marketing_lead_events WHERE lead_id = ? ORDER BY created_at DESC',
         (lead_id,),
     ).fetchall()
-    return render_template('marketing/lead_detail.html', lead=lead, events=events, statuses=LEAD_STATUSES)
+    return render_template(
+        'marketing/lead_detail.html',
+        lead=lead,
+        events=events,
+        statuses=LEAD_STATUSES,
+        activity_types=ACTIVITY_TYPES,
+        assignable_users=_assignable_users(db),
+        flags=_lead_flags(dict(lead)),
+    )
+
+
+@marketing.route('/marketing/leads/<int:lead_id>/workflow', methods=['POST'])
+@login_required
+@role_required('admin', 'secretary')
+def update_lead_workflow(lead_id):
+    _require_marketing_hq()
+    db = get_db()
+    lead = db.execute('SELECT * FROM marketing_leads WHERE id = ?', (lead_id,)).fetchone()
+    if not lead:
+        flash('Lead not found.', 'danger')
+        return redirect(url_for('marketing.leads_inbox'))
+    assigned_to = request.form.get('assigned_to', '').strip()
+    next_follow_up = _parse_datetime(request.form.get('next_follow_up_at'))
+    assigned_value = int(assigned_to) if assigned_to.isdigit() else None
+    db.execute('''
+        UPDATE marketing_leads
+           SET assigned_to = ?, next_follow_up_at = ?, updated_at = ?
+         WHERE id = ?
+    ''', (assigned_value, next_follow_up, datetime.now(), lead_id))
+    db.execute('''
+        INSERT INTO marketing_lead_events
+            (lead_id, event_type, description, actor_user_id, actor_username, data)
+        VALUES (?, 'workflow_update', 'Owner or follow-up updated', ?, ?, ?)
+    ''', (
+        lead_id,
+        current_user.id,
+        current_user.username,
+        json.dumps({'assigned_to': assigned_value, 'next_follow_up_at': str(next_follow_up or '')}),
+    ))
+    audit(db, 'UPDATE_MARKETING_WORKFLOW', 'marketing', f'Updated workflow for lead #{lead_id}')
+    db.commit()
+    flash('Lead workflow updated.', 'success')
+    return redirect(url_for('marketing.lead_detail', lead_id=lead_id))
+
+
+@marketing.route('/marketing/leads/<int:lead_id>/activity', methods=['POST'])
+@login_required
+@role_required('admin', 'secretary')
+def add_lead_activity(lead_id):
+    _require_marketing_hq()
+    db = get_db()
+    lead = db.execute('SELECT * FROM marketing_leads WHERE id = ?', (lead_id,)).fetchone()
+    if not lead:
+        flash('Lead not found.', 'danger')
+        return redirect(url_for('marketing.leads_inbox'))
+    activity_type = request.form.get('activity_type', 'note').strip()
+    if activity_type not in ACTIVITY_TYPES:
+        activity_type = 'note'
+    description = _clean(request.form.get('description'), 2000)
+    if not description:
+        flash('Activity note is required.', 'danger')
+        return redirect(url_for('marketing.lead_detail', lead_id=lead_id))
+    next_follow_up = _parse_datetime(request.form.get('next_follow_up_at'))
+    now = datetime.now()
+    db.execute('''
+        INSERT INTO marketing_lead_events
+            (lead_id, event_type, description, actor_user_id, actor_username, data)
+        VALUES (?, ?, ?, ?, ?, ?)
+    ''', (
+        lead_id,
+        f'activity_{activity_type}',
+        description,
+        current_user.id,
+        current_user.username,
+        json.dumps({'next_follow_up_at': str(next_follow_up or '')}),
+    ))
+    db.execute('''
+        UPDATE marketing_leads
+           SET last_activity_at = ?, next_follow_up_at = COALESCE(?, next_follow_up_at), updated_at = ?
+         WHERE id = ?
+    ''', (now, next_follow_up, now, lead_id))
+    audit(db, 'ADD_MARKETING_ACTIVITY', 'marketing', f'Added {activity_type} activity to lead #{lead_id}')
+    db.commit()
+    flash('Activity added.', 'success')
+    return redirect(url_for('marketing.lead_detail', lead_id=lead_id))
 
 
 @marketing.route('/marketing/leads/export.csv')
@@ -348,6 +492,7 @@ def export_leads():
         'created_at', 'status', 'lead_score', 'lead_temperature', 'score_reason',
         'full_name', 'email', 'phone', 'society_name',
         'society_type', 'member_count', 'current_system', 'priority', 'message',
+        'assigned_to', 'next_follow_up_at', 'last_activity_at',
         'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
         'referrer', 'landing_page', 'consent_accepted', 'confirmation_sent_at',
         'confirmation_status', 'confirmation_provider', 'confirmation_error',

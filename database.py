@@ -760,6 +760,8 @@ def init_db():
             internal_alert_error TEXT,
             notes TEXT,
             assigned_to INTEGER,
+            next_follow_up_at TIMESTAMP,
+            last_activity_at TIMESTAMP,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (assigned_to) REFERENCES users (id)
@@ -776,6 +778,9 @@ def init_db():
     _add_col(db, 'marketing_leads', 'internal_alert_status', "TEXT DEFAULT 'not_attempted'")
     _add_col(db, 'marketing_leads', 'internal_alert_provider', 'TEXT')
     _add_col(db, 'marketing_leads', 'internal_alert_error', 'TEXT')
+    _add_col(db, 'marketing_leads', 'assigned_to', 'INTEGER')
+    _add_col(db, 'marketing_leads', 'next_follow_up_at', 'TIMESTAMP')
+    _add_col(db, 'marketing_leads', 'last_activity_at', 'TIMESTAMP')
     db.execute(_adapt('''
         CREATE TABLE IF NOT EXISTS marketing_lead_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

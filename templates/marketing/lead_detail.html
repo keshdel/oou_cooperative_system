@@ -101,6 +101,60 @@
       </div>
     </div>
 
+    <div class="card shadow-sm mb-4">
+      <div class="card-header bg-white fw-bold">Owner &amp; Follow-up</div>
+      <div class="card-body">
+        {% if flags.follow_up_due %}<div class="alert alert-warning py-2">Follow-up is due.</div>{% endif %}
+        {% if flags.stale %}<div class="alert alert-danger py-2">No recent activity. This lead is stale.</div>{% endif %}
+        <form method="post" action="{{ url_for('marketing.update_lead_workflow', lead_id=lead.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="mb-3">
+            <label class="form-label">Owner</label>
+            <select class="form-select" name="assigned_to">
+              <option value="">Unassigned</option>
+              {% for user in assignable_users %}
+              <option value="{{ user.id }}" {% if lead.assigned_to == user.id %}selected{% endif %}>
+                {{ user.full_name or user.username }}{% if user.email %} - {{ user.email }}{% endif %}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Next Follow-up</label>
+            <input class="form-control" type="datetime-local" name="next_follow_up_at"
+                   value="{{ (lead.next_follow_up_at or '')[:16].replace(' ', 'T') }}">
+          </div>
+          <button class="btn btn-outline-primary w-100" type="submit"><i class="fas fa-calendar-check"></i> Save Workflow</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="card shadow-sm mb-4">
+      <div class="card-header bg-white fw-bold">Add Activity</div>
+      <div class="card-body">
+        <form method="post" action="{{ url_for('marketing.add_lead_activity', lead_id=lead.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="mb-3">
+            <label class="form-label">Activity Type</label>
+            <select class="form-select" name="activity_type">
+              {% for activity_type in activity_types %}
+              <option value="{{ activity_type }}">{{ activity_type|title }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Activity Note</label>
+            <textarea class="form-control" name="description" rows="4" required placeholder="What happened? What did the prospect say?"></textarea>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Next Follow-up</label>
+            <input class="form-control" type="datetime-local" name="next_follow_up_at">
+          </div>
+          <button class="btn btn-success w-100" type="submit"><i class="fas fa-plus"></i> Add Activity</button>
+        </form>
+      </div>
+    </div>
+
     <div class="card shadow-sm">
       <div class="card-header bg-white fw-bold">History</div>
       <div class="list-group list-group-flush">

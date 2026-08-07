@@ -14,6 +14,36 @@
 </div>
 
 <div class="row g-3 mb-4">
+  <div class="col-6 col-md-4 col-xl-2">
+    <a class="text-decoration-none" href="{{ url_for('marketing.leads_inbox', focus='hot') }}">
+      <div class="card shadow-sm h-100 {% if focus == 'hot' %}border-danger{% endif %}">
+        <div class="card-body py-3">
+          <div class="small text-muted text-uppercase fw-bold">Hot</div>
+          <div class="h4 mb-0">{{ dashboard.hot }}</div>
+        </div>
+      </div>
+    </a>
+  </div>
+  <div class="col-6 col-md-4 col-xl-2">
+    <a class="text-decoration-none" href="{{ url_for('marketing.leads_inbox', focus='due') }}">
+      <div class="card shadow-sm h-100 {% if focus == 'due' %}border-warning{% endif %}">
+        <div class="card-body py-3">
+          <div class="small text-muted text-uppercase fw-bold">Due</div>
+          <div class="h4 mb-0">{{ dashboard.due }}</div>
+        </div>
+      </div>
+    </a>
+  </div>
+  <div class="col-6 col-md-4 col-xl-2">
+    <a class="text-decoration-none" href="{{ url_for('marketing.leads_inbox', focus='unassigned') }}">
+      <div class="card shadow-sm h-100 {% if focus == 'unassigned' %}border-secondary{% endif %}">
+        <div class="card-body py-3">
+          <div class="small text-muted text-uppercase fw-bold">Unassigned</div>
+          <div class="h4 mb-0">{{ dashboard.unassigned }}</div>
+        </div>
+      </div>
+    </a>
+  </div>
   {% for status in statuses %}
   <div class="col-6 col-md-4 col-xl-2">
     <a class="text-decoration-none" href="{{ url_for('marketing.leads_inbox', status=status) }}">
@@ -61,6 +91,7 @@
           <th>Lead</th>
           <th>Cooperative</th>
           <th>Score</th>
+          <th>Owner / Follow-up</th>
           <th>Priority</th>
           <th>Source</th>
           <th>Email</th>
@@ -86,6 +117,12 @@
               {{ lead.lead_score or 0 }}/100 · {{ temp|title }}
             </span>
             {% if lead.score_reason %}<div class="small text-muted mt-1">{{ lead.score_reason }}</div>{% endif %}
+          </td>
+          <td>
+            <div class="small fw-semibold">{{ lead.owner_full_name or lead.owner_username or 'Unassigned' }}</div>
+            <div class="small text-muted">{{ lead.next_follow_up_at or 'No follow-up set' }}</div>
+            {% if lead.follow_up_due %}<span class="badge bg-warning text-dark mt-1">Due</span>{% endif %}
+            {% if lead.stale %}<span class="badge bg-danger mt-1">Stale</span>{% endif %}
           </td>
           <td>{{ lead.priority or 'Demo request' }}</td>
           <td>
@@ -117,7 +154,7 @@
         </tr>
         {% else %}
         <tr>
-          <td colspan="9" class="text-center text-muted py-5">No leads found yet.</td>
+          <td colspan="10" class="text-center text-muted py-5">No leads found yet.</td>
         </tr>
         {% endfor %}
       </tbody>
