@@ -59,6 +59,83 @@ def _clean(value, limit=500):
     return (str(value or '').strip())[:limit]
 
 
+def _hq_base_url() -> str:
+    return os.environ.get('MARKETING_HQ_BASE_URL', 'https://hq.cooperativems.com').rstrip('/')
+
+
+def _public_site_url() -> str:
+    return os.environ.get('MARKETING_SITE_URL', 'https://www.cooperativems.com').rstrip('/')
+
+
+def _lead_detail_url(lead_id) -> str:
+    return f"{_hq_base_url()}/marketing/leads/{lead_id}"
+
+
+def _score_lead(lead):
+    score = 20
+    reasons = []
+    member_count = (lead.get('member_count') or '').lower()
+    priority = (lead.get('priority') or '').lower()
+    current_system = (lead.get('current_system') or '').lower()
+    message = (lead.get('message') or '').lower()
+    society_type = (lead.get('society_type') or '').lower()
+
+    if '1,000' in member_count or '1000' in member_count:
+        score += 35
+        reasons.append('large cooperative size')
+    elif '500' in member_count:
+        score += 28
+        reasons.append('mid-large cooperative size')
+    elif '200' in member_count:
+        score += 20
+        reasons.append('meaningful member base')
+    elif '50' in member_count:
+        score += 10
+        reasons.append('small but qualified society')
+
+    if any(term in priority for term in ('migration', 'reconciliation')):
+        score += 25
+        reasons.append('migration/reconciliation priority')
+    if 'demo' in priority:
+        score += 18
+        reasons.append('demo requested')
+    if any(term in priority for term in ('loan', 'portal', 'audit', 'compliance')):
+        score += 15
+        reasons.append('specific product pain identified')
+    if 'pricing' in priority:
+        score += 8
+        reasons.append('pricing interest')
+
+    if any(term in current_system for term in ('excel', 'manual', 'spreadsheets')):
+        score += 15
+        reasons.append('manual/spreadsheet process')
+    if 'accounting software plus spreadsheets' in current_system:
+        score += 12
+        reasons.append('fragmented accounting workflow')
+
+    if lead.get('phone'):
+        score += 10
+        reasons.append('phone/WhatsApp provided')
+    if lead.get('email'):
+        score += 5
+        reasons.append('email provided')
+    if any(term in society_type for term in ('staff', 'multipurpose', 'federation', 'union')):
+        score += 8
+        reasons.append('strong target segment')
+    if len(message) > 40:
+        score += 7
+        reasons.append('detailed request')
+
+    score = max(0, min(score, 100))
+    if score >= 75:
+        temperature = 'hot'
+    elif score >= 50:
+        temperature = 'warm'
+    else:
+        temperature = 'cold'
+    return score, temperature, '; '.join(reasons) or 'basic enquiry'
+
+
 def _origin_allowed() -> bool:
     origin = request.headers.get('Origin') or request.headers.get('Referer') or ''
     if not origin:
@@ -98,12 +175,18 @@ def _notification_recipients(db):
 def _send_lead_alert(db, lead):
     recipients = _notification_recipients(db)
     if not recipients:
-        return
-    subject = f"New CoopMS demo lead - {lead['society_name']}"
+        return False
+    subject = f"{str(lead.get('lead_temperature') or 'new').upper()} lead ({lead.get('lead_score', 0)}/100) - {lead['society_name']}"
     safe = {k: escape(lead.get(k) or '') for k in lead.keys()}
+    lead_url = _lead_detail_url(lead['id'])
     html = f"""
     <h2>New CoopMS demo request</h2>
     <p>A new lead has been captured from the public CoopMS website.</p>
+    <div style="background:#eef5ff;border:1px solid #cfe0ff;border-radius:8px;padding:14px 16px;margin:18px 0;">
+      <div style="font-size:13px;color:#475569;text-transform:uppercase;font-weight:bold;">Lead score</div>
+      <div style="font-size:28px;color:#082b66;font-weight:800;">{safe['lead_score']}/100 &middot; {safe['lead_temperature']}</div>
+      <div style="color:#475569;">{safe['score_reason']}</div>
+    </div>
     <table cellpadding="6" cellspacing="0" style="border-collapse:collapse;">
       <tr><td><strong>Name</strong></td><td>{safe['full_name']}</td></tr>
       <tr><td><strong>Email</strong></td><td>{safe['email']}</td></tr>
@@ -115,10 +198,43 @@ def _send_lead_alert(db, lead):
       <tr><td><strong>Source</strong></td><td>{safe['utm_source'] or 'direct'}</td></tr>
     </table>
     <p><strong>Message</strong><br>{safe['message'].replace(chr(10), '<br>')}</p>
-    <p><a href="{url_for('marketing.leads_inbox', _external=True)}">Open Lead Inbox</a></p>
+    <p><strong>Suggested next action:</strong> respond within one business day, confirm the society size and book a live demo.</p>
+    <p>
+      <a href="{lead_url}" style="background:#f4b51c;color:#082b66;text-decoration:none;padding:12px 22px;border-radius:6px;font-weight:bold;display:inline-block;">Open lead in HQ</a>
+    </p>
     """
+    queued = False
     for recipient in recipients:
-        send_email(recipient, subject, html, background=True)
+        queued = send_email(recipient, subject, html, background=True) or queued
+    return queued
+
+
+def _send_prospect_confirmation(lead):
+    public_site = _public_site_url()
+    html = f"""
+    <h2>Thank you for requesting a CoopMS demo</h2>
+    <p>Hello {escape(lead['full_name'])},</p>
+    <p>Thank you for contacting CoopMS. We have received your request for <strong>{escape(lead['society_name'])}</strong>.</p>
+    <p>Our team will review your cooperative's needs and contact you to arrange a short discovery call or live demo.</p>
+    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px 16px;margin:18px 0;">
+      <p style="margin:0 0 8px;"><strong>Your request summary</strong></p>
+      <p style="margin:0;">Priority: {escape(lead.get('priority') or 'Product demo')}</p>
+      <p style="margin:0;">Approx. members: {escape(lead.get('member_count') or 'Not provided')}</p>
+      <p style="margin:0;">Current records: {escape(lead.get('current_system') or 'Not provided')}</p>
+    </div>
+    <p>Before the demo, it helps to have a rough idea of your member count, savings process, loan workflow, and current records.</p>
+    <p>
+      <a href="{public_site}" style="background:#082b66;color:#ffffff;text-decoration:none;padding:12px 22px;border-radius:6px;font-weight:bold;display:inline-block;">Visit CoopMS</a>
+    </p>
+    <p>Regards,<br><strong>The CoopMS Team</strong></p>
+    """
+    text = (
+        f"Hello {lead['full_name']},\n\n"
+        f"Thank you for requesting a CoopMS demo for {lead['society_name']}.\n"
+        "Our team will review your request and contact you shortly.\n\n"
+        f"Visit: {public_site}\n\nThe CoopMS Team"
+    )
+    return send_email(lead['email'], 'We received your CoopMS demo request', html, text, background=True)
 
 
 @marketing.route('/marketing/leads')
@@ -226,10 +342,12 @@ def export_leads():
     buf = io.StringIO()
     writer = csv.writer(buf)
     headers = [
-        'created_at', 'status', 'full_name', 'email', 'phone', 'society_name',
+        'created_at', 'status', 'lead_score', 'lead_temperature', 'score_reason',
+        'full_name', 'email', 'phone', 'society_name',
         'society_type', 'member_count', 'current_system', 'priority', 'message',
         'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
-        'referrer', 'landing_page', 'consent_accepted', 'crm_sync_status', 'notes'
+        'referrer', 'landing_page', 'consent_accepted', 'confirmation_sent_at',
+        'internal_alert_sent_at', 'crm_sync_status', 'notes'
     ]
     writer.writerow(headers)
     for row in rows:
@@ -289,18 +407,24 @@ def capture_lead():
         'created_at': now,
         'updated_at': now,
     }
+    lead_score, lead_temperature, score_reason = _score_lead(lead_values)
+    lead_values['lead_score'] = lead_score
+    lead_values['lead_temperature'] = lead_temperature
+    lead_values['score_reason'] = score_reason
     db.execute('''
         INSERT INTO marketing_leads (
             full_name, email, phone, society_name, society_type, member_count,
             current_system, priority, message, consent_accepted, utm_source,
             utm_medium, utm_campaign, utm_term, utm_content, referrer,
-            landing_page, ip_address, user_agent, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            landing_page, ip_address, user_agent, lead_score, lead_temperature,
+            score_reason, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', tuple(lead_values[k] for k in [
         'full_name', 'email', 'phone', 'society_name', 'society_type', 'member_count',
         'current_system', 'priority', 'message', 'consent_accepted', 'utm_source',
         'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'referrer',
-        'landing_page', 'ip_address', 'user_agent', 'created_at', 'updated_at'
+        'landing_page', 'ip_address', 'user_agent', 'lead_score', 'lead_temperature',
+        'score_reason', 'created_at', 'updated_at'
     ]))
     lead_id = last_insert_id(db)
     db.execute('''
@@ -308,12 +432,44 @@ def capture_lead():
             (lead_id, event_type, description, data)
         VALUES (?, 'created', 'Lead captured from public website', ?)
     ''', (lead_id, json.dumps({k: lead_values.get(k, '') for k in ('utm_source', 'utm_campaign', 'landing_page')})))
-    db.commit()
-
     lead = dict(lead_values)
     lead['id'] = lead_id
+    db.execute('''
+        INSERT INTO marketing_lead_events
+            (lead_id, event_type, description, data)
+        VALUES (?, 'scored', ?, ?)
+    ''', (
+        lead_id,
+        f"Lead scored {lead_score}/100 ({lead_temperature})",
+        json.dumps({'score': lead_score, 'temperature': lead_temperature, 'reason': score_reason}),
+    ))
+    db.commit()
+
     try:
-        _send_lead_alert(db, lead)
+        if _send_prospect_confirmation(lead):
+            db.execute(
+                'UPDATE marketing_leads SET confirmation_sent_at = ?, updated_at = ? WHERE id = ?',
+                (datetime.now(), datetime.now(), lead_id),
+            )
+            db.execute('''
+                INSERT INTO marketing_lead_events
+                    (lead_id, event_type, description)
+                VALUES (?, 'email_queued', 'Prospect confirmation email queued')
+            ''', (lead_id,))
+    except Exception as exc:
+        current_app.logger.warning('Marketing lead confirmation failed: %s', exc)
+    try:
+        if _send_lead_alert(db, lead):
+            db.execute(
+                'UPDATE marketing_leads SET internal_alert_sent_at = ?, updated_at = ? WHERE id = ?',
+                (datetime.now(), datetime.now(), lead_id),
+            )
+            db.execute('''
+                INSERT INTO marketing_lead_events
+                    (lead_id, event_type, description)
+                VALUES (?, 'email_queued', 'Internal sales alert queued')
+            ''', (lead_id,))
     except Exception as exc:
         current_app.logger.warning('Marketing lead alert failed: %s', exc)
+    db.commit()
     return jsonify({'ok': True, 'lead_id': lead_id})

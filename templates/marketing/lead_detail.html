@@ -11,7 +11,15 @@
     <h1 class="h3 mt-2 mb-1">{{ lead.society_name }}</h1>
     <p class="text-muted mb-0">{{ lead.full_name }} · {{ lead.email }}{% if lead.phone %} · {{ lead.phone }}{% endif %}</p>
   </div>
-  <span class="badge bg-primary fs-6">{{ lead.status.replace('_', ' ')|title }}</span>
+  <div class="text-end">
+    {% set temp = lead.lead_temperature or 'cold' %}
+    <div><span class="badge bg-primary fs-6">{{ lead.status.replace('_', ' ')|title }}</span></div>
+    <div class="mt-2">
+      <span class="badge {% if temp == 'hot' %}bg-danger{% elif temp == 'warm' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
+        {{ lead.lead_score or 0 }}/100 · {{ temp|title }}
+      </span>
+    </div>
+  </div>
 </div>
 
 <div class="row g-4">
@@ -24,6 +32,7 @@
           <div class="col-md-6"><div class="text-muted small">Approx. Members</div><div class="fw-semibold">{{ lead.member_count or '-' }}</div></div>
           <div class="col-md-6"><div class="text-muted small">Current Records</div><div class="fw-semibold">{{ lead.current_system or '-' }}</div></div>
           <div class="col-md-6"><div class="text-muted small">Priority</div><div class="fw-semibold">{{ lead.priority or '-' }}</div></div>
+          <div class="col-12"><div class="text-muted small">Score Reason</div><div class="fw-semibold">{{ lead.score_reason or '-' }}</div></div>
           <div class="col-12"><div class="text-muted small">Message</div><div class="border rounded p-3 bg-light">{{ lead.message or 'No message provided.' }}</div></div>
         </div>
       </div>
@@ -40,6 +49,8 @@
           <div class="col-md-6"><div class="text-muted small">Referrer</div><div class="text-break">{{ lead.referrer or '-' }}</div></div>
           <div class="col-md-6"><div class="text-muted small">IP Address</div><div>{{ lead.ip_address or '-' }}</div></div>
           <div class="col-md-6"><div class="text-muted small">Consent</div><div>{{ 'Accepted' if lead.consent_accepted else 'Not accepted' }}</div></div>
+          <div class="col-md-6"><div class="text-muted small">Confirmation Email</div><div>{{ lead.confirmation_sent_at or 'Not queued' }}</div></div>
+          <div class="col-md-6"><div class="text-muted small">Internal Alert</div><div>{{ lead.internal_alert_sent_at or 'Not queued' }}</div></div>
         </div>
       </div>
     </div>

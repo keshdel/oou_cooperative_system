@@ -52,8 +52,26 @@ FIELD_ENCRYPTION_KEY=${FIELD_ENCRYPTION_KEY}
 ADMIN_PASSWORD=${ADMIN_PASSWORD}
 FLASK_DEBUG=0
 
-# Fill these in when ready:
+# Email. Each tenant has its own sender configuration.
+# Set MAIL_ENABLED=1 and configure exactly one provider.
+MAIL_ENABLED=0
+MAIL_FROM=
+
+# Option A: Brevo API
+# BREVO_API_KEY=
+
+# Option B: SMTP relay (Brevo SMTP, Gmail app password, Outlook, etc.)
+# SMTP_HOST=smtp-relay.brevo.com
+# SMTP_PORT=587
+# SMTP_USER=
+# SMTP_PASS=
+# SMTP_USE_TLS=1
+# SMTP_USE_SSL=0
+
+# Option C: Resend API. Requires verified sender/domain.
 # RESEND_API_KEY=
+
+# Payments and billing:
 # PAYSTACK_SECRET=
 # PAYSTACK_PUBLIC=
 # SUBSCRIPTION_EXPIRY=2027-01-01
@@ -63,6 +81,9 @@ if [[ "$NAME" == "hq" ]]; then
 
 # CoopMS owner back office. Enables marketing lead inbox and public lead capture.
 MARKETING_HQ=1
+MARKETING_HQ_BASE_URL=https://${DOMAIN}
+MARKETING_SITE_URL=https://www.cooperativems.com
+# Where new website lead alerts should go. Leave blank to notify active admins.
 MARKETING_LEAD_NOTIFY_EMAIL=
 MARKETING_ALLOWED_ORIGINS=cooperativems.com,www.cooperativems.com
 EOF

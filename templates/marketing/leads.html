@@ -60,6 +60,7 @@
           <th>Created</th>
           <th>Lead</th>
           <th>Cooperative</th>
+          <th>Score</th>
           <th>Priority</th>
           <th>Source</th>
           <th>Status</th>
@@ -78,6 +79,13 @@
             <div class="fw-semibold">{{ lead.society_name }}</div>
             <div class="small text-muted">{{ lead.society_type or 'Type not provided' }}{% if lead.member_count %} · {{ lead.member_count }}{% endif %}</div>
           </td>
+          <td>
+            {% set temp = lead.lead_temperature or 'cold' %}
+            <span class="badge {% if temp == 'hot' %}bg-danger{% elif temp == 'warm' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
+              {{ lead.lead_score or 0 }}/100 · {{ temp|title }}
+            </span>
+            {% if lead.score_reason %}<div class="small text-muted mt-1">{{ lead.score_reason }}</div>{% endif %}
+          </td>
           <td>{{ lead.priority or 'Demo request' }}</td>
           <td>
             <span class="badge bg-light text-dark">{{ lead.utm_source or 'direct' }}</span>
@@ -92,7 +100,7 @@
         </tr>
         {% else %}
         <tr>
-          <td colspan="7" class="text-center text-muted py-5">No leads found yet.</td>
+          <td colspan="8" class="text-center text-muted py-5">No leads found yet.</td>
         </tr>
         {% endfor %}
       </tbody>

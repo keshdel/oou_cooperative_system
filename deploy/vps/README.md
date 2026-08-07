@@ -85,6 +85,36 @@ portals such as `ooucoop.cooperativems.com` and `smtcoop.cooperativems.com`
 remain client-owned and do not show the marketing lead inbox unless their env
 file explicitly sets `MARKETING_HQ=1`.
 
+**Configure outgoing email for any tenant**
+Edit that tenant's env file, for example:
+```bash
+nano clients/hq.env
+```
+Minimum Brevo SMTP setup:
+```env
+MAIL_ENABLED=1
+MAIL_FROM=CoopMS <verified-sender@example.com>
+SMTP_HOST=smtp-relay.brevo.com
+SMTP_PORT=587
+SMTP_USER=<brevo-smtp-login>
+SMTP_PASS=<brevo-smtp-password>
+SMTP_USE_TLS=1
+SMTP_USE_SSL=0
+```
+For HQ lead alerts, also set:
+```env
+MARKETING_LEAD_NOTIFY_EMAIL=you@example.com
+MARKETING_HQ_BASE_URL=https://hq.cooperativems.com
+MARKETING_SITE_URL=https://www.cooperativems.com
+```
+Then restart the affected app:
+```bash
+docker compose up -d --build app-hq
+```
+Use `app-ooucoop` or `app-smtcoop` for client tenant email changes. Each
+tenant has its own sender credentials, so a client's member emails do not mix
+with CoopMS HQ sales emails.
+
 **Update all clients to the latest code**
 ```bash
 git pull
@@ -122,8 +152,9 @@ gunzip -c backups/coop_client1-YYYYMMDD-HHMMSS.sql.gz | \
 - **Secrets never leave the server.** `deploy/vps/.env` and everything in
   `clients/` are gitignored. Keep a copy of each client's admin password in your
   password manager.
-- **Email:** set `RESEND_API_KEY` (or Brevo) in the client's `clients/<name>.env`,
-  then `docker compose up -d` to apply. Plain SMTP is not needed.
+- **Email:** set `MAIL_ENABLED=1` plus Brevo API, SMTP, or Resend in the
+  client's `clients/<name>.env`, then restart that app container. Brevo SMTP is
+  the easiest interim option before you have a verified sending domain.
 - **Payments:** put each client's own Paystack keys in their `clients/<name>.env`.
 - **Sizing:** if the server gets busy, resize it in the provider dashboard — no
   reinstall needed. One 2 GB box handles many small coops.

@@ -747,6 +747,11 @@ def init_db():
             user_agent TEXT,
             crm_sync_status TEXT DEFAULT 'not_synced',
             crm_external_id TEXT,
+            lead_score INTEGER DEFAULT 0,
+            lead_temperature TEXT DEFAULT 'cold',
+            score_reason TEXT,
+            confirmation_sent_at TIMESTAMP,
+            internal_alert_sent_at TIMESTAMP,
             notes TEXT,
             assigned_to INTEGER,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -754,6 +759,11 @@ def init_db():
             FOREIGN KEY (assigned_to) REFERENCES users (id)
         )
     '''))
+    _add_col(db, 'marketing_leads', 'lead_score', 'INTEGER DEFAULT 0')
+    _add_col(db, 'marketing_leads', 'lead_temperature', "TEXT DEFAULT 'cold'")
+    _add_col(db, 'marketing_leads', 'score_reason', 'TEXT')
+    _add_col(db, 'marketing_leads', 'confirmation_sent_at', 'TIMESTAMP')
+    _add_col(db, 'marketing_leads', 'internal_alert_sent_at', 'TIMESTAMP')
     db.execute(_adapt('''
         CREATE TABLE IF NOT EXISTS marketing_lead_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
