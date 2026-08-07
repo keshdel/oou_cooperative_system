@@ -63,6 +63,7 @@
           <th>Score</th>
           <th>Priority</th>
           <th>Source</th>
+          <th>Email</th>
           <th>Status</th>
           <th class="text-end">Action</th>
         </tr>
@@ -91,6 +92,22 @@
             <span class="badge bg-light text-dark">{{ lead.utm_source or 'direct' }}</span>
             {% if lead.utm_campaign %}<div class="small text-muted mt-1">{{ lead.utm_campaign }}</div>{% endif %}
           </td>
+          <td>
+            {% set confirmation_status = lead.confirmation_status or 'not_attempted' %}
+            {% set alert_status = lead.internal_alert_status or 'not_attempted' %}
+            <div class="small">
+              Prospect:
+              <span class="badge {% if confirmation_status == 'sent' %}bg-success{% elif confirmation_status == 'failed' %}bg-danger{% else %}bg-secondary{% endif %}">
+                {{ confirmation_status.replace('_', ' ')|title }}
+              </span>
+            </div>
+            <div class="small mt-1">
+              Alert:
+              <span class="badge {% if alert_status == 'sent' %}bg-success{% elif alert_status == 'failed' %}bg-danger{% else %}bg-secondary{% endif %}">
+                {{ alert_status.replace('_', ' ')|title }}
+              </span>
+            </div>
+          </td>
           <td><span class="badge bg-primary">{{ lead.status.replace('_', ' ')|title }}</span></td>
           <td class="text-end">
             <a class="btn btn-sm btn-outline-primary" href="{{ url_for('marketing.lead_detail', lead_id=lead.id) }}">
@@ -100,7 +117,7 @@
         </tr>
         {% else %}
         <tr>
-          <td colspan="8" class="text-center text-muted py-5">No leads found yet.</td>
+          <td colspan="9" class="text-center text-muted py-5">No leads found yet.</td>
         </tr>
         {% endfor %}
       </tbody>

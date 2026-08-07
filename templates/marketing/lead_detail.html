@@ -49,8 +49,30 @@
           <div class="col-md-6"><div class="text-muted small">Referrer</div><div class="text-break">{{ lead.referrer or '-' }}</div></div>
           <div class="col-md-6"><div class="text-muted small">IP Address</div><div>{{ lead.ip_address or '-' }}</div></div>
           <div class="col-md-6"><div class="text-muted small">Consent</div><div>{{ 'Accepted' if lead.consent_accepted else 'Not accepted' }}</div></div>
-          <div class="col-md-6"><div class="text-muted small">Confirmation Email</div><div>{{ lead.confirmation_sent_at or 'Not queued' }}</div></div>
-          <div class="col-md-6"><div class="text-muted small">Internal Alert</div><div>{{ lead.internal_alert_sent_at or 'Not queued' }}</div></div>
+          <div class="col-md-6">
+            <div class="text-muted small">Confirmation Email</div>
+            {% set confirmation_status = lead.confirmation_status or 'not_attempted' %}
+            <div>
+              <span class="badge {% if confirmation_status == 'sent' %}bg-success{% elif confirmation_status == 'failed' %}bg-danger{% else %}bg-secondary{% endif %}">
+                {{ confirmation_status.replace('_', ' ')|title }}
+              </span>
+              {% if lead.confirmation_provider %}<span class="small text-muted ms-1">{{ lead.confirmation_provider }}</span>{% endif %}
+            </div>
+            <div class="small text-muted">{{ lead.confirmation_sent_at or '' }}</div>
+            {% if lead.confirmation_error %}<div class="small text-danger text-break">{{ lead.confirmation_error }}</div>{% endif %}
+          </div>
+          <div class="col-md-6">
+            <div class="text-muted small">Internal Alert</div>
+            {% set alert_status = lead.internal_alert_status or 'not_attempted' %}
+            <div>
+              <span class="badge {% if alert_status == 'sent' %}bg-success{% elif alert_status == 'failed' %}bg-danger{% else %}bg-secondary{% endif %}">
+                {{ alert_status.replace('_', ' ')|title }}
+              </span>
+              {% if lead.internal_alert_provider %}<span class="small text-muted ms-1">{{ lead.internal_alert_provider }}</span>{% endif %}
+            </div>
+            <div class="small text-muted">{{ lead.internal_alert_sent_at or '' }}</div>
+            {% if lead.internal_alert_error %}<div class="small text-danger text-break">{{ lead.internal_alert_error }}</div>{% endif %}
+          </div>
         </div>
       </div>
     </div>

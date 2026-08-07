@@ -122,6 +122,14 @@ def _is_enabled() -> bool:
     return _truthy(configured)
 
 
+def _delivery_result(ok: bool, provider: str, error: str = '') -> dict:
+    return {
+        'ok': ok,
+        'provider': provider,
+        'error': str(error or '')[:1000],
+    }
+
+
 # ── Resend back-end ────────────────────────────────────────────────────────────
 
 def _send_via_resend(to: str, subject: str, html: str) -> bool:
@@ -328,6 +336,37 @@ def _deliver(to: str, subject: str, html: str, text: str = '') -> bool:
     return False
 
 
+def _deliver_detailed(to: str, subject: str, html: str, text: str = '') -> dict:
+    """Try configured providers and return provider/status details."""
+    attempted = []
+
+    if _cfg('RESEND_API_KEY', 'resend_api_key'):
+        attempted.append('resend')
+        if _send_via_resend(to, subject, html):
+            return _delivery_result(True, 'resend')
+        log.warning('Resend failed; trying next email provider for "%s"', subject)
+
+    if _cfg('BREVO_API_KEY', 'brevo_api_key', 'SENDINBLUE_API_KEY'):
+        attempted.append('brevo')
+        if _send_via_brevo(to, subject, html, text):
+            return _delivery_result(True, 'brevo')
+        log.warning('Brevo API failed; trying SMTP fallback for "%s"', subject)
+
+    if _cfg('SMTP_HOST', 'smtp_host', 'MAIL_SERVER'):
+        attempted.append('smtp')
+        if _send_via_smtp(to, subject, html, text):
+            return _delivery_result(True, 'smtp')
+
+    if attempted:
+        return _delivery_result(
+            False,
+            attempted[-1],
+            'Provider returned failure. Check app logs or provider dashboard for the exact rejection reason.',
+        )
+    log.warning('No email provider configured - skipped: "%s"', subject)
+    return _delivery_result(False, 'none', 'No email provider configured')
+
+
 def send_email(to: str, subject: str, html: str, text: str = '',
                background: bool = False) -> bool:
     """
@@ -353,6 +392,15 @@ def send_email(to: str, subject: str, html: str, text: str = '',
         run_in_background(_deliver, to, subject, html, text)
         return True
     return _deliver(to, subject, html, text)
+
+
+def send_email_detailed(to: str, subject: str, html: str, text: str = '') -> dict:
+    """Send synchronously and return actual provider delivery status."""
+    if not _is_enabled():
+        log.debug('Email disabled - skipped: "%s"', subject)
+        return _delivery_result(False, 'none', 'Email is disabled')
+
+    return _deliver_detailed(to, subject, _wrap_email(html), text)
 
 
 # ── Public send helpers ────────────────────────────────────────────────────────

@@ -751,7 +751,13 @@ def init_db():
             lead_temperature TEXT DEFAULT 'cold',
             score_reason TEXT,
             confirmation_sent_at TIMESTAMP,
+            confirmation_status TEXT DEFAULT 'not_attempted',
+            confirmation_provider TEXT,
+            confirmation_error TEXT,
             internal_alert_sent_at TIMESTAMP,
+            internal_alert_status TEXT DEFAULT 'not_attempted',
+            internal_alert_provider TEXT,
+            internal_alert_error TEXT,
             notes TEXT,
             assigned_to INTEGER,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -763,7 +769,13 @@ def init_db():
     _add_col(db, 'marketing_leads', 'lead_temperature', "TEXT DEFAULT 'cold'")
     _add_col(db, 'marketing_leads', 'score_reason', 'TEXT')
     _add_col(db, 'marketing_leads', 'confirmation_sent_at', 'TIMESTAMP')
+    _add_col(db, 'marketing_leads', 'confirmation_status', "TEXT DEFAULT 'not_attempted'")
+    _add_col(db, 'marketing_leads', 'confirmation_provider', 'TEXT')
+    _add_col(db, 'marketing_leads', 'confirmation_error', 'TEXT')
     _add_col(db, 'marketing_leads', 'internal_alert_sent_at', 'TIMESTAMP')
+    _add_col(db, 'marketing_leads', 'internal_alert_status', "TEXT DEFAULT 'not_attempted'")
+    _add_col(db, 'marketing_leads', 'internal_alert_provider', 'TEXT')
+    _add_col(db, 'marketing_leads', 'internal_alert_error', 'TEXT')
     db.execute(_adapt('''
         CREATE TABLE IF NOT EXISTS marketing_lead_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

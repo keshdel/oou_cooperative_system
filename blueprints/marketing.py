@@ -15,7 +15,7 @@ from flask_login import current_user, login_required
 from markupsafe import escape
 
 from database import get_db, last_insert_id
-from email_service import send_email
+from email_service import send_email_detailed
 from extensions import csrf
 from utils import audit, role_required
 
@@ -175,7 +175,7 @@ def _notification_recipients(db):
 def _send_lead_alert(db, lead):
     recipients = _notification_recipients(db)
     if not recipients:
-        return False
+        return {'ok': False, 'provider': 'none', 'error': 'No internal alert recipients configured'}
     subject = f"{str(lead.get('lead_temperature') or 'new').upper()} lead ({lead.get('lead_score', 0)}/100) - {lead['society_name']}"
     safe = {k: escape(lead.get(k) or '') for k in lead.keys()}
     lead_url = _lead_detail_url(lead['id'])
@@ -203,10 +203,13 @@ def _send_lead_alert(db, lead):
       <a href="{lead_url}" style="background:#f4b51c;color:#082b66;text-decoration:none;padding:12px 22px;border-radius:6px;font-weight:bold;display:inline-block;">Open lead in HQ</a>
     </p>
     """
-    queued = False
+    results = []
     for recipient in recipients:
-        queued = send_email(recipient, subject, html, background=True) or queued
-    return queued
+        results.append(send_email_detailed(recipient, subject, html))
+    ok = any(result.get('ok') for result in results)
+    provider = next((r.get('provider') for r in results if r.get('ok')), results[-1].get('provider', 'none'))
+    errors = '; '.join(r.get('error', '') for r in results if not r.get('ok') and r.get('error'))
+    return {'ok': ok, 'provider': provider, 'error': errors[:1000]}
 
 
 def _send_prospect_confirmation(lead):
@@ -234,7 +237,7 @@ def _send_prospect_confirmation(lead):
         "Our team will review your request and contact you shortly.\n\n"
         f"Visit: {public_site}\n\nThe CoopMS Team"
     )
-    return send_email(lead['email'], 'We received your CoopMS demo request', html, text, background=True)
+    return send_email_detailed(lead['email'], 'We received your CoopMS demo request', html, text)
 
 
 @marketing.route('/marketing/leads')
@@ -347,7 +350,9 @@ def export_leads():
         'society_type', 'member_count', 'current_system', 'priority', 'message',
         'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
         'referrer', 'landing_page', 'consent_accepted', 'confirmation_sent_at',
-        'internal_alert_sent_at', 'crm_sync_status', 'notes'
+        'confirmation_status', 'confirmation_provider', 'confirmation_error',
+        'internal_alert_sent_at', 'internal_alert_status', 'internal_alert_provider',
+        'internal_alert_error', 'crm_sync_status', 'notes'
     ]
     writer.writerow(headers)
     for row in rows:
@@ -446,30 +451,76 @@ def capture_lead():
     db.commit()
 
     try:
-        if _send_prospect_confirmation(lead):
-            db.execute(
-                'UPDATE marketing_leads SET confirmation_sent_at = ?, updated_at = ? WHERE id = ?',
-                (datetime.now(), datetime.now(), lead_id),
-            )
-            db.execute('''
-                INSERT INTO marketing_lead_events
-                    (lead_id, event_type, description)
-                VALUES (?, 'email_queued', 'Prospect confirmation email queued')
-            ''', (lead_id,))
+        confirmation = _send_prospect_confirmation(lead)
+        confirmation_status = 'sent' if confirmation.get('ok') else 'failed'
+        db.execute('''
+            UPDATE marketing_leads
+               SET confirmation_sent_at = ?,
+                   confirmation_status = ?,
+                   confirmation_provider = ?,
+                   confirmation_error = ?,
+                   updated_at = ?
+             WHERE id = ?
+        ''', (
+            datetime.now() if confirmation.get('ok') else None,
+            confirmation_status,
+            confirmation.get('provider', ''),
+            confirmation.get('error', ''),
+            datetime.now(),
+            lead_id,
+        ))
+        db.execute('''
+            INSERT INTO marketing_lead_events
+                (lead_id, event_type, description, data)
+            VALUES (?, ?, ?, ?)
+        ''', (
+            lead_id,
+            'email_sent' if confirmation.get('ok') else 'email_failed',
+            f"Prospect confirmation email {confirmation_status}",
+            json.dumps(confirmation),
+        ))
     except Exception as exc:
         current_app.logger.warning('Marketing lead confirmation failed: %s', exc)
+        db.execute('''
+            UPDATE marketing_leads
+               SET confirmation_status = 'failed', confirmation_error = ?, updated_at = ?
+             WHERE id = ?
+        ''', (str(exc)[:1000], datetime.now(), lead_id))
     try:
-        if _send_lead_alert(db, lead):
-            db.execute(
-                'UPDATE marketing_leads SET internal_alert_sent_at = ?, updated_at = ? WHERE id = ?',
-                (datetime.now(), datetime.now(), lead_id),
-            )
-            db.execute('''
-                INSERT INTO marketing_lead_events
-                    (lead_id, event_type, description)
-                VALUES (?, 'email_queued', 'Internal sales alert queued')
-            ''', (lead_id,))
+        alert = _send_lead_alert(db, lead)
+        alert_status = 'sent' if alert.get('ok') else 'failed'
+        db.execute('''
+            UPDATE marketing_leads
+               SET internal_alert_sent_at = ?,
+                   internal_alert_status = ?,
+                   internal_alert_provider = ?,
+                   internal_alert_error = ?,
+                   updated_at = ?
+             WHERE id = ?
+        ''', (
+            datetime.now() if alert.get('ok') else None,
+            alert_status,
+            alert.get('provider', ''),
+            alert.get('error', ''),
+            datetime.now(),
+            lead_id,
+        ))
+        db.execute('''
+            INSERT INTO marketing_lead_events
+                (lead_id, event_type, description, data)
+            VALUES (?, ?, ?, ?)
+        ''', (
+            lead_id,
+            'email_sent' if alert.get('ok') else 'email_failed',
+            f"Internal sales alert {alert_status}",
+            json.dumps(alert),
+        ))
     except Exception as exc:
         current_app.logger.warning('Marketing lead alert failed: %s', exc)
+        db.execute('''
+            UPDATE marketing_leads
+               SET internal_alert_status = 'failed', internal_alert_error = ?, updated_at = ?
+             WHERE id = ?
+        ''', (str(exc)[:1000], datetime.now(), lead_id))
     db.commit()
     return jsonify({'ok': True, 'lead_id': lead_id})
