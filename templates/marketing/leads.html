@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+
+{% block title %}Marketing Leads - CoopMS{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+  <div>
+    <h1 class="h3 mb-1"><i class="fas fa-bullseye text-primary"></i> Marketing Leads</h1>
+    <p class="text-muted mb-0">Demo requests and campaign leads captured from the CoopMS public website.</p>
+  </div>
+  <a class="btn btn-outline-success" href="{{ url_for('marketing.export_leads') }}">
+    <i class="fas fa-file-csv"></i> Export CSV
+  </a>
+</div>
+
+<div class="row g-3 mb-4">
+  {% for status in statuses %}
+  <div class="col-6 col-md-4 col-xl-2">
+    <a class="text-decoration-none" href="{{ url_for('marketing.leads_inbox', status=status) }}">
+      <div class="card shadow-sm h-100 {% if current_status == status %}border-primary{% endif %}">
+        <div class="card-body py-3">
+          <div class="small text-muted text-uppercase fw-bold">{{ status.replace('_', ' ') }}</div>
+          <div class="h4 mb-0">{{ status_counts.get(status, 0) }}</div>
+        </div>
+      </div>
+    </a>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="card shadow-sm mb-4">
+  <div class="card-body">
+    <form method="get" class="row g-2 align-items-end">
+      <div class="col-md-5">
+        <label class="form-label">Search</label>
+        <input class="form-control" name="q" value="{{ q }}" placeholder="Name, email, phone, or cooperative">
+      </div>
+      <div class="col-md-4">
+        <label class="form-label">Status</label>
+        <select class="form-select" name="status">
+          <option value="">All statuses</option>
+          {% for status in statuses %}
+          <option value="{{ status }}" {% if current_status == status %}selected{% endif %}>{{ status.replace('_', ' ')|title }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3 d-flex gap-2">
+        <button class="btn btn-primary flex-fill" type="submit"><i class="fas fa-filter"></i> Apply</button>
+        <a class="btn btn-light" href="{{ url_for('marketing.leads_inbox') }}">Clear</a>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-dark">
+        <tr>
+          <th>Created</th>
+          <th>Lead</th>
+          <th>Cooperative</th>
+          <th>Priority</th>
+          <th>Source</th>
+          <th>Status</th>
+          <th class="text-end">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for lead in leads %}
+        <tr>
+          <td class="text-nowrap small">{{ lead.created_at }}</td>
+          <td>
+            <div class="fw-bold">{{ lead.full_name }}</div>
+            <div class="small text-muted">{{ lead.email }}{% if lead.phone %} · {{ lead.phone }}{% endif %}</div>
+          </td>
+          <td>
+            <div class="fw-semibold">{{ lead.society_name }}</div>
+            <div class="small text-muted">{{ lead.society_type or 'Type not provided' }}{% if lead.member_count %} · {{ lead.member_count }}{% endif %}</div>
+          </td>
+          <td>{{ lead.priority or 'Demo request' }}</td>
+          <td>
+            <span class="badge bg-light text-dark">{{ lead.utm_source or 'direct' }}</span>
+            {% if lead.utm_campaign %}<div class="small text-muted mt-1">{{ lead.utm_campaign }}</div>{% endif %}
+          </td>
+          <td><span class="badge bg-primary">{{ lead.status.replace('_', ' ')|title }}</span></td>
+          <td class="text-end">
+            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('marketing.lead_detail', lead_id=lead.id) }}">
+              <i class="fas fa-eye"></i> Open
+            </a>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="7" class="text-center text-muted py-5">No leads found yet.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

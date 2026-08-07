@@ -609,7 +609,7 @@
   <div class="wrap">
     <h2>Give your cooperative an institution-grade platform</h2>
     <p>Tell us about your society and we'll set up a live demo and a migration plan tailored to your books.</p>
-    <form id="demoForm" class="lead-form" data-endpoint="" data-mailto="hello@cooperativems.com">
+    <form id="demoForm" class="lead-form" data-endpoint="/api/marketing/leads" data-mailto="hello@cooperativems.com">
       <div class="form-grid">
         <label>Full name
           <input name="full_name" autocomplete="name" required>
@@ -668,7 +668,14 @@
         <label class="full">What should we help with?
           <textarea name="message" placeholder="Example: We have 350 members, monthly savings, loans and old Excel records to migrate."></textarea>
         </label>
+        <label class="full" style="position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden;">Company website
+          <input name="company_website" tabindex="-1" autocomplete="off">
+        </label>
       </div>
+      <label class="full" style="display:flex;align-items:flex-start;gap:10px;margin-top:14px;text-transform:none;letter-spacing:0;font-size:13px;font-weight:600;color:var(--body);">
+        <input type="checkbox" name="consent_accepted" value="1" required style="width:auto;margin-top:3px;">
+        <span>By submitting this form, you agree that CoopMS may contact you about product demos, pricing, onboarding, and related cooperative management services.</span>
+      </label>
       <input type="hidden" name="utm_source">
       <input type="hidden" name="utm_medium">
       <input type="hidden" name="utm_campaign">

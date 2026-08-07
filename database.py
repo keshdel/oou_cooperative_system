@@ -721,6 +721,58 @@ def init_db():
     _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_comm_recip_campaign ON communication_recipients(campaign_id)')
     _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_comm_campaign_created ON communication_campaigns(created_at)')
 
+    # Product marketing leads captured from the public CoopMS website.
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS marketing_leads (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            full_name TEXT NOT NULL,
+            email TEXT NOT NULL,
+            phone TEXT,
+            society_name TEXT NOT NULL,
+            society_type TEXT,
+            member_count TEXT,
+            current_system TEXT,
+            priority TEXT,
+            message TEXT,
+            status TEXT DEFAULT 'new',
+            consent_accepted INTEGER DEFAULT 0,
+            utm_source TEXT,
+            utm_medium TEXT,
+            utm_campaign TEXT,
+            utm_term TEXT,
+            utm_content TEXT,
+            referrer TEXT,
+            landing_page TEXT,
+            ip_address TEXT,
+            user_agent TEXT,
+            crm_sync_status TEXT DEFAULT 'not_synced',
+            crm_external_id TEXT,
+            notes TEXT,
+            assigned_to INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (assigned_to) REFERENCES users (id)
+        )
+    '''))
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS marketing_lead_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            lead_id INTEGER NOT NULL,
+            event_type TEXT NOT NULL,
+            description TEXT,
+            actor_user_id INTEGER,
+            actor_username TEXT,
+            data TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (lead_id) REFERENCES marketing_leads (id),
+            FOREIGN KEY (actor_user_id) REFERENCES users (id)
+        )
+    '''))
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_marketing_leads_status ON marketing_leads(status)')
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_marketing_leads_created ON marketing_leads(created_at)')
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_marketing_leads_email ON marketing_leads(email)')
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_marketing_lead_events_lead ON marketing_lead_events(lead_id)')
+
     # Pending payments table
     db.execute(_adapt('''
         CREATE TABLE IF NOT EXISTS pending_payments (

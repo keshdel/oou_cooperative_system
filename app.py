@@ -119,6 +119,7 @@ from blueprints.governance  import governance
 from blueprints.communications import communications
 from blueprints.security     import security_bp
 from blueprints.feedback     import feedback_bp
+from blueprints.marketing    import marketing
 from mobile_api             import mobile_api
 
 app.register_blueprint(auth)
@@ -139,6 +140,7 @@ app.register_blueprint(governance)
 app.register_blueprint(communications)
 app.register_blueprint(security_bp)
 app.register_blueprint(feedback_bp)
+app.register_blueprint(marketing)
 app.register_blueprint(mobile_api)
 
 csrf.exempt(mobile_api)
@@ -246,6 +248,7 @@ def utility_processor():
         'show_feedback_nudge':      show_feedback_nudge,
         'feedback_features':        feedback_features,
         'feedback_improve_options': feedback_improve_options,
+        'marketing_hq_enabled':     os.environ.get('MARKETING_HQ', '0') == '1',
     }
 
 
@@ -296,6 +299,7 @@ _BILLING_EXEMPT = {
     'help_bp.knowledge_base',
     'help_bp.article',
     'help_bp.panel_api',
+    'marketing.capture_lead',
 }
 
 _IDLE_EXEMPT = {

@@ -58,6 +58,15 @@ FLASK_DEBUG=0
 # PAYSTACK_PUBLIC=
 # SUBSCRIPTION_EXPIRY=2027-01-01
 EOF
+if [[ "$NAME" == "hq" ]]; then
+  cat >> "$CLIENT_FILE" <<EOF
+
+# CoopMS owner back office. Enables marketing lead inbox and public lead capture.
+MARKETING_HQ=1
+MARKETING_LEAD_NOTIFY_EMAIL=
+MARKETING_ALLOWED_ORIGINS=cooperativems.com,www.cooperativems.com
+EOF
+fi
 echo "    wrote ${CLIENT_FILE}"
 
 echo "==> Starting Postgres (if not already up)"

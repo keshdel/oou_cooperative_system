@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block title %}Lead Detail - CoopMS{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
+  <div>
+    <a class="text-muted text-decoration-none" href="{{ url_for('marketing.leads_inbox') }}">
+      <i class="fas fa-arrow-left"></i> Lead Inbox
+    </a>
+    <h1 class="h3 mt-2 mb-1">{{ lead.society_name }}</h1>
+    <p class="text-muted mb-0">{{ lead.full_name }} · {{ lead.email }}{% if lead.phone %} · {{ lead.phone }}{% endif %}</p>
+  </div>
+  <span class="badge bg-primary fs-6">{{ lead.status.replace('_', ' ')|title }}</span>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-8">
+    <div class="card shadow-sm mb-4">
+      <div class="card-header bg-white fw-bold">Lead Details</div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-md-6"><div class="text-muted small">Cooperative Type</div><div class="fw-semibold">{{ lead.society_type or '-' }}</div></div>
+          <div class="col-md-6"><div class="text-muted small">Approx. Members</div><div class="fw-semibold">{{ lead.member_count or '-' }}</div></div>
+          <div class="col-md-6"><div class="text-muted small">Current Records</div><div class="fw-semibold">{{ lead.current_system or '-' }}</div></div>
+          <div class="col-md-6"><div class="text-muted small">Priority</div><div class="fw-semibold">{{ lead.priority or '-' }}</div></div>
+          <div class="col-12"><div class="text-muted small">Message</div><div class="border rounded p-3 bg-light">{{ lead.message or 'No message provided.' }}</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card shadow-sm">
+      <div class="card-header bg-white fw-bold">Source Tracking</div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-md-4"><div class="text-muted small">UTM Source</div><div>{{ lead.utm_source or 'direct' }}</div></div>
+          <div class="col-md-4"><div class="text-muted small">UTM Medium</div><div>{{ lead.utm_medium or '-' }}</div></div>
+          <div class="col-md-4"><div class="text-muted small">UTM Campaign</div><div>{{ lead.utm_campaign or '-' }}</div></div>
+          <div class="col-md-6"><div class="text-muted small">Landing Page</div><div class="text-break">{{ lead.landing_page or '-' }}</div></div>
+          <div class="col-md-6"><div class="text-muted small">Referrer</div><div class="text-break">{{ lead.referrer or '-' }}</div></div>
+          <div class="col-md-6"><div class="text-muted small">IP Address</div><div>{{ lead.ip_address or '-' }}</div></div>
+          <div class="col-md-6"><div class="text-muted small">Consent</div><div>{{ 'Accepted' if lead.consent_accepted else 'Not accepted' }}</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="card shadow-sm mb-4">
+      <div class="card-header bg-white fw-bold">Update Lead</div>
+      <div class="card-body">
+        <form method="post" action="{{ url_for('marketing.update_lead_status', lead_id=lead.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="mb-3">
+            <label class="form-label">Status</label>
+            <select class="form-select" name="status">
+              {% for status in statuses %}
+              <option value="{{ status }}" {% if lead.status == status %}selected{% endif %}>{{ status.replace('_', ' ')|title }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Notes</label>
+            <textarea class="form-control" name="notes" rows="5" placeholder="Next step, call notes, proposal detail...">{{ lead.notes or '' }}</textarea>
+          </div>
+          <button class="btn btn-primary w-100" type="submit"><i class="fas fa-save"></i> Save Update</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="card shadow-sm">
+      <div class="card-header bg-white fw-bold">History</div>
+      <div class="list-group list-group-flush">
+        {% for event in events %}
+        <div class="list-group-item">
+          <div class="fw-semibold">{{ event.description or event.event_type }}</div>
+          <div class="small text-muted">{{ event.created_at }}{% if event.actor_username %} · {{ event.actor_username }}{% endif %}</div>
+        </div>
+        {% else %}
+        <div class="list-group-item text-muted">No history yet.</div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

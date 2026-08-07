@@ -71,6 +71,20 @@ their members under **Data Migration**.
 ./add-client.sh client3 client3.yourcoop.com
 ```
 
+**Create the CoopMS owner/HQ back office**
+```bash
+./add-client.sh hq hq.cooperativems.com
+echo hq > .landing-api-client
+python3 generate.py
+docker compose up -d --build
+docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile
+```
+Use the HQ portal for CoopMS-owned operations such as website leads, demo
+requests, prospect follow-up, onboarding setup, and future CRM sync. Client
+portals such as `ooucoop.cooperativems.com` and `smtcoop.cooperativems.com`
+remain client-owned and do not show the marketing lead inbox unless their env
+file explicitly sets `MARKETING_HQ=1`.
+
 **Update all clients to the latest code**
 ```bash
 git pull

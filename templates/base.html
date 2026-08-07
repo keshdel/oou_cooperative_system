@@ -174,6 +174,12 @@
                        class="{% if request.blueprint == 'feedback' %}active{% endif %}">
                         <i class="fas fa-comment-dots"></i> Feedback
                     </a>
+                    {% if marketing_hq_enabled %}
+                    <a href="{{ url_for('marketing.leads_inbox') }}"
+                       class="{% if request.blueprint == 'marketing' %}active{% endif %}">
+                        <i class="fas fa-bullseye"></i> Leads
+                    </a>
+                    {% endif %}
                     {% endif %}
                     {% if current_user.role in ['admin', 'treasurer'] %}
                     <a href="{{ url_for('admin_panel.subscription_page') }}"
