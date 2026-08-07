@@ -1322,7 +1322,8 @@ class HardeningFeatureTests(unittest.TestCase):
         self.assertIn('Dear Ada', sent_messages[0][2])
         self.assertIn('NGN', sent_messages[0][2])
         self.assertIn('CoopMS Member Communication', sent_messages[0][2])
-        self.assertIn('Member Portal Notice', sent_messages[0][2])
+        # The email heading reflects the campaign title, not a hardcoded string.
+        self.assertIn('Profile reminder', sent_messages[0][2])
 
         with self.app.app_context():
             db = get_db()

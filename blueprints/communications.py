@@ -199,7 +199,7 @@ def _render_message(template, context):
     return rendered
 
 
-def _body_to_html(body):
+def _body_to_html(body, heading='Member Communication'):
     paragraphs = []
     facts = []
     portal_url = ''
@@ -279,7 +279,7 @@ def _body_to_html(body):
         '<tr><td style="background:#082b66;padding:20px 22px;">'
         '<div style="font-size:12px;letter-spacing:.09em;text-transform:uppercase;'
         'color:#f4b51c;font-weight:700;margin-bottom:7px;">CoopMS Member Communication</div>'
-        '<div style="font-size:20px;font-weight:800;color:#ffffff;line-height:1.25;">Member Portal Notice</div>'
+        f'<div style="font-size:20px;font-weight:800;color:#ffffff;line-height:1.25;">{escape(heading)}</div>'
         '</td></tr>'
         '<tr><td style="padding:22px;">'
         f'{body_html}'
@@ -365,6 +365,7 @@ def _process_campaign(campaign_id, portal_url=None):
         return
     subject = campaign['subject']
     body = campaign['body']
+    title = campaign['title'] or 'Member Communication'
 
     recipients = db.execute('''
         SELECT r.id AS recipient_id, r.destination AS destination, m.*
@@ -379,7 +380,8 @@ def _process_campaign(campaign_id, portal_url=None):
         ctx = _member_context(db, r, portal_url)
         member_subject = _render_message(subject, ctx)
         member_body = _render_message(body, ctx)
-        ok = send_email(destination, member_subject, _body_to_html(member_body))
+        member_heading = _render_message(title, ctx)
+        ok = send_email(destination, member_subject, _body_to_html(member_body, member_heading))
         status = 'sent' if ok else 'failed'
         if ok:
             sent += 1
