@@ -802,7 +802,8 @@
           setStatus('Thank you. We received your request and will contact you shortly.', 'ok');
           return;
         }catch(error){
-          setStatus('We could not submit automatically. Opening your email app instead...', 'err');
+          setStatus('We could not submit your request. Please check your connection and try again, or email hello@cooperativems.com.', 'err');
+          return;
         }
       }else{
         setStatus('Opening your email app with the request details...', 'ok');
