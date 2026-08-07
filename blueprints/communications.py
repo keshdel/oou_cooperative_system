@@ -229,7 +229,7 @@ def _body_to_html(body):
             paragraphs.append(
                 '<p style="margin:0 0 14px;color:#334155;font-size:15px;line-height:1.65;">'
                 '<strong>Portal:</strong> '
-                f'<a href="{safe_url}" style="color:#0f766e;text-decoration:none;">{escape(clean_value)}</a>'
+                f'<a href="{safe_url}" style="color:#082b66;text-decoration:none;font-weight:600;">{escape(clean_value)}</a>'
                 '</p>'
             )
         elif sep and normalized_key in fact_labels:
@@ -260,36 +260,37 @@ def _body_to_html(body):
     cta_html = ''
     if portal_url:
         safe_url = escape(portal_url, quote=True)
+        # Table-based "bulletproof" button so Outlook renders the padding/fill.
         cta_html = (
-            '<p style="margin:22px 0 6px;">'
-            f'<a href="{safe_url}" '
-            'style="display:inline-block;background:#0f766e;color:#ffffff;text-decoration:none;'
-            'font-weight:700;font-size:14px;padding:12px 18px;border-radius:6px;">'
-            'Open Member Portal'
-            '</a></p>'
+            '<table role="presentation" cellspacing="0" cellpadding="0" style="margin:22px 0 6px;">'
+            '<tr><td style="background:#082b66;border-radius:6px;padding:13px 26px;text-align:center;">'
+            f'<a href="{safe_url}" style="color:#ffffff;text-decoration:none;font-weight:700;'
+            'font-size:14px;display:inline-block;">Open Member Portal &rarr;</a>'
+            '</td></tr></table>'
         )
 
     body_html = ''.join(paragraphs) or '<p style="margin:0;color:#334155;font-size:15px;"> </p>'
+    # Table-based layout (not nested divs) so Outlook renders the header band
+    # and spacing correctly instead of collapsing it.
     return (
-        '<div style="font-family:Arial,Helvetica,sans-serif;">'
-        '<div style="border:1px solid #dbeafe;border-radius:8px;overflow:hidden;background:#ffffff;">'
-        '<div style="background:#0f172a;color:#ffffff;padding:14px 18px;">'
-        '<div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#93c5fd;font-weight:700;">'
-        'CoopMS Member Communication'
-        '</div>'
-        '<div style="font-size:19px;font-weight:800;margin-top:3px;">Member Portal Notice</div>'
-        '</div>'
-        '<div style="padding:18px;">'
+        '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" '
+        'style="font-family:Arial,Helvetica,sans-serif;border:1px solid #e2e8f0;'
+        'border-radius:8px;overflow:hidden;background:#ffffff;">'
+        '<tr><td style="background:#082b66;padding:20px 22px;">'
+        '<div style="font-size:12px;letter-spacing:.09em;text-transform:uppercase;'
+        'color:#f4b51c;font-weight:700;margin-bottom:7px;">CoopMS Member Communication</div>'
+        '<div style="font-size:20px;font-weight:800;color:#ffffff;line-height:1.25;">Member Portal Notice</div>'
+        '</td></tr>'
+        '<tr><td style="padding:22px;">'
         f'{body_html}'
         f'{fact_html}'
         f'{cta_html}'
-        '<div style="margin-top:20px;padding-top:14px;border-top:1px solid #e2e8f0;'
+        '<div style="margin-top:22px;padding-top:16px;border-top:1px solid #e2e8f0;'
         'color:#64748b;font-size:12px;line-height:1.5;">'
         'This message was sent from CoopMS for cooperative administration, member records, and account servicing.'
         '</div>'
-        '</div>'
-        '</div>'
-        '</div>'
+        '</td></tr>'
+        '</table>'
     )
 
 

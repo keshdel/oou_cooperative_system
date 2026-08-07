@@ -282,7 +282,7 @@ def _wrap_email(inner_html: str) -> str:
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f9;padding:24px 12px;">
     <tr><td align="center">
       <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:10px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
-        <tr><td style="background:#1e4d8c;padding:24px 30px;text-align:center;">
+        <tr><td style="background:#082b66;padding:24px 30px;text-align:center;">
           <div style="color:#ffffff;font-size:22px;font-weight:bold;letter-spacing:.2px;">{coop}</div>
         </td></tr>
         <tr><td style="padding:32px 30px;color:#333333;font-size:16px;line-height:1.6;">
@@ -292,9 +292,13 @@ def _wrap_email(inner_html: str) -> str:
           This is an automated message from {coop}. Please do not reply to this email.<br>
           &copy; {year} {coop}. All rights reserved.
         </td></tr>
-        <tr><td style="padding:22px 30px;background:#0f2a5c;text-align:center;">
-          <div style="color:#cbd5e1;font-size:13px;line-height:1.55;margin-bottom:14px;">{advert}</div>
-          <a href="{cta}" style="display:inline-block;background:#22c55e;color:#ffffff;text-decoration:none;padding:10px 22px;border-radius:6px;font-weight:bold;font-size:13px;">Digitize your cooperative with {APP_NAME} &rarr;</a>
+        <tr><td style="padding:22px 30px;background:#061e4a;text-align:center;">
+          <div style="color:#cbd5e1;font-size:13px;line-height:1.55;margin-bottom:16px;">{advert}</div>
+          <table role="presentation" cellspacing="0" cellpadding="0" align="center" style="margin:0 auto;">
+            <tr><td style="background:#f4b51c;border-radius:6px;padding:11px 24px;text-align:center;">
+              <a href="{cta}" style="color:#082b66;text-decoration:none;font-weight:bold;font-size:13px;display:inline-block;">Digitize your cooperative with {APP_NAME} &rarr;</a>
+            </td></tr>
+          </table>
         </td></tr>
       </table>
       <div style="color:#aaaaaa;font-size:11px;margin-top:12px;">Delivered by {APP_NAME}</div>
