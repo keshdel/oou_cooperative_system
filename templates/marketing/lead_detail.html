@@ -2,170 +2,300 @@
 
 {% block title %}Lead Detail - CoopMS{% endblock %}
 
+{% block extra_css %}
+<style>
+  .crm-shell { max-width: 1480px; margin: 0 auto; }
+  .lead-header {
+    background: #fff;
+    border: 1px solid #e1e7f0;
+    border-left: 5px solid #0f3d82;
+    border-radius: 8px;
+    padding: 14px 18px;
+    box-shadow: 0 6px 20px rgba(15, 23, 42, .05);
+  }
+  .lead-title { font-size: 1.45rem; font-weight: 900; color: #12233f; }
+  .lead-meta { color: #6f7d8e; font-size: .9rem; }
+  .crm-panel {
+    border: 1px solid #e1e7f0;
+    border-radius: 8px;
+    box-shadow: 0 6px 20px rgba(15, 23, 42, .05);
+  }
+  .crm-panel .card-header {
+    padding: 12px 14px;
+    background: #fff;
+    border-bottom: 1px solid #eef2f7;
+    font-weight: 900;
+    color: #152238;
+  }
+  .crm-panel .card-body { padding: 14px; }
+  .crm-field-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .crm-field { min-width: 0; }
+  .crm-label {
+    color: #778397;
+    font-size: .68rem;
+    font-weight: 800;
+    letter-spacing: .02em;
+    text-transform: uppercase;
+  }
+  .crm-value {
+    color: #1f2a44;
+    font-size: .9rem;
+    font-weight: 700;
+    overflow-wrap: anywhere;
+  }
+  .crm-message {
+    min-height: 46px;
+    padding: 10px 12px;
+    background: #f8fafc;
+    border: 1px solid #e7edf5;
+    border-radius: 6px;
+    color: #334155;
+  }
+  .crm-side {
+    position: sticky;
+    top: 86px;
+  }
+  .crm-side .form-label {
+    margin-bottom: 4px;
+    color: #6f7d8e;
+    font-size: .72rem;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+  .crm-side .form-control, .crm-side .form-select, .crm-side .btn {
+    border-radius: 6px;
+  }
+  .crm-history {
+    max-height: 360px;
+    overflow: auto;
+  }
+  .crm-history .list-group-item { padding: 10px 14px; }
+  .crm-alert { border-radius: 6px; font-size: .84rem; }
+  @media (max-width: 992px) {
+    .crm-field-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .crm-side { position: static; }
+  }
+  @media (max-width: 576px) {
+    .crm-field-grid { grid-template-columns: 1fr; }
+  }
+</style>
+{% endblock %}
+
 {% block content %}
-<div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-4">
-  <div>
-    <a class="text-muted text-decoration-none" href="{{ url_for('marketing.leads_inbox') }}">
-      <i class="fas fa-arrow-left"></i> Lead Inbox
-    </a>
-    <h1 class="h3 mt-2 mb-1">{{ lead.society_name }}</h1>
-    <p class="text-muted mb-0">{{ lead.full_name }} · {{ lead.email }}{% if lead.phone %} · {{ lead.phone }}{% endif %}</p>
-  </div>
-  <div class="text-end">
-    {% set temp = lead.lead_temperature or 'cold' %}
-    <div><span class="badge bg-primary fs-6">{{ lead.status.replace('_', ' ')|title }}</span></div>
-    <div class="mt-2">
-      <span class="badge {% if temp == 'hot' %}bg-danger{% elif temp == 'warm' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">
-        {{ lead.lead_score or 0 }}/100 · {{ temp|title }}
+<div class="crm-shell">
+  <div class="lead-header d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
+    <div>
+      <a class="text-muted text-decoration-none small fw-semibold" href="{{ url_for('marketing.leads_inbox') }}">
+        <i class="fas fa-arrow-left"></i> Lead Inbox
+      </a>
+      <div class="lead-title mt-1">{{ lead.society_name }}</div>
+      <div class="lead-meta">{{ lead.full_name }} &middot; {{ lead.email }}{% if lead.phone %} &middot; {{ lead.phone }}{% endif %}</div>
+    </div>
+    <div class="d-flex flex-wrap gap-2 justify-content-end">
+      {% set temp = lead.lead_temperature or 'cold' %}
+      <span class="badge bg-primary fs-6">{{ lead.status.replace('_', ' ')|title }}</span>
+      <span class="badge {% if temp == 'hot' %}bg-danger{% elif temp == 'warm' %}bg-warning text-dark{% else %}bg-secondary{% endif %} fs-6">
+        {{ lead.lead_score or 0 }}/100 &middot; {{ temp|title }}
       </span>
     </div>
   </div>
-</div>
 
-<div class="row g-4">
-  <div class="col-lg-8">
-    <div class="card shadow-sm mb-4">
-      <div class="card-header bg-white fw-bold">Lead Details</div>
-      <div class="card-body">
-        <div class="row g-3">
-          <div class="col-md-6"><div class="text-muted small">Cooperative Type</div><div class="fw-semibold">{{ lead.society_type or '-' }}</div></div>
-          <div class="col-md-6"><div class="text-muted small">Approx. Members</div><div class="fw-semibold">{{ lead.member_count or '-' }}</div></div>
-          <div class="col-md-6"><div class="text-muted small">Current Records</div><div class="fw-semibold">{{ lead.current_system or '-' }}</div></div>
-          <div class="col-md-6"><div class="text-muted small">Priority</div><div class="fw-semibold">{{ lead.priority or '-' }}</div></div>
-          <div class="col-12"><div class="text-muted small">Score Reason</div><div class="fw-semibold">{{ lead.score_reason or '-' }}</div></div>
-          <div class="col-12"><div class="text-muted small">Message</div><div class="border rounded p-3 bg-light">{{ lead.message or 'No message provided.' }}</div></div>
-        </div>
-      </div>
-    </div>
-
-    <div class="card shadow-sm">
-      <div class="card-header bg-white fw-bold">Source Tracking</div>
-      <div class="card-body">
-        <div class="row g-3">
-          <div class="col-md-4"><div class="text-muted small">UTM Source</div><div>{{ lead.utm_source or 'direct' }}</div></div>
-          <div class="col-md-4"><div class="text-muted small">UTM Medium</div><div>{{ lead.utm_medium or '-' }}</div></div>
-          <div class="col-md-4"><div class="text-muted small">UTM Campaign</div><div>{{ lead.utm_campaign or '-' }}</div></div>
-          <div class="col-md-6"><div class="text-muted small">Landing Page</div><div class="text-break">{{ lead.landing_page or '-' }}</div></div>
-          <div class="col-md-6"><div class="text-muted small">Referrer</div><div class="text-break">{{ lead.referrer or '-' }}</div></div>
-          <div class="col-md-6"><div class="text-muted small">IP Address</div><div>{{ lead.ip_address or '-' }}</div></div>
-          <div class="col-md-6"><div class="text-muted small">Consent</div><div>{{ 'Accepted' if lead.consent_accepted else 'Not accepted' }}</div></div>
-          <div class="col-md-6">
-            <div class="text-muted small">Confirmation Email</div>
-            {% set confirmation_status = lead.confirmation_status or 'not_attempted' %}
-            <div>
-              <span class="badge {% if confirmation_status == 'sent' %}bg-success{% elif confirmation_status == 'failed' %}bg-danger{% else %}bg-secondary{% endif %}">
-                {{ confirmation_status.replace('_', ' ')|title }}
-              </span>
-              {% if lead.confirmation_provider %}<span class="small text-muted ms-1">{{ lead.confirmation_provider }}</span>{% endif %}
+  <div class="row g-3">
+    <div class="col-xl-8">
+      <div class="card crm-panel mb-3">
+        <div class="card-header">Lead Snapshot</div>
+        <div class="card-body">
+          <div class="crm-field-grid mb-3">
+            <div class="crm-field">
+              <div class="crm-label">Cooperative Type</div>
+              <div class="crm-value">{{ lead.society_type or '-' }}</div>
             </div>
-            <div class="small text-muted">{{ lead.confirmation_sent_at or '' }}</div>
-            {% if lead.confirmation_error %}<div class="small text-danger text-break">{{ lead.confirmation_error }}</div>{% endif %}
-          </div>
-          <div class="col-md-6">
-            <div class="text-muted small">Internal Alert</div>
-            {% set alert_status = lead.internal_alert_status or 'not_attempted' %}
-            <div>
-              <span class="badge {% if alert_status == 'sent' %}bg-success{% elif alert_status == 'failed' %}bg-danger{% else %}bg-secondary{% endif %}">
-                {{ alert_status.replace('_', ' ')|title }}
-              </span>
-              {% if lead.internal_alert_provider %}<span class="small text-muted ms-1">{{ lead.internal_alert_provider }}</span>{% endif %}
+            <div class="crm-field">
+              <div class="crm-label">Approx. Members</div>
+              <div class="crm-value">{{ lead.member_count or '-' }}</div>
             </div>
-            <div class="small text-muted">{{ lead.internal_alert_sent_at or '' }}</div>
-            {% if lead.internal_alert_error %}<div class="small text-danger text-break">{{ lead.internal_alert_error }}</div>{% endif %}
+            <div class="crm-field">
+              <div class="crm-label">Current Records</div>
+              <div class="crm-value">{{ lead.current_system or '-' }}</div>
+            </div>
+            <div class="crm-field">
+              <div class="crm-label">Priority</div>
+              <div class="crm-value">{{ lead.priority or '-' }}</div>
+            </div>
+          </div>
+          <div class="crm-field mb-3">
+            <div class="crm-label">Score Reason</div>
+            <div class="crm-value">{{ lead.score_reason or '-' }}</div>
+          </div>
+          <div class="crm-field">
+            <div class="crm-label">Message</div>
+            <div class="crm-message">{{ lead.message or 'No message provided.' }}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card crm-panel">
+        <div class="card-header">Source, Consent & Email Delivery</div>
+        <div class="card-body">
+          <div class="crm-field-grid">
+            <div class="crm-field">
+              <div class="crm-label">UTM Source</div>
+              <div class="crm-value">{{ lead.utm_source or 'direct' }}</div>
+            </div>
+            <div class="crm-field">
+              <div class="crm-label">UTM Medium</div>
+              <div class="crm-value">{{ lead.utm_medium or '-' }}</div>
+            </div>
+            <div class="crm-field">
+              <div class="crm-label">UTM Campaign</div>
+              <div class="crm-value">{{ lead.utm_campaign or '-' }}</div>
+            </div>
+            <div class="crm-field">
+              <div class="crm-label">Consent</div>
+              <div class="crm-value">{{ 'Accepted' if lead.consent_accepted else 'Not accepted' }}</div>
+            </div>
+            <div class="crm-field">
+              <div class="crm-label">Landing Page</div>
+              <div class="crm-value">{{ lead.landing_page or '-' }}</div>
+            </div>
+            <div class="crm-field">
+              <div class="crm-label">Referrer</div>
+              <div class="crm-value">{{ lead.referrer or '-' }}</div>
+            </div>
+            <div class="crm-field">
+              <div class="crm-label">IP Address</div>
+              <div class="crm-value">{{ lead.ip_address or '-' }}</div>
+            </div>
+            <div class="crm-field">
+              <div class="crm-label">Created</div>
+              <div class="crm-value">{{ lead.created_at or '-' }}</div>
+            </div>
+            <div class="crm-field">
+              <div class="crm-label">Confirmation Email</div>
+              {% set confirmation_status = lead.confirmation_status or 'not_attempted' %}
+              <div class="crm-value">
+                <span class="badge {% if confirmation_status == 'sent' %}bg-success{% elif confirmation_status == 'failed' %}bg-danger{% else %}bg-secondary{% endif %}">
+                  {{ confirmation_status.replace('_', ' ')|title }}
+                </span>
+                {% if lead.confirmation_provider %}<span class="small text-muted ms-1">{{ lead.confirmation_provider }}</span>{% endif %}
+              </div>
+              <div class="small text-muted">{{ lead.confirmation_sent_at or '' }}</div>
+              {% if lead.confirmation_error %}<div class="small text-danger text-break">{{ lead.confirmation_error }}</div>{% endif %}
+            </div>
+            <div class="crm-field">
+              <div class="crm-label">Internal Alert</div>
+              {% set alert_status = lead.internal_alert_status or 'not_attempted' %}
+              <div class="crm-value">
+                <span class="badge {% if alert_status == 'sent' %}bg-success{% elif alert_status == 'failed' %}bg-danger{% else %}bg-secondary{% endif %}">
+                  {{ alert_status.replace('_', ' ')|title }}
+                </span>
+                {% if lead.internal_alert_provider %}<span class="small text-muted ms-1">{{ lead.internal_alert_provider }}</span>{% endif %}
+              </div>
+              <div class="small text-muted">{{ lead.internal_alert_sent_at or '' }}</div>
+              {% if lead.internal_alert_error %}<div class="small text-danger text-break">{{ lead.internal_alert_error }}</div>{% endif %}
+            </div>
           </div>
         </div>
       </div>
     </div>
-  </div>
 
-  <div class="col-lg-4">
-    <div class="card shadow-sm mb-4">
-      <div class="card-header bg-white fw-bold">Update Lead</div>
-      <div class="card-body">
-        <form method="post" action="{{ url_for('marketing.update_lead_status', lead_id=lead.id) }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <div class="mb-3">
-            <label class="form-label">Status</label>
-            <select class="form-select" name="status">
-              {% for status in statuses %}
-              <option value="{{ status }}" {% if lead.status == status %}selected{% endif %}>{{ status.replace('_', ' ')|title }}</option>
-              {% endfor %}
-            </select>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Notes</label>
-            <textarea class="form-control" name="notes" rows="5" placeholder="Next step, call notes, proposal detail...">{{ lead.notes or '' }}</textarea>
-          </div>
-          <button class="btn btn-primary w-100" type="submit"><i class="fas fa-save"></i> Save Update</button>
-        </form>
-      </div>
-    </div>
+    <div class="col-xl-4">
+      <div class="crm-side">
+        <div class="card crm-panel mb-3">
+          <div class="card-header">Sales Controls</div>
+          <div class="card-body">
+            {% if flags.follow_up_due %}<div class="alert alert-warning py-2 crm-alert">Follow-up is due.</div>{% endif %}
+            {% if flags.stale %}<div class="alert alert-danger py-2 crm-alert">No recent activity. This lead is stale.</div>{% endif %}
 
-    <div class="card shadow-sm mb-4">
-      <div class="card-header bg-white fw-bold">Owner &amp; Follow-up</div>
-      <div class="card-body">
-        {% if flags.follow_up_due %}<div class="alert alert-warning py-2">Follow-up is due.</div>{% endif %}
-        {% if flags.stale %}<div class="alert alert-danger py-2">No recent activity. This lead is stale.</div>{% endif %}
-        <form method="post" action="{{ url_for('marketing.update_lead_workflow', lead_id=lead.id) }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <div class="mb-3">
-            <label class="form-label">Owner</label>
-            <select class="form-select" name="assigned_to">
-              <option value="">Unassigned</option>
-              {% for user in assignable_users %}
-              <option value="{{ user.id }}" {% if lead.assigned_to == user.id %}selected{% endif %}>
-                {{ user.full_name or user.username }}{% if user.email %} - {{ user.email }}{% endif %}
-              </option>
-              {% endfor %}
-            </select>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Next Follow-up</label>
-            <input class="form-control" type="datetime-local" name="next_follow_up_at"
-                   value="{{ (lead.next_follow_up_at or '')[:16].replace(' ', 'T') }}">
-          </div>
-          <button class="btn btn-outline-primary w-100" type="submit"><i class="fas fa-calendar-check"></i> Save Workflow</button>
-        </form>
-      </div>
-    </div>
+            <form method="post" action="{{ url_for('marketing.update_lead_status', lead_id=lead.id) }}" class="mb-3">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <div class="row g-2">
+                <div class="col-md-5 col-xl-12">
+                  <label class="form-label">Status</label>
+                  <select class="form-select" name="status">
+                    {% for status in statuses %}
+                    <option value="{{ status }}" {% if lead.status == status %}selected{% endif %}>{{ status.replace('_', ' ')|title }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="col-md-7 col-xl-12">
+                  <label class="form-label">Notes</label>
+                  <textarea class="form-control" name="notes" rows="3" placeholder="Next step, call notes, proposal detail...">{{ lead.notes or '' }}</textarea>
+                </div>
+              </div>
+              <button class="btn btn-primary w-100 mt-2" type="submit"><i class="fas fa-save"></i> Save Status</button>
+            </form>
 
-    <div class="card shadow-sm mb-4">
-      <div class="card-header bg-white fw-bold">Add Activity</div>
-      <div class="card-body">
-        <form method="post" action="{{ url_for('marketing.add_lead_activity', lead_id=lead.id) }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <div class="mb-3">
-            <label class="form-label">Activity Type</label>
-            <select class="form-select" name="activity_type">
-              {% for activity_type in activity_types %}
-              <option value="{{ activity_type }}">{{ activity_type|title }}</option>
-              {% endfor %}
-            </select>
+            <form method="post" action="{{ url_for('marketing.update_lead_workflow', lead_id=lead.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <div class="row g-2">
+                <div class="col-md-6 col-xl-12">
+                  <label class="form-label">Owner</label>
+                  <select class="form-select" name="assigned_to">
+                    <option value="">Unassigned</option>
+                    {% for user in assignable_users %}
+                    <option value="{{ user.id }}" {% if lead.assigned_to == user.id %}selected{% endif %}>
+                      {{ user.full_name or user.username }}{% if user.email %} - {{ user.email }}{% endif %}
+                    </option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="col-md-6 col-xl-12">
+                  <label class="form-label">Next Follow-up</label>
+                  <input class="form-control" type="datetime-local" name="next_follow_up_at"
+                         value="{{ (lead.next_follow_up_at or '')[:16].replace(' ', 'T') }}">
+                </div>
+              </div>
+              <button class="btn btn-outline-primary w-100 mt-2" type="submit"><i class="fas fa-calendar-check"></i> Save Workflow</button>
+            </form>
           </div>
-          <div class="mb-3">
-            <label class="form-label">Activity Note</label>
-            <textarea class="form-control" name="description" rows="4" required placeholder="What happened? What did the prospect say?"></textarea>
-          </div>
-          <div class="mb-3">
-            <label class="form-label">Next Follow-up</label>
-            <input class="form-control" type="datetime-local" name="next_follow_up_at">
-          </div>
-          <button class="btn btn-success w-100" type="submit"><i class="fas fa-plus"></i> Add Activity</button>
-        </form>
-      </div>
-    </div>
-
-    <div class="card shadow-sm">
-      <div class="card-header bg-white fw-bold">History</div>
-      <div class="list-group list-group-flush">
-        {% for event in events %}
-        <div class="list-group-item">
-          <div class="fw-semibold">{{ event.description or event.event_type }}</div>
-          <div class="small text-muted">{{ event.created_at }}{% if event.actor_username %} · {{ event.actor_username }}{% endif %}</div>
         </div>
-        {% else %}
-        <div class="list-group-item text-muted">No history yet.</div>
-        {% endfor %}
+
+        <div class="card crm-panel mb-3">
+          <div class="card-header">Log Activity</div>
+          <div class="card-body">
+            <form method="post" action="{{ url_for('marketing.add_lead_activity', lead_id=lead.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <div class="row g-2">
+                <div class="col-md-5 col-xl-12">
+                  <label class="form-label">Type</label>
+                  <select class="form-select" name="activity_type">
+                    {% for activity_type in activity_types %}
+                    <option value="{{ activity_type }}">{{ activity_type|title }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div class="col-md-7 col-xl-12">
+                  <label class="form-label">Next Follow-up</label>
+                  <input class="form-control" type="datetime-local" name="next_follow_up_at">
+                </div>
+                <div class="col-12">
+                  <label class="form-label">Activity Note</label>
+                  <textarea class="form-control" name="description" rows="3" required placeholder="What happened? What did the prospect say?"></textarea>
+                </div>
+              </div>
+              <button class="btn btn-success w-100 mt-2" type="submit"><i class="fas fa-plus"></i> Add Activity</button>
+            </form>
+          </div>
+        </div>
+
+        <div class="card crm-panel">
+          <div class="card-header">History</div>
+          <div class="list-group list-group-flush crm-history">
+            {% for event in events %}
+            <div class="list-group-item">
+              <div class="fw-semibold small">{{ event.description or event.event_type }}</div>
+              <div class="small text-muted">{{ event.created_at }}{% if event.actor_username %} &middot; {{ event.actor_username }}{% endif %}</div>
+            </div>
+            {% else %}
+            <div class="list-group-item text-muted">No history yet.</div>
+            {% endfor %}
+          </div>
+        </div>
       </div>
     </div>
   </div>
