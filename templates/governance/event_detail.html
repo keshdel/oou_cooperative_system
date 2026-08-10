@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}{{ event.title }} - {{ coop_name }}{% endblock %}
+{% block content %}
+<div class="container-fluid">
+  <div class="d-flex justify-content-between align-items-start mb-3 flex-wrap gap-2">
+    <div>
+      <h2 class="mb-1">{{ event.title }}</h2>
+      <span class="badge bg-primary text-uppercase">{{ meeting_labels.get(event.event_type, event.event_type) }}</span>
+      <span class="text-muted ms-2"><i class="far fa-calendar"></i> {{ when }}</span>
+    </div>
+    <div class="d-flex gap-2">
+      {% if is_manager %}<a href="{{ url_for('governance.edit_event', event_id=event.id) }}" class="btn btn-outline-secondary btn-sm"><i class="fas fa-pen"></i> Edit / reschedule</a>{% endif %}
+      <a href="{{ url_for('governance.events_list') }}" class="btn btn-outline-secondary btn-sm"><i class="fas fa-arrow-left"></i> Back</a>
+    </div>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-lg-7">
+      <div class="card mb-3">
+        <div class="card-body">
+          <div class="row">
+            <div class="col-sm-3 text-muted small">When</div>
+            <div class="col-sm-9 mb-2 fw-semibold">{{ when }}</div>
+            <div class="col-sm-3 text-muted small">Where</div>
+            <div class="col-sm-9 mb-2">
+              {% if event.meeting_link %}<a href="{{ event.meeting_link }}" target="_blank" rel="noopener"><i class="fas fa-video"></i> Join online</a>{% endif %}
+              {% if event.location %}<div>{{ event.location }}</div>{% endif %}
+              {% if not event.meeting_link and not event.location %}<span class="text-muted">To be confirmed</span>{% endif %}
+            </div>
+            {% if event.agenda %}<div class="col-sm-3 text-muted small">Agenda</div>
+            <div class="col-sm-9 mb-2" style="white-space:pre-line">{{ event.agenda }}</div>{% endif %}
+            {% if event.description %}<div class="col-sm-3 text-muted small">Details</div>
+            <div class="col-sm-9" style="white-space:pre-line">{{ event.description }}</div>{% endif %}
+          </div>
+        </div>
+      </div>
+
+      {% if minutes %}
+      <div class="card mb-3">
+        <div class="card-header"><h6 class="mb-0"><i class="fas fa-file-alt"></i> Minutes for this meeting</h6></div>
+        <ul class="list-group list-group-flush">
+          {% for m in minutes %}
+          <li class="list-group-item d-flex justify-content-between align-items-center">
+            <span>{{ m.title }}{% if m.meeting_date %}<span class="text-muted small ms-2">{{ (m.meeting_date|string)[:10] }}</span>{% endif %}</span>
+            {% if m.file_name %}<a href="{{ url_for('governance.minutes_download', minute_id=m.id) }}" class="btn btn-sm btn-outline-primary"><i class="fas fa-download"></i></a>{% endif %}
+          </li>
+          {% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="col-lg-5">
+      <div class="card mb-3">
+        <div class="card-header"><h6 class="mb-0"><i class="fas fa-user-check"></i> Will you attend?</h6></div>
+        <div class="card-body">
+          <div class="d-flex gap-4 mb-3">
+            <div class="text-center"><div class="fs-4 fw-bold text-success">{{ summary.attending }}</div><div class="small text-muted">Attending</div></div>
+            <div class="text-center"><div class="fs-4 fw-bold text-warning">{{ summary.maybe }}</div><div class="small text-muted">Maybe</div></div>
+            <div class="text-center"><div class="fs-4 fw-bold text-secondary">{{ summary.not_attending }}</div><div class="small text-muted">Can't</div></div>
+          </div>
+          <form method="post" action="{{ url_for('governance.rsvp', event_id=event.id) }}" class="d-flex gap-2">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button name="response" value="attending" class="btn btn-sm flex-fill {{ 'btn-success' if my_rsvp=='attending' else 'btn-outline-success' }}">Attending</button>
+            <button name="response" value="maybe" class="btn btn-sm flex-fill {{ 'btn-warning' if my_rsvp=='maybe' else 'btn-outline-warning' }}">Maybe</button>
+            <button name="response" value="not_attending" class="btn btn-sm flex-fill {{ 'btn-secondary' if my_rsvp=='not_attending' else 'btn-outline-secondary' }}">Can't</button>
+          </form>
+          {% if my_rsvp %}<div class="small text-muted mt-2">Your response: <strong>{{ my_rsvp.replace('_',' ')|title }}</strong> — you can change it any time.</div>{% endif %}
+        </div>
+      </div>
+
+      {% if is_manager %}
+      <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+          <h6 class="mb-0"><i class="fas fa-clipboard-check"></i> Attendance register</h6>
+          <span class="badge bg-primary">{{ summary.attended }} present</span>
+        </div>
+        <form method="post" action="{{ url_for('governance.mark_attendance', event_id=event.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="card-body p-0" style="max-height:420px;overflow:auto">
+            <table class="table table-sm mb-0 align-middle">
+              <thead class="table-light"><tr><th style="width:44px">Here</th><th>Member</th><th>RSVP</th></tr></thead>
+              <tbody>
+                {% for r in register %}
+                <tr>
+                  <td><input class="form-check-input" type="checkbox" name="attended" value="{{ r.member_id }}" {% if r.attended %}checked{% endif %}></td>
+                  <td>{{ r.name }} <span class="text-muted small">{{ r.member_number }}</span></td>
+                  <td>{% if r.response == 'attending' %}<span class="badge bg-success">Attending</span>{% elif r.response == 'maybe' %}<span class="badge bg-warning text-dark">Maybe</span>{% elif r.response == 'not_attending' %}<span class="badge bg-secondary">Can't</span>{% else %}<span class="text-muted small">—</span>{% endif %}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="3" class="text-center text-muted py-3">No active members.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          <div class="card-footer d-flex justify-content-between align-items-center">
+            <span class="small text-muted">Tick who attended — the count feeds AGM quorum.</span>
+            <button class="btn btn-primary btn-sm"><i class="fas fa-save"></i> Save register</button>
+          </div>
+        </form>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

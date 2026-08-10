@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Edit meeting - {{ coop_name }}{% endblock %}
+{% block content %}
+<div class="container-fluid">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h2 class="mb-0"><i class="fas fa-pen"></i> Edit / reschedule meeting</h2>
+    <a href="{{ url_for('governance.event_detail', event_id=event.id) }}" class="btn btn-outline-secondary btn-sm"><i class="fas fa-arrow-left"></i> Back</a>
+  </div>
+  <div class="card">
+    <div class="card-body">
+      <form method="post" action="{{ url_for('governance.edit_event', event_id=event.id) }}" class="row g-2">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="col-md-8"><label class="form-label small mb-0">Title *</label>
+            <input name="title" class="form-control form-control-sm" value="{{ event.title }}" required></div>
+        <div class="col-md-4"><label class="form-label small mb-0">Type</label>
+            <select name="event_type" class="form-select form-select-sm">
+              {% for val, label in meeting_types %}<option value="{{ val }}"{% if val == event.event_type %} selected{% endif %}>{{ label }}</option>{% endfor %}
+            </select></div>
+        <div class="col-md-4"><label class="form-label small mb-0">Date</label>
+            <input type="date" name="event_date" class="form-control form-control-sm" value="{{ (event.event_date|string)[:10] if event.event_date else '' }}"></div>
+        <div class="col-md-4"><label class="form-label small mb-0">Start</label>
+            <input type="time" name="start_time" class="form-control form-control-sm" value="{{ event.start_time or '' }}"></div>
+        <div class="col-md-4"><label class="form-label small mb-0">End</label>
+            <input type="time" name="end_time" class="form-control form-control-sm" value="{{ event.end_time or '' }}"></div>
+        <div class="col-md-6"><label class="form-label small mb-0">Location / Venue</label>
+            <input name="location" class="form-control form-control-sm" value="{{ event.location or '' }}"></div>
+        <div class="col-md-6"><label class="form-label small mb-0">Meeting link</label>
+            <input name="meeting_link" type="url" class="form-control form-control-sm" value="{{ event.meeting_link or '' }}"></div>
+        <div class="col-12"><label class="form-label small mb-0">Agenda</label>
+            <textarea name="agenda" class="form-control form-control-sm" rows="2">{{ event.agenda or '' }}</textarea></div>
+        <div class="col-12"><label class="form-label small mb-0">Notes / details</label>
+            <textarea name="description" class="form-control form-control-sm" rows="2">{{ event.description or '' }}</textarea></div>
+        <div class="col-12 d-flex align-items-center justify-content-between flex-wrap gap-2">
+            <div class="form-check mb-0">
+              <input class="form-check-input" type="checkbox" name="notify_members" value="1" id="notifyMembers" checked>
+              <label class="form-check-label small" for="notifyMembers">Email members the updated schedule</label>
+            </div>
+            <button class="btn btn-primary btn-sm"><i class="fas fa-save"></i> Save changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

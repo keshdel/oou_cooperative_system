@@ -852,6 +852,54 @@ class HardeningFeatureTests(unittest.TestCase):
         with self.app.test_request_context():
             self.assertIn('uploads/x.png', _logo_src('uploads/x.png'))
 
+    def test_meeting_create_rsvp_and_attendance(self):
+        """A meeting is created with the new detail fields; a member RSVPs; the
+        manager records attendance for the register (AGM quorum)."""
+        self.login_admin()
+        resp = self.client.post('/governance/events/add', data={
+            'title': 'Test AGM 2026', 'event_type': 'agm', 'event_date': '2026-12-01',
+            'start_time': '10:00', 'end_time': '12:00', 'location': 'Main Hall',
+            'agenda': '1. Opening 2. Reports', 'description': 'Annual meeting',
+        }, follow_redirects=False)   # no send_invite → no email dependency
+        self.assertIn(resp.status_code, (302, 303))
+        with self.app.app_context():
+            db = get_db()
+            ev = db.execute("SELECT * FROM events WHERE title = 'Test AGM 2026' ORDER BY id DESC").fetchone()
+            self.assertIsNotNone(ev)
+            event_id = ev['id']
+            self.assertEqual(ev['start_time'], '10:00')
+            self.assertEqual(ev['event_type'], 'agm')
+
+        detail = self.client.get(f'/events/{event_id}')
+        self.assertEqual(detail.status_code, 200)
+        self.assertIn(b'Test AGM 2026', detail.data)
+        self.assertIn(b'Attendance register', detail.data)   # manager view
+
+        member_id = self.create_member()
+        self.create_member_user(member_id)
+        self.login_member()
+        r = self.client.post(f'/events/{event_id}/rsvp', data={'response': 'attending'},
+                             follow_redirects=False)
+        self.assertIn(r.status_code, (302, 303))
+        with self.app.app_context():
+            db = get_db()
+            row = db.execute("SELECT response FROM event_rsvps WHERE event_id = ? AND member_id = ?",
+                             (event_id, member_id)).fetchone()
+            self.assertEqual(row['response'], 'attending')
+
+        self.login_admin()
+        a = self.client.post(f'/governance/events/{event_id}/attendance',
+                             data={'attended': [str(member_id)]}, follow_redirects=False)
+        self.assertIn(a.status_code, (302, 303))
+        with self.app.app_context():
+            db = get_db()
+            att = db.execute("SELECT attended FROM event_rsvps WHERE event_id = ? AND member_id = ?",
+                             (event_id, member_id)).fetchone()
+            self.assertEqual(att['attended'], 1)
+            db.execute("DELETE FROM event_rsvps WHERE event_id = ?", (event_id,))
+            db.execute("DELETE FROM events WHERE id = ?", (event_id,))
+            db.commit()
+
     def test_admin_can_resend_and_revoke_setup_links(self):
         self.login_admin()
         email = 'resend.setup@example.com'

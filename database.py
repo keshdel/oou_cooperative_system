@@ -905,6 +905,26 @@ def init_db():
             uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     '''))
+    # Meeting details + RSVP/attendance (added incrementally; guarded for old DBs).
+    _add_col(db, 'events', 'start_time', 'TEXT')
+    _add_col(db, 'events', 'end_time', 'TEXT')
+    _add_col(db, 'events', 'agenda', 'TEXT')
+    _add_col(db, 'events', 'reminder_sent_at', 'TIMESTAMP')
+    _add_col(db, 'meeting_minutes', 'event_id', 'INTEGER')
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS event_rsvps (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            event_id INTEGER NOT NULL,
+            member_id INTEGER NOT NULL,
+            response TEXT DEFAULT 'attending',
+            attended INTEGER DEFAULT 0,
+            responded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (event_id) REFERENCES events (id),
+            FOREIGN KEY (member_id) REFERENCES members (id)
+        )
+    '''))
+    _exec_ignore(db, 'CREATE UNIQUE INDEX IF NOT EXISTS uq_event_rsvp ON event_rsvps(event_id, member_id)')
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_event_rsvps_event ON event_rsvps(event_id)')
     _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_events_date ON events(event_date)')
 
     # Member requests to change their monthly savings amount (staff-approved)

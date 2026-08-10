@@ -21,14 +21,13 @@
                     {% if e.meeting_link %}<span class="badge bg-danger mb-2"><i class="fas fa-video"></i> Virtual</span>{% endif %}
                     <h5 class="card-title">{{ e.title }}</h5>
                     <p class="mb-1"><i class="fas fa-calendar text-muted"></i>
-                        {{ (e.event_date|string)[:16] if e.event_date else 'Date to be announced' }}</p>
+                        {{ (e.event_date|string)[:10] if e.event_date else 'Date to be announced' }}{% if e.start_time %} · {{ e.start_time }}{% if e.end_time %}–{{ e.end_time }}{% endif %}{% endif %}</p>
                     {% if e.location %}<p class="mb-1"><i class="fas fa-map-marker-alt text-muted"></i> {{ e.location }}</p>{% endif %}
                     {% if e.description %}<p class="small text-muted mb-2">{{ e.description }}</p>{% endif %}
-                    {% if e.meeting_link %}
-                    <a href="{{ e.meeting_link }}" target="_blank" rel="noopener noreferrer" class="btn btn-danger btn-sm">
-                        <i class="fas fa-video"></i> Join Meeting
-                    </a>
-                    {% endif %}
+                    <div class="d-flex gap-2 mt-2">
+                        <a href="{{ url_for('governance.event_detail', event_id=e.id) }}" class="btn btn-primary btn-sm"><i class="fas fa-user-check"></i> View &amp; RSVP</a>
+                        {% if e.meeting_link %}<a href="{{ e.meeting_link }}" target="_blank" rel="noopener noreferrer" class="btn btn-outline-danger btn-sm"><i class="fas fa-video"></i> Join</a>{% endif %}
+                    </div>
                 </div>
             </div>
         </div>
@@ -42,11 +41,11 @@
     <h5 class="text-muted mt-4">Past</h5>
     <div class="list-group">
         {% for e in past %}
-        <div class="list-group-item d-flex justify-content-between">
+        <a href="{{ url_for('governance.event_detail', event_id=e.id) }}" class="list-group-item list-group-item-action d-flex justify-content-between">
             <div><span class="badge bg-light text-dark text-uppercase">{{ e.event_type }}</span> {{ e.title }}
                 {% if e.location %}<span class="text-muted small">· {{ e.location }}</span>{% endif %}</div>
             <span class="text-muted small">{{ (e.event_date|string)[:10] }}</span>
-        </div>
+        </a>
         {% endfor %}
     </div>
     {% endif %}

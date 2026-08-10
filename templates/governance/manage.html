@@ -16,7 +16,7 @@
         <!-- Events -->
         <div class="col-lg-6">
             <div class="card mb-4">
-                <div class="card-header bg-primary text-white"><h6 class="mb-0"><i class="fas fa-calendar-day"></i> Publish Event / Announcement</h6></div>
+                <div class="card-header bg-primary text-white"><h6 class="mb-0"><i class="fas fa-calendar-day"></i> Schedule a Meeting / Event</h6></div>
                 <div class="card-body">
                     <form method="post" action="{{ url_for('governance.add_event') }}" class="row g-2">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -24,18 +24,29 @@
                             <input name="title" class="form-control form-control-sm" placeholder="e.g. 2026 Annual General Meeting" required></div>
                         <div class="col-md-4"><label class="form-label small mb-0">Type</label>
                             <select name="event_type" class="form-select form-select-sm">
-                                <option value="agm">AGM</option><option value="meeting">Meeting</option>
-                                <option value="announcement" selected>Announcement</option><option value="holiday">Holiday</option>
+                                {% for val, label in meeting_types %}<option value="{{ val }}"{% if val == 'general' %} selected{% endif %}>{{ label }}</option>{% endfor %}
                             </select></div>
-                        <div class="col-md-5"><label class="form-label small mb-0">Date</label>
+                        <div class="col-md-4"><label class="form-label small mb-0">Date</label>
                             <input type="date" name="event_date" class="form-control form-control-sm"></div>
-                        <div class="col-md-7"><label class="form-label small mb-0">Location / Venue</label>
+                        <div class="col-md-4"><label class="form-label small mb-0">Start</label>
+                            <input type="time" name="start_time" class="form-control form-control-sm"></div>
+                        <div class="col-md-4"><label class="form-label small mb-0">End</label>
+                            <input type="time" name="end_time" class="form-control form-control-sm"></div>
+                        <div class="col-md-6"><label class="form-label small mb-0">Location / Venue</label>
                             <input name="location" class="form-control form-control-sm" placeholder="e.g. Main Hall (or 'Virtual')"></div>
-                        <div class="col-12"><label class="form-label small mb-0">Meeting link <span class="text-muted">(virtual AGM/meeting — Zoom, Google Meet, etc.)</span></label>
+                        <div class="col-md-6"><label class="form-label small mb-0">Meeting link <span class="text-muted">(Zoom/Meet)</span></label>
                             <input name="meeting_link" type="url" class="form-control form-control-sm" placeholder="https://zoom.us/j/…"></div>
-                        <div class="col-12"><label class="form-label small mb-0">Details</label>
+                        <div class="col-12"><label class="form-label small mb-0">Agenda</label>
+                            <textarea name="agenda" class="form-control form-control-sm" rows="2" placeholder="1. Opening  2. Minutes of last meeting  3. Financial report  4. …"></textarea></div>
+                        <div class="col-12"><label class="form-label small mb-0">Notes / details</label>
                             <textarea name="description" class="form-control form-control-sm" rows="2"></textarea></div>
-                        <div class="col-12"><button class="btn btn-primary btn-sm"><i class="fas fa-plus"></i> Publish</button></div>
+                        <div class="col-12 d-flex align-items-center justify-content-between flex-wrap gap-2">
+                            <div class="form-check mb-0">
+                                <input class="form-check-input" type="checkbox" name="send_invite" value="1" id="sendInvite" checked>
+                                <label class="form-check-label small" for="sendInvite">Email an invite to all members</label>
+                            </div>
+                            <button class="btn btn-primary btn-sm"><i class="fas fa-paper-plane"></i> Publish &amp; invite</button>
+                        </div>
                     </form>
                 </div>
             </div>
@@ -43,15 +54,18 @@
                 <div class="card-header"><h6 class="mb-0">Events</h6></div>
                 <div class="card-body p-0">
                     {% if events %}
-                    <table class="table table-sm mb-0">
-                        <thead class="table-light"><tr><th>Title</th><th>Date</th><th>Status</th><th></th></tr></thead>
+                    <table class="table table-sm mb-0 align-middle">
+                        <thead class="table-light"><tr><th>Meeting</th><th>When</th><th>RSVP</th><th></th></tr></thead>
                         <tbody>
                             {% for e in events %}
                             <tr class="{% if not e.is_active %}text-muted{% endif %}">
-                                <td><span class="badge bg-light text-dark text-uppercase">{{ e.event_type }}</span> {{ e.title }}</td>
-                                <td class="small">{{ (e.event_date|string)[:10] if e.event_date else '—' }}</td>
-                                <td>{% if e.is_active %}<span class="badge bg-success">Live</span>{% else %}<span class="badge bg-secondary">Hidden</span>{% endif %}</td>
-                                <td class="text-end">
+                                <td><span class="badge bg-light text-dark text-uppercase">{{ meeting_labels.get(e.event_type, e.event_type) }}</span> {{ e.title }}
+                                    {% if not e.is_active %}<span class="badge bg-secondary ms-1">Hidden</span>{% endif %}</td>
+                                <td class="small">{{ (e.event_date|string)[:10] if e.event_date else '—' }}{% if e.start_time %}<br><span class="text-muted">{{ e.start_time }}{% if e.end_time %}–{{ e.end_time }}{% endif %}</span>{% endif %}</td>
+                                <td><span class="badge bg-primary">{{ e.attending_count or 0 }}</span></td>
+                                <td class="text-end" style="white-space:nowrap">
+                                    <a href="{{ url_for('governance.event_detail', event_id=e.id) }}" class="btn btn-sm btn-outline-primary" title="Manage &amp; attendance"><i class="fas fa-users"></i></a>
+                                    <a href="{{ url_for('governance.edit_event', event_id=e.id) }}" class="btn btn-sm btn-outline-secondary" title="Edit / reschedule"><i class="fas fa-pen"></i></a>
                                     <form method="post" action="{{ url_for('governance.toggle_event', event_id=e.id) }}" class="d-inline">
                                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                         <button class="btn btn-sm btn-outline-secondary">{{ 'Hide' if e.is_active else 'Show' }}</button>
@@ -86,7 +100,12 @@
                             </select></div>
                         <div class="col-md-5"><label class="form-label small mb-0">Meeting date</label>
                             <input type="date" name="meeting_date" class="form-control form-control-sm"></div>
-                        <div class="col-md-7"><label class="form-label small mb-0">File (PDF/DOC/image, max 10MB)</label>
+                        <div class="col-md-7"><label class="form-label small mb-0">Link to a meeting <span class="text-muted">(optional)</span></label>
+                            <select name="event_id" class="form-select form-select-sm">
+                                <option value="">— none —</option>
+                                {% for e in events %}<option value="{{ e.id }}">{{ (e.event_date|string)[:10] if e.event_date else '' }} · {{ e.title }}</option>{% endfor %}
+                            </select></div>
+                        <div class="col-12"><label class="form-label small mb-0">File (PDF/DOC/image, max 10MB)</label>
                             <input type="file" name="file" class="form-control form-control-sm" accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png"></div>
                         <div class="col-12"><label class="form-label small mb-0">Notes</label>
                             <input name="notes" class="form-control form-control-sm"></div>
