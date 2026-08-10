@@ -427,9 +427,13 @@ def my_loans():
         tenure = max(loan['tenure'] or 1, 1)
         amt    = loan['amount']   or 0
         bal    = loan['balance']  or 0
+        is_disbursed = bool(loan['status'] in ('active', 'completed') or loan['disbursement_date'])
 
         d['monthly_payment']    = round((loan['total_repayment'] or 0) / tenure, 2)
-        d['progress_percentage'] = round((amt - bal) / amt * 100, 1) if amt > 0 else 0
+        d['account_balance']     = bal if is_disbursed else 0
+        d['display_balance']     = d['account_balance']
+        d['is_disbursed']        = is_disbursed
+        d['progress_percentage'] = round((amt - bal) / amt * 100, 1) if is_disbursed and amt > 0 else 0
         d['payments_made']       = repayment_counts.get(loan['id'], 0)
 
         # Parse date fields to datetime objects for strftime in template
@@ -456,9 +460,10 @@ def my_loans():
     active_loans    = [l for l in all_loans if l.status == 'active']
     pending_loans   = [l for l in all_loans if l.status == 'pending']
     completed_loans = [l for l in all_loans if l.status == 'completed']
+    booked_loans    = active_loans + completed_loans
 
-    total_loans_taken   = sum(l.amount  for l in all_loans)
-    outstanding_balance = sum(l.balance for l in active_loans)
+    total_loans_taken   = sum(l.amount for l in booked_loans)
+    outstanding_balance = sum(l.account_balance for l in active_loans)
     total_repaid        = total_loans_taken - outstanding_balance
     available_credit    = max(0, (member['total_savings'] or 0) * 2 - outstanding_balance)
     repayment_pct       = round((total_repaid / total_loans_taken * 100) if total_loans_taken > 0 else 0, 1)
@@ -499,6 +504,7 @@ def loan_detail(loan_id):
     amt    = d.get('amount') or 0
     rate   = d.get('interest_rate') or 0
     method = d.get('interest_method') or 'reducing_annual'
+    is_disbursed = bool(d.get('status') in ('active', 'completed') or d.get('disbursement_date'))
 
     # Parse dates (DB column is approved_at, alias to date_approved for templates)
     d['date_applied']      = _parse_dt(d.get('date_applied'))      if d.get('date_applied')      else None
@@ -506,11 +512,13 @@ def loan_detail(loan_id):
     d['disbursement_date'] = _parse_dt(d.get('disbursement_date'))  if d.get('disbursement_date') else None
 
     # Ensure numeric fields have safe defaults
-    d['disbursed_amount']   = d.get('disbursed_amount')   or amt
+    d['is_disbursed']       = is_disbursed
+    d['disbursed_amount']   = (d.get('disbursed_amount') or 0) if is_disbursed else 0
     d['application_fee']    = d.get('application_fee')    or 0
     d['insurance_premium']  = d.get('insurance_premium')  or 0
     d['total_repayment']    = d.get('total_repayment')    or 0
-    d['balance']            = d.get('balance')            or 0
+    d['account_balance']    = (d.get('balance') or 0) if is_disbursed else 0
+    d['balance']            = d['account_balance']
 
     # Compute schedule using the stored interest method
     mp, total_rep, raw_schedule = compute_loan_schedule(amt, rate, tenure, method)
@@ -520,15 +528,15 @@ def loan_detail(loan_id):
 
     # Build schedule with due dates and paid/overdue flags
     schedule   = []
-    start_date = d['disbursement_date'] or d['date_approved'] or d['date_applied'] or datetime.now()
+    start_date = d['disbursement_date'] or datetime.now()
     today      = datetime.now()
-    paid_count = len(repayments_raw)
+    paid_count = len(repayments_raw) if is_disbursed else 0
 
     for row in raw_schedule:
         i   = row['month']
         due = start_date + timedelta(days=30 * i)
-        is_paid    = i <= paid_count
-        is_overdue = not is_paid and due < today
+        is_paid    = is_disbursed and i <= paid_count
+        is_overdue = is_disbursed and not is_paid and due < today
         schedule.append(SimpleNamespace(
             month=i, due_date=due,
             payment=row['payment'],
@@ -540,8 +548,8 @@ def loan_detail(loan_id):
 
     # Next payment date
     next_unpaid = next((s for s in schedule if not s.paid), None)
-    d['next_payment_date']   = next_unpaid.due_date if next_unpaid else None
-    d['progress_percentage'] = round(paid_count / tenure * 100, 1)
+    d['next_payment_date']   = next_unpaid.due_date if is_disbursed and next_unpaid else None
+    d['progress_percentage'] = round(paid_count / tenure * 100, 1) if is_disbursed else 0
 
     # Payments with datetime objects
     payments = []

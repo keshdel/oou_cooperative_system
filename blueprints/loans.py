@@ -150,6 +150,11 @@ def loans_list():
     ).fetchone()
     active_count = summary['c']
     total_outstanding = summary['outstanding']
+    booked_interest = db.execute('''
+        SELECT COALESCE(SUM(COALESCE(total_repayment, 0) - COALESCE(amount, 0)), 0)
+          FROM loans
+         WHERE status IN ('active', 'completed')
+    ''').fetchone()[0] or 0
 
     # Real delinquency: compare each active loan's expected repayments-to-date
     # against what has actually been repaid, and age the shortfall.
@@ -157,6 +162,7 @@ def loans_list():
 
     return render_template('admin/loans.html', loans=all_loans, active_loans=active_loans,
                            active_count=active_count, total_outstanding=total_outstanding,
+                           booked_interest=booked_interest,
                            overdue_loans=ageing['loans'], ageing=ageing)
 
 
