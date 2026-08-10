@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Calendar - {{ coop_name }}{% endblock %}
+{% block extra_css %}
+<style>
+  .cal-table{ table-layout:fixed; }
+  .cal-table th{ text-align:center; font-size:.72rem; text-transform:uppercase; letter-spacing:.05em; color:#6b7280; }
+  .cal-cell{ height:112px; vertical-align:top; padding:6px; }
+  .cal-cell.other{ background:#f8fafc; }
+  .cal-day{ font-size:.8rem; font-weight:700; color:#334155; }
+  .cal-cell.today .cal-day{ background:#082b66; color:#fff; border-radius:50%; width:24px; height:24px; display:inline-flex; align-items:center; justify-content:center; }
+  .cal-ev{ display:block; font-size:.72rem; padding:2px 6px; margin-top:3px; border-radius:5px; background:#e9eff8; color:#082b66; text-decoration:none; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .cal-ev:hover{ background:#082b66; color:#fff; }
+  .cal-ev.agm{ background:#fdf3d7; color:#a9780a; }
+  .cal-ev.agm:hover{ background:#a9780a; color:#fff; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="container-fluid">
+  <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <h2 class="mb-0"><i class="far fa-calendar-alt"></i> {{ month_name }} {{ year }}</h2>
+    <div class="btn-group">
+      <a href="{{ url_for('governance.calendar_view', year=prev_y, month=prev_m) }}" class="btn btn-outline-secondary btn-sm" title="Previous month"><i class="fas fa-chevron-left"></i></a>
+      <a href="{{ url_for('governance.calendar_view') }}" class="btn btn-outline-secondary btn-sm">Today</a>
+      <a href="{{ url_for('governance.calendar_view', year=next_y, month=next_m) }}" class="btn btn-outline-secondary btn-sm" title="Next month"><i class="fas fa-chevron-right"></i></a>
+      <a href="{{ url_for('governance.events_list') }}" class="btn btn-outline-primary btn-sm ms-2"><i class="fas fa-list"></i> List</a>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-body p-2">
+      <div class="table-responsive">
+        <table class="table table-bordered cal-table mb-0">
+          <thead><tr>
+            <th>Sun</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th>
+          </tr></thead>
+          <tbody>
+            {% for week in weeks %}
+            <tr>
+              {% for day in week %}
+              {% if day == 0 %}
+              <td class="cal-cell other"></td>
+              {% else %}
+              {% set dstr = '%04d-%02d-%02d'|format(year, month, day) %}
+              <td class="cal-cell {% if dstr == today %}today{% endif %}">
+                <span class="cal-day">{{ day }}</span>
+                {% for e in by_day.get(day, []) %}
+                <a href="{{ url_for('governance.event_detail', event_id=e.id) }}"
+                   class="cal-ev {{ 'agm' if e.event_type == 'agm' }}" title="{{ e.title }}">{% if e.start_time %}{{ e.start_time }} {% endif %}{{ e.title }}</a>
+                {% endfor %}
+              </td>
+              {% endif %}
+              {% endfor %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

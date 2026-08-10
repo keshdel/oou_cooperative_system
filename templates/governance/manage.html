@@ -7,7 +7,12 @@
             <h2><i class="fas fa-bullhorn"></i> Events &amp; Minutes</h2>
             <p class="text-muted mb-0">Publish AGM/meeting notices to members and keep the minutes-of-meeting repository.</p>
         </div>
-        <div class="col-auto align-self-center">
+        <div class="col-auto align-self-center d-flex gap-2 flex-wrap">
+            <a href="{{ url_for('governance.calendar_view') }}" class="btn btn-outline-primary btn-sm"><i class="far fa-calendar-alt"></i> Calendar</a>
+            <form method="post" action="{{ url_for('governance.run_reminders') }}" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-outline-warning btn-sm" title="Email members about meetings happening in the next day"><i class="fas fa-bell"></i> Send reminders</button>
+            </form>
             <a href="{{ url_for('governance.events_list') }}" class="btn btn-outline-secondary btn-sm">Members' view</a>
         </div>
     </div>

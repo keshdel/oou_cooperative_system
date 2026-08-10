@@ -4,10 +4,12 @@ governance.py — cooperative governance content:
   * Minutes-of-meeting repository (upload → stored in the DB → browse/download).
 """
 import io
-from datetime import datetime
+import os
+import calendar as pycal
+from datetime import datetime, timedelta
 
 from flask import (Blueprint, render_template, redirect, url_for, request, flash,
-                   send_file, abort)
+                   send_file, abort, jsonify)
 from flask_login import login_required, current_user
 from werkzeug.utils import secure_filename
 
@@ -96,6 +98,9 @@ def _notify_members_of_event(db, event, kind='invite', send_mail=True):
     if kind == 'update':
         subject = f'Updated: {event["title"]} — {_fmt_event_when(event)}'
         intro = f'The details for this {label.lower()} have been updated. Please review the new schedule below.'
+    elif kind == 'reminder':
+        subject = f'Reminder: {event["title"]} — {_fmt_event_when(event)}'
+        intro = f'A friendly reminder about this upcoming {label.lower()}. We look forward to seeing you.'
     else:
         subject = f'You are invited: {event["title"]} — {_fmt_event_when(event)}'
         intro = f'You are invited to the following {label.lower()}. Please let us know if you will attend.'
@@ -119,6 +124,30 @@ def _notify_members_of_event(db, event, kind='invite', send_mail=True):
             emailed += 1
     db.commit()
     return emailed
+
+
+def _send_due_reminders(db, within_days=1):
+    """Send a one-time reminder for active meetings happening within the next
+    `within_days` day(s) that haven't been reminded yet. Idempotent via
+    events.reminder_sent_at — safe to call from a page load or a cron endpoint."""
+    today = datetime.now().date()
+    lo = today.strftime('%Y-%m-%d')
+    hi = (today + timedelta(days=within_days + 1)).strftime('%Y-%m-%d')   # exclusive upper bound
+    events = db.execute(
+        "SELECT * FROM events WHERE is_active = 1 AND reminder_sent_at IS NULL "
+        "AND event_date IS NOT NULL AND event_date >= ? AND event_date < ? "
+        "ORDER BY event_date", (lo, hi)).fetchall()
+    sent = 0
+    for ev in events:
+        try:
+            _notify_members_of_event(db, ev, kind='reminder', send_mail=True)
+            db.execute("UPDATE events SET reminder_sent_at = ? WHERE id = ?",
+                       (datetime.now(), ev['id']))
+            db.commit()
+            sent += 1
+        except Exception:
+            db.rollback()
+    return sent
 
 _ALLOWED = {'pdf', 'doc', 'docx', 'txt', 'jpg', 'jpeg', 'png'}
 _MIME = {
@@ -146,6 +175,10 @@ def upcoming_events(db, limit=5):
 @login_required
 def events_list():
     db = get_db()
+    try:
+        _send_due_reminders(db)   # opportunistic: fire due reminders when members check events
+    except Exception:
+        pass
     today = datetime.now().strftime('%Y-%m-%d')
     upcoming = db.execute(
         "SELECT * FROM events WHERE is_active = 1 AND (event_date IS NULL OR event_date >= ?) "
@@ -186,6 +219,10 @@ def minutes_download(minute_id):
 @role_required('admin', 'secretary')
 def manage():
     db = get_db()
+    try:
+        _send_due_reminders(db)
+    except Exception:
+        pass
     events = db.execute('''
         SELECT e.*,
                (SELECT COUNT(*) FROM event_rsvps r WHERE r.event_id = e.id AND r.response = 'attending') AS attending_count
@@ -374,6 +411,58 @@ def mark_attendance(event_id):
     audit(db, 'MARK_ATTENDANCE', 'governance', f'Recorded attendance for event #{event_id}')
     flash('Attendance register saved.', 'success')
     return redirect(url_for('governance.event_detail', event_id=event_id))
+
+
+# ── Calendar + reminders ─────────────────────────────────────────────────────
+
+@governance.route('/events/calendar')
+@login_required
+def calendar_view():
+    db = get_db()
+    now = datetime.now()
+    try:
+        year = int(request.args.get('year', now.year))
+        month = int(request.args.get('month', now.month))
+        if not 1 <= month <= 12:
+            year, month = now.year, now.month
+    except (TypeError, ValueError):
+        year, month = now.year, now.month
+    first = f'{year:04d}-{month:02d}-01'
+    nextm = f'{year + 1:04d}-01-01' if month == 12 else f'{year:04d}-{month + 1:02d}-01'
+    rows = db.execute(
+        "SELECT id, title, event_type, event_date, start_time FROM events "
+        "WHERE is_active = 1 AND event_date >= ? AND event_date < ? "
+        "ORDER BY event_date, start_time", (first, nextm)).fetchall()
+    by_day = {}
+    for e in rows:
+        d = (e['event_date'] or '')[:10]
+        if len(d) >= 10 and d[8:10].isdigit():
+            by_day.setdefault(int(d[8:10]), []).append(e)
+    weeks = pycal.Calendar(firstweekday=6).monthdayscalendar(year, month)   # Sunday-first
+    prev_y, prev_m = (year, month - 1) if month > 1 else (year - 1, 12)
+    next_y, next_m = (year, month + 1) if month < 12 else (year + 1, 1)
+    return render_template('governance/calendar.html', weeks=weeks, by_day=by_day,
+                           year=year, month=month, month_name=pycal.month_name[month],
+                           prev_y=prev_y, prev_m=prev_m, next_y=next_y, next_m=next_m,
+                           today=now.strftime('%Y-%m-%d'), meeting_labels=_MEETING_TYPE_LABELS)
+
+
+@governance.route('/governance/reminders/run', methods=['GET', 'POST'])
+def run_reminders():
+    """Send due meeting reminders. Callable two ways:
+      * by a daily cron with ?token=<GOVERNANCE_CRON_TOKEN> (no login), or
+      * by a logged-in admin/secretary (returns to the manage page)."""
+    db = get_db()
+    token = os.environ.get('GOVERNANCE_CRON_TOKEN', '').strip()
+    provided = (request.args.get('token') or request.form.get('token') or '').strip()
+    if token and provided and provided == token:
+        return jsonify({'sent': _send_due_reminders(db)})
+    if not current_user.is_authenticated or getattr(current_user, 'role', '') not in ('admin', 'secretary'):
+        abort(403)
+    n = _send_due_reminders(db)
+    flash(f'{n} reminder(s) sent for meetings in the next day.' if n
+          else 'No meetings are due for a reminder right now.', 'info')
+    return redirect(url_for('governance.manage'))
 
 
 @governance.route('/governance/minutes/upload', methods=['POST'])

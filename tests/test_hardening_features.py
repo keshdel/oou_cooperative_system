@@ -852,6 +852,39 @@ class HardeningFeatureTests(unittest.TestCase):
         with self.app.test_request_context():
             self.assertIn('uploads/x.png', _logo_src('uploads/x.png'))
 
+    def test_meeting_reminders_and_calendar(self):
+        """A meeting due tomorrow gets a one-time reminder (idempotent), and the
+        calendar view renders it."""
+        from datetime import datetime, timedelta
+        from database import last_insert_id
+        self.login_admin()
+        tomorrow = (datetime.now() + timedelta(days=1)).strftime('%Y-%m-%d')
+        with self.app.app_context():
+            db = get_db()
+            db.execute("INSERT INTO events (title, event_type, event_date, is_active, created_by) "
+                       "VALUES ('Reminder Test Mtg', 'general', ?, 1, 1)", (tomorrow,))
+            event_id = last_insert_id(db)
+            db.commit()
+
+        resp = self.client.post('/governance/reminders/run', follow_redirects=False)
+        self.assertIn(resp.status_code, (302, 303))
+        with self.app.app_context():
+            db = get_db()
+            ev = db.execute("SELECT reminder_sent_at FROM events WHERE id = ?", (event_id,)).fetchone()
+            self.assertIsNotNone(ev['reminder_sent_at'], 'reminder should mark the event')
+
+        # A second run must not re-remind (reminder_sent_at is set).
+        self.client.post('/governance/reminders/run', follow_redirects=False)
+
+        cal = self.client.get(f'/events/calendar?year={tomorrow[:4]}&month={int(tomorrow[5:7])}')
+        self.assertEqual(cal.status_code, 200)
+        self.assertIn(b'Reminder Test Mtg', cal.data)
+
+        with self.app.app_context():
+            db = get_db()
+            db.execute("DELETE FROM events WHERE id = ?", (event_id,))
+            db.commit()
+
     def test_meeting_create_rsvp_and_attendance(self):
         """A meeting is created with the new detail fields; a member RSVPs; the
         manager records attendance for the register (AGM quorum)."""
