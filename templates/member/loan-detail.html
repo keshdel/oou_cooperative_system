@@ -25,12 +25,16 @@
             <div class="card mb-4">
                 <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
                     <h5 class="mb-0">{{ 'Loan Account Summary' if loan.is_disbursed else 'Loan Application Summary' }}</h5>
-                    <span class="badge bg-{{ 'success' if loan.status == 'active' else 'warning' }}">
+                    <span class="badge bg-{{ 'success' if loan.status == 'active' else ('secondary' if loan.status == 'withdrawn' else ('danger' if loan.status == 'rejected' else 'warning')) }}">
                         {{ loan.status|upper }}
                     </span>
                 </div>
                 <div class="card-body">
-                    {% if not loan.is_disbursed %}
+                    {% if loan.status == 'withdrawn' %}
+                    <div class="alert alert-secondary">
+                        This application was withdrawn by you before final approval/disbursement. No loan account was created and no ledger entry was posted.
+                    </div>
+                    {% elif not loan.is_disbursed %}
                     <div class="alert alert-warning">
                         This request is still an application. It is not a disbursed loan account and it is not included in your outstanding loan balance until final approval and disbursement.
                     </div>
@@ -288,6 +292,12 @@
                     <button class="btn btn-warning w-100 mb-2" onclick="requestStatement({{ loan.id }})">
                         <i class="fas fa-file-pdf"></i> Download Statement
                     </button>
+                    {% if loan.status == 'pending' %}
+                    <button class="btn btn-outline-danger w-100 mb-2"
+                            data-bs-toggle="modal" data-bs-target="#withdrawLoanModal">
+                        <i class="fas fa-ban"></i> Withdraw Application
+                    </button>
+                    {% endif %}
                     <button class="btn btn-secondary w-100" onclick="contactSupport()">
                         <i class="fas fa-headset"></i> Contact Support
                     </button>
@@ -349,6 +359,37 @@
         </div>
     </div>
 </div>
+
+{% if loan.status == 'pending' %}
+<div class="modal fade" id="withdrawLoanModal" tabindex="-1" aria-labelledby="withdrawLoanModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header bg-danger text-white">
+        <h5 class="modal-title" id="withdrawLoanModalLabel"><i class="fas fa-ban me-2"></i>Withdraw Loan Application</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST" action="{{ url_for('portal.withdraw_loan_application', loan_id=loan.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="modal-body">
+          <div class="alert alert-warning small">
+            This will stop the pending approval workflow. The record stays available for audit, and this action is only available before final approval/disbursement.
+          </div>
+          <label class="form-label fw-semibold" for="withdrawalReason">Reason for withdrawal</label>
+          <textarea class="form-control" id="withdrawalReason" name="withdrawal_reason" rows="3"
+                    placeholder="Optional: tell the cooperative why you are withdrawing this request"></textarea>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Keep Application</button>
+          <button type="submit" class="btn btn-danger"
+                  onclick="return confirm('Withdraw this loan application? It will leave the approval workflow.');">
+            Withdraw Application
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endif %}
 
 <script>
 function viewReceipt(receiptNumber) {

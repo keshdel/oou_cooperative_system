@@ -432,6 +432,87 @@ class HardeningFeatureTests(unittest.TestCase):
             self.assertEqual(snapshot['tenure'], 6)
             self.assertEqual(len(snapshot['schedule']), 6)
 
+    def test_member_can_withdraw_pending_loan_before_disbursement_only(self):
+        suffix = int(time.time() * 1000)
+        email = f'withdraw.{suffix}@example.com'
+        loan_number = f"LOAN/WITHDRAW/{int(time.time() * 1000)}"
+        active_loan_number = f"LOAN/WITHDRAW-ACTIVE/{int(time.time() * 1000)}"
+        with self.app.app_context():
+            db = get_db()
+            db.execute('''
+                INSERT INTO members
+                    (member_number, employee_id, first_name, last_name, email,
+                     phone, status, monthly_savings, total_savings, date_joined)
+                VALUES (?, ?, 'Wendy', 'Withdraw', ?, '08000000088',
+                        'active', 15000, 100000, '2024-01-01')
+            ''', (f'OOU/TEST/W{suffix}', f'EMP-W{suffix}', email))
+            member_id = db.execute(
+                'SELECT id FROM members WHERE email = ?', (email,)
+            ).fetchone()['id']
+            db.execute('''
+                INSERT INTO loans
+                    (loan_number, member_id, amount, purpose, tenure, interest_rate,
+                     interest_method, total_repayment, balance, status, approval_stage,
+                     date_applied)
+                VALUES (?, ?, 50000, 'Regular', 6, 11, 'reducing_annual',
+                        52000, 52000, 'pending', 'secretary', '2026-07-20')
+            ''', (loan_number, member_id))
+            pending_loan_id = db.execute(
+                'SELECT id FROM loans WHERE loan_number = ?', (loan_number,)
+            ).fetchone()['id']
+            db.execute(
+                "INSERT INTO loan_guarantors (loan_id, member_id, status) VALUES (?, ?, 'pending')",
+                (pending_loan_id, member_id)
+            )
+            db.execute('''
+                INSERT INTO loans
+                    (loan_number, member_id, amount, purpose, tenure, interest_rate,
+                     interest_method, total_repayment, balance, status, approval_stage,
+                     disbursement_date, date_applied)
+                VALUES (?, ?, 50000, 'Regular', 6, 11, 'reducing_annual',
+                        52000, 52000, 'active', 'approved', '2026-07-21', '2026-07-20')
+            ''', (active_loan_number, member_id))
+            active_loan_id = db.execute(
+                'SELECT id FROM loans WHERE loan_number = ?', (active_loan_number,)
+            ).fetchone()['id']
+            db.commit()
+
+        self.create_member_user(member_id, email=email)
+        self.login_member(email=email)
+        response = self.client.post(
+            f'/loan-detail/{pending_loan_id}/withdraw',
+            data={'withdrawal_reason': 'I want to revise the amount'},
+            follow_redirects=False,
+        )
+        self.assertIn(response.status_code, (302, 303))
+
+        blocked = self.client.post(
+            f'/loan-detail/{active_loan_id}/withdraw',
+            data={'withdrawal_reason': 'Too late'},
+            follow_redirects=False,
+        )
+        self.assertIn(blocked.status_code, (302, 303))
+
+        with self.app.app_context():
+            db = get_db()
+            withdrawn = db.execute('SELECT * FROM loans WHERE id = ?', (pending_loan_id,)).fetchone()
+            self.assertEqual(withdrawn['status'], 'withdrawn')
+            self.assertEqual(withdrawn['approval_stage'], 'withdrawn')
+            self.assertIsNotNone(withdrawn['withdrawn_at'])
+            self.assertEqual(withdrawn['withdrawal_reason'], 'I want to revise the amount')
+            trail = db.execute(
+                "SELECT * FROM loan_approvals WHERE loan_id = ? AND action = 'withdrawn'",
+                (pending_loan_id,)
+            ).fetchone()
+            self.assertIsNotNone(trail)
+            guarantor = db.execute(
+                'SELECT status FROM loan_guarantors WHERE loan_id = ?',
+                (pending_loan_id,)
+            ).fetchone()
+            self.assertEqual(guarantor['status'], 'withdrawn')
+            active = db.execute('SELECT * FROM loans WHERE id = ?', (active_loan_id,)).fetchone()
+            self.assertEqual(active['status'], 'active')
+
     def test_non_staff_loan_application_still_requires_bank_and_credit_acknowledgements(self):
         member_id, email = self.create_non_staff_member()
         self.create_member_user(member_id, email=email)

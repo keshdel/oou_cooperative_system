@@ -101,6 +101,12 @@
                         </a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link" href="#withdrawn" data-bs-toggle="tab">
+                            Withdrawn
+                            <span class="badge bg-secondary ms-1">{{ loans|selectattr('status','equalto','withdrawn')|list|length }}</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link" href="#overdue" data-bs-toggle="tab">
                             Overdue
                             <span class="badge bg-danger ms-1">{{ overdue_loans|length }}</span>
@@ -168,6 +174,8 @@
                                         <span class="badge bg-info">Completed</span>
                                         {% elif loan.status == 'rejected' %}
                                         <span class="badge bg-danger">Rejected</span>
+                                        {% elif loan.status == 'withdrawn' %}
+                                        <span class="badge bg-secondary">Withdrawn</span>
                                         {% else %}
                                         <span class="badge bg-secondary">{{ loan.status }}</span>
                                         {% endif %}
@@ -300,6 +308,43 @@
                                 </tr>
                                 {% else %}
                                 <tr><td colspan="9" class="text-center text-muted py-3">No completed loans</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Withdrawn Loans Tab -->
+                <div class="tab-pane" id="withdrawn">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>ID</th><th>Member</th><th>Amount</th><th>Purpose</th>
+                                    <th>Tenure</th><th>Total Repayment</th><th>Applied</th>
+                                    <th>Withdrawn</th><th>Reason</th><th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for loan in loans if loan.status == 'withdrawn' %}
+                                <tr>
+                                    <td>{{ loan.id }}</td>
+                                    <td><a href="{{ url_for('members.member_details', member_id=loan.member_id) }}">{{ loan.member_name }}</a></td>
+                                    <td>â‚¦{{ "{:,.2f}".format(loan.amount) }}</td>
+                                    <td>{{ loan.purpose[:30] }}...</td>
+                                    <td>{{ loan.tenure }} months</td>
+                                    <td>â‚¦{{ "{:,.2f}".format(loan.total_repayment) }}</td>
+                                    <td>{{ loan.date_applied[:10] if loan.date_applied else '-' }}</td>
+                                    <td>{{ loan.withdrawn_at[:10] if loan.withdrawn_at else '-' }}</td>
+                                    <td>{{ loan.withdrawal_reason or 'Not provided' }}</td>
+                                    <td>
+                                        <a href="{{ url_for('loans.loan_detail', loan_id=loan.id) }}" class="btn btn-outline-secondary btn-sm">
+                                            <i class="fas fa-eye"></i> View
+                                        </a>
+                                    </td>
+                                </tr>
+                                {% else %}
+                                <tr><td colspan="10" class="text-center text-muted py-3">No withdrawn applications</td></tr>
                                 {% endfor %}
                             </tbody>
                         </table>

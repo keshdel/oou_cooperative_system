@@ -569,6 +569,64 @@ def loan_detail(loan_id):
 
 # ── Guarantor Requests ────────────────────────────────────────────────────────────
 
+@portal.route('/loan-detail/<int:loan_id>/withdraw', methods=['POST'])
+@login_required
+def withdraw_loan_application(loan_id):
+    db = get_db()
+    member = member_for_user(db)
+    if not member:
+        flash('Member profile not found.', 'warning')
+        return redirect(url_for('main.dashboard'))
+
+    reason = request.form.get('withdrawal_reason', '').strip()
+    loan = db.execute(
+        'SELECT * FROM loans WHERE id = ? AND member_id = ?',
+        (loan_id, member['id'])
+    ).fetchone()
+    if not loan:
+        flash('Loan application not found.', 'danger')
+        return redirect(url_for('portal.my_loans'))
+    if loan['status'] != 'pending':
+        flash('Only pending loan applications can be withdrawn before final approval or disbursement.', 'warning')
+        return redirect(url_for('portal.loan_detail', loan_id=loan_id))
+
+    now = datetime.now()
+    try:
+        db.execute('''
+            UPDATE loans
+               SET status = 'withdrawn',
+                   approval_stage = 'withdrawn',
+                   withdrawn_at = ?,
+                   withdrawn_by = ?,
+                   withdrawal_reason = ?
+             WHERE id = ?
+        ''', (now, current_user.id, reason or 'Withdrawn by applicant', loan_id))
+        db.execute(
+            "UPDATE loan_guarantors SET status = 'withdrawn', responded_at = ? "
+            "WHERE loan_id = ? AND status = 'pending'",
+            (now, loan_id)
+        )
+        lw.record_action(db, loan_id, 'withdrawn', 'withdrawn',
+                         acted_by=current_user.id,
+                         acted_by_name=current_user.username,
+                         comment=reason or 'Applicant withdrew the pending application')
+        audit(db, 'LOAN_APPLICATION_WITHDRAWN', 'loans',
+              f"Member {member['id']} withdrew loan {loan['loan_number']}: {reason or 'No reason supplied'}")
+        for u in db.execute(
+            "SELECT id FROM users WHERE role IN ('admin', 'treasurer', 'secretary') "
+            "AND COALESCE(is_active, 1) = 1"
+        ).fetchall():
+            notify(db, u['id'], 'Loan Application Withdrawn',
+                   f"{member['first_name']} {member['last_name']} withdrew loan application "
+                   f"{loan['loan_number']}.", 'info', url_for('loans.loan_detail', loan_id=loan_id))
+        db.commit()
+        flash('Your loan application has been withdrawn. No loan account was created and no ledger entry was posted.', 'success')
+    except Exception as exc:
+        db.rollback()
+        flash(f'Unable to withdraw application: {exc}', 'danger')
+    return redirect(url_for('portal.loan_detail', loan_id=loan_id))
+
+
 @portal.route('/my-guarantor-requests')
 @login_required
 def my_guarantor_requests():

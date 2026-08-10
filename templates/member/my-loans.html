@@ -301,6 +301,10 @@
                                         <span class="badge bg-info">Completed</span>
                                         {% elif loan.status == 'rejected' %}
                                         <span class="badge bg-danger">Rejected</span>
+                                        {% elif loan.status == 'withdrawn' %}
+                                        <span class="badge bg-secondary">Withdrawn</span>
+                                        {% else %}
+                                        <span class="badge bg-secondary">{{ loan.status|title }}</span>
                                         {% endif %}
                                     </td>
                                     <td>

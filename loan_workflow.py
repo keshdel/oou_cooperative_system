@@ -14,6 +14,7 @@ STAGE_TREASURER  = 'treasurer'
 STAGE_PRESIDENT  = 'president'
 STAGE_APPROVED   = 'approved'
 STAGE_REJECTED   = 'rejected'
+STAGE_WITHDRAWN  = 'withdrawn'
 
 STAGE_LABELS = {
     STAGE_GUARANTORS: 'Awaiting guarantor consent',
@@ -22,6 +23,7 @@ STAGE_LABELS = {
     STAGE_PRESIDENT:  'Awaiting President approval',
     STAGE_APPROVED:   'Approved & disbursed',
     STAGE_REJECTED:   'Rejected',
+    STAGE_WITHDRAWN:  'Withdrawn by applicant',
 }
 
 # Role that acts at each staff stage (admin may act at any stage)
