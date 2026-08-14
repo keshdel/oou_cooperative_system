@@ -1055,6 +1055,37 @@ class HardeningFeatureTests(unittest.TestCase):
             db.execute("DELETE FROM users WHERE username = 'selfadmin'")
             db.commit()
 
+    def test_open_notification_marks_read_and_redirects(self):
+        """Clicking a notification (GET /notification/<id>) marks it read and
+        redirects to its action target — the route was missing (404 before)."""
+        from datetime import datetime
+        from database import last_insert_id
+        self.login_admin()
+        with self.app.app_context():
+            db = get_db()
+            admin_id = db.execute("SELECT id FROM users WHERE username = 'admin'").fetchone()['id']
+            db.execute("INSERT INTO notifications (user_id, title, message, notification_type, is_read, action_url, created_at) "
+                       "VALUES (?, 'Go', 'Body', 'info', 0, '/dashboard', ?)", (admin_id, datetime.now()))
+            notif_id = last_insert_id(db)
+            db.execute("INSERT INTO notifications (user_id, title, message, notification_type, is_read, action_url, created_at) "
+                       "VALUES (?, 'Evil', 'Body', 'info', 0, '//evil.example.com', ?)", (admin_id, datetime.now()))
+            evil_id = last_insert_id(db)
+            db.commit()
+
+        resp = self.client.get(f'/notification/{notif_id}', follow_redirects=False)
+        self.assertIn(resp.status_code, (302, 303))
+        self.assertIn('/dashboard', resp.headers.get('Location', ''))
+
+        # Open-redirect guard: a protocol-relative target falls back to the list.
+        evil = self.client.get(f'/notification/{evil_id}', follow_redirects=False)
+        self.assertNotIn('evil.example.com', evil.headers.get('Location', ''))
+
+        with self.app.app_context():
+            db = get_db()
+            self.assertEqual(db.execute("SELECT is_read FROM notifications WHERE id = ?", (notif_id,)).fetchone()['is_read'], 1)
+            db.execute("DELETE FROM notifications WHERE id IN (?, ?)", (notif_id, evil_id))
+            db.commit()
+
     def test_admin_can_resend_and_revoke_setup_links(self):
         self.login_admin()
         email = 'resend.setup@example.com'

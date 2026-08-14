@@ -92,13 +92,17 @@
 </div>
 
 <script>
+function _csrf() {
+    var m = document.querySelector('meta[name="csrf-token"]');
+    return m ? m.content : '';
+}
 function markRead(id) {
-    fetch('/api/notification/read/' + id, { method: 'POST' })
+    fetch('/notifications/mark-read/' + id, { method: 'POST', headers: { 'X-CSRFToken': _csrf() } })
         .then(() => location.reload());
 }
 
 function markAllRead() {
-    fetch('/api/notifications/read-all', { method: 'POST' })
+    fetch('/notifications/mark-all-read', { method: 'POST', headers: { 'X-CSRFToken': _csrf() } })
         .then(() => location.reload());
 }
 

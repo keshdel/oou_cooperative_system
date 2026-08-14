@@ -1516,6 +1516,27 @@ def mark_all_notifications_read():
     return jsonify({'ok': True})
 
 
+@portal.route('/notification/<int:notif_id>')
+@login_required
+def open_notification(notif_id):
+    """Open a notification: mark it read, then go to its action target (or back
+    to the list). This backs the card click on the notifications page."""
+    db = get_db()
+    n = db.execute('SELECT * FROM notifications WHERE id = ? AND user_id = ?',
+                   (notif_id, current_user.id)).fetchone()
+    if not n:
+        flash('That notification could not be found.', 'warning')
+        return redirect(url_for('portal.notifications'))
+    db.execute('UPDATE notifications SET is_read = 1, read_at = ? WHERE id = ? AND user_id = ?',
+               (datetime.now(), notif_id, current_user.id))
+    db.commit()
+    target = (n['action_url'] or '').strip()
+    # Only follow same-site relative paths — never an external/open redirect.
+    if target.startswith('/') and not target.startswith('//'):
+        return redirect(target)
+    return redirect(url_for('portal.notifications'))
+
+
 # ── Support ───────────────────────────────────────────────────────────────────────
 
 @portal.route('/support', methods=['GET', 'POST'])
