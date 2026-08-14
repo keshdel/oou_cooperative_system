@@ -1014,6 +1014,47 @@ class HardeningFeatureTests(unittest.TestCase):
             db.execute("DELETE FROM events WHERE id = ?", (event_id,))
             db.commit()
 
+    def test_officer_cannot_approve_own_loan(self):
+        """Separation of duties: an officer (even an admin) who is the loan's
+        applicant must not be able to approve/advance their own loan."""
+        from datetime import datetime
+        from database import last_insert_id
+        email = 'self.approver@example.com'
+        with self.app.app_context():
+            db = get_db()
+            db.execute(
+                "INSERT INTO users (username, password_hash, role, full_name, email, is_active, must_change_password) "
+                "VALUES ('selfadmin', ?, 'admin', 'Self Admin', ?, 1, 0)",
+                (generate_password_hash('SelfAdmin1!'), email))
+            db.execute(
+                "INSERT INTO members (member_number, first_name, last_name, email, phone, status, "
+                "monthly_savings, total_savings, date_joined) "
+                "VALUES ('OOU/TEST/SELF', 'Self', 'Approver', ?, '08000000061', 'active', 15000, 100000, '2020-01-01')",
+                (email,))
+            member_id = db.execute("SELECT id FROM members WHERE member_number = 'OOU/TEST/SELF'").fetchone()['id']
+            db.execute(
+                "INSERT INTO loans (loan_number, member_id, amount, purpose, tenure, interest_rate, "
+                "interest_method, total_repayment, balance, status, approval_stage, date_applied) "
+                "VALUES ('LOAN/SELF/0001', ?, 100000, 'Regular', 6, 11, 'reducing_annual', 104000, 104000, "
+                "'pending', 'secretary', ?)", (member_id, datetime.now()))
+            loan_id = db.execute("SELECT id FROM loans WHERE loan_number = 'LOAN/SELF/0001'").fetchone()['id']
+            db.commit()
+
+        self.client.post('/login', data={'username': 'selfadmin', 'password': 'SelfAdmin1!'},
+                         follow_redirects=False)
+        resp = self.client.post(f'/loans/{loan_id}/act', data={'action': 'approve'}, follow_redirects=True)
+        self.assertIn(b'your own loan', resp.data)
+
+        with self.app.app_context():
+            db = get_db()
+            loan = db.execute("SELECT status, approval_stage FROM loans WHERE id = ?", (loan_id,)).fetchone()
+            self.assertEqual(loan['status'], 'pending')            # not activated
+            self.assertEqual(loan['approval_stage'], 'secretary')  # stage did not advance
+            db.execute("DELETE FROM loans WHERE id = ?", (loan_id,))
+            db.execute("DELETE FROM members WHERE id = ?", (member_id,))
+            db.execute("DELETE FROM users WHERE username = 'selfadmin'")
+            db.commit()
+
     def test_admin_can_resend_and_revoke_setup_links(self):
         self.login_admin()
         email = 'resend.setup@example.com'

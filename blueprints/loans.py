@@ -12,7 +12,7 @@ from email_service import (send_loan_approval_email, send_loan_rejection_email,
                            send_guarantor_request_email)
 from utils import (role_required, audit, notify_member, notify, compute_loan_schedule,
                    PURPOSE_SETTING_KEY, METHOD_LABELS, record_revenue, split_repayment,
-                   member_savings_balance)
+                   member_savings_balance, member_for_user)
 from ledger import (post_journal_safe, get_default_cash_account, LOANS_RECEIVABLE, FEE_INCOME,
                     LOAN_INTEREST_INCOME, INSURANCE_PAYABLE)
 import loan_workflow as lw
@@ -78,6 +78,14 @@ def _due_diligence_checks(loan):
 def _due_diligence_complete(loan):
     checks = _due_diligence_checks(loan)
     return all(c['done'] for c in checks), checks
+
+
+def _acting_on_own_loan(db, loan):
+    """True if the current user is the loan's applicant. Separation of duties:
+    an officer must never approve or run due diligence on their own loan, even
+    if they hold an approver role (e.g. an admin who is also a member)."""
+    me = member_for_user(db)
+    return bool(me and loan and me['id'] == loan['member_id'])
 
 
 def _disburse_loan(db, loan):
@@ -352,6 +360,10 @@ def update_due_diligence(loan_id):
     if loan['status'] != 'pending':
         flash('Due diligence can only be updated on pending loan applications.', 'warning')
         return redirect(url_for('loans.loan_detail', loan_id=loan_id))
+    if _acting_on_own_loan(db, loan):
+        flash('You cannot run due diligence on your own loan application. '
+              'A different officer must handle it.', 'danger')
+        return redirect(url_for('loans.loan_detail', loan_id=loan_id))
 
     applicant_type = _loan_applicant_type(loan)
     payment_collateral_status = 'verified' if request.form.get('payment_collateral_verified') else 'pending'
@@ -411,6 +423,10 @@ def loan_act(loan_id):
         if not lw.can_act(current_user.role, stage):
             flash(f'Only the {lw.STAGE_ACTOR_LABEL.get(stage, "authorised approver")} '
                   f'(or an admin) can act at this stage.', 'danger')
+            return redirect(url_for('loans.loan_detail', loan_id=loan_id))
+        if _acting_on_own_loan(db, loan):
+            flash('You cannot approve or reject your own loan application. '
+                  'A different officer must review it.', 'danger')
             return redirect(url_for('loans.loan_detail', loan_id=loan_id))
         member = db.execute('SELECT * FROM members WHERE id = ?', (loan['member_id'],)).fetchone()
 
