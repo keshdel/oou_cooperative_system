@@ -31,8 +31,8 @@
                             <select name="event_type" class="form-select form-select-sm">
                                 {% for val, label in meeting_types %}<option value="{{ val }}"{% if val == 'general' %} selected{% endif %}>{{ label }}</option>{% endfor %}
                             </select></div>
-                        <div class="col-md-4"><label class="form-label small mb-0">Date</label>
-                            <input type="date" name="event_date" class="form-control form-control-sm"></div>
+                        <div class="col-md-4"><label class="form-label small mb-0">Date <span class="text-danger">*</span></label>
+                            <input type="date" name="event_date" class="form-control form-control-sm" required></div>
                         <div class="col-md-4"><label class="form-label small mb-0">Start</label>
                             <input type="time" name="start_time" class="form-control form-control-sm"></div>
                         <div class="col-md-4"><label class="form-label small mb-0">End</label>

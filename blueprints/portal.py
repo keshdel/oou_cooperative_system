@@ -222,7 +222,7 @@ def member_portal():
     try:
         _today = datetime.now().strftime('%Y-%m-%d')
         events = db.execute(
-            "SELECT * FROM events WHERE is_active = 1 AND (event_date IS NULL OR event_date >= ?) "
+            "SELECT * FROM events WHERE is_active = 1 AND event_date >= ? "
             "ORDER BY event_date ASC LIMIT 3", (_today,)).fetchall()
     except Exception:
         events = []

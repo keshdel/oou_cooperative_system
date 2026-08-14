@@ -933,6 +933,29 @@ class HardeningFeatureTests(unittest.TestCase):
         with self.app.test_request_context():
             self.assertIn('uploads/x.png', _logo_src('uploads/x.png'))
 
+    def test_upcoming_events_excludes_past_and_undated(self):
+        """The members' announcements banner is date-driven: past and undated
+        events never appear; only today-or-future dated events do."""
+        from datetime import datetime, timedelta
+        from blueprints.governance import upcoming_events
+        with self.app.app_context():
+            db = get_db()
+            past = (datetime.now() - timedelta(days=3)).strftime('%Y-%m-%d')
+            future = (datetime.now() + timedelta(days=3)).strftime('%Y-%m-%d')
+            db.execute("INSERT INTO events (title, event_type, event_date, is_active, created_by) "
+                       "VALUES ('PAST EV', 'general', ?, 1, 1)", (past,))
+            db.execute("INSERT INTO events (title, event_type, event_date, is_active, created_by) "
+                       "VALUES ('UNDATED EV', 'announcement', NULL, 1, 1)")
+            db.execute("INSERT INTO events (title, event_type, event_date, is_active, created_by) "
+                       "VALUES ('FUTURE EV', 'general', ?, 1, 1)", (future,))
+            db.commit()
+            titles = {e['title'] for e in upcoming_events(db, limit=20)}
+            self.assertIn('FUTURE EV', titles)
+            self.assertNotIn('PAST EV', titles)
+            self.assertNotIn('UNDATED EV', titles)
+            db.execute("DELETE FROM events WHERE title IN ('PAST EV', 'UNDATED EV', 'FUTURE EV')")
+            db.commit()
+
     def test_meeting_reminders_and_calendar(self):
         """A meeting due tomorrow gets a one-time reminder (idempotent), and the
         calendar view renders it."""

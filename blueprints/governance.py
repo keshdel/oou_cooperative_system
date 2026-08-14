@@ -158,11 +158,12 @@ _MIME = {
 
 
 def upcoming_events(db, limit=5):
-    """Active events dated today or later — used for the members' banner."""
+    """Active events dated today or later — used for the members' banner.
+    Date-driven: undated and past events never appear (they can't be 'upcoming')."""
     try:
         today = datetime.now().strftime('%Y-%m-%d')
         return db.execute(
-            "SELECT * FROM events WHERE is_active = 1 AND (event_date IS NULL OR event_date >= ?) "
+            "SELECT * FROM events WHERE is_active = 1 AND event_date >= ? "
             "ORDER BY event_date ASC LIMIT ?", (today, limit)
         ).fetchall()
     except Exception:
@@ -243,6 +244,11 @@ def add_event():
     title = request.form.get('title', '').strip()
     if not title:
         flash('Event title is required.', 'danger')
+        return redirect(url_for('governance.manage'))
+    # A date is required so the event has a natural expiry and clears from the
+    # members' banner once it has passed.
+    if not (request.form.get('event_date') or '').strip():
+        flash('An event date is required.', 'danger')
         return redirect(url_for('governance.manage'))
     # Meeting link (virtual AGM/meeting) — only accept http(s) URLs.
     link = request.form.get('meeting_link', '').strip()
