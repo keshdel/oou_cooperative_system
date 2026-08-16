@@ -782,6 +782,25 @@ def mobile_register_device():
     return jsonify({'success': True, 'device_id': device_id})
 
 
+@mobile_api.route('/api/mobile/v1/tenant', methods=['GET'])
+def mobile_tenant():
+    """Public tenant identity — lets the app confirm which cooperative a member
+    is signing in to (name + logo) before login. No authentication required."""
+    db = get_db()
+
+    def _setting(key, default=''):
+        row = db.execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+        return (row['value'] if row and row['value'] else default)
+
+    coop_name = _setting('coop_name', 'Cooperative')
+    return jsonify({
+        'success': True,
+        'coop_name': coop_name,
+        'coop_short_name': _setting('coop_short_name', coop_name),
+        'logo': _setting('coop_logo', ''),
+    })
+
+
 @mobile_api.route('/api/mobile/card')
 @jwt_required
 def mobile_card():

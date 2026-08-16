@@ -35,21 +35,18 @@ npm start
 
 Then scan the Expo QR code with Expo Go.
 
-## Tenant API Target
+## Multi-Tenant Login
 
-The mobile app reads its API base URL from:
+The app is multi-tenant — one build serves every society. On first launch the
+member enters their cooperative's **code** (its subdomain, e.g. `smtcoop`). The
+app resolves it to `https://<code>.cooperativems.com`, confirms it via the
+public `GET /api/mobile/v1/tenant` endpoint (which returns the coop's name and
+logo to brand the sign-in screen), and stores the choice on the device. Every
+request then targets that backend. A **Change cooperative** link on the sign-in
+screen lets the member switch societies.
 
-```text
-mobile/coopms-mobile/app.json
-```
-
-Default:
-
-```json
-"apiBaseUrl": "https://ooucoop.cooperativems.com"
-```
-
-Change this per tenant build if needed.
+A full domain or `https://…` URL is also accepted (for custom-domain tenants).
+No per-tenant build is required.
 
 ## Android Test Build
 

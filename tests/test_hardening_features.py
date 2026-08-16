@@ -2,6 +2,7 @@ import json
 import os
 import time
 import unittest
+from datetime import datetime
 from io import BytesIO
 from unittest.mock import patch
 from urllib.parse import urlparse
@@ -202,6 +203,17 @@ class HardeningFeatureTests(unittest.TestCase):
             self.assertEqual(form_token_response.status_code, 200)
             self.assertNotIn(b'TestAdmin123', form_token_response.data)
 
+    def test_mobile_tenant_endpoint_is_public(self):
+        """The mobile tenant endpoint returns the coop identity without auth so
+        the app can target the right backend and brand its login screen."""
+        resp = self.client.get('/api/mobile/v1/tenant')   # no Authorization header
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertTrue(data.get('success'))
+        self.assertIn('coop_name', data)
+        self.assertIn('coop_short_name', data)
+        self.assertIn('logo', data)
+
     def test_mobile_repayment_is_fail_closed(self):
         clear_login_attempts('mobile:127.0.0.1')
         login = self.client.post(
@@ -265,6 +277,179 @@ class HardeningFeatureTests(unittest.TestCase):
             audience=JWT_AUDIENCE,
         )
         self.assertEqual(payload['username'], 'admin')
+
+    def test_mobile_v1_member_profile_device_notifications_and_loan_withdrawal(self):
+        suffix = int(time.time() * 1000)
+        email = f'mobile.member.{suffix}@example.com'
+        with self.app.app_context():
+            db = get_db()
+            db.execute('''
+                INSERT INTO members
+                    (member_number, employee_id, first_name, last_name, email,
+                     phone, status, monthly_savings, total_savings, date_joined)
+                VALUES (?, ?, 'Mobi', 'Member', ?, '08000000123',
+                        'active', 15000, 0, '2024-01-01')
+            ''', (f'OOU/TEST/MOB{suffix}', f'EMP-MOB{suffix}', email))
+            member_id = db.execute('SELECT id FROM members WHERE email = ?', (email,)).fetchone()['id']
+            db.execute('''
+                INSERT INTO savings
+                    (member_id, amount, month, payment_type, payment_method, receipt_number, date)
+                VALUES (?, 100000, '2026-08', 'monthly', 'cash', ?, '2026-08-01')
+            ''', (member_id, f'MOB-SAV-{suffix}'))
+            db.execute('''
+                INSERT INTO loans
+                    (loan_number, member_id, amount, purpose, tenure, interest_rate,
+                     interest_method, total_repayment, balance, status, approval_stage,
+                     date_applied)
+                VALUES (?, ?, 50000, 'Regular', 6, 11, 'reducing_annual',
+                        52000, 52000, 'pending', 'secretary', '2026-08-02')
+            ''', (f'LOAN/MOBILE/{suffix}', member_id))
+            loan_id = db.execute(
+                'SELECT id FROM loans WHERE member_id = ? ORDER BY id DESC', (member_id,)
+            ).fetchone()['id']
+            db.commit()
+        self.create_member_user(member_id, email=email)
+
+        login = self.client.post(
+            '/api/mobile/login',
+            json={'username': email, 'password': 'MemberPass1!'},
+        )
+        self.assertEqual(login.status_code, 200)
+        token = login.get_json()['token']
+        headers = {'Authorization': f'Bearer {token}'}
+
+        profile_update = self.client.patch(
+            '/api/mobile/v1/profile',
+            json={
+                'city': 'Abeokuta',
+                'state': 'Ogun',
+                'country': 'Nigeria',
+                'date_of_birth': '1990-01-02',
+                'address': '1 Mobile Street',
+                'occupation': 'Teacher',
+                'emergency_contact_name': 'Mobile Helper',
+                'emergency_contact_phone': '08000000999',
+                'bank_name': 'Zenith Bank',
+                'account_name': 'Mobi Member',
+                'account_number': '1234567890',
+                'bvn': '22222222222',
+                'nin': '33333333333',
+            },
+            headers=headers,
+        )
+        self.assertEqual(profile_update.status_code, 200)
+        member_payload = profile_update.get_json()['member']
+        self.assertIn('account_number_masked', member_payload)
+        self.assertNotEqual(member_payload['account_number_masked'], '1234567890')
+
+        dashboard = self.client.get('/api/mobile/v1/dashboard', headers=headers)
+        self.assertEqual(dashboard.status_code, 200)
+        data = dashboard.get_json()
+        self.assertTrue(data['success'])
+        self.assertGreaterEqual(data['member']['total_savings'], 100000)
+        self.assertEqual(len(data['loans']), 1)
+
+        device = self.client.post(
+            '/api/mobile/v1/devices',
+            json={'platform': 'android', 'push_token': f'ExpoPushToken[{suffix}]', 'device_name': 'Test Phone'},
+            headers=headers,
+        )
+        self.assertEqual(device.status_code, 200)
+        self.assertTrue(device.get_json()['device_id'])
+
+        withdraw = self.client.post(
+            f'/api/mobile/v1/loans/{loan_id}/withdraw',
+            json={'reason': 'Applying later'},
+            headers=headers,
+        )
+        self.assertEqual(withdraw.status_code, 200)
+        self.assertEqual(withdraw.get_json()['loan']['status'], 'withdrawn')
+
+        blocked = self.client.post(
+            f'/api/mobile/v1/loans/{loan_id}/withdraw',
+            json={'reason': 'Again'},
+            headers=headers,
+        )
+        self.assertEqual(blocked.status_code, 409)
+
+        with self.app.app_context():
+            db = get_db()
+            loan = db.execute('SELECT * FROM loans WHERE id = ?', (loan_id,)).fetchone()
+            self.assertEqual(loan['status'], 'withdrawn')
+            self.assertEqual(loan['withdrawal_reason'], 'Applying later')
+            device_row = db.execute(
+                'SELECT * FROM mobile_devices WHERE push_token = ?', (f'ExpoPushToken[{suffix}]',)
+            ).fetchone()
+            self.assertEqual(device_row['member_id'], member_id)
+
+        guarantor_1 = self.create_guarantor_member(f'OOU/TEST/MG1{suffix}', f'mg1.{suffix}@example.com', 'MobileG1')
+        guarantor_2 = self.create_guarantor_member(f'OOU/TEST/MG2{suffix}', f'mg2.{suffix}@example.com', 'MobileG2')
+        preview = self.client.post(
+            '/api/mobile/v1/loans/schedule-preview',
+            json={'amount': 50000, 'purpose': 'Regular', 'tenure': 6},
+            headers=headers,
+        )
+        self.assertEqual(preview.status_code, 200)
+        self.assertGreater(preview.get_json()['monthly_payment'], 0)
+
+        apply = self.client.post(
+            '/api/mobile/v1/loans/apply',
+            json={
+                'amount': 50000,
+                'purpose': 'Regular',
+                'tenure': 6,
+                'payment_collateral_type': 'standing_order',
+                'guarantor_ids': [guarantor_1, guarantor_2],
+                'signature_name': 'Mobi Member',
+                'accept_terms': True,
+                'data_processing_consent': True,
+                'repayment_schedule_accepted': True,
+                'hr_affordability_consent': True,
+            },
+            headers=headers,
+        )
+        self.assertEqual(apply.status_code, 201)
+        self.assertEqual(apply.get_json()['loan']['status'], 'pending')
+
+        with self.app.app_context():
+            db = get_db()
+            new_loan = db.execute(
+                "SELECT * FROM loans WHERE member_id = ? AND status = 'pending' ORDER BY id DESC",
+                (member_id,),
+            ).fetchone()
+            self.assertIsNotNone(new_loan)
+            self.assertEqual(new_loan['repayment_schedule_accepted'], 1)
+            self.assertEqual(new_loan['loan_applicant_type'], 'staff')
+            guarantor_count = db.execute(
+                'SELECT COUNT(*) FROM loan_guarantors WHERE loan_id = ?',
+                (new_loan['id'],),
+            ).fetchone()[0]
+            self.assertEqual(guarantor_count, 2)
+
+    def test_registered_mobile_device_receives_push_when_notified(self):
+        self.login_admin()
+        with self.app.app_context():
+            db = get_db()
+            user = db.execute("SELECT * FROM users WHERE username = 'admin'").fetchone()
+            db.execute('''
+                INSERT INTO mobile_devices
+                    (user_id, platform, push_token, device_name, enabled, last_seen_at)
+                VALUES (?, 'android', 'ExpoPushToken[test-admin]', 'Admin Phone', 1, ?)
+            ''', (user['id'], datetime.now()))
+            db.commit()
+
+        with patch.dict(os.environ, {'MOBILE_PUSH_SYNC': '1'}):
+            with patch('mobile_push._post_expo_messages') as post_push:
+                with self.app.app_context():
+                    db = get_db()
+                    from utils import notify
+                    notify(db, user['id'], 'Mobile Alert', 'This is a push-enabled notification.', 'info', '/dashboard')
+                    db.commit()
+                post_push.assert_called_once()
+                messages = post_push.call_args[0][0]
+                self.assertEqual(messages[0]['to'], 'ExpoPushToken[test-admin]')
+                self.assertEqual(messages[0]['title'], 'Mobile Alert')
+                self.assertEqual(messages[0]['data']['action_url'], '/dashboard')
 
     def test_admin_configured_password_policy_is_enforced_by_helper(self):
         with self.app.app_context():

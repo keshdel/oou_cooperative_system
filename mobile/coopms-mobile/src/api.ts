@@ -1,5 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
-import { API_BASE_URL } from './config';
+import { codeToBaseUrl, getApiBase } from './config';
 import type { DashboardPayload, Loan, MobileNotification, SavingRow } from './types';
 
 const TOKEN_KEY = 'coopms.mobile.token';
@@ -26,7 +26,10 @@ async function request<T>(path: string, options: ApiOptions = {}): Promise<T> {
   if (options.body) headers['Content-Type'] = 'application/json';
   if (options.token) headers.Authorization = `Bearer ${options.token}`;
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const base = getApiBase();
+  if (!base) throw new ApiError('No cooperative selected.', 0);
+
+  const response = await fetch(`${base}${path}`, {
     method: options.method || 'GET',
     headers,
     body: options.body ? JSON.stringify(options.body) : undefined
@@ -37,6 +40,29 @@ async function request<T>(path: string, options: ApiOptions = {}): Promise<T> {
     throw new ApiError(payload.error || `Request failed (${response.status})`, response.status);
   }
   return payload as T;
+}
+
+/** Look up a cooperative by code/domain via its public tenant endpoint.
+ *  Returns the resolved API base + display name so the app can target the right
+ *  backend and brand its login screen. Throws ApiError with a friendly message. */
+export async function resolveTenant(code: string): Promise<{ base: string; coopName: string; logo: string }> {
+  const base = codeToBaseUrl(code);
+  if (!base) throw new ApiError('Enter your cooperative code.', 0);
+  let response: Response;
+  try {
+    response = await fetch(`${base}/api/mobile/v1/tenant`, { headers: { Accept: 'application/json' } });
+  } catch {
+    throw new ApiError('Could not reach that cooperative. Check the code and your connection.', 0);
+  }
+  const payload = await response.json().catch(() => ({} as Record<string, unknown>));
+  if (!response.ok || payload.success !== true) {
+    throw new ApiError('Cooperative not found — check the code with your society.', response.status);
+  }
+  return {
+    base,
+    coopName: (payload.coop_name as string) || 'Cooperative',
+    logo: (payload.logo as string) || ''
+  };
 }
 
 export async function saveToken(token: string) {

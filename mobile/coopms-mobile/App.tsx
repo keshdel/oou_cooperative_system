@@ -29,10 +29,11 @@ import {
   markAllNotificationsRead,
   previewLoanSchedule,
   registerDevice,
+  resolveTenant,
   updateProfile,
   withdrawLoan
 } from './src/api';
-import { API_BASE_URL } from './src/config';
+import { clearTenant, getApiBase, getCoopName, loadTenant, setTenant } from './src/config';
 import type { DashboardPayload, Loan, MobileNotification, SavingRow } from './src/types';
 
 type Tab = 'home' | 'profile' | 'savings' | 'loans' | 'notifications';
@@ -58,7 +59,57 @@ async function tryRegisterPushToken(token: string) {
   }
 }
 
-function LoginScreen({ onLogin }: { onLogin: (token: string) => void }) {
+function TenantScreen({ onReady }: { onReady: () => void }) {
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function connect() {
+    if (!code.trim()) {
+      Alert.alert('Cooperative code', 'Enter your cooperative code, e.g. smtcoop.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const tenant = await resolveTenant(code);
+      await setTenant(tenant.base, tenant.coopName);
+      onReady();
+    } catch (error) {
+      Alert.alert('Not found', error instanceof Error ? error.message : 'Check the code and try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <SafeAreaView style={styles.authRoot}>
+      <StatusBar barStyle="light-content" />
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.authContent}>
+        <View style={styles.logoMark}>
+          <Ionicons name="people-circle" size={42} color={NAVY} />
+        </View>
+        <Text style={styles.brand}>COOPMS</Text>
+        <Text style={styles.tagline}>Digital Cooperative Management Platform</Text>
+        <View style={styles.loginCard}>
+          <Text style={styles.loginTitle}>Find your cooperative</Text>
+          <Text style={styles.helperText}>Enter the code your society gave you, e.g. smtcoop.</Text>
+          <TextInput
+            value={code}
+            onChangeText={setCode}
+            autoCapitalize="none"
+            autoCorrect={false}
+            placeholder="Cooperative code"
+            style={styles.input}
+          />
+          <Pressable style={[styles.primaryButton, busy && styles.disabled]} onPress={connect} disabled={busy}>
+            {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Continue</Text>}
+          </Pressable>
+        </View>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
+  );
+}
+
+function LoginScreen({ onLogin, coopName, onChangeCooperative }: { onLogin: (token: string) => void; coopName: string; onChangeCooperative: () => void }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -90,7 +141,7 @@ function LoginScreen({ onLogin }: { onLogin: (token: string) => void }) {
         <Text style={styles.brand}>COOPMS</Text>
         <Text style={styles.tagline}>Digital Cooperative Management Platform</Text>
         <View style={styles.loginCard}>
-          <Text style={styles.loginTitle}>Member Sign In</Text>
+          <Text style={styles.loginTitle}>Sign in to {coopName || 'your cooperative'}</Text>
           <TextInput
             value={username}
             onChangeText={setUsername}
@@ -109,7 +160,9 @@ function LoginScreen({ onLogin }: { onLogin: (token: string) => void }) {
           <Pressable style={[styles.primaryButton, busy && styles.disabled]} onPress={submit} disabled={busy}>
             {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Sign In</Text>}
           </Pressable>
-          <Text style={styles.apiHint}>Connected to {API_BASE_URL.replace('https://', '')}</Text>
+          <Pressable onPress={onChangeCooperative}>
+            <Text style={styles.apiHint}>{getApiBase().replace('https://', '') || 'your cooperative'} · Change</Text>
+          </Pressable>
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -500,6 +553,8 @@ export default function App() {
   const [dashboard, setDashboard] = useState<DashboardPayload | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('home');
   const [loading, setLoading] = useState(true);
+  const [hasTenant, setHasTenant] = useState(false);
+  const [coopName, setCoopName] = useState('');
 
   async function reload(currentToken = token) {
     if (!currentToken) return;
@@ -508,18 +563,25 @@ export default function App() {
   }
 
   useEffect(() => {
-    loadToken().then(async (stored) => {
-      if (stored) {
-        setToken(stored);
-        try {
-          await reload(stored);
-          void tryRegisterPushToken(stored);
-        } catch {
-          await clearToken();
-          setToken(null);
+    (async () => {
+      const ready = await loadTenant();
+      setHasTenant(ready);
+      setCoopName(getCoopName());
+      if (ready) {
+        const stored = await loadToken();
+        if (stored) {
+          setToken(stored);
+          try {
+            await reload(stored);
+            void tryRegisterPushToken(stored);
+          } catch {
+            await clearToken();
+            setToken(null);
+          }
         }
       }
-    }).finally(() => setLoading(false));
+      setLoading(false);
+    })();
   }, []);
 
   async function onLogin(nextToken: string) {
@@ -531,6 +593,16 @@ export default function App() {
     await clearToken();
     setToken(null);
     setDashboard(null);
+    setActiveTab('home');
+  }
+
+  async function changeCooperative() {
+    await clearTenant();
+    await clearToken();
+    setToken(null);
+    setDashboard(null);
+    setHasTenant(false);
+    setCoopName('');
     setActiveTab('home');
   }
 
@@ -550,8 +622,12 @@ export default function App() {
     );
   }
 
+  if (!hasTenant) {
+    return <TenantScreen onReady={() => { setHasTenant(true); setCoopName(getCoopName()); }} />;
+  }
+
   if (!token || !dashboard) {
-    return <LoginScreen onLogin={onLogin} />;
+    return <LoginScreen onLogin={onLogin} coopName={coopName} onChangeCooperative={changeCooperative} />;
   }
 
   return (
@@ -578,6 +654,7 @@ const styles = StyleSheet.create({
   tagline: { color: '#DDE8FF', fontSize: 15, marginTop: 6, marginBottom: 28 },
   loginCard: { backgroundColor: '#fff', borderRadius: 8, padding: 18, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 18, elevation: 4 },
   loginTitle: { color: INK, fontSize: 20, fontWeight: '800', marginBottom: 14 },
+  helperText: { color: '#5b6b85', fontSize: 13, marginBottom: 12, marginTop: -6 },
   input: { borderWidth: 1, borderColor: '#D7DEE8', borderRadius: 8, padding: 14, marginBottom: 12, fontSize: 16, color: INK },
   inputLight: { borderWidth: 1, borderColor: '#D7DEE8', borderRadius: 8, padding: 12, marginTop: 6, marginBottom: 12, fontSize: 15, color: INK, backgroundColor: '#fff' },
   primaryButton: { backgroundColor: BLUE, borderRadius: 8, padding: 15, alignItems: 'center', justifyContent: 'center' },
