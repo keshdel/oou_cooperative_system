@@ -1113,6 +1113,81 @@
                             </tbody>
                         </table>
                     </div>
+
+                    <div class="card mt-4" id="mobile-devices">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <div>
+                                <h5 class="mb-0"><i class="fas fa-mobile-alt me-2"></i>Mobile Devices</h5>
+                                <small class="text-muted">Registered phones that can receive CoopMS push notifications.</small>
+                            </div>
+                            <span class="badge bg-primary">{{ mobile_devices|default([])|length }} device{{ '' if mobile_devices|default([])|length == 1 else 's' }}</span>
+                        </div>
+                        <div class="card-body p-0">
+                            {% if mobile_devices|default([]) %}
+                            <div class="table-responsive">
+                                <table class="table table-hover align-middle mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>User / Member</th>
+                                            <th>Device</th>
+                                            <th>Push Token</th>
+                                            <th>Last Seen</th>
+                                            <th>Status</th>
+                                            <th class="text-end">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for device in mobile_devices|default([]) %}
+                                        <tr>
+                                            <td>
+                                                <div class="fw-semibold">{{ device.user_full_name or device.username or 'Unknown user' }}</div>
+                                                <div class="small text-muted">{{ device.username }}{% if device.user_email %} · {{ device.user_email }}{% endif %}</div>
+                                                {% if device.member_number %}
+                                                <div class="small text-muted">{{ device.member_number }}{% if device.member_name %} · {{ device.member_name }}{% endif %}</div>
+                                                {% endif %}
+                                            </td>
+                                            <td>
+                                                <div class="fw-semibold">{{ device.device_name }}</div>
+                                                <span class="badge bg-light text-dark border">{{ device.platform|upper }}</span>
+                                            </td>
+                                            <td><code>…{{ device.token_tail }}</code></td>
+                                            <td>
+                                                <div>{{ device.last_seen_at }}</div>
+                                                <div class="small text-muted">Registered {{ device.created_at }}</div>
+                                            </td>
+                                            <td>
+                                                {% if device.enabled %}
+                                                <span class="badge bg-success">Enabled</span>
+                                                {% else %}
+                                                <span class="badge bg-secondary">Revoked</span>
+                                                {% endif %}
+                                            </td>
+                                            <td class="text-end text-nowrap">
+                                                <form method="POST" action="{{ url_for('admin_panel.test_mobile_device_push', device_id=device.id) }}" class="d-inline"
+                                                      onsubmit="return confirm('Send a test push notification to this member?')">
+                                                    <button type="submit" class="btn btn-sm btn-outline-primary" {% if not device.enabled %}disabled{% endif %}>
+                                                        <i class="fas fa-paper-plane me-1"></i> Test
+                                                    </button>
+                                                </form>
+                                                <form method="POST" action="{{ url_for('admin_panel.revoke_mobile_device', device_id=device.id) }}" class="d-inline"
+                                                      onsubmit="return confirm('Revoke this mobile device? It will stop receiving push notifications.')">
+                                                    <button type="submit" class="btn btn-sm btn-outline-danger" {% if not device.enabled %}disabled{% endif %}>
+                                                        <i class="fas fa-ban me-1"></i> Revoke
+                                                    </button>
+                                                </form>
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {% else %}
+                            <div class="p-4 text-muted">
+                                No mobile devices have registered yet. Ask a member to sign in from the mobile app, then return here to send a test push.
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
                     
                     <!-- Role Permissions Matrix -->
                     <div class="card mt-4">

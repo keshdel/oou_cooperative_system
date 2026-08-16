@@ -11,7 +11,7 @@ from database import USE_POSTGRES, get_db, last_insert_id
 from email_service import send_member_onboarding_email
 from security import generate_account_setup_token, validate_password_strength
 from utils import (role_required, audit, validate_image, logo_data_uri,
-                   member_savings_balance, reconcile_member_savings)
+                   member_savings_balance, reconcile_member_savings, notify)
 from ledger import (post_journal_safe, get_default_cash_account, OPERATING_EXPENSES, FEE_INCOME,
                     HONORARIUM)
 
@@ -119,6 +119,54 @@ def _format_last_login(value):
         return datetime.fromisoformat(str(value)).strftime('%Y-%m-%d %H:%M')
     except (TypeError, ValueError):
         return str(value)[:16]
+
+
+def _mobile_device_rows(db):
+    rows = db.execute('''
+        SELECT
+            d.id,
+            d.user_id,
+            d.member_id,
+            d.platform,
+            d.push_token,
+            d.device_name,
+            d.enabled,
+            d.last_seen_at,
+            d.created_at,
+            u.username,
+            u.full_name AS user_full_name,
+            u.email AS user_email,
+            m.member_number,
+            m.first_name,
+            m.last_name
+        FROM mobile_devices d
+        LEFT JOIN users u ON u.id = d.user_id
+        LEFT JOIN members m ON m.id = d.member_id
+        ORDER BY COALESCE(d.last_seen_at, d.created_at) DESC, d.id DESC
+    ''').fetchall()
+    devices = []
+    for row in rows:
+        member_name = ''
+        if row['first_name'] or row['last_name']:
+            member_name = f"{row['first_name'] or ''} {row['last_name'] or ''}".strip()
+        devices.append({
+            'id': row['id'],
+            'user_id': row['user_id'],
+            'member_id': row['member_id'],
+            'platform': row['platform'] or 'unknown',
+            'push_token': row['push_token'] or '',
+            'token_tail': (row['push_token'] or '')[-18:],
+            'device_name': row['device_name'] or 'Mobile device',
+            'enabled': row['enabled'] if row['enabled'] is not None else 1,
+            'last_seen_at': _format_last_login(row['last_seen_at']),
+            'created_at': _format_last_login(row['created_at']),
+            'username': row['username'] or '',
+            'user_full_name': row['user_full_name'] or row['username'] or '',
+            'user_email': row['user_email'] or '',
+            'member_number': row['member_number'] or '',
+            'member_name': member_name,
+        })
+    return devices
 
 
 def _upsert_setting(db, key, value, description=None):
@@ -279,10 +327,12 @@ def settings():
             'SELECT * FROM audit_log ORDER BY timestamp DESC LIMIT 100'
         ).fetchall()
         readiness = _system_readiness(db)
+        mobile_devices = _mobile_device_rows(db)
 
         return render_template('admin/settings.html',
                                settings=settings_dict,
                                system_users=user_list,
+                               mobile_devices=mobile_devices,
                                current_is_super=current_is_super,
                                audit_logs=audit_logs,
                                backup_history=[],
@@ -293,6 +343,7 @@ def settings():
         return render_template('admin/settings.html',
                                settings=_DEFAULT_SETTINGS,
                                system_users=[],
+                               mobile_devices=[],
                                current_is_super=False,
                                audit_logs=[],
                                backup_history=[],
@@ -872,6 +923,62 @@ def toggle_user(user_id):
         db.rollback()
         flash(f'Error toggling user: {e}', 'danger')
     return redirect(url_for('admin_panel.settings') + '#users')
+
+
+@admin_panel.route('/api/mobile_devices/<int:device_id>/test-push', methods=['POST'])
+@login_required
+@role_required('admin')
+def test_mobile_device_push(device_id):
+    db = get_db()
+    try:
+        device = db.execute('''
+            SELECT d.*, u.username
+            FROM mobile_devices d
+            LEFT JOIN users u ON u.id = d.user_id
+            WHERE d.id = ?
+        ''', (device_id,)).fetchone()
+        if not device:
+            flash('Mobile device not found.', 'danger')
+            return redirect(url_for('admin_panel.settings') + '#mobile-devices')
+        if not (device['enabled'] if device['enabled'] is not None else 1):
+            flash('This mobile device is revoked. Enable/register it again before testing push delivery.', 'warning')
+            return redirect(url_for('admin_panel.settings') + '#mobile-devices')
+
+        title = 'CoopMS test notification'
+        message = 'If you received this, mobile push delivery is working for this device.'
+        notify(db, device['user_id'], title, message, 'info', '/notifications')
+        audit(db, 'TEST_MOBILE_PUSH', 'mobile', f"Sent test push to device #{device_id} ({device['username'] or device['user_id']})")
+        db.commit()
+        flash('Test push queued for the selected mobile device/user.', 'success')
+    except Exception as e:
+        db.rollback()
+        flash(f'Error sending test push: {e}', 'danger')
+    return redirect(url_for('admin_panel.settings') + '#mobile-devices')
+
+
+@admin_panel.route('/api/mobile_devices/<int:device_id>/revoke', methods=['POST'])
+@login_required
+@role_required('admin')
+def revoke_mobile_device(device_id):
+    db = get_db()
+    try:
+        device = db.execute('''
+            SELECT d.*, u.username
+            FROM mobile_devices d
+            LEFT JOIN users u ON u.id = d.user_id
+            WHERE d.id = ?
+        ''', (device_id,)).fetchone()
+        if not device:
+            flash('Mobile device not found.', 'danger')
+            return redirect(url_for('admin_panel.settings') + '#mobile-devices')
+        db.execute('UPDATE mobile_devices SET enabled = 0 WHERE id = ?', (device_id,))
+        audit(db, 'REVOKE_MOBILE_DEVICE', 'mobile', f"Revoked mobile device #{device_id} ({device['username'] or device['user_id']})")
+        db.commit()
+        flash('Mobile device revoked. It will no longer receive push notifications.', 'success')
+    except Exception as e:
+        db.rollback()
+        flash(f'Error revoking mobile device: {e}', 'danger')
+    return redirect(url_for('admin_panel.settings') + '#mobile-devices')
 
 
 @admin_panel.route('/api/test_db')

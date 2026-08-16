@@ -585,6 +585,55 @@ class HardeningFeatureTests(unittest.TestCase):
                 self.assertEqual(messages[0]['title'], 'Mobile Alert')
                 self.assertEqual(messages[0]['data']['action_url'], '/dashboard')
 
+    def test_admin_can_view_test_and_revoke_mobile_device(self):
+        self.login_admin()
+        suffix = int(time.time() * 1000)
+        email = f'mobile.device.admin.{suffix}@example.com'
+        member_id = self.create_member()
+        self.create_member_user(member_id, email=email)
+        push_token = f'ExpoPushToken[admin-device-{suffix}]'
+        with self.app.app_context():
+            db = get_db()
+            user = db.execute('SELECT * FROM users WHERE username = ?', (email,)).fetchone()
+            db.execute('''
+                INSERT INTO mobile_devices
+                    (user_id, member_id, platform, push_token, device_name, enabled, last_seen_at)
+                VALUES (?, ?, 'android', ?, 'Adeo Test Phone', 1, ?)
+            ''', (user['id'], member_id, push_token, datetime.now()))
+            device_id = db.execute(
+                'SELECT id FROM mobile_devices WHERE push_token = ?', (push_token,)
+            ).fetchone()['id']
+            db.commit()
+
+        settings = self.client.get('/settings')
+        self.assertEqual(settings.status_code, 200)
+        self.assertIn(b'Mobile Devices', settings.data)
+        self.assertIn(b'Adeo Test Phone', settings.data)
+
+        with patch.dict(os.environ, {'MOBILE_PUSH_SYNC': '1'}):
+            with patch('mobile_push._post_expo_messages') as post_push:
+                pushed = self.client.post(
+                    f'/api/mobile_devices/{device_id}/test-push',
+                    follow_redirects=False,
+                )
+                self.assertIn(pushed.status_code, (302, 303))
+                post_push.assert_called_once()
+                messages = post_push.call_args[0][0]
+                self.assertEqual(messages[0]['to'], push_token)
+                self.assertEqual(messages[0]['title'], 'CoopMS test notification')
+
+        revoked = self.client.post(
+            f'/api/mobile_devices/{device_id}/revoke',
+            follow_redirects=False,
+        )
+        self.assertIn(revoked.status_code, (302, 303))
+        with self.app.app_context():
+            db = get_db()
+            enabled = db.execute(
+                'SELECT enabled FROM mobile_devices WHERE id = ?', (device_id,)
+            ).fetchone()['enabled']
+            self.assertEqual(enabled, 0)
+
     def test_admin_configured_password_policy_is_enforced_by_helper(self):
         with self.app.app_context():
             db = get_db()
