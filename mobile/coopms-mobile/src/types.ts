@@ -74,6 +74,39 @@ export type LoanScheduleRow = {
   balance: number;
 };
 
+export type LoanPurposeOption = {
+  value: string;
+  label: string;
+  interest_rate: number;
+  interest_method: string;
+};
+
+export type CollateralOption = {
+  value: string;
+  label: string;
+  description: string;
+};
+
+export type GuarantorOption = {
+  id: number;
+  member_number: string;
+  full_name: string;
+  email: string;
+  phone: string;
+  total_savings: number;
+};
+
+export type LoanOptionsPayload = {
+  success: boolean;
+  purposes: LoanPurposeOption[];
+  collateral_options: CollateralOption[];
+  guarantors_required: number;
+  eligible_guarantors: GuarantorOption[];
+  max_tenure_months: number;
+  loan_eligibility_amount: number;
+  staff_member: boolean;
+};
+
 export type MobileNotification = {
   id: number;
   title: string;

@@ -1,6 +1,6 @@
 import * as SecureStore from 'expo-secure-store';
 import { HQ_API_BASE, codeToBaseUrl, getApiBase } from './config';
-import type { DashboardPayload, Loan, MobileNotification, SavingRow } from './types';
+import type { DashboardPayload, Loan, LoanOptionsPayload, MobileNotification, SavingRow } from './types';
 
 const TOKEN_KEY = 'coopms.mobile.token';
 
@@ -153,6 +153,10 @@ export async function getSavings(token: string) {
 
 export async function getLoans(token: string) {
   return request<{ success: boolean; loans: Loan[] }>('/api/mobile/v1/loans', { token });
+}
+
+export async function getLoanOptions(token: string) {
+  return request<LoanOptionsPayload>('/api/mobile/v1/loans/options', { token });
 }
 
 export async function previewLoanSchedule(token: string, input: { amount: number; purpose: string; tenure: number }) {

@@ -22,6 +22,7 @@ import {
   clearToken,
   getDashboard,
   getLoanDetail,
+  getLoanOptions,
   getNotifications,
   getProfile,
   getSavings,
@@ -36,7 +37,7 @@ import {
   withdrawLoan
 } from './src/api';
 import { clearTenant, getApiBase, getCoopName, loadTenant, setTenant } from './src/config';
-import type { DashboardPayload, Loan, MobileNotification, SavingRow } from './src/types';
+import type { DashboardPayload, GuarantorOption, Loan, LoanOptionsPayload, MobileNotification, SavingRow } from './src/types';
 
 type Tab = 'home' | 'profile' | 'savings' | 'loans' | 'notifications';
 
@@ -591,18 +592,67 @@ function SavingsScreen({ token }: { token: string }) {
   );
 }
 
+function OptionChip({ label, selected, onPress }: { label: string; selected: boolean; onPress: () => void }) {
+  return (
+    <Pressable style={({ pressed }) => [styles.optionChip, selected && styles.optionChipSelected, pressed && styles.pressed]} onPress={onPress}>
+      <Text style={[styles.optionChipText, selected && styles.optionChipTextSelected]}>{label}</Text>
+    </Pressable>
+  );
+}
+
+function GuarantorChoice({
+  guarantor,
+  selected,
+  onToggle
+}: {
+  guarantor: GuarantorOption;
+  selected: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <Pressable style={({ pressed }) => [styles.guarantorChoice, selected && styles.guarantorSelected, pressed && styles.pressed]} onPress={onToggle}>
+      <View style={[styles.guarantorCheck, selected && styles.guarantorCheckSelected]}>
+        {selected ? <Ionicons name="checkmark" size={16} color="#fff" /> : null}
+      </View>
+      <View style={styles.quickText}>
+        <Text style={styles.quickLabel}>{guarantor.full_name}</Text>
+        <Text style={styles.quickHelper}>{guarantor.member_number} - {guarantor.phone || guarantor.email || 'Active member'}</Text>
+      </View>
+    </Pressable>
+  );
+}
+
 function LoansScreen({ token, dashboard, reload }: { token: string; dashboard: DashboardPayload; reload: () => void }) {
   const [selected, setSelected] = useState<Loan | null>(null);
   const [reason, setReason] = useState('');
   const [showApply, setShowApply] = useState(false);
+  const [loanOptions, setLoanOptions] = useState<LoanOptionsPayload | null>(null);
   const [amount, setAmount] = useState('');
   const [purpose, setPurpose] = useState('Regular');
   const [tenure, setTenure] = useState('6');
   const [signature, setSignature] = useState('');
   const [collateral, setCollateral] = useState('standing_order');
-  const [guarantors, setGuarantors] = useState('');
+  const [guarantors, setGuarantors] = useState<number[]>([]);
   const [preview, setPreview] = useState<{ monthly_payment: number; total_repayment: number; total_interest: number } | null>(null);
   const [busyApply, setBusyApply] = useState(false);
+
+  useEffect(() => {
+    getLoanOptions(token).then((response) => {
+      setLoanOptions(response);
+      if (response.purposes.length > 0 && !response.purposes.some((item) => item.value === purpose)) {
+        setPurpose(response.purposes[0].value);
+      }
+      if (response.collateral_options.length > 0 && !response.collateral_options.some((item) => item.value === collateral)) {
+        setCollateral(response.collateral_options[0].value);
+      }
+    }).catch(() => undefined);
+  }, [token]);
+
+  function toggleGuarantor(id: number) {
+    setGuarantors((current) => (
+      current.includes(id) ? current.filter((item) => item !== id) : [...current, id]
+    ));
+  }
 
   async function openLoan(loan: Loan) {
     const response = await getLoanDetail(token, loan.id);
@@ -651,7 +701,7 @@ function LoansScreen({ token, dashboard, reload }: { token: string; dashboard: D
         purpose,
         tenure: Number(tenure),
         payment_collateral_type: collateral,
-        guarantor_ids: guarantors.split(',').map((value) => value.trim()).filter(Boolean),
+        guarantor_ids: guarantors,
         signature_name: signature,
         accept_terms: true,
         data_processing_consent: true,
@@ -664,7 +714,7 @@ function LoansScreen({ token, dashboard, reload }: { token: string; dashboard: D
       setPreview(null);
       setAmount('');
       setSignature('');
-      setGuarantors('');
+      setGuarantors([]);
       reload();
       Alert.alert('Application submitted', 'Your loan request has entered the approval workflow.');
     } catch (error) {
@@ -690,7 +740,19 @@ function LoansScreen({ token, dashboard, reload }: { token: string; dashboard: D
           </View>
           <View style={styles.fieldBlock}>
             <Text style={styles.fieldLabel}>Purpose</Text>
-            <TextInput value={purpose} onChangeText={setPurpose} style={styles.inputLight} placeholder="Regular" />
+            <View style={styles.optionWrap}>
+              {(loanOptions?.purposes || [{ value: 'Regular', label: 'Regular' }]).map((option) => (
+                <OptionChip
+                  key={option.value}
+                  label={option.label}
+                  selected={purpose === option.value}
+                  onPress={() => {
+                    setPurpose(option.value);
+                    setPreview(null);
+                  }}
+                />
+              ))}
+            </View>
           </View>
           <View style={styles.fieldBlock}>
             <Text style={styles.fieldLabel}>Tenure months</Text>
@@ -698,11 +760,40 @@ function LoansScreen({ token, dashboard, reload }: { token: string; dashboard: D
           </View>
           <View style={styles.fieldBlock}>
             <Text style={styles.fieldLabel}>Collateral</Text>
-            <TextInput value={collateral} onChangeText={setCollateral} style={styles.inputLight} placeholder="standing_order or post_dated_cheques" />
+            <View style={styles.optionStack}>
+              {(loanOptions?.collateral_options || [{ value: 'standing_order', label: 'Standing order / salary deduction', description: 'Repayment is deducted automatically.' }]).map((option) => (
+                <Pressable
+                  key={option.value}
+                  style={({ pressed }) => [styles.collateralOption, collateral === option.value && styles.collateralSelected, pressed && styles.pressed]}
+                  onPress={() => setCollateral(option.value)}
+                >
+                  <View style={styles.rowBetween}>
+                    <Text style={styles.rowTitle}>{option.label}</Text>
+                    {collateral === option.value ? <Ionicons name="checkmark-circle" size={20} color={BLUE} /> : null}
+                  </View>
+                  <Text style={styles.rowSub}>{option.description}</Text>
+                </Pressable>
+              ))}
+            </View>
           </View>
           <View style={styles.fieldBlock}>
-            <Text style={styles.fieldLabel}>Guarantor IDs</Text>
-            <TextInput value={guarantors} onChangeText={setGuarantors} style={styles.inputLight} placeholder="e.g. 3, 4" />
+            <Text style={styles.fieldLabel}>Guarantors</Text>
+            <Text style={styles.rowSub}>
+              Select {loanOptions?.guarantors_required ?? 0} active member{(loanOptions?.guarantors_required ?? 0) === 1 ? '' : 's'}.
+            </Text>
+            <View style={styles.optionStack}>
+              {(loanOptions?.eligible_guarantors || []).slice(0, 25).map((guarantor) => (
+                <GuarantorChoice
+                  key={guarantor.id}
+                  guarantor={guarantor}
+                  selected={guarantors.includes(guarantor.id)}
+                  onToggle={() => toggleGuarantor(guarantor.id)}
+                />
+              ))}
+            </View>
+            {loanOptions && loanOptions.eligible_guarantors.length === 0 ? (
+              <Text style={styles.emptyText}>No eligible active guarantors found. Contact the cooperative office.</Text>
+            ) : null}
           </View>
           <Pressable style={styles.secondaryButton} onPress={runPreview}>
             <Text style={styles.secondaryButtonText}>Preview Schedule</Text>
@@ -1019,6 +1110,18 @@ const styles = StyleSheet.create({
   progressFill: { height: 10, backgroundColor: YELLOW },
   fieldBlock: { marginTop: 6 },
   fieldLabel: { color: '#667085', fontWeight: '800', textTransform: 'capitalize' },
+  optionWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8, marginBottom: 10 },
+  optionStack: { gap: 8, marginTop: 8, marginBottom: 10 },
+  optionChip: { borderWidth: 1, borderColor: '#D7DEE8', backgroundColor: '#fff', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 9 },
+  optionChipSelected: { borderColor: BLUE, backgroundColor: '#EEF4FF' },
+  optionChipText: { color: '#667085', fontWeight: '800' },
+  optionChipTextSelected: { color: BLUE },
+  collateralOption: { borderWidth: 1, borderColor: '#D7DEE8', borderRadius: 8, backgroundColor: '#fff', padding: 12 },
+  collateralSelected: { borderColor: BLUE, backgroundColor: '#F4F8FF' },
+  guarantorChoice: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderColor: '#D7DEE8', borderRadius: 8, backgroundColor: '#fff', padding: 10 },
+  guarantorSelected: { borderColor: BLUE, backgroundColor: '#F4F8FF' },
+  guarantorCheck: { width: 24, height: 24, borderRadius: 999, borderWidth: 1, borderColor: BLUE, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
+  guarantorCheckSelected: { backgroundColor: BLUE },
   detailLine: { color: INK, marginBottom: 8, fontWeight: '600' },
   disclaimer: { color: '#667085', fontSize: 12, lineHeight: 18, marginBottom: 12 },
   previewBox: { borderWidth: 1, borderColor: '#D7E7FF', backgroundColor: '#F4F8FF', borderRadius: 8, padding: 12, marginBottom: 10 },

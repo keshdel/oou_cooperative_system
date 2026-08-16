@@ -76,6 +76,7 @@ policy.
 - `PATCH /api/mobile/v1/profile`
 - `GET /api/mobile/v1/savings`
 - `GET /api/mobile/v1/loans`
+- `GET /api/mobile/v1/loans/options`
 - `POST /api/mobile/v1/loans/schedule-preview`
 - `POST /api/mobile/v1/loans/apply`
 - `GET /api/mobile/v1/loans/<loan_id>`
@@ -98,6 +99,23 @@ Stores the device push token for future push notifications.
   "device_name": "Adeo Android"
 }
 ```
+
+### Loan Options
+
+`GET /api/mobile/v1/loans/options`
+
+Returns the closed-ended data the mobile app must use when rendering a loan
+application form:
+
+- configured loan purposes and interest methods
+- collateral options valid for the member type
+- required guarantor count
+- eligible active member guarantors
+- maximum tenure and eligibility amount
+
+Mobile clients should not use free-text loan purpose, collateral type, or typed
+guarantor IDs. Savings adjustment and loan-payment API workflows are not exposed
+in the mobile app.
 
 ### Loan Withdrawal
 

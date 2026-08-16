@@ -419,6 +419,14 @@ class HardeningFeatureTests(unittest.TestCase):
         token = login.get_json()['token']
         headers = {'Authorization': f'Bearer {token}'}
 
+        options = self.client.get('/api/mobile/v1/loans/options', headers=headers)
+        self.assertEqual(options.status_code, 200)
+        options_payload = options.get_json()
+        self.assertIn('Regular', [item['value'] for item in options_payload['purposes']])
+        self.assertTrue(options_payload['collateral_options'])
+        self.assertGreaterEqual(options_payload['guarantors_required'], 0)
+        self.assertTrue(all(g['id'] != member_id for g in options_payload['eligible_guarantors']))
+
         profile_update = self.client.patch(
             '/api/mobile/v1/profile',
             json={
@@ -493,6 +501,13 @@ class HardeningFeatureTests(unittest.TestCase):
         self.assertEqual(preview.status_code, 200)
         self.assertGreater(preview.get_json()['monthly_payment'], 0)
 
+        invalid_preview = self.client.post(
+            '/api/mobile/v1/loans/schedule-preview',
+            json={'amount': 50000, 'purpose': 'Free text purpose', 'tenure': 6},
+            headers=headers,
+        )
+        self.assertEqual(invalid_preview.status_code, 400)
+
         apply = self.client.post(
             '/api/mobile/v1/loans/apply',
             json={
@@ -511,6 +526,24 @@ class HardeningFeatureTests(unittest.TestCase):
         )
         self.assertEqual(apply.status_code, 201)
         self.assertEqual(apply.get_json()['loan']['status'], 'pending')
+
+        invalid_apply = self.client.post(
+            '/api/mobile/v1/loans/apply',
+            json={
+                'amount': 50000,
+                'purpose': 'Free text purpose',
+                'tenure': 6,
+                'payment_collateral_type': 'standing_order',
+                'guarantor_ids': [member_id],
+                'signature_name': 'Mobi Member',
+                'accept_terms': True,
+                'data_processing_consent': True,
+                'repayment_schedule_accepted': True,
+                'hr_affordability_consent': True,
+            },
+            headers=headers,
+        )
+        self.assertEqual(invalid_apply.status_code, 400)
 
         with self.app.app_context():
             db = get_db()

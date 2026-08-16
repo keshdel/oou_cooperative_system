@@ -79,6 +79,63 @@ def _interest_methods(db):
     }
 
 
+def _loan_purpose_options(db):
+    rates = _interest_rates(db)
+    methods = _interest_methods(db)
+    return [
+        {
+            'value': purpose,
+            'label': purpose,
+            'interest_rate': float(rates[purpose]),
+            'interest_method': methods.get(purpose, 'reducing_annual'),
+        }
+        for purpose in rates.keys()
+    ]
+
+
+def _collateral_options(is_staff_member):
+    options = [
+        {
+            'value': 'standing_order',
+            'label': 'Standing order / salary deduction',
+            'description': 'Repayment is deducted automatically through payroll or a standing instruction.',
+        },
+    ]
+    if not is_staff_member:
+        options.append({
+            'value': 'post_dated_cheques',
+            'label': 'Post-dated cheques',
+            'description': 'Member provides post-dated cheques as repayment collateral.',
+        })
+    return options
+
+
+def _eligible_guarantors(db, applicant_id):
+    rows = db.execute('''
+        SELECT id, member_number, first_name, last_name, email, phone, total_savings
+        FROM members
+        WHERE status = 'active'
+          AND id <> ?
+        ORDER BY first_name, last_name, member_number
+        LIMIT 250
+    ''', (applicant_id,)).fetchall()
+    return [
+        {
+            'id': row['id'],
+            'member_number': row['member_number'],
+            'full_name': f"{row['first_name']} {row['last_name']}",
+            'email': row['email'] or '',
+            'phone': row['phone'] or '',
+            'total_savings': float(row['total_savings'] or 0),
+        }
+        for row in rows
+    ]
+
+
+def _mobile_member_is_staff(member):
+    return bool((member['employee_id'] or '').strip()) if 'employee_id' in member.keys() else False
+
+
 def _max_tenure(db):
     row = db.execute("SELECT value FROM settings WHERE key = 'max_tenure_months'").fetchone()
     try:
@@ -638,6 +695,24 @@ def mobile_loans():
     return jsonify({'success': True, 'loans': _get_loans(g.db, g.member['id'])})
 
 
+@mobile_api.route('/api/mobile/v1/loans/options')
+@member_required
+def mobile_loan_options():
+    db = g.db
+    member = g.member
+    is_staff_member = _mobile_member_is_staff(member)
+    return jsonify({
+        'success': True,
+        'purposes': _loan_purpose_options(db),
+        'collateral_options': _collateral_options(is_staff_member),
+        'guarantors_required': lw.guarantors_required(db),
+        'eligible_guarantors': _eligible_guarantors(db, member['id']),
+        'max_tenure_months': _max_tenure(db),
+        'loan_eligibility_amount': float(round((member_savings_balance(db, member['id']) or 0) * 2, 2)),
+        'staff_member': bool(is_staff_member),
+    })
+
+
 @mobile_api.route('/api/mobile/v1/loans/schedule-preview', methods=['POST'])
 @member_required
 def mobile_loan_schedule_preview():
@@ -654,6 +729,8 @@ def mobile_loan_schedule_preview():
         return jsonify({'success': False, 'error': f'Maximum tenure is {_max_tenure(g.db)} months.'}), 400
 
     rates = _interest_rates(g.db)
+    if purpose not in rates:
+        return jsonify({'success': False, 'error': 'Select a valid loan purpose.'}), 400
     methods = _interest_methods(g.db)
     rate = rates.get(purpose, rates['Regular'])
     method = methods.get(purpose, 'reducing_annual')
@@ -686,18 +763,19 @@ def mobile_apply_loan():
     purpose = (data.get('purpose') or '').strip()
     signature = (data.get('signature_name') or '').strip()
     payment_collateral_type = (data.get('payment_collateral_type') or '').strip()
-    guarantor_ids = [
-        str(gid) for gid in data.get('guarantor_ids', [])
-        if str(gid).strip() and str(gid) != str(member['id'])
-    ]
+    raw_guarantor_ids = [str(gid).strip() for gid in data.get('guarantor_ids', []) if str(gid).strip()]
+    guarantor_ids = [gid for gid in raw_guarantor_ids if gid != str(member['id'])]
     guarantor_ids = list(dict.fromkeys(guarantor_ids))
 
     if amount <= 0 or tenure <= 0 or not purpose:
         return jsonify({'success': False, 'error': 'amount, tenure and purpose are required'}), 400
     if tenure > _max_tenure(db):
         return jsonify({'success': False, 'error': f'Maximum tenure is {_max_tenure(db)} months.'}), 400
+    rates = _interest_rates(db)
+    if purpose not in rates:
+        return jsonify({'success': False, 'error': 'Select a valid loan purpose.'}), 400
 
-    is_staff_member = bool((member['employee_id'] or '').strip()) if 'employee_id' in member.keys() else False
+    is_staff_member = _mobile_member_is_staff(member)
     required_acknowledgements = {
         'accept_terms': 'You must accept the loan terms and conditions.',
         'data_processing_consent': 'You must permit the cooperative to process your personal information for this loan application.',
@@ -721,6 +799,8 @@ def mobile_apply_loan():
         return jsonify({'success': False, 'error': 'Select a valid repayment collateral option.'}), 400
     if is_staff_member and payment_collateral_type != 'standing_order':
         return jsonify({'success': False, 'error': 'Staff cooperative loans must use standing order/salary deduction.'}), 400
+    if str(member['id']) in raw_guarantor_ids:
+        return jsonify({'success': False, 'error': 'You cannot select yourself as guarantor.'}), 400
 
     try:
         if member['date_joined']:
@@ -748,7 +828,15 @@ def mobile_apply_loan():
         required_g = lw.guarantors_required(db)
         if len(guarantor_ids) < required_g:
             return jsonify({'success': False, 'error': f'Select {required_g} guarantor(s).'}), 400
-        rates = _interest_rates(db)
+        if guarantor_ids:
+            placeholders = ','.join(['?'] * len(guarantor_ids))
+            active_guarantors = db.execute(
+                f"SELECT id FROM members WHERE status = 'active' AND id IN ({placeholders})",
+                guarantor_ids,
+            ).fetchall()
+            active_ids = {str(row['id']) for row in active_guarantors}
+            if any(gid not in active_ids for gid in guarantor_ids):
+                return jsonify({'success': False, 'error': 'Select guarantors from active cooperative members.'}), 400
         methods = _interest_methods(db)
         rate = rates.get(purpose, rates['Regular'])
         method = methods.get(purpose, 'reducing_annual')
