@@ -1,0 +1,98 @@
+export type MobileUser = {
+  id: number;
+  username: string;
+  role: string;
+  email?: string;
+};
+
+export type ProfileCompletion = {
+  percent: number;
+  missing_fields: string[];
+  certified_member: boolean;
+};
+
+export type MobileMember = {
+  id: number;
+  member_number: string;
+  full_name: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone: string;
+  status: string;
+  total_savings: number;
+  share_capital: number;
+  loan_eligibility_amount: number;
+  profile_completion: ProfileCompletion;
+};
+
+export type SavingRow = {
+  id: number;
+  amount: number;
+  month: string;
+  payment_type?: string;
+  payment_method?: string;
+  receipt_number?: string;
+  date?: string;
+};
+
+export type Loan = {
+  id: number;
+  loan_number: string;
+  amount: number;
+  purpose: string;
+  tenure: number;
+  interest_rate: number;
+  total_repayment: number;
+  balance: number;
+  status: string;
+  approval_stage?: string;
+  is_disbursed: boolean;
+  date_applied?: string;
+  withdrawal_reason?: string;
+  schedule?: LoanScheduleRow[];
+};
+
+export type LoanPreview = {
+  success: boolean;
+  amount: number;
+  purpose: string;
+  tenure: number;
+  interest_rate: number;
+  interest_method: string;
+  monthly_payment: number;
+  total_repayment: number;
+  total_interest: number;
+  schedule?: LoanScheduleRow[];
+};
+
+export type LoanScheduleRow = {
+  month: number;
+  payment: number;
+  principal: number;
+  interest: number;
+  balance: number;
+};
+
+export type MobileNotification = {
+  id: number;
+  title: string;
+  message: string;
+  notification_type: string;
+  is_read: number;
+  action_url?: string;
+  created_at?: string;
+};
+
+export type DashboardPayload = {
+  success: boolean;
+  member: MobileMember;
+  summary: {
+    unread_notifications: number;
+    active_loan_balance: number;
+  };
+  savings: SavingRow[];
+  loans: Loan[];
+  recent_transactions: Array<Record<string, unknown>>;
+  notifications: MobileNotification[];
+};

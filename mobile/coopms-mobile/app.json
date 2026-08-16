@@ -1,0 +1,26 @@
+{
+  "expo": {
+    "name": "CoopMS",
+    "slug": "coopms-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "scheme": "coopms",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.cooperativems.mobile"
+    },
+    "android": {
+      "package": "com.cooperativems.mobile",
+      "adaptiveIcon": {
+        "backgroundColor": "#0B3475"
+      }
+    },
+    "extra": {
+      "apiBaseUrl": "https://ooucoop.cooperativems.com"
+    }
+  }
+}

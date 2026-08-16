@@ -1,21 +1,36 @@
 """
-REST API for Mobile App Integration
-All routes are prefixed with /api/mobile/
+REST API for CoopMS mobile app integration.
+
+Existing routes under /api/mobile remain available for backward compatibility.
+New member-facing app routes use /api/mobile/v1.
 """
 
-from flask import Blueprint, jsonify, request, current_app, g
+import json
+import random
+from datetime import datetime, timedelta, UTC
 from functools import wraps
+
+import jwt
+from flask import Blueprint, current_app, g, jsonify, request
 from werkzeug.security import check_password_hash
-from database import get_db
+
+import loan_workflow as lw
+from crypto import encrypt_member_sensitive_fields, mask_member_sensitive_fields
+from database import get_db, last_insert_id
+from email_service import send_guarantor_request_email
 from utils import (
+    audit,
     clear_login_attempts,
+    compute_loan_schedule,
     is_rate_limited,
     lockout_seconds_remaining,
     member_for_user,
+    member_savings_balance,
+    member_share_capital,
+    notify,
+    notify_member,
     record_failed_login,
 )
-import jwt
-import datetime
 
 mobile_api = Blueprint('mobile_api', __name__)
 
@@ -23,18 +38,60 @@ JWT_ISSUER = 'coopms'
 JWT_AUDIENCE = 'coopms-mobile'
 MOBILE_TOKEN_TTL_HOURS = 24
 
+PROFILE_FIELDS = (
+    'first_name', 'last_name', 'phone', 'address', 'city', 'state', 'country',
+    'occupation', 'date_of_birth', 'emergency_contact_name',
+    'emergency_contact_phone', 'next_of_kin', 'bank_name', 'account_name',
+    'account_number', 'bvn', 'nin',
+)
+PROFILE_COMPLETION_FIELDS = (
+    'first_name', 'last_name', 'email', 'phone', 'date_of_birth', 'address',
+    'city', 'state', 'country', 'occupation', 'bank_name', 'account_name',
+    'account_number', 'emergency_contact_name', 'emergency_contact_phone',
+)
 
-# ── JWT helpers ───────────────────────────────────────────────────────────────
+
+def _interest_rates(db):
+    rows = db.execute("SELECT key, value FROM settings WHERE key LIKE 'interest_%'").fetchall()
+    raw = {row['key']: row['value'] for row in rows}
+    return {
+        'Regular': float(raw.get('interest_regular', 11)),
+        'Housing': float(raw.get('interest_housing', 9)),
+        'Emergency': float(raw.get('interest_emergency', 10)),
+        'Asset Purchase': float(raw.get('interest_asset', 10)),
+        'School Fees': float(raw.get('interest_school_fees', 9)),
+    }
+
+
+def _interest_methods(db):
+    rows = db.execute("SELECT key, value FROM settings WHERE key LIKE 'interest_method_%'").fetchall()
+    raw = {row['key']: row['value'] for row in rows}
+    return {
+        'Regular': raw.get('interest_method_regular', 'reducing_annual'),
+        'Housing': raw.get('interest_method_housing', 'reducing_annual'),
+        'Emergency': raw.get('interest_method_emergency', 'reducing_annual'),
+        'Asset Purchase': raw.get('interest_method_asset', 'reducing_annual'),
+        'School Fees': raw.get('interest_method_school_fees', 'flat'),
+    }
+
+
+def _max_tenure(db):
+    row = db.execute("SELECT value FROM settings WHERE key = 'max_tenure_months'").fetchone()
+    try:
+        return int(row['value']) if row and row['value'] else 18
+    except (TypeError, ValueError):
+        return 18
+
 
 def _generate_token(user_id, username, role):
-    now = datetime.datetime.now(datetime.UTC)
+    now = datetime.now(UTC)
     payload = {
         'user_id': user_id,
         'username': username,
         'role': role,
         'iat': now,
         'nbf': now,
-        'exp': now + datetime.timedelta(hours=MOBILE_TOKEN_TTL_HOURS),
+        'exp': now + timedelta(hours=MOBILE_TOKEN_TTL_HOURS),
         'iss': JWT_ISSUER,
         'aud': JWT_AUDIENCE,
     }
@@ -45,8 +102,23 @@ def _mobile_login_key():
     return f"mobile:{request.remote_addr or '0.0.0.0'}"
 
 
+def _to_json_value(value):
+    if isinstance(value, datetime):
+        return value.isoformat(timespec='seconds')
+    if hasattr(value, 'isoformat'):
+        try:
+            return value.isoformat()
+        except Exception:
+            return str(value)
+    return value
+
+
+def _row_to_dict(row):
+    return {k: _to_json_value(row[k]) for k in row.keys()} if row else None
+
+
 def jwt_required(f):
-    """Decorator — validates Bearer JWT and stores payload in flask.g."""
+    """Validate Bearer JWT and store payload in flask.g."""
     @wraps(f)
     def decorated(*args, **kwargs):
         auth = request.headers.get('Authorization', '')
@@ -61,9 +133,9 @@ def jwt_required(f):
                 issuer=JWT_ISSUER,
                 audience=JWT_AUDIENCE,
             )
-            g.user_id  = payload['user_id']
+            g.user_id = payload['user_id']
             g.username = payload['username']
-            g.role     = payload['role']
+            g.role = payload['role']
         except jwt.ExpiredSignatureError:
             return jsonify({'success': False, 'error': 'Token has expired'}), 401
         except jwt.InvalidTokenError:
@@ -72,72 +144,151 @@ def jwt_required(f):
     return decorated
 
 
-# ── Data helpers ──────────────────────────────────────────────────────────────
+def member_required(f):
+    @wraps(f)
+    @jwt_required
+    def decorated(*args, **kwargs):
+        db = get_db()
+        member = member_for_user(db, g.user_id)
+        if not member:
+            return jsonify({
+                'success': False,
+                'error': 'No member profile is linked to this account. Contact admin.',
+            }), 404
+        g.db = db
+        g.member = member
+        return f(*args, **kwargs)
+    return decorated
 
-def _get_savings(db, member_id):
+
+def _profile_completion(member):
+    missing = []
+    completed = 0
+    for field in PROFILE_COMPLETION_FIELDS:
+        if (member[field] if field in member.keys() else None):
+            completed += 1
+        else:
+            missing.append(field)
+    percent = round((completed / len(PROFILE_COMPLETION_FIELDS)) * 100)
+    return {
+        'percent': percent,
+        'missing_fields': missing,
+        'certified_member': percent == 100,
+    }
+
+
+def _member_summary(member, db):
+    savings_balance = member_savings_balance(db, member['id'])
+    share_capital = member_share_capital(db, member['id'])
+    data = _row_to_dict(member)
+    data = mask_member_sensitive_fields(data)
+    return {
+        'id': member['id'],
+        'member_number': member['member_number'],
+        'full_name': f"{member['first_name']} {member['last_name']}",
+        'first_name': member['first_name'],
+        'last_name': member['last_name'],
+        'email': member['email'] or '',
+        'phone': member['phone'] or '',
+        'status': member['status'],
+        'date_joined': _to_json_value(member['date_joined']),
+        'total_savings': float(savings_balance or 0),
+        'share_capital': float(share_capital or 0),
+        'loan_eligibility_amount': float(round((savings_balance or 0) * 2, 2)),
+        'profile_completion': _profile_completion(member),
+        'bank_name_masked': data.get('bank_name_masked', ''),
+        'account_name_masked': data.get('account_name_masked', ''),
+        'account_number_masked': data.get('account_number_masked', ''),
+        'bvn_masked': data.get('bvn_masked', ''),
+        'nin_masked': data.get('nin_masked', ''),
+    }
+
+
+def _loan_payload(loan, include_schedule=False):
+    data = _row_to_dict(loan)
+    is_disbursed = loan['status'] in ('active', 'completed') or bool(loan['disbursement_date'])
+    data['is_disbursed'] = is_disbursed
+    data['balance'] = float(loan['balance'] or 0) if is_disbursed else 0.0
+    data['amount'] = float(loan['amount'] or 0)
+    data['total_repayment'] = float(loan['total_repayment'] or 0)
+    data['monthly_payment'] = 0.0
+    if include_schedule:
+        mp, _, schedule = compute_loan_schedule(
+            float(loan['amount'] or 0),
+            float(loan['interest_rate'] or 0),
+            max(int(loan['tenure'] or 1), 1),
+            loan['interest_method'] or 'reducing_annual',
+        )
+        data['monthly_payment'] = float(mp or 0)
+        data['schedule'] = schedule
+    return data
+
+
+def _get_savings(db, member_id, limit=12):
     rows = db.execute(
-        '''SELECT amount, month, late_fee, date, receipt_number
+        '''SELECT id, amount, month, late_fee, payment_type, payment_method,
+                  receipt_number, date
            FROM savings WHERE member_id = ?
-           ORDER BY date DESC LIMIT 12''',
-        (member_id,)
+           ORDER BY date DESC LIMIT ?''',
+        (member_id, limit),
     ).fetchall()
-    return [dict(r) for r in rows]
+    return [_row_to_dict(r) for r in rows]
 
 
 def _get_loans(db, member_id):
     rows = db.execute(
-        '''SELECT loan_number, amount, purpose, tenure, interest_rate,
-                  total_repayment, balance, status, date_applied
+        '''SELECT id, loan_number, amount, purpose, tenure, interest_rate,
+                  interest_method, total_repayment, balance, status, approval_stage,
+                  disbursement_date, date_applied, withdrawn_at, withdrawal_reason
            FROM loans WHERE member_id = ?
-           ORDER BY date_applied DESC''',
-        (member_id,)
+           ORDER BY date_applied DESC, id DESC''',
+        (member_id,),
     ).fetchall()
-    return [dict(r) for r in rows]
+    return [_loan_payload(r) for r in rows]
 
 
 def _get_transactions(db, member_id, limit=10):
     savings = db.execute(
-        '''SELECT 'saving' as type, amount, date, receipt_number as reference
+        '''SELECT 'saving' AS type, amount, date, receipt_number AS reference
            FROM savings WHERE member_id = ?
            ORDER BY date DESC LIMIT ?''',
-        (member_id, limit)
+        (member_id, limit),
     ).fetchall()
     repayments = db.execute(
-        '''SELECT 'repayment' as type, r.amount, r.date, r.repayment_number as reference
+        '''SELECT 'repayment' AS type, r.amount, r.date, r.repayment_number AS reference
            FROM repayments r
            JOIN loans l ON r.loan_id = l.id
            WHERE l.member_id = ?
            ORDER BY r.date DESC LIMIT ?''',
-        (member_id, limit)
+        (member_id, limit),
     ).fetchall()
-    combined = [dict(r) for r in savings] + [dict(r) for r in repayments]
+    combined = [_row_to_dict(r) for r in savings] + [_row_to_dict(r) for r in repayments]
     combined.sort(key=lambda x: x.get('date') or '', reverse=True)
     return combined[:limit]
 
 
-def _get_notifications(db, user_id, limit=10):
+def _get_notifications(db, user_id, limit=20):
     rows = db.execute(
-        '''SELECT title, message, notification_type, is_read, created_at
+        '''SELECT id, title, message, notification_type, is_read, action_url,
+                  created_at, read_at
            FROM notifications WHERE user_id = ?
            ORDER BY created_at DESC LIMIT ?''',
-        (user_id, limit)
+        (user_id, limit),
     ).fetchall()
-    return [dict(r) for r in rows]
+    return [_row_to_dict(r) for r in rows]
 
 
-def _card_data(member):
+def _card_data(member, db):
     return {
         'member_number': member['member_number'],
-        'full_name':     f"{member['first_name']} {member['last_name']}",
-        'status':        member['status'],
-        'card_number':   member['card_number'],
-        'card_status':   member['card_status'],
-        'date_joined':   str(member['date_joined'])[:10] if member['date_joined'] else '',
-        'total_savings': float(member['total_savings'] or 0),
+        'full_name': f"{member['first_name']} {member['last_name']}",
+        'status': member['status'],
+        'card_number': member['card_number'],
+        'card_status': member['card_status'],
+        'date_joined': str(member['date_joined'])[:10] if member['date_joined'] else '',
+        'total_savings': float(member_savings_balance(db, member['id']) or 0),
     }
 
-
-# ── Routes ────────────────────────────────────────────────────────────────────
 
 @mobile_api.route('/api/mobile/login', methods=['POST'])
 def mobile_login():
@@ -159,7 +310,7 @@ def mobile_login():
 
     db = get_db()
     user = db.execute(
-        'SELECT * FROM users WHERE username = ? AND is_active = 1', (username,)
+        'SELECT * FROM users WHERE username = ? AND is_active = 1', (username,),
     ).fetchone()
 
     if not user or not check_password_hash(user['password_hash'], password):
@@ -167,62 +318,479 @@ def mobile_login():
         return jsonify({'success': False, 'error': 'Invalid credentials'}), 401
 
     clear_login_attempts(login_key)
-    db.execute('UPDATE users SET last_login = ? WHERE id = ?',
-               (datetime.datetime.now(), user['id']))
+    db.execute('UPDATE users SET last_login = ? WHERE id = ?', (datetime.now(), user['id']))
     db.commit()
     token = _generate_token(user['id'], user['username'], user['role'])
     return jsonify({
         'success': True,
-        'token':   token,
+        'token': token,
+        'expires_in_seconds': MOBILE_TOKEN_TTL_HOURS * 3600,
         'user': {
-            'id':       user['id'],
+            'id': user['id'],
             'username': user['username'],
-            'role':     user['role'],
-            'email':    user['email'] or '',
+            'role': user['role'],
+            'email': user['email'] or '',
         },
+    })
+
+
+@mobile_api.route('/api/mobile/v1/me')
+@member_required
+def mobile_me():
+    return jsonify({
+        'success': True,
+        'user': {
+            'id': g.user_id,
+            'username': g.username,
+            'role': g.role,
+        },
+        'member': _member_summary(g.member, g.db),
+    })
+
+
+@mobile_api.route('/api/mobile/v1/profile', methods=['GET', 'PATCH'])
+@member_required
+def mobile_profile():
+    db = g.db
+    member = g.member
+    if request.method == 'GET':
+        data = _row_to_dict(member)
+        masked = mask_member_sensitive_fields(data)
+        profile = {
+            field: data.get(field, '') for field in PROFILE_FIELDS
+            if field not in {'bank_name', 'account_name', 'account_number', 'bvn', 'nin'}
+        }
+        profile.update({
+            'email': member['email'] or '',
+            'member_number': member['member_number'],
+            'bank_name_masked': masked.get('bank_name_masked', ''),
+            'account_name_masked': masked.get('account_name_masked', ''),
+            'account_number_masked': masked.get('account_number_masked', ''),
+            'bvn_masked': masked.get('bvn_masked', ''),
+            'nin_masked': masked.get('nin_masked', ''),
+        })
+        return jsonify({
+            'success': True,
+            'profile': profile,
+            'profile_completion': _profile_completion(member),
+        })
+
+    data = request.get_json(silent=True) or {}
+    updates = {
+        field: str(data[field]).strip()
+        for field in PROFILE_FIELDS
+        if field in data and data[field] is not None
+    }
+    if not updates:
+        return jsonify({'success': False, 'error': 'No editable profile fields supplied'}), 400
+
+    updates = encrypt_member_sensitive_fields(updates)
+    set_clause = ', '.join(f'{field} = ?' for field in updates)
+    db.execute(
+        f'UPDATE members SET {set_clause} WHERE id = ?',
+        (*updates.values(), member['id']),
+    )
+    audit(db, 'MOBILE_PROFILE_UPDATE', 'members',
+          f"Member {member['id']} updated profile from mobile API")
+    db.commit()
+    refreshed = db.execute('SELECT * FROM members WHERE id = ?', (member['id'],)).fetchone()
+    return jsonify({
+        'success': True,
+        'member': _member_summary(refreshed, db),
+    })
+
+
+@mobile_api.route('/api/mobile/v1/dashboard')
+@member_required
+def mobile_v1_dashboard():
+    db = g.db
+    member = g.member
+    unread = db.execute(
+        'SELECT COUNT(*) FROM notifications WHERE user_id = ? AND is_read = 0',
+        (g.user_id,),
+    ).fetchone()[0]
+    active_balance = db.execute(
+        "SELECT COALESCE(SUM(balance), 0) FROM loans WHERE member_id = ? AND status = 'active'",
+        (member['id'],),
+    ).fetchone()[0] or 0
+    return jsonify({
+        'success': True,
+        'member': _member_summary(member, db),
+        'summary': {
+            'unread_notifications': int(unread or 0),
+            'active_loan_balance': float(active_balance or 0),
+        },
+        'savings': _get_savings(db, member['id']),
+        'loans': _get_loans(db, member['id']),
+        'recent_transactions': _get_transactions(db, member['id']),
+        'notifications': _get_notifications(db, g.user_id),
     })
 
 
 @mobile_api.route('/api/mobile/dashboard')
 @jwt_required
 def mobile_dashboard():
-    """Return savings, loans, recent transactions and notifications for the user."""
-    db     = get_db()
+    """Backward-compatible dashboard route."""
+    db = get_db()
     member = member_for_user(db, g.user_id)
-
     if not member:
         return jsonify({
             'success': False,
-            'error': 'No member profile is linked to this account. Contact admin.'
+            'error': 'No member profile is linked to this account. Contact admin.',
         }), 404
-
-    mid = member['id']
     return jsonify({
         'success': True,
-        'member': {
-            'name':          f"{member['first_name']} {member['last_name']}",
-            'member_number': member['member_number'],
-            'total_savings': float(member['total_savings'] or 0),
-            'status':        member['status'],
-        },
-        'savings':              _get_savings(db, mid),
-        'loans':                _get_loans(db, mid),
-        'recent_transactions':  _get_transactions(db, mid),
-        'notifications':        _get_notifications(db, g.user_id),
+        'member': _member_summary(member, db),
+        'savings': _get_savings(db, member['id']),
+        'loans': _get_loans(db, member['id']),
+        'recent_transactions': _get_transactions(db, member['id']),
+        'notifications': _get_notifications(db, g.user_id, limit=10),
     })
+
+
+@mobile_api.route('/api/mobile/v1/savings')
+@member_required
+def mobile_savings():
+    limit = min(max(int(request.args.get('limit', 50)), 1), 250)
+    return jsonify({
+        'success': True,
+        'balance': float(member_savings_balance(g.db, g.member['id']) or 0),
+        'rows': _get_savings(g.db, g.member['id'], limit=limit),
+    })
+
+
+@mobile_api.route('/api/mobile/v1/loans')
+@member_required
+def mobile_loans():
+    return jsonify({'success': True, 'loans': _get_loans(g.db, g.member['id'])})
+
+
+@mobile_api.route('/api/mobile/v1/loans/schedule-preview', methods=['POST'])
+@member_required
+def mobile_loan_schedule_preview():
+    data = request.get_json(silent=True) or {}
+    try:
+        amount = float(data.get('amount') or 0)
+        tenure = int(data.get('tenure') or 0)
+    except (TypeError, ValueError):
+        return jsonify({'success': False, 'error': 'Invalid amount or tenure'}), 400
+    purpose = (data.get('purpose') or 'Regular').strip()
+    if amount <= 0 or tenure <= 0:
+        return jsonify({'success': False, 'error': 'Enter an amount and tenure.'}), 400
+    if tenure > _max_tenure(g.db):
+        return jsonify({'success': False, 'error': f'Maximum tenure is {_max_tenure(g.db)} months.'}), 400
+
+    rates = _interest_rates(g.db)
+    methods = _interest_methods(g.db)
+    rate = rates.get(purpose, rates['Regular'])
+    method = methods.get(purpose, 'reducing_annual')
+    monthly_payment, total_repayment, schedule = compute_loan_schedule(amount, rate, tenure, method)
+    return jsonify({
+        'success': True,
+        'amount': amount,
+        'purpose': purpose,
+        'tenure': tenure,
+        'interest_rate': rate,
+        'interest_method': method,
+        'monthly_payment': monthly_payment,
+        'total_repayment': total_repayment,
+        'total_interest': round(total_repayment - amount, 2),
+        'schedule': schedule,
+    })
+
+
+@mobile_api.route('/api/mobile/v1/loans/apply', methods=['POST'])
+@member_required
+def mobile_apply_loan():
+    db = g.db
+    member = g.member
+    data = request.get_json(silent=True) or {}
+    try:
+        amount = float(data.get('amount') or 0)
+        tenure = int(data.get('tenure') or 0)
+    except (TypeError, ValueError):
+        return jsonify({'success': False, 'error': 'Invalid amount or tenure'}), 400
+    purpose = (data.get('purpose') or '').strip()
+    signature = (data.get('signature_name') or '').strip()
+    payment_collateral_type = (data.get('payment_collateral_type') or '').strip()
+    guarantor_ids = [
+        str(gid) for gid in data.get('guarantor_ids', [])
+        if str(gid).strip() and str(gid) != str(member['id'])
+    ]
+    guarantor_ids = list(dict.fromkeys(guarantor_ids))
+
+    if amount <= 0 or tenure <= 0 or not purpose:
+        return jsonify({'success': False, 'error': 'amount, tenure and purpose are required'}), 400
+    if tenure > _max_tenure(db):
+        return jsonify({'success': False, 'error': f'Maximum tenure is {_max_tenure(db)} months.'}), 400
+
+    is_staff_member = bool((member['employee_id'] or '').strip()) if 'employee_id' in member.keys() else False
+    required_acknowledgements = {
+        'accept_terms': 'You must accept the loan terms and conditions.',
+        'data_processing_consent': 'You must permit the cooperative to process your personal information for this loan application.',
+        'repayment_schedule_accepted': 'You must accept the calculated repayment schedule before submitting.',
+    }
+    if is_staff_member:
+        required_acknowledgements['hr_affordability_consent'] = (
+            'You must permit HR/payroll affordability confirmation for this staff cooperative loan.'
+        )
+    else:
+        required_acknowledgements.update({
+            'credit_check_consent': 'You must permit the cooperative to perform affordability and credit checks.',
+            'bank_statement_ack': 'You must acknowledge that a bank statement is required before disbursement.',
+        })
+    for field, message in required_acknowledgements.items():
+        if not data.get(field):
+            return jsonify({'success': False, 'error': message}), 400
+    if not signature:
+        return jsonify({'success': False, 'error': 'Type your full name to sign this application.'}), 400
+    if payment_collateral_type not in {'standing_order', 'post_dated_cheques'}:
+        return jsonify({'success': False, 'error': 'Select a valid repayment collateral option.'}), 400
+    if is_staff_member and payment_collateral_type != 'standing_order':
+        return jsonify({'success': False, 'error': 'Staff cooperative loans must use standing order/salary deduction.'}), 400
+
+    try:
+        if member['date_joined']:
+            joined_raw = str(member['date_joined'])
+            try:
+                date_joined = datetime.fromisoformat(joined_raw.replace('Z', '+00:00').split('+')[0])
+            except ValueError:
+                date_joined = datetime.strptime(joined_raw, '%Y-%m-%d %H:%M:%S')
+            if (datetime.now() - date_joined).days < 180:
+                return jsonify({'success': False, 'error': 'You must be a member for at least 6 months to apply.'}), 400
+        else:
+            return jsonify({'success': False, 'error': 'Your join date is missing. Contact admin.'}), 400
+
+        savings_balance = member_savings_balance(db, member['id'])
+        if savings_balance < 50000:
+            return jsonify({'success': False, 'error': 'Minimum savings of NGN 50,000 required.'}), 400
+        if db.execute(
+            "SELECT id FROM loans WHERE member_id = ? AND status = 'active'", (member['id'],)
+        ).fetchone():
+            return jsonify({'success': False, 'error': 'You already have an active loan.'}), 409
+        max_loan = savings_balance * 2
+        if amount > max_loan:
+            return jsonify({'success': False, 'error': f'Maximum loan amount is NGN {max_loan:,.2f}.'}), 400
+
+        required_g = lw.guarantors_required(db)
+        if len(guarantor_ids) < required_g:
+            return jsonify({'success': False, 'error': f'Select {required_g} guarantor(s).'}), 400
+        rates = _interest_rates(db)
+        methods = _interest_methods(db)
+        rate = rates.get(purpose, rates['Regular'])
+        method = methods.get(purpose, 'reducing_annual')
+        monthly_payment, total_repayment, schedule = compute_loan_schedule(amount, rate, tenure, method)
+        schedule_snapshot = json.dumps({
+            'principal': round(amount, 2),
+            'purpose': purpose,
+            'tenure': tenure,
+            'interest_rate': rate,
+            'interest_method': method,
+            'monthly_payment': round(monthly_payment, 2),
+            'total_repayment': round(total_repayment, 2),
+            'schedule': schedule,
+            'accepted_at': datetime.now().isoformat(timespec='seconds'),
+            'accepted_channel': 'mobile',
+        }, separators=(',', ':'))
+
+        initial_stage = lw.STAGE_GUARANTORS if required_g > 0 else lw.STAGE_SECRETARY
+        loan_number = f"LOAN/{datetime.now().strftime('%Y%m%d')}/{random.randint(1000, 9999)}"
+        db.execute('''
+            INSERT INTO loans (loan_number, member_id, amount, purpose, tenure, interest_rate,
+                               interest_method, total_repayment, balance, status, approval_stage,
+                               terms_accepted, data_processing_consent, credit_check_consent,
+                               credit_check_status, repayment_schedule_accepted, bank_statement_status,
+                               payment_collateral_type, payment_collateral_status,
+                               repayment_schedule_snapshot, consent_ip, loan_applicant_type,
+                               hr_affordability_consent, hr_affordability_status, signature_name,
+                               signed_at, date_applied)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, 1, 1, ?, ?, 1, ?,
+                    ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (loan_number, member['id'], amount, purpose, tenure, rate,
+              method, total_repayment, total_repayment, initial_stage,
+              0 if is_staff_member else 1,
+              'not_required' if is_staff_member else 'pending',
+              'not_required' if is_staff_member else 'requested',
+              payment_collateral_type, schedule_snapshot, request.remote_addr,
+              'staff' if is_staff_member else 'non_staff',
+              1 if is_staff_member else 0,
+              'pending' if is_staff_member else 'not_required',
+              signature, datetime.now(), datetime.now()))
+        loan_id = last_insert_id(db)
+        lw.record_action(db, loan_id, 'submitted', 'submitted',
+                         acted_by=g.user_id, acted_by_name=g.username,
+                         comment='Member mobile self-application')
+
+        for gid in guarantor_ids:
+            guarantor = db.execute('SELECT * FROM members WHERE id = ?', (gid,)).fetchone()
+            if not guarantor:
+                continue
+            db.execute(
+                "INSERT INTO loan_guarantors (loan_id, member_id, status) VALUES (?, ?, 'pending')",
+                (loan_id, gid),
+            )
+            if guarantor['email']:
+                notify_member(db, guarantor['email'], 'Guarantor Request',
+                              f"{member['first_name']} {member['last_name']} asked you to guarantee "
+                              f"a NGN {amount:,.2f} loan. Please review and respond.",
+                              'warning', '/my-guarantor-requests')
+                send_guarantor_request_email(guarantor['email'], guarantor, member, loan_number, amount)
+
+        if initial_stage == lw.STAGE_SECRETARY:
+            for user in db.execute("SELECT id FROM users WHERE role = 'secretary'").fetchall():
+                notify(db, user['id'], 'Loan Awaiting Review',
+                       f"Loan {loan_number} (NGN {amount:,.2f}) awaits Secretary review.", 'info', '/loans')
+
+        audit(db, 'MOBILE_LOAN_APPLICATION', 'loans',
+              f"Member {member['id']} applied for NGN {amount:,.2f} {purpose} loan - {loan_number}")
+        db.commit()
+        loan = db.execute('SELECT * FROM loans WHERE id = ?', (loan_id,)).fetchone()
+        return jsonify({'success': True, 'loan': _loan_payload(loan, include_schedule=True)}), 201
+    except Exception as exc:
+        db.rollback()
+        return jsonify({'success': False, 'error': f'Error submitting application: {exc}'}), 500
+
+
+@mobile_api.route('/api/mobile/v1/loans/<int:loan_id>')
+@member_required
+def mobile_loan_detail(loan_id):
+    loan = g.db.execute(
+        'SELECT * FROM loans WHERE id = ? AND member_id = ?',
+        (loan_id, g.member['id']),
+    ).fetchone()
+    if not loan:
+        return jsonify({'success': False, 'error': 'Loan not found'}), 404
+    return jsonify({'success': True, 'loan': _loan_payload(loan, include_schedule=True)})
+
+
+@mobile_api.route('/api/mobile/v1/loans/<int:loan_id>/withdraw', methods=['POST'])
+@member_required
+def mobile_withdraw_loan(loan_id):
+    data = request.get_json(silent=True) or {}
+    reason = (data.get('reason') or '').strip()
+    db = g.db
+    loan = db.execute(
+        'SELECT * FROM loans WHERE id = ? AND member_id = ?',
+        (loan_id, g.member['id']),
+    ).fetchone()
+    if not loan:
+        return jsonify({'success': False, 'error': 'Loan not found'}), 404
+    if loan['status'] != 'pending':
+        return jsonify({
+            'success': False,
+            'error': 'Only pending loan applications can be withdrawn before final approval or disbursement.',
+        }), 409
+
+    now = datetime.now()
+    db.execute('''
+        UPDATE loans
+           SET status = 'withdrawn',
+               approval_stage = 'withdrawn',
+               withdrawn_at = ?,
+               withdrawn_by = ?,
+               withdrawal_reason = ?
+         WHERE id = ?
+    ''', (now, g.user_id, reason or 'Withdrawn by applicant via mobile app', loan_id))
+    db.execute(
+        "UPDATE loan_guarantors SET status = 'withdrawn', responded_at = ? "
+        "WHERE loan_id = ? AND status = 'pending'",
+        (now, loan_id),
+    )
+    lw.record_action(db, loan_id, 'withdrawn', 'withdrawn',
+                     acted_by=g.user_id, acted_by_name=g.username,
+                     comment=reason or 'Applicant withdrew the pending application via mobile app')
+    audit(db, 'MOBILE_LOAN_APPLICATION_WITHDRAWN', 'loans',
+          f"Member {g.member['id']} withdrew loan {loan['loan_number']}: {reason or 'No reason supplied'}")
+    for u in db.execute(
+        "SELECT id FROM users WHERE role IN ('admin', 'treasurer', 'secretary') "
+        "AND COALESCE(is_active, 1) = 1"
+    ).fetchall():
+        notify(db, u['id'], 'Loan Application Withdrawn',
+               f"{g.member['first_name']} {g.member['last_name']} withdrew loan application "
+               f"{loan['loan_number']} from the mobile app.", 'info', f"/loans/{loan_id}")
+    db.commit()
+    updated = db.execute('SELECT * FROM loans WHERE id = ?', (loan_id,)).fetchone()
+    return jsonify({'success': True, 'loan': _loan_payload(updated, include_schedule=True)})
+
+
+@mobile_api.route('/api/mobile/v1/notifications')
+@member_required
+def mobile_notifications():
+    limit = min(max(int(request.args.get('limit', 50)), 1), 250)
+    return jsonify({
+        'success': True,
+        'notifications': _get_notifications(g.db, g.user_id, limit=limit),
+    })
+
+
+@mobile_api.route('/api/mobile/v1/notifications/<int:notification_id>/read', methods=['POST'])
+@jwt_required
+def mobile_mark_notification_read(notification_id):
+    db = get_db()
+    db.execute(
+        'UPDATE notifications SET is_read = 1, read_at = ? WHERE id = ? AND user_id = ?',
+        (datetime.now(), notification_id, g.user_id),
+    )
+    db.commit()
+    return jsonify({'success': True})
+
+
+@mobile_api.route('/api/mobile/v1/notifications/mark-all-read', methods=['POST'])
+@jwt_required
+def mobile_mark_all_notifications_read():
+    db = get_db()
+    db.execute(
+        'UPDATE notifications SET is_read = 1, read_at = ? WHERE user_id = ? AND is_read = 0',
+        (datetime.now(), g.user_id),
+    )
+    db.commit()
+    return jsonify({'success': True})
+
+
+@mobile_api.route('/api/mobile/v1/devices', methods=['POST'])
+@member_required
+def mobile_register_device():
+    data = request.get_json(silent=True) or {}
+    push_token = (data.get('push_token') or '').strip()
+    if not push_token:
+        return jsonify({'success': False, 'error': 'push_token is required'}), 400
+    platform = (data.get('platform') or '').strip().lower()[:30]
+    device_name = (data.get('device_name') or '').strip()[:120]
+    now = datetime.now()
+
+    existing = g.db.execute(
+        'SELECT id FROM mobile_devices WHERE push_token = ?', (push_token,),
+    ).fetchone()
+    if existing:
+        g.db.execute('''
+            UPDATE mobile_devices
+               SET user_id = ?, member_id = ?, platform = ?, device_name = ?,
+                   enabled = 1, last_seen_at = ?
+             WHERE id = ?
+        ''', (g.user_id, g.member['id'], platform, device_name, now, existing['id']))
+        device_id = existing['id']
+    else:
+        g.db.execute('''
+            INSERT INTO mobile_devices
+                (user_id, member_id, platform, push_token, device_name, enabled, last_seen_at)
+            VALUES (?, ?, ?, ?, ?, 1, ?)
+        ''', (g.user_id, g.member['id'], platform, push_token, device_name, now))
+        device_id = g.db.execute(
+            'SELECT id FROM mobile_devices WHERE push_token = ?', (push_token,),
+        ).fetchone()['id']
+    g.db.commit()
+    return jsonify({'success': True, 'device_id': device_id})
 
 
 @mobile_api.route('/api/mobile/card')
 @jwt_required
 def mobile_card():
     """Return digital membership card data."""
-    db     = get_db()
+    db = get_db()
     member = member_for_user(db, g.user_id)
-
     if not member:
         return jsonify({'success': False, 'error': 'Member profile not found'}), 404
-
-    return jsonify({'success': True, 'card': _card_data(member)})
+    return jsonify({'success': True, 'card': _card_data(member, db)})
 
 
 @mobile_api.route('/api/mobile/pay', methods=['POST'])
@@ -234,5 +802,5 @@ def mobile_payment():
         'error': (
             'Mobile repayments are temporarily disabled. '
             'Please use the web payment flow or contact the cooperative office.'
-        )
+        ),
     }), 503
