@@ -7,6 +7,7 @@ import * as SecureStore from 'expo-secure-store';
 const TENANT_BASE_KEY = 'coopms.tenant.base';
 const TENANT_NAME_KEY = 'coopms.tenant.name';
 const ROOT_DOMAIN = 'cooperativems.com';
+export const HQ_API_BASE = 'https://hq.cooperativems.com';
 
 let currentBase = '';
 let currentName = '';

@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as Notifications from 'expo-notifications';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { Component, type ErrorInfo, type ReactNode, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -18,6 +18,7 @@ import {
 
 import {
   applyForLoan,
+  changePassword,
   clearToken,
   getDashboard,
   getLoanDetail,
@@ -29,6 +30,7 @@ import {
   markAllNotificationsRead,
   previewLoanSchedule,
   registerDevice,
+  requestPasswordReset,
   resolveTenant,
   updateProfile,
   withdrawLoan
@@ -38,6 +40,17 @@ import type { DashboardPayload, Loan, MobileNotification, SavingRow } from './sr
 
 type Tab = 'home' | 'profile' | 'savings' | 'loans' | 'notifications';
 
+type FatalScreenProps = {
+  title?: string;
+  message: string;
+  details?: string;
+  onRetry?: () => void;
+};
+
+type AppErrorBoundaryState = {
+  error: Error | null;
+};
+
 const NAVY = '#0B3475';
 const BLUE = '#1554B7';
 const YELLOW = '#F8B91E';
@@ -46,6 +59,50 @@ const INK = '#172033';
 
 function money(value?: number) {
   return `NGN ${(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function FatalScreen({ title = 'App could not start', message, details, onRetry }: FatalScreenProps) {
+  return (
+    <SafeAreaView style={styles.fatalRoot}>
+      <StatusBar barStyle="light-content" />
+      <View style={styles.fatalCard}>
+        <Text style={styles.fatalTitle}>{title}</Text>
+        <Text style={styles.fatalMessage}>{message}</Text>
+        {details ? <Text style={styles.fatalDetails}>{details}</Text> : null}
+        {onRetry ? (
+          <Pressable style={styles.primaryButton} onPress={onRetry}>
+            <Text style={styles.primaryButtonText}>Try Again</Text>
+          </Pressable>
+        ) : null}
+      </View>
+    </SafeAreaView>
+  );
+}
+
+class AppErrorBoundary extends Component<{ children: ReactNode }, AppErrorBoundaryState> {
+  state: AppErrorBoundaryState = { error: null };
+
+  static getDerivedStateFromError(error: Error): AppErrorBoundaryState {
+    return { error };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('CoopMS mobile render error', error, info.componentStack);
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <FatalScreen
+          title="CoopMS stopped loading"
+          message="The mobile app hit a startup error. Restart the Expo session after reviewing the message below."
+          details={this.state.error.message}
+        />
+      );
+    }
+
+    return this.props.children;
+  }
 }
 
 async function tryRegisterPushToken(token: string) {
@@ -113,6 +170,9 @@ function LoginScreen({ onLogin, coopName, onChangeCooperative }: { onLogin: (tok
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
+  const [showReset, setShowReset] = useState(false);
+  const [resetIdentifier, setResetIdentifier] = useState('');
+  const [resetBusy, setResetBusy] = useState(false);
 
   async function submit() {
     if (!username.trim() || !password) {
@@ -128,6 +188,24 @@ function LoginScreen({ onLogin, coopName, onChangeCooperative }: { onLogin: (tok
       Alert.alert('Login failed', error instanceof Error ? error.message : 'Please try again.');
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function sendReset() {
+    const identifier = resetIdentifier.trim() || username.trim();
+    if (!identifier) {
+      Alert.alert('Password reset', 'Enter your email or username first.');
+      return;
+    }
+    setResetBusy(true);
+    try {
+      const response = await requestPasswordReset(identifier);
+      Alert.alert('Password reset', response.message || 'If an account exists, a reset link will be sent.');
+      setShowReset(false);
+    } catch (error) {
+      Alert.alert('Unable to send reset link', error instanceof Error ? error.message : 'Please try again.');
+    } finally {
+      setResetBusy(false);
     }
   }
 
@@ -160,6 +238,25 @@ function LoginScreen({ onLogin, coopName, onChangeCooperative }: { onLogin: (tok
           <Pressable style={[styles.primaryButton, busy && styles.disabled]} onPress={submit} disabled={busy}>
             {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryButtonText}>Sign In</Text>}
           </Pressable>
+          <Pressable onPress={() => setShowReset((value) => !value)} style={styles.textButton}>
+            <Text style={styles.linkText}>Forgot password?</Text>
+          </Pressable>
+          {showReset ? (
+            <View style={styles.resetPanel}>
+              <Text style={styles.helperText}>We will send a secure reset link to your registered email.</Text>
+              <TextInput
+                value={resetIdentifier}
+                onChangeText={setResetIdentifier}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                placeholder="Email or username"
+                style={styles.inputLight}
+              />
+              <Pressable style={[styles.secondaryButton, resetBusy && styles.disabled]} onPress={sendReset} disabled={resetBusy}>
+                <Text style={styles.secondaryButtonText}>{resetBusy ? 'Sending...' : 'Send Reset Link'}</Text>
+              </Pressable>
+            </View>
+          ) : null}
           <Pressable onPress={onChangeCooperative}>
             <Text style={styles.apiHint}>{getApiBase().replace('https://', '') || 'your cooperative'} · Change</Text>
           </Pressable>
@@ -183,21 +280,98 @@ function Header({ title, onLogout }: { title: string; onLogout: () => void }) {
   );
 }
 
-function StatCard({ label, value, tone }: { label: string; value: string; tone?: 'yellow' | 'green' }) {
-  return (
-    <View style={[styles.statCard, tone === 'yellow' && styles.statYellow, tone === 'green' && styles.statGreen]}>
-      <Text style={styles.statLabel}>{label}</Text>
+function StatCard({
+  label,
+  value,
+  tone,
+  icon,
+  hint,
+  onPress
+}: {
+  label: string;
+  value: string;
+  tone?: 'yellow' | 'green';
+  icon?: keyof typeof Ionicons.glyphMap;
+  hint?: string;
+  onPress?: () => void;
+}) {
+  const content = (
+    <>
+      <View style={styles.statTopLine}>
+        <Text style={styles.statLabel}>{label}</Text>
+        {icon ? <Ionicons name={icon} size={18} color={tone === 'yellow' ? NAVY : BLUE} /> : null}
+      </View>
       <Text style={styles.statValue}>{value}</Text>
+      {hint ? <Text style={styles.statHint}>{hint}</Text> : null}
+    </>
+  );
+
+  if (onPress) {
+    return (
+      <Pressable
+        onPress={onPress}
+        style={({ pressed }) => [
+          styles.statCard,
+          tone === 'yellow' && styles.statYellow,
+          tone === 'green' && styles.statGreen,
+          pressed && styles.pressed
+        ]}
+      >
+        {content}
+      </Pressable>
+    );
+  }
+
+  return (
+    <View
+      style={[
+        styles.statCard,
+        tone === 'yellow' && styles.statYellow,
+        tone === 'green' && styles.statGreen
+      ]}
+    >
+      {content}
     </View>
   );
 }
 
-function HomeScreen({ data, reload }: { data: DashboardPayload; reload: () => void }) {
+function QuickAction({
+  icon,
+  label,
+  helper,
+  onPress,
+  tone
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  helper: string;
+  onPress: () => void;
+  tone?: 'yellow';
+}) {
+  return (
+    <Pressable style={({ pressed }) => [styles.quickAction, tone === 'yellow' && styles.quickActionYellow, pressed && styles.pressed]} onPress={onPress}>
+      <View style={styles.quickIcon}>
+        <Ionicons name={icon} size={20} color={tone === 'yellow' ? NAVY : BLUE} />
+      </View>
+      <View style={styles.quickText}>
+        <Text style={styles.quickLabel}>{label}</Text>
+        <Text style={styles.quickHelper}>{helper}</Text>
+      </View>
+      <Ionicons name="chevron-forward" size={18} color="#8A95A6" />
+    </Pressable>
+  );
+}
+
+function HomeScreen({ data, reload, setActive }: { data: DashboardPayload; reload: () => void; setActive: (tab: Tab) => void }) {
   const completion = data.member.profile_completion;
+  const latestSavings = data.savings.slice(0, 3);
+  const pendingLoan = data.loans.find((loan) => loan.status === 'pending');
+  const activeLoan = data.loans.find((loan) => loan.status === 'active');
   return (
     <ScrollView contentContainerStyle={styles.screen}>
       <View style={styles.memberBand}>
         <View>
+          <Text style={styles.memberGreeting}>Welcome back</Text>
           <Text style={styles.memberName}>{data.member.full_name}</Text>
           <Text style={styles.memberMeta}>{data.member.member_number} - {data.member.status}</Text>
         </View>
@@ -210,24 +384,81 @@ function HomeScreen({ data, reload }: { data: DashboardPayload; reload: () => vo
       </View>
 
       <View style={styles.statGrid}>
-        <StatCard label="Savings" value={money(data.member.total_savings)} />
-        <StatCard label="Share Capital" value={money(data.member.share_capital)} tone="yellow" />
-        <StatCard label="Loan Balance" value={money(data.summary.active_loan_balance)} />
-        <StatCard label="Profile" value={`${completion.percent}%`} tone={completion.percent === 100 ? 'green' : 'yellow'} />
+        <StatCard label="Savings" value={money(data.member.total_savings)} icon="wallet" hint="View statement" onPress={() => setActive('savings')} />
+        <StatCard label="Share Capital" value={money(data.member.share_capital)} icon="layers" tone="yellow" hint="Member equity" onPress={() => setActive('savings')} />
+        <StatCard label="Loan Balance" value={money(data.summary.active_loan_balance)} icon="cash" hint="Open loan book" onPress={() => setActive('loans')} />
+        <StatCard label="Profile" value={`${completion.percent}%`} icon="person-circle" tone={completion.percent === 100 ? 'green' : 'yellow'} hint={completion.certified_member ? 'Certified member' : 'Complete profile'} onPress={() => setActive('profile')} />
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Quick Actions</Text>
+        <QuickAction icon="person-circle" label={completion.percent === 100 ? 'View Profile' : 'Complete Profile'} helper={completion.percent === 100 ? 'Review your member information' : 'Finish setup to become transaction-ready'} onPress={() => setActive('profile')} tone={completion.percent < 100 ? 'yellow' : undefined} />
+        <QuickAction icon="document-text" label="Savings Statement" helper="See contributions from inception" onPress={() => setActive('savings')} />
+        <QuickAction icon="calculator" label="Loan Calculator" helper={pendingLoan ? 'Review pending application' : 'Preview repayment before applying'} onPress={() => setActive('loans')} />
+        <QuickAction icon="notifications" label="Notifications" helper={`${data.summary.unread_notifications} unread message${data.summary.unread_notifications === 1 ? '' : 's'}`} onPress={() => setActive('notifications')} />
+      </View>
+
+      <View style={styles.card}>
+        <View style={styles.rowBetween}>
+          <Text style={styles.cardTitle}>Next Best Action</Text>
+          <Pressable onPress={reload}>
+            <Ionicons name="refresh" size={18} color={BLUE} />
+          </Pressable>
+        </View>
+        {completion.percent < 100 ? (
+          <Pressable style={({ pressed }) => [styles.actionNotice, pressed && styles.pressed]} onPress={() => setActive('profile')}>
+            <Text style={styles.rowTitle}>Complete your profile</Text>
+            <Text style={styles.rowSub}>Your profile is {completion.percent}% complete. Finish the remaining fields to improve readiness to transact.</Text>
+          </Pressable>
+        ) : pendingLoan ? (
+          <Pressable style={({ pressed }) => [styles.actionNotice, pressed && styles.pressed]} onPress={() => setActive('loans')}>
+            <Text style={styles.rowTitle}>Loan application pending</Text>
+            <Text style={styles.rowSub}>{pendingLoan.loan_number} is still in workflow. Open loans to review or withdraw before approval.</Text>
+          </Pressable>
+        ) : activeLoan ? (
+          <Pressable style={({ pressed }) => [styles.actionNotice, pressed && styles.pressed]} onPress={() => setActive('loans')}>
+            <Text style={styles.rowTitle}>Track loan balance</Text>
+            <Text style={styles.rowSub}>{activeLoan.loan_number} has a balance of {money(activeLoan.balance)}.</Text>
+          </Pressable>
+        ) : (
+          <Pressable style={({ pressed }) => [styles.actionNotice, pressed && styles.pressed]} onPress={() => setActive('loans')}>
+            <Text style={styles.rowTitle}>Estimate a loan</Text>
+            <Text style={styles.rowSub}>Preview repayment and affordability before submitting a request.</Text>
+          </Pressable>
+        )}
+      </View>
+
+      <View style={styles.card}>
+        <View style={styles.rowBetween}>
+          <Text style={styles.cardTitle}>Recent Savings</Text>
+          <Pressable onPress={() => setActive('savings')}>
+            <Text style={styles.linkText}>View all</Text>
+          </Pressable>
+        </View>
+        {latestSavings.map((row) => (
+          <Pressable key={row.id} style={({ pressed }) => [styles.listRow, pressed && styles.pressed]} onPress={() => setActive('savings')}>
+            <View style={styles.rowBetween}>
+              <Text style={styles.rowTitle}>{money(row.amount)}</Text>
+              <Text style={styles.dateText}>{row.date?.slice(0, 10) || row.month}</Text>
+            </View>
+            <Text style={styles.rowSub}>{row.month} - {row.receipt_number || 'No receipt'}</Text>
+          </Pressable>
+        ))}
+        {latestSavings.length === 0 ? <Text style={styles.emptyText}>No savings records found yet.</Text> : null}
       </View>
 
       <View style={styles.card}>
         <View style={styles.rowBetween}>
           <Text style={styles.cardTitle}>Recent Notifications</Text>
-          <Pressable onPress={reload}>
-            <Ionicons name="refresh" size={18} color={BLUE} />
+          <Pressable onPress={() => setActive('notifications')}>
+            <Text style={styles.linkText}>Open</Text>
           </Pressable>
         </View>
-        {data.notifications.slice(0, 3).map((item) => (
-          <View key={item.id} style={styles.listRow}>
+        {data.notifications.slice(0, 2).map((item) => (
+          <Pressable key={item.id} style={({ pressed }) => [styles.listRow, pressed && styles.pressed]} onPress={() => setActive('notifications')}>
             <Text style={styles.rowTitle}>{item.title}</Text>
             <Text style={styles.rowSub}>{item.message}</Text>
-          </View>
+          </Pressable>
         ))}
         {data.notifications.length === 0 ? <Text style={styles.emptyText}>No notifications yet.</Text> : null}
       </View>
@@ -238,6 +469,10 @@ function HomeScreen({ data, reload }: { data: DashboardPayload; reload: () => vo
 function ProfileScreen({ token, data, reload }: { token: string; data: DashboardPayload; reload: () => void }) {
   const [profile, setProfile] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [passwordBusy, setPasswordBusy] = useState(false);
 
   useEffect(() => {
     getProfile(token).then((response) => setProfile(response.profile)).catch(() => undefined);
@@ -253,6 +488,25 @@ function ProfileScreen({ token, data, reload }: { token: string; data: Dashboard
       Alert.alert('Unable to save', error instanceof Error ? error.message : 'Please try again.');
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function savePassword() {
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      Alert.alert('Change password', 'Enter your current password and confirm the new password.');
+      return;
+    }
+    setPasswordBusy(true);
+    try {
+      const response = await changePassword(token, currentPassword, newPassword, confirmPassword);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      Alert.alert('Password changed', response.message || 'Your password has been updated.');
+    } catch (error) {
+      Alert.alert('Unable to change password', error instanceof Error ? error.message : 'Please try again.');
+    } finally {
+      setPasswordBusy(false);
     }
   }
 
@@ -283,6 +537,26 @@ function ProfileScreen({ token, data, reload }: { token: string; data: Dashboard
         ))}
         <Pressable style={[styles.primaryButton, busy && styles.disabled]} onPress={save} disabled={busy}>
           <Text style={styles.primaryButtonText}>{busy ? 'Saving...' : 'Save Profile'}</Text>
+        </Pressable>
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Security</Text>
+        <Text style={styles.rowSub}>Change your password using the cooperative's current password policy.</Text>
+        <View style={styles.fieldBlock}>
+          <Text style={styles.fieldLabel}>Current password</Text>
+          <TextInput value={currentPassword} onChangeText={setCurrentPassword} secureTextEntry style={styles.inputLight} />
+        </View>
+        <View style={styles.fieldBlock}>
+          <Text style={styles.fieldLabel}>New password</Text>
+          <TextInput value={newPassword} onChangeText={setNewPassword} secureTextEntry style={styles.inputLight} />
+        </View>
+        <View style={styles.fieldBlock}>
+          <Text style={styles.fieldLabel}>Confirm new password</Text>
+          <TextInput value={confirmPassword} onChangeText={setConfirmPassword} secureTextEntry style={styles.inputLight} />
+        </View>
+        <Pressable style={[styles.secondaryButton, passwordBusy && styles.disabled]} onPress={savePassword} disabled={passwordBusy}>
+          <Text style={styles.secondaryButtonText}>{passwordBusy ? 'Saving...' : 'Change Password'}</Text>
         </Pressable>
       </View>
     </ScrollView>
@@ -548,13 +822,14 @@ function TabBar({ active, setActive, unread }: { active: Tab; setActive: (tab: T
   );
 }
 
-export default function App() {
+function AppContent() {
   const [token, setToken] = useState<string | null>(null);
   const [dashboard, setDashboard] = useState<DashboardPayload | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('home');
   const [loading, setLoading] = useState(true);
   const [hasTenant, setHasTenant] = useState(false);
   const [coopName, setCoopName] = useState('');
+  const [startupError, setStartupError] = useState('');
 
   async function reload(currentToken = token) {
     if (!currentToken) return;
@@ -564,23 +839,33 @@ export default function App() {
 
   useEffect(() => {
     (async () => {
-      const ready = await loadTenant();
-      setHasTenant(ready);
-      setCoopName(getCoopName());
-      if (ready) {
-        const stored = await loadToken();
-        if (stored) {
-          setToken(stored);
-          try {
-            await reload(stored);
-            void tryRegisterPushToken(stored);
-          } catch {
-            await clearToken();
-            setToken(null);
+      try {
+        const ready = await loadTenant();
+        setHasTenant(ready);
+        setCoopName(getCoopName());
+        if (ready) {
+          const stored = await loadToken();
+          if (stored) {
+            setToken(stored);
+            try {
+              await reload(stored);
+              void tryRegisterPushToken(stored);
+            } catch {
+              await clearToken();
+              setToken(null);
+            }
           }
         }
+      } catch (error) {
+        setStartupError(error instanceof Error ? error.message : 'Could not load saved mobile session.');
+        await clearTenant().catch(() => undefined);
+        await clearToken().catch(() => undefined);
+        setToken(null);
+        setDashboard(null);
+        setHasTenant(false);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     })();
   }, []);
 
@@ -622,6 +907,21 @@ export default function App() {
     );
   }
 
+  if (startupError) {
+    return (
+      <FatalScreen
+        title="Session reset needed"
+        message="The saved mobile session could not be loaded. Tap Try Again to restart with a clean cooperative selection."
+        details={startupError}
+        onRetry={() => {
+          setStartupError('');
+          setHasTenant(false);
+          setLoading(false);
+        }}
+      />
+    );
+  }
+
   if (!hasTenant) {
     return <TenantScreen onReady={() => { setHasTenant(true); setCoopName(getCoopName()); }} />;
   }
@@ -634,7 +934,7 @@ export default function App() {
     <SafeAreaView style={styles.appRoot}>
       <StatusBar barStyle="dark-content" />
       <Header title={title} onLogout={logout} />
-      {activeTab === 'home' ? <HomeScreen data={dashboard} reload={() => reload()} /> : null}
+      {activeTab === 'home' ? <HomeScreen data={dashboard} reload={() => reload()} setActive={setActiveTab} /> : null}
       {activeTab === 'profile' ? <ProfileScreen token={token} data={dashboard} reload={() => reload()} /> : null}
       {activeTab === 'savings' ? <SavingsScreen token={token} /> : null}
       {activeTab === 'loans' ? <LoansScreen token={token} dashboard={dashboard} reload={() => reload()} /> : null}
@@ -644,9 +944,22 @@ export default function App() {
   );
 }
 
+export default function App() {
+  return (
+    <AppErrorBoundary>
+      <AppContent />
+    </AppErrorBoundary>
+  );
+}
+
 const styles = StyleSheet.create({
   appRoot: { flex: 1, backgroundColor: BG },
   loadingRoot: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: BG },
+  fatalRoot: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: NAVY, padding: 20 },
+  fatalCard: { width: '100%', backgroundColor: '#fff', borderRadius: 8, padding: 18, borderWidth: 1, borderColor: '#D7DEE8' },
+  fatalTitle: { color: NAVY, fontSize: 22, fontWeight: '900', marginBottom: 10 },
+  fatalMessage: { color: INK, fontSize: 15, lineHeight: 21, marginBottom: 12 },
+  fatalDetails: { color: '#D93030', backgroundColor: '#FFF1F1', borderRadius: 8, padding: 10, marginBottom: 14, fontSize: 12, lineHeight: 17 },
   authRoot: { flex: 1, backgroundColor: NAVY },
   authContent: { flex: 1, justifyContent: 'center', padding: 24 },
   logoMark: { width: 72, height: 72, borderRadius: 20, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', marginBottom: 18 },
@@ -661,6 +974,8 @@ const styles = StyleSheet.create({
   primaryButtonText: { color: '#fff', fontWeight: '800', fontSize: 16 },
   secondaryButton: { backgroundColor: '#EEF4FF', borderRadius: 8, padding: 14, alignItems: 'center', marginTop: 4, marginBottom: 10 },
   secondaryButtonText: { color: BLUE, fontWeight: '900' },
+  textButton: { alignItems: 'center', paddingVertical: 12 },
+  resetPanel: { borderWidth: 1, borderColor: '#D7E7FF', backgroundColor: '#F4F8FF', borderRadius: 8, padding: 12, marginTop: 2, marginBottom: 8 },
   dangerButton: { backgroundColor: '#D93030', borderRadius: 8, padding: 14, alignItems: 'center', marginTop: 4 },
   dangerButtonText: { color: '#fff', fontWeight: '800' },
   disabled: { opacity: 0.7 },
@@ -671,23 +986,35 @@ const styles = StyleSheet.create({
   iconButton: { width: 42, height: 42, borderRadius: 8, backgroundColor: '#EEF4FF', alignItems: 'center', justifyContent: 'center' },
   screen: { padding: 16, paddingBottom: 104 },
   memberBand: { backgroundColor: NAVY, borderRadius: 8, padding: 18, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  memberGreeting: { color: YELLOW, fontSize: 12, fontWeight: '900', textTransform: 'uppercase', marginBottom: 5 },
   memberName: { color: '#fff', fontSize: 20, fontWeight: '900' },
   memberMeta: { color: '#CFE0FF', marginTop: 4 },
   certifiedBadge: { backgroundColor: YELLOW, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6, flexDirection: 'row', gap: 4, alignItems: 'center' },
   certifiedText: { color: NAVY, fontWeight: '900', fontSize: 12 },
   statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginVertical: 14 },
-  statCard: { flexBasis: '48%', flexGrow: 1, backgroundColor: '#fff', borderRadius: 8, padding: 14, borderWidth: 1, borderColor: '#E2E8F0' },
+  statCard: { flexBasis: '48%', flexGrow: 1, minHeight: 116, backgroundColor: '#fff', borderRadius: 8, padding: 14, borderWidth: 1, borderColor: '#E2E8F0' },
   statYellow: { borderColor: '#F5D66D', backgroundColor: '#FFF8E5' },
   statGreen: { borderColor: '#A7E0C2', backgroundColor: '#EDFFF4' },
+  statTopLine: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
   statLabel: { color: '#667085', fontSize: 12, fontWeight: '800', textTransform: 'uppercase' },
   statValue: { color: INK, fontSize: 17, fontWeight: '900', marginTop: 8 },
+  statHint: { color: '#667085', fontSize: 12, marginTop: 8, fontWeight: '700' },
   card: { backgroundColor: '#fff', borderRadius: 8, marginTop: 14, borderWidth: 1, borderColor: '#E2E8F0', overflow: 'hidden', padding: 14 },
   cardTitle: { fontSize: 17, color: INK, fontWeight: '900', marginBottom: 8 },
   rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   listRow: { paddingVertical: 12, borderTopWidth: 1, borderColor: '#EEF2F6' },
   rowTitle: { color: INK, fontWeight: '800', fontSize: 15 },
   rowSub: { color: '#667085', marginTop: 4, lineHeight: 19 },
+  dateText: { color: '#667085', fontSize: 12, fontWeight: '800' },
   emptyText: { color: '#667085', paddingVertical: 12 },
+  actionNotice: { borderWidth: 1, borderColor: '#D7E7FF', backgroundColor: '#F4F8FF', borderRadius: 8, padding: 13, marginTop: 4 },
+  quickAction: { minHeight: 68, flexDirection: 'row', alignItems: 'center', gap: 12, borderTopWidth: 1, borderColor: '#EEF2F6', paddingVertical: 12 },
+  quickActionYellow: { backgroundColor: '#FFF8E5', borderRadius: 8, borderTopWidth: 0, paddingHorizontal: 10, marginBottom: 4 },
+  quickIcon: { width: 38, height: 38, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: '#EEF4FF' },
+  quickText: { flex: 1 },
+  quickLabel: { color: INK, fontWeight: '900', fontSize: 15 },
+  quickHelper: { color: '#667085', marginTop: 3, fontSize: 12, lineHeight: 17 },
+  pressed: { opacity: 0.72 },
   progressShell: { height: 10, borderRadius: 999, backgroundColor: '#E5EAF2', overflow: 'hidden', marginTop: 10, marginBottom: 6 },
   progressFill: { height: 10, backgroundColor: YELLOW },
   fieldBlock: { marginTop: 6 },

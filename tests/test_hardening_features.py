@@ -214,6 +214,30 @@ class HardeningFeatureTests(unittest.TestCase):
         self.assertIn('coop_short_name', data)
         self.assertIn('logo', data)
 
+    def test_mobile_hq_tenant_resolver_uses_registry(self):
+        with self.app.app_context():
+            db = get_db()
+            db.execute('''
+                INSERT INTO coop_tenants (code, name, base_url, logo_url, is_active)
+                VALUES ('demo', 'Demo Cooperative', 'https://demo.cooperativems.com/', '/logo.png', 1)
+                ON CONFLICT(code) DO UPDATE SET
+                    name = excluded.name,
+                    base_url = excluded.base_url,
+                    logo_url = excluded.logo_url,
+                    is_active = excluded.is_active
+            ''')
+            db.commit()
+
+        response = self.client.get('/api/mobile/v1/tenants/resolve?code=demo')
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload['success'])
+        self.assertEqual(payload['tenant']['coop_name'], 'Demo Cooperative')
+        self.assertEqual(payload['tenant']['base_url'], 'https://demo.cooperativems.com')
+
+        bad = self.client.get('/api/mobile/v1/tenants/resolve?code=../admin')
+        self.assertEqual(bad.status_code, 400)
+
     def test_mobile_repayment_is_fail_closed(self):
         clear_login_attempts('mobile:127.0.0.1')
         login = self.client.post(
@@ -258,6 +282,31 @@ class HardeningFeatureTests(unittest.TestCase):
         )
         self.assertEqual(success.status_code, 200)
 
+    def test_mobile_password_reset_request_is_generic_and_sends_email(self):
+        suffix = int(time.time() * 1000)
+        email = f'mobile.reset.{suffix}@example.com'
+        member_id = self.create_member()
+        self.create_member_user(member_id, email=email)
+        clear_login_attempts(f'mobile-reset:127.0.0.1:{email}')
+        with patch('mobile_api.send_password_reset_email') as send_reset:
+            send_reset.return_value = True
+            response = self.client.post(
+                '/api/mobile/v1/auth/forgot-password',
+                json={'identifier': email},
+            )
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()['success'])
+        send_reset.assert_called_once()
+
+        with patch('mobile_api.send_password_reset_email') as send_reset_unknown:
+            unknown = self.client.post(
+                '/api/mobile/v1/auth/forgot-password',
+                json={'identifier': 'unknown-user@example.com'},
+            )
+        self.assertEqual(unknown.status_code, 200)
+        self.assertTrue(unknown.get_json()['success'])
+        send_reset_unknown.assert_not_called()
+
     def test_mobile_token_requires_expected_audience(self):
         clear_login_attempts('mobile:127.0.0.1')
         response = self.client.post(
@@ -277,6 +326,58 @@ class HardeningFeatureTests(unittest.TestCase):
             audience=JWT_AUDIENCE,
         )
         self.assertEqual(payload['username'], 'admin')
+
+    def test_mobile_change_password_requires_current_password_and_policy(self):
+        suffix = int(time.time() * 1000)
+        email = f'mobile.password.{suffix}@example.com'
+        member_id = self.create_member()
+        self.create_member_user(member_id, email=email)
+
+        login = self.client.post(
+            '/api/mobile/login',
+            json={'username': email, 'password': 'MemberPass1!'},
+        )
+        self.assertEqual(login.status_code, 200)
+        headers = {'Authorization': f"Bearer {login.get_json()['token']}"}
+
+        wrong_current = self.client.post(
+            '/api/mobile/v1/auth/change-password',
+            json={
+                'current_password': 'wrong',
+                'new_password': 'NewMemberPass1!',
+                'confirm_password': 'NewMemberPass1!',
+            },
+            headers=headers,
+        )
+        self.assertEqual(wrong_current.status_code, 401)
+
+        weak = self.client.post(
+            '/api/mobile/v1/auth/change-password',
+            json={
+                'current_password': 'MemberPass1!',
+                'new_password': 'short',
+                'confirm_password': 'short',
+            },
+            headers=headers,
+        )
+        self.assertEqual(weak.status_code, 400)
+
+        changed = self.client.post(
+            '/api/mobile/v1/auth/change-password',
+            json={
+                'current_password': 'MemberPass1!',
+                'new_password': 'NewMemberPass1!',
+                'confirm_password': 'NewMemberPass1!',
+            },
+            headers=headers,
+        )
+        self.assertEqual(changed.status_code, 200)
+
+        relogin = self.client.post(
+            '/api/mobile/login',
+            json={'username': email, 'password': 'NewMemberPass1!'},
+        )
+        self.assertEqual(relogin.status_code, 200)
 
     def test_mobile_v1_member_profile_device_notifications_and_loan_withdrawal(self):
         suffix = int(time.time() * 1000)

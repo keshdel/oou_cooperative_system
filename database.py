@@ -685,6 +685,47 @@ def init_db():
             FOREIGN KEY (user_id) REFERENCES users (id)
         )
     '''))
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS mobile_devices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            member_id INTEGER,
+            platform TEXT,
+            push_token TEXT UNIQUE NOT NULL,
+            device_name TEXT,
+            enabled INTEGER DEFAULT 1,
+            last_seen_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users (id),
+            FOREIGN KEY (member_id) REFERENCES members (id)
+        )
+    '''))
+    _add_col(db, 'mobile_devices', 'member_id', 'INTEGER')
+    _add_col(db, 'mobile_devices', 'platform', 'TEXT')
+    _add_col(db, 'mobile_devices', 'device_name', 'TEXT')
+    _add_col(db, 'mobile_devices', 'enabled', 'INTEGER DEFAULT 1')
+    _add_col(db, 'mobile_devices', 'last_seen_at', 'TIMESTAMP')
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_mobile_devices_user ON mobile_devices(user_id, enabled)')
+
+    # Central mobile tenant registry. In production this is primarily used by
+    # the HQ tenant so the mobile app can resolve short codes like "ooucoop"
+    # without guessing client domains.
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS coop_tenants (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT UNIQUE NOT NULL,
+            name TEXT NOT NULL,
+            base_url TEXT NOT NULL,
+            logo_url TEXT,
+            is_active INTEGER DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    '''))
+    _add_col(db, 'coop_tenants', 'logo_url', 'TEXT')
+    _add_col(db, 'coop_tenants', 'is_active', 'INTEGER DEFAULT 1')
+    _add_col(db, 'coop_tenants', 'updated_at', 'TIMESTAMP')
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_coop_tenants_code ON coop_tenants(code, is_active)')
 
     # Member communication campaigns and delivery attempts.
     db.execute(_adapt('''

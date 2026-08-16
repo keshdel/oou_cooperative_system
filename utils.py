@@ -501,6 +501,11 @@ def notify(db, user_id: int, title: str, message: str,
                 (user_id, title, message, notification_type, is_read, action_url, created_at)
             VALUES (?, ?, ?, ?, 0, ?, ?)
         ''', (user_id, title, message, notification_type, action_url or '', datetime.now()))
+        try:
+            from mobile_push import send_mobile_pushes
+            send_mobile_pushes(db, user_id, title, message, notification_type, action_url)
+        except Exception:
+            pass
     except Exception:
         pass  # notifications are non-critical — never break the main flow
 

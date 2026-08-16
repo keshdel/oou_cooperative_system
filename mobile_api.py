@@ -6,18 +6,21 @@ New member-facing app routes use /api/mobile/v1.
 """
 
 import json
+import os
 import random
+import re
 from datetime import datetime, timedelta, UTC
 from functools import wraps
 
 import jwt
 from flask import Blueprint, current_app, g, jsonify, request
-from werkzeug.security import check_password_hash
+from werkzeug.security import check_password_hash, generate_password_hash
 
 import loan_workflow as lw
 from crypto import encrypt_member_sensitive_fields, mask_member_sensitive_fields
 from database import get_db, last_insert_id
-from email_service import send_guarantor_request_email
+from email_service import send_guarantor_request_email, send_password_reset_email
+from security import generate_account_setup_token, validate_password_strength
 from utils import (
     audit,
     clear_login_attempts,
@@ -37,6 +40,7 @@ mobile_api = Blueprint('mobile_api', __name__)
 JWT_ISSUER = 'coopms'
 JWT_AUDIENCE = 'coopms-mobile'
 MOBILE_TOKEN_TTL_HOURS = 24
+TENANT_CODE_RE = re.compile(r'^[a-z0-9][a-z0-9-]{1,30}$')
 
 PROFILE_FIELDS = (
     'first_name', 'last_name', 'phone', 'address', 'city', 'state', 'country',
@@ -102,6 +106,10 @@ def _mobile_login_key():
     return f"mobile:{request.remote_addr or '0.0.0.0'}"
 
 
+def _json_error(message, status=400, code='error'):
+    return jsonify({'success': False, 'error': message, 'code': code}), status
+
+
 def _to_json_value(value):
     if isinstance(value, datetime):
         return value.isoformat(timespec='seconds')
@@ -137,11 +145,76 @@ def jwt_required(f):
             g.username = payload['username']
             g.role = payload['role']
         except jwt.ExpiredSignatureError:
-            return jsonify({'success': False, 'error': 'Token has expired'}), 401
+            return _json_error('Token has expired', 401, 'token_expired')
         except jwt.InvalidTokenError:
-            return jsonify({'success': False, 'error': 'Invalid token'}), 401
+            return _json_error('Invalid token', 401, 'invalid_token')
         return f(*args, **kwargs)
     return decorated
+
+
+def _issue_mobile_password_reset_link(db, user):
+    token, token_hash = generate_account_setup_token()
+    db.execute('''
+        UPDATE account_setup_tokens
+        SET used_at = ?
+        WHERE user_id = ?
+          AND purpose = 'password_reset'
+          AND used_at IS NULL
+    ''', (datetime.now(), user['id']))
+    db.execute('''
+        INSERT INTO account_setup_tokens
+            (user_id, token_hash, purpose, expires_at)
+        VALUES (?, ?, 'password_reset', ?)
+    ''', (user['id'], token_hash, datetime.now() + timedelta(hours=1)))
+    from flask import url_for
+    return url_for('auth.reset_password', token=token, _external=True)
+
+
+def _env_tenant_records():
+    raw = os.environ.get('COOPMS_TENANTS_JSON', '').strip()
+    if raw:
+        try:
+            records = json.loads(raw)
+            if isinstance(records, list):
+                return records
+        except Exception:
+            pass
+    suffix = os.environ.get('COOPMS_MOBILE_DOMAIN_SUFFIX', 'cooperativems.com').strip().strip('.')
+    defaults = []
+    for code, name in (
+        ('hq', 'CoopMS HQ'),
+        ('ooucoop', 'OOU Coop'),
+        ('smtcoop', 'SMT Coop'),
+    ):
+        defaults.append({
+            'code': code,
+            'name': name,
+            'base_url': f'https://{code}.{suffix}',
+            'logo_url': '',
+            'is_active': 1,
+        })
+    return defaults
+
+
+def _tenant_record_from_mapping(record, code):
+    rec_code = str(record.get('code') or '').strip().lower()
+    if rec_code != code:
+        return None
+    active = record.get('is_active', record.get('active', True))
+    if str(active).lower() in ('0', 'false', 'no', 'inactive'):
+        return None
+    base_url = str(record.get('base_url') or record.get('url') or '').strip().rstrip('/')
+    if not base_url:
+        domain = str(record.get('domain') or '').strip().strip('/')
+        base_url = f'https://{domain}' if domain else ''
+    if not base_url:
+        return None
+    return {
+        'code': rec_code,
+        'coop_name': str(record.get('name') or record.get('coop_name') or rec_code),
+        'base_url': base_url,
+        'logo': str(record.get('logo_url') or record.get('logo') or ''),
+    }
 
 
 def member_required(f):
@@ -332,6 +405,106 @@ def mobile_login():
             'email': user['email'] or '',
         },
     })
+
+
+@mobile_api.route('/api/mobile/v1/auth/forgot-password', methods=['POST'])
+def mobile_forgot_password():
+    """Request a password-reset email from mobile.
+
+    The response is deliberately generic so the endpoint cannot be used for
+    account enumeration.
+    """
+    data = request.get_json(silent=True) or {}
+    identifier = (data.get('identifier') or '').strip()
+    ip = request.remote_addr or '0.0.0.0'
+    ua = request.user_agent.string if request.user_agent else ''
+    generic = {
+        'success': True,
+        'message': 'If an active account exists, a password reset link will be sent to the registered email address.',
+    }
+
+    if not identifier:
+        return _json_error('Enter your username or email address.', 400, 'missing_identifier')
+
+    reset_key = f"mobile-reset:{ip}:{identifier.lower()}"
+    if is_rate_limited(reset_key):
+        return jsonify({
+            'success': False,
+            'error': 'Too many reset requests. Please wait before trying again.',
+            'retry_after_seconds': lockout_seconds_remaining(reset_key),
+            'code': 'rate_limited',
+        }), 429
+
+    record_failed_login(reset_key, identifier)
+    db = get_db()
+    user = db.execute('''
+        SELECT id, username, email, full_name, is_active
+        FROM users
+        WHERE lower(username) = lower(?)
+           OR lower(COALESCE(email, '')) = lower(?)
+        LIMIT 1
+    ''', (identifier, identifier)).fetchone()
+
+    if user and user['is_active'] and (user['email'] or '').strip():
+        reset_url = _issue_mobile_password_reset_link(db, user)
+        sent = send_password_reset_email(user['email'], dict(user), reset_url)
+        from security import log_audit
+        log_audit(
+            db,
+            user['id'],
+            user['username'],
+            'MOBILE_PASSWORD_RESET_REQUEST',
+            'auth',
+            'Mobile password reset link requested' + ('' if sent else ' but email delivery failed'),
+            ip,
+            ua,
+        )
+    else:
+        from security import log_audit
+        log_audit(
+            db,
+            None,
+            identifier,
+            'MOBILE_PASSWORD_RESET_REQUEST',
+            'auth',
+            'Mobile password reset requested for unknown, inactive, or email-less account',
+            ip,
+            ua,
+        )
+    db.commit()
+    return jsonify(generic)
+
+
+@mobile_api.route('/api/mobile/v1/auth/change-password', methods=['POST'])
+@jwt_required
+def mobile_change_password():
+    data = request.get_json(silent=True) or {}
+    current_password = data.get('current_password') or ''
+    new_password = data.get('new_password') or ''
+    confirm_password = data.get('confirm_password') or ''
+
+    if not current_password or not new_password or not confirm_password:
+        return _json_error('Current password, new password, and confirmation are required.', 400, 'missing_fields')
+    if new_password != confirm_password:
+        return _json_error('New passwords do not match.', 400, 'password_mismatch')
+
+    db = get_db()
+    user = db.execute('SELECT * FROM users WHERE id = ? AND is_active = 1', (g.user_id,)).fetchone()
+    if not user or not check_password_hash(user['password_hash'], current_password):
+        record_failed_login(f"mobile-change-password:{request.remote_addr or '0.0.0.0'}", g.username)
+        return _json_error('Current password is incorrect.', 401, 'invalid_current_password')
+
+    ok, errors = validate_password_strength(new_password, db)
+    if not ok:
+        return _json_error(' '.join(errors), 400, 'weak_password')
+
+    db.execute(
+        'UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?',
+        (generate_password_hash(new_password), g.user_id),
+    )
+    audit(db, 'MOBILE_CHANGE_PASSWORD', 'auth', 'Mobile user changed password')
+    db.commit()
+    return jsonify({'success': True, 'message': 'Password changed successfully.'})
 
 
 @mobile_api.route('/api/mobile/v1/me')
@@ -799,6 +972,45 @@ def mobile_tenant():
         'coop_short_name': _setting('coop_short_name', coop_name),
         'logo': _setting('coop_logo', ''),
     })
+
+
+@mobile_api.route('/api/mobile/v1/tenants/resolve', methods=['GET'])
+def mobile_resolve_tenant():
+    """Resolve a short cooperative code to a tenant API base URL.
+
+    Intended to be served by the HQ tenant. The mobile app calls this before it
+    knows which cooperative backend to use.
+    """
+    code = (request.args.get('code') or '').strip().lower()
+    if not TENANT_CODE_RE.match(code or ''):
+        return _json_error('Enter a valid cooperative code.', 400, 'invalid_tenant_code')
+
+    db = get_db()
+    row = db.execute('''
+        SELECT code, name, base_url, logo_url, is_active
+        FROM coop_tenants
+        WHERE lower(code) = lower(?)
+        LIMIT 1
+    ''', (code,)).fetchone()
+    if row and row['is_active']:
+        return jsonify({
+            'success': True,
+            'tenant': {
+                'code': row['code'],
+                'coop_name': row['name'],
+                'base_url': (row['base_url'] or '').rstrip('/'),
+                'logo': row['logo_url'] or '',
+            },
+        })
+    if row and not row['is_active']:
+        return _json_error('This cooperative is not active on mobile.', 404, 'tenant_inactive')
+
+    for record in _env_tenant_records():
+        tenant = _tenant_record_from_mapping(record, code)
+        if tenant:
+            return jsonify({'success': True, 'tenant': tenant})
+
+    return _json_error('Cooperative not found — check the code with your society.', 404, 'tenant_not_found')
 
 
 @mobile_api.route('/api/mobile/card')

@@ -1,5 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
-import { codeToBaseUrl, getApiBase } from './config';
+import { HQ_API_BASE, codeToBaseUrl, getApiBase } from './config';
 import type { DashboardPayload, Loan, MobileNotification, SavingRow } from './types';
 
 const TOKEN_KEY = 'coopms.mobile.token';
@@ -19,6 +19,10 @@ export class ApiError extends Error {
   }
 }
 
+async function parseResponse(response: Response) {
+  return response.json().catch(() => ({} as Record<string, unknown>));
+}
+
 async function request<T>(path: string, options: ApiOptions = {}): Promise<T> {
   const headers: Record<string, string> = {
     Accept: 'application/json'
@@ -35,9 +39,9 @@ async function request<T>(path: string, options: ApiOptions = {}): Promise<T> {
     body: options.body ? JSON.stringify(options.body) : undefined
   });
 
-  const payload = await response.json().catch(() => ({}));
+  const payload = await parseResponse(response);
   if (!response.ok || payload.success === false) {
-    throw new ApiError(payload.error || `Request failed (${response.status})`, response.status);
+    throw new ApiError((payload.error as string) || `Request failed (${response.status})`, response.status);
   }
   return payload as T;
 }
@@ -46,15 +50,34 @@ async function request<T>(path: string, options: ApiOptions = {}): Promise<T> {
  *  Returns the resolved API base + display name so the app can target the right
  *  backend and brand its login screen. Throws ApiError with a friendly message. */
 export async function resolveTenant(code: string): Promise<{ base: string; coopName: string; logo: string }> {
-  const base = codeToBaseUrl(code);
-  if (!base) throw new ApiError('Enter your cooperative code.', 0);
+  const cleanCode = (code || '').trim().toLowerCase();
+  if (!cleanCode) throw new ApiError('Enter your cooperative code.', 0);
+  try {
+    const response = await fetch(
+      `${HQ_API_BASE}/api/mobile/v1/tenants/resolve?code=${encodeURIComponent(cleanCode)}`,
+      { headers: { Accept: 'application/json' } }
+    );
+    const payload = await parseResponse(response);
+    const tenant = payload.tenant as Record<string, unknown> | undefined;
+    if (response.ok && payload.success === true && tenant?.base_url) {
+      return {
+        base: String(tenant.base_url).replace(/\/+$/, ''),
+        coopName: String(tenant.coop_name || tenant.name || 'Cooperative'),
+        logo: String(tenant.logo || '')
+      };
+    }
+  } catch {
+    // Fall back to direct tenant probing below so local/dev testing still works.
+  }
+
+  const base = codeToBaseUrl(cleanCode);
   let response: Response;
   try {
     response = await fetch(`${base}/api/mobile/v1/tenant`, { headers: { Accept: 'application/json' } });
   } catch {
     throw new ApiError('Could not reach that cooperative. Check the code and your connection.', 0);
   }
-  const payload = await response.json().catch(() => ({} as Record<string, unknown>));
+  const payload = await parseResponse(response);
   if (!response.ok || payload.success !== true) {
     throw new ApiError('Cooperative not found — check the code with your society.', response.status);
   }
@@ -84,6 +107,25 @@ export async function login(username: string, password: string) {
   });
   await saveToken(payload.token);
   return payload;
+}
+
+export async function requestPasswordReset(identifier: string) {
+  return request<{ success: boolean; message: string }>('/api/mobile/v1/auth/forgot-password', {
+    method: 'POST',
+    body: { identifier }
+  });
+}
+
+export async function changePassword(token: string, currentPassword: string, newPassword: string, confirmPassword: string) {
+  return request<{ success: boolean; message: string }>('/api/mobile/v1/auth/change-password', {
+    method: 'POST',
+    token,
+    body: {
+      current_password: currentPassword,
+      new_password: newPassword,
+      confirm_password: confirmPassword
+    }
+  });
 }
 
 export async function getDashboard(token: string) {
