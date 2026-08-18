@@ -186,6 +186,8 @@ def member_portal():
     member = member_for_user(db)
     if not member:
         flash('Your account is not linked to a member profile. Please contact the administrator.', 'warning')
+        if current_user.role == 'member':
+            return redirect(url_for('portal.member_link_required'))
         return redirect(url_for('main.dashboard'))
 
     savings = db.execute(
@@ -236,6 +238,16 @@ def member_portal():
                            recent_loans=loans[:5],
                            events=events,
                            unread_count=unread_count)
+
+
+@portal.route('/member/link-required')
+@login_required
+def member_link_required():
+    db = get_db()
+    member = member_for_user(db)
+    if member:
+        return redirect(url_for('portal.member_portal'))
+    return render_template('member/link-required.html')
 
 
 # ── My Savings ────────────────────────────────────────────────────────────────────

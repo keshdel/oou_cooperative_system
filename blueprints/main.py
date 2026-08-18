@@ -2,6 +2,7 @@ from flask import Blueprint, render_template, redirect, url_for
 from flask_login import login_required, current_user
 
 from database import get_db
+from utils import member_for_user
 
 main = Blueprint('main', __name__)
 
@@ -14,6 +15,9 @@ _PRIVILEGED_ROLES = {'admin', 'treasurer', 'secretary', 'exco'}
 def dashboard():
     # Members must never see org-wide data — send them to their own portal
     if current_user.role not in _PRIVILEGED_ROLES:
+        db = get_db()
+        if not member_for_user(db):
+            return redirect(url_for('portal.member_link_required'))
         return redirect(url_for('portal.member_portal'))
 
     db = get_db()

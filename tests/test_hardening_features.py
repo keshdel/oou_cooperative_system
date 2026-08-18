@@ -333,6 +333,27 @@ class HardeningFeatureTests(unittest.TestCase):
         self.assertTrue(payload['success'])
         self.assertEqual(payload['member']['email'], user_email.upper())
 
+    def test_unlinked_member_login_does_not_redirect_loop(self):
+        suffix = int(time.time() * 1000)
+        username = f'unlinked.member.{suffix}@example.com'
+        with self.app.app_context():
+            db = get_db()
+            db.execute('''
+                INSERT INTO users
+                    (username, password_hash, role, full_name, email, is_active, must_change_password)
+                VALUES (?, ?, 'member', 'Unlinked Member', ?, 1, 0)
+            ''', (username, generate_password_hash('MemberPass1!'), username))
+            db.commit()
+
+        response = self.client.post(
+            '/login',
+            data={'username': username, 'password': 'MemberPass1!'},
+            follow_redirects=True,
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b'Member profile link required', response.data)
+        self.assertLess(len(response.history), 5)
+
     def test_mobile_password_reset_request_is_generic_and_sends_email(self):
         suffix = int(time.time() * 1000)
         email = f'mobile.reset.{suffix}@example.com'
