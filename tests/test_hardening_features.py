@@ -298,6 +298,41 @@ class HardeningFeatureTests(unittest.TestCase):
         self.assertTrue(payload['success'])
         self.assertEqual(payload['user']['email'], email)
 
+    def test_mobile_dashboard_links_member_email_case_insensitively(self):
+        suffix = int(time.time() * 1000)
+        user_email = f'hq.member.{suffix}@example.com'
+        with self.app.app_context():
+            db = get_db()
+            db.execute('''
+                INSERT INTO members
+                    (member_number, first_name, last_name, email, phone, status,
+                     monthly_savings, total_savings, date_joined)
+                VALUES (?, 'HQ', 'Member', ?, '08000000991', 'active', 10000, 0, '2024-01-01')
+            ''', (f'HQ/TEST/{suffix}', user_email.upper()))
+            db.commit()
+            member_id = db.execute(
+                'SELECT id FROM members WHERE member_number = ?',
+                (f'HQ/TEST/{suffix}',),
+            ).fetchone()['id']
+        self.create_member_user(member_id, email=user_email)
+        clear_login_attempts('mobile:127.0.0.1')
+
+        login_response = self.client.post(
+            '/api/mobile/login',
+            json={'username': user_email, 'password': 'MemberPass1!'},
+        )
+        self.assertEqual(login_response.status_code, 200)
+        token = login_response.get_json()['token']
+
+        dashboard_response = self.client.get(
+            '/api/mobile/v1/dashboard',
+            headers={'Authorization': f'Bearer {token}'},
+        )
+        self.assertEqual(dashboard_response.status_code, 200)
+        payload = dashboard_response.get_json()
+        self.assertTrue(payload['success'])
+        self.assertEqual(payload['member']['email'], user_email.upper())
+
     def test_mobile_password_reset_request_is_generic_and_sends_email(self):
         suffix = int(time.time() * 1000)
         email = f'mobile.reset.{suffix}@example.com'

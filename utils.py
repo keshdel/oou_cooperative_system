@@ -65,7 +65,10 @@ def member_for_user(db, user_id=None):
         email = (urow['email'] if urow else '') or ''
     if not email:
         return None
-    return db.execute('SELECT * FROM members WHERE email = ?', (email,)).fetchone()
+    return db.execute(
+        'SELECT * FROM members WHERE lower(COALESCE(email, \'\')) = lower(?)',
+        (email,),
+    ).fetchone()
 
 
 def current_member_id(db):
