@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
 import React, { Component, type ErrorInfo, type ReactNode, useEffect, useMemo, useState } from 'react';
 import {
@@ -17,6 +18,7 @@ import {
 } from 'react-native';
 
 import {
+  ApiError,
   applyForLoan,
   changePassword,
   clearToken,
@@ -52,11 +54,13 @@ type AppErrorBoundaryState = {
   error: Error | null;
 };
 
-const NAVY = '#0B3475';
-const BLUE = '#1554B7';
+const NAVY = '#083574';
+const BLUE = '#1450A3';
 const YELLOW = '#F8B91E';
-const BG = '#F3F6FA';
-const INK = '#172033';
+const BG = '#EEF3F8';
+const INK = '#102033';
+const BORDER = '#D9E2EE';
+const MUTED = '#607086';
 
 function money(value?: number) {
   return `NGN ${(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -110,7 +114,13 @@ async function tryRegisterPushToken(token: string) {
   try {
     const permission = await Notifications.requestPermissionsAsync();
     if (!permission.granted) return;
-    const push = await Notifications.getExpoPushTokenAsync();
+    const projectId =
+      Constants.easConfig?.projectId ||
+      (Constants.expoConfig?.extra?.eas as { projectId?: string } | undefined)?.projectId;
+
+    if (!projectId) return;
+
+    const push = await Notifications.getExpoPushTokenAsync({ projectId });
     await registerDevice(token, push.data, Platform.OS, `${Platform.OS} device`);
   } catch {
     // Push setup should never block login or dashboard access.
@@ -274,7 +284,7 @@ function Header({ title, onLogout }: { title: string; onLogout: () => void }) {
         <Text style={styles.headerEyebrow}>COOPMS</Text>
         <Text style={styles.headerTitle}>{title}</Text>
       </View>
-      <Pressable onPress={onLogout} style={styles.iconButton}>
+      <Pressable onPress={onLogout} style={styles.iconButton} hitSlop={10}>
         <Ionicons name="log-out-outline" size={20} color={NAVY} />
       </Pressable>
     </View>
@@ -402,7 +412,7 @@ function HomeScreen({ data, reload, setActive }: { data: DashboardPayload; reloa
       <View style={styles.card}>
         <View style={styles.rowBetween}>
           <Text style={styles.cardTitle}>Next Best Action</Text>
-          <Pressable onPress={reload}>
+          <Pressable onPress={reload} hitSlop={10}>
             <Ionicons name="refresh" size={18} color={BLUE} />
           </Pressable>
         </View>
@@ -633,8 +643,24 @@ function LoansScreen({ token, dashboard, reload }: { token: string; dashboard: D
   const [signature, setSignature] = useState('');
   const [collateral, setCollateral] = useState('standing_order');
   const [guarantors, setGuarantors] = useState<number[]>([]);
+  const [guarantorQuery, setGuarantorQuery] = useState('');
   const [preview, setPreview] = useState<{ monthly_payment: number; total_repayment: number; total_interest: number } | null>(null);
   const [busyApply, setBusyApply] = useState(false);
+  const selectedGuarantors = useMemo(() => {
+    const choices = loanOptions?.eligible_guarantors || [];
+    return choices.filter((item) => guarantors.includes(item.id));
+  }, [loanOptions, guarantors]);
+  const filteredGuarantors = useMemo(() => {
+    const choices = loanOptions?.eligible_guarantors || [];
+    const query = guarantorQuery.trim().toLowerCase();
+    if (!query) return choices.slice(0, 25);
+    return choices.filter((item) => (
+      item.full_name.toLowerCase().includes(query)
+      || item.member_number.toLowerCase().includes(query)
+      || (item.email || '').toLowerCase().includes(query)
+      || (item.phone || '').toLowerCase().includes(query)
+    )).slice(0, 30);
+  }, [loanOptions, guarantorQuery]);
 
   useEffect(() => {
     getLoanOptions(token).then((response) => {
@@ -715,6 +741,7 @@ function LoansScreen({ token, dashboard, reload }: { token: string; dashboard: D
       setAmount('');
       setSignature('');
       setGuarantors([]);
+      setGuarantorQuery('');
       reload();
       Alert.alert('Application submitted', 'Your loan request has entered the approval workflow.');
     } catch (error) {
@@ -777,12 +804,41 @@ function LoansScreen({ token, dashboard, reload }: { token: string; dashboard: D
             </View>
           </View>
           <View style={styles.fieldBlock}>
-            <Text style={styles.fieldLabel}>Guarantors</Text>
+            <View style={styles.rowBetween}>
+              <Text style={styles.fieldLabel}>Guarantors</Text>
+              <Text style={styles.selectionCount}>{guarantors.length} selected</Text>
+            </View>
             <Text style={styles.rowSub}>
-              Select {loanOptions?.guarantors_required ?? 0} active member{(loanOptions?.guarantors_required ?? 0) === 1 ? '' : 's'}.
+              Search and select {loanOptions?.guarantors_required ?? 0} active member{(loanOptions?.guarantors_required ?? 0) === 1 ? '' : 's'}.
             </Text>
-            <View style={styles.optionStack}>
-              {(loanOptions?.eligible_guarantors || []).slice(0, 25).map((guarantor) => (
+            {selectedGuarantors.length > 0 ? (
+              <View style={styles.selectedWrap}>
+                {selectedGuarantors.map((guarantor) => (
+                  <Pressable key={guarantor.id} style={styles.selectedPill} onPress={() => toggleGuarantor(guarantor.id)}>
+                    <Text style={styles.selectedPillText}>{guarantor.full_name}</Text>
+                    <Ionicons name="close" size={14} color={NAVY} />
+                  </Pressable>
+                ))}
+              </View>
+            ) : null}
+            <View style={styles.searchBox}>
+              <Ionicons name="search" size={18} color="#7D8797" />
+              <TextInput
+                value={guarantorQuery}
+                onChangeText={setGuarantorQuery}
+                autoCapitalize="none"
+                autoCorrect={false}
+                placeholder="Search member name, number, phone, or email"
+                style={styles.searchInput}
+              />
+              {guarantorQuery ? (
+                <Pressable onPress={() => setGuarantorQuery('')} hitSlop={8}>
+                  <Ionicons name="close-circle" size={18} color="#7D8797" />
+                </Pressable>
+              ) : null}
+            </View>
+            <View style={styles.searchResults}>
+              {filteredGuarantors.map((guarantor) => (
                 <GuarantorChoice
                   key={guarantor.id}
                   guarantor={guarantor}
@@ -793,6 +849,12 @@ function LoansScreen({ token, dashboard, reload }: { token: string; dashboard: D
             </View>
             {loanOptions && loanOptions.eligible_guarantors.length === 0 ? (
               <Text style={styles.emptyText}>No eligible active guarantors found. Contact the cooperative office.</Text>
+            ) : null}
+            {loanOptions && loanOptions.eligible_guarantors.length > 0 && filteredGuarantors.length === 0 ? (
+              <Text style={styles.emptyText}>No member matched your search.</Text>
+            ) : null}
+            {loanOptions && !guarantorQuery && loanOptions.eligible_guarantors.length > filteredGuarantors.length ? (
+              <Text style={styles.rowSub}>Showing first {filteredGuarantors.length}. Use search to find other members.</Text>
             ) : null}
           </View>
           <Pressable style={styles.secondaryButton} onPress={runPreview}>
@@ -903,7 +965,7 @@ function TabBar({ active, setActive, unread }: { active: Tab; setActive: (tab: T
   return (
     <View style={styles.tabBar}>
       {tabs.map((tab) => (
-        <Pressable key={tab.key} style={styles.tabButton} onPress={() => setActive(tab.key)}>
+        <Pressable key={tab.key} style={styles.tabButton} onPress={() => setActive(tab.key)} hitSlop={8}>
           <Ionicons name={tab.icon} size={21} color={active === tab.key ? NAVY : '#7D8797'} />
           <Text style={[styles.tabLabel, active === tab.key && styles.tabActive]}>{tab.label}</Text>
           {tab.key === 'notifications' && unread > 0 ? <View style={styles.dot} /> : null}
@@ -918,9 +980,12 @@ function AppContent() {
   const [dashboard, setDashboard] = useState<DashboardPayload | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('home');
   const [loading, setLoading] = useState(true);
+  const [loadingMessage, setLoadingMessage] = useState('Checking your cooperative and secure session...');
   const [hasTenant, setHasTenant] = useState(false);
   const [coopName, setCoopName] = useState('');
   const [startupError, setStartupError] = useState('');
+  const [dashboardError, setDashboardError] = useState('');
+  const [bootAttempt, setBootAttempt] = useState(0);
 
   async function reload(currentToken = token) {
     if (!currentToken) return;
@@ -929,25 +994,46 @@ function AppContent() {
   }
 
   useEffect(() => {
+    let alive = true;
+    const watchdog = setTimeout(() => {
+      if (!alive) return;
+      setStartupError('Startup took longer than expected. This is usually a temporary network connection issue.');
+      setLoading(false);
+    }, 60000);
+
     (async () => {
       try {
+        setStartupError('');
+        setDashboardError('');
+        setLoading(true);
+        setLoadingMessage('Loading saved cooperative...');
         const ready = await loadTenant();
+        if (!alive) return;
         setHasTenant(ready);
         setCoopName(getCoopName());
         if (ready) {
+          setLoadingMessage('Checking saved sign-in...');
           const stored = await loadToken();
+          if (!alive) return;
           if (stored) {
             setToken(stored);
             try {
+              setLoadingMessage('Loading your dashboard...');
               await reload(stored);
               void tryRegisterPushToken(stored);
-            } catch {
-              await clearToken();
-              setToken(null);
+            } catch (error) {
+              if (!alive) return;
+              if (error instanceof ApiError && (error.status === 401 || error.status === 403)) {
+                await clearToken();
+                setToken(null);
+              } else {
+                setDashboardError(error instanceof Error ? error.message : 'Could not load your dashboard.');
+              }
             }
           }
         }
       } catch (error) {
+        if (!alive) return;
         setStartupError(error instanceof Error ? error.message : 'Could not load saved mobile session.');
         await clearTenant().catch(() => undefined);
         await clearToken().catch(() => undefined);
@@ -955,14 +1041,31 @@ function AppContent() {
         setDashboard(null);
         setHasTenant(false);
       } finally {
-        setLoading(false);
+        if (alive) setLoading(false);
       }
     })();
-  }, []);
+
+    return () => {
+      alive = false;
+      clearTimeout(watchdog);
+    };
+  }, [bootAttempt]);
 
   async function onLogin(nextToken: string) {
-    setToken(nextToken);
-    await reload(nextToken);
+    try {
+      await reload(nextToken);
+      setToken(nextToken);
+    } catch (error) {
+      await clearToken();
+      setToken(null);
+      const message = error instanceof Error ? error.message : 'Could not load your member dashboard.';
+      Alert.alert(
+        'Member profile required',
+        message.includes('member profile')
+          ? 'This mobile app is for member self-service. This account is not linked to a member profile yet. Use the web admin portal, or link this user email to a member record.'
+          : message
+      );
+    }
   }
 
   async function logout() {
@@ -994,6 +1097,8 @@ function AppContent() {
     return (
       <SafeAreaView style={styles.loadingRoot}>
         <ActivityIndicator size="large" color={NAVY} />
+        <Text style={styles.loadingTitle}>Loading CoopMS</Text>
+        <Text style={styles.loadingHint}>{loadingMessage}</Text>
       </SafeAreaView>
     );
   }
@@ -1006,8 +1111,7 @@ function AppContent() {
         details={startupError}
         onRetry={() => {
           setStartupError('');
-          setHasTenant(false);
-          setLoading(false);
+          setBootAttempt((value) => value + 1);
         }}
       />
     );
@@ -1018,6 +1122,16 @@ function AppContent() {
   }
 
   if (!token || !dashboard) {
+    if (token && dashboardError) {
+      return (
+        <FatalScreen
+          title="Dashboard unavailable"
+          message="Your sign-in is still saved, but CoopMS could not load your dashboard. Check your internet connection and try again."
+          details={dashboardError}
+          onRetry={() => setBootAttempt((value) => value + 1)}
+        />
+      );
+    }
     return <LoginScreen onLogin={onLogin} coopName={coopName} onChangeCooperative={changeCooperative} />;
   }
 
@@ -1046,65 +1160,67 @@ export default function App() {
 const styles = StyleSheet.create({
   appRoot: { flex: 1, backgroundColor: BG },
   loadingRoot: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: BG },
+  loadingTitle: { color: NAVY, fontSize: 18, fontWeight: '900', marginTop: 18 },
+  loadingHint: { color: MUTED, fontSize: 13, marginTop: 6, textAlign: 'center', paddingHorizontal: 28 },
   fatalRoot: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: NAVY, padding: 20 },
-  fatalCard: { width: '100%', backgroundColor: '#fff', borderRadius: 8, padding: 18, borderWidth: 1, borderColor: '#D7DEE8' },
+  fatalCard: { width: '100%', backgroundColor: '#fff', borderRadius: 16, padding: 18, borderWidth: 1, borderColor: BORDER },
   fatalTitle: { color: NAVY, fontSize: 22, fontWeight: '900', marginBottom: 10 },
   fatalMessage: { color: INK, fontSize: 15, lineHeight: 21, marginBottom: 12 },
   fatalDetails: { color: '#D93030', backgroundColor: '#FFF1F1', borderRadius: 8, padding: 10, marginBottom: 14, fontSize: 12, lineHeight: 17 },
   authRoot: { flex: 1, backgroundColor: NAVY },
   authContent: { flex: 1, justifyContent: 'center', padding: 24 },
-  logoMark: { width: 72, height: 72, borderRadius: 20, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', marginBottom: 18 },
+  logoMark: { width: 72, height: 72, borderRadius: 20, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', marginBottom: 18, borderWidth: 1, borderColor: 'rgba(255,255,255,0.38)' },
   brand: { color: '#fff', fontSize: 34, fontWeight: '900', letterSpacing: 0 },
   tagline: { color: '#DDE8FF', fontSize: 15, marginTop: 6, marginBottom: 28 },
-  loginCard: { backgroundColor: '#fff', borderRadius: 8, padding: 18, shadowColor: '#000', shadowOpacity: 0.12, shadowRadius: 18, elevation: 4 },
+  loginCard: { backgroundColor: '#fff', borderRadius: 18, padding: 20, shadowColor: '#061E4A', shadowOpacity: 0.2, shadowRadius: 22, elevation: 5 },
   loginTitle: { color: INK, fontSize: 20, fontWeight: '800', marginBottom: 14 },
-  helperText: { color: '#5b6b85', fontSize: 13, marginBottom: 12, marginTop: -6 },
-  input: { borderWidth: 1, borderColor: '#D7DEE8', borderRadius: 8, padding: 14, marginBottom: 12, fontSize: 16, color: INK },
-  inputLight: { borderWidth: 1, borderColor: '#D7DEE8', borderRadius: 8, padding: 12, marginTop: 6, marginBottom: 12, fontSize: 15, color: INK, backgroundColor: '#fff' },
-  primaryButton: { backgroundColor: BLUE, borderRadius: 8, padding: 15, alignItems: 'center', justifyContent: 'center' },
+  helperText: { color: MUTED, fontSize: 13, marginBottom: 12, marginTop: -6, lineHeight: 19 },
+  input: { minHeight: 50, borderWidth: 1, borderColor: BORDER, borderRadius: 12, padding: 14, marginBottom: 12, fontSize: 16, color: INK, backgroundColor: '#FBFCFE' },
+  inputLight: { minHeight: 48, borderWidth: 1, borderColor: BORDER, borderRadius: 12, padding: 12, marginTop: 6, marginBottom: 12, fontSize: 15, color: INK, backgroundColor: '#fff' },
+  primaryButton: { minHeight: 50, backgroundColor: BLUE, borderRadius: 12, padding: 15, alignItems: 'center', justifyContent: 'center' },
   primaryButtonText: { color: '#fff', fontWeight: '800', fontSize: 16 },
-  secondaryButton: { backgroundColor: '#EEF4FF', borderRadius: 8, padding: 14, alignItems: 'center', marginTop: 4, marginBottom: 10 },
+  secondaryButton: { minHeight: 48, backgroundColor: '#EEF4FF', borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 4, marginBottom: 10 },
   secondaryButtonText: { color: BLUE, fontWeight: '900' },
   textButton: { alignItems: 'center', paddingVertical: 12 },
-  resetPanel: { borderWidth: 1, borderColor: '#D7E7FF', backgroundColor: '#F4F8FF', borderRadius: 8, padding: 12, marginTop: 2, marginBottom: 8 },
-  dangerButton: { backgroundColor: '#D93030', borderRadius: 8, padding: 14, alignItems: 'center', marginTop: 4 },
+  resetPanel: { borderWidth: 1, borderColor: '#D7E7FF', backgroundColor: '#F4F8FF', borderRadius: 14, padding: 12, marginTop: 2, marginBottom: 8 },
+  dangerButton: { minHeight: 48, backgroundColor: '#D93030', borderRadius: 12, padding: 14, alignItems: 'center', marginTop: 4 },
   dangerButtonText: { color: '#fff', fontWeight: '800' },
   disabled: { opacity: 0.7 },
-  apiHint: { color: '#667085', marginTop: 12, fontSize: 12 },
+  apiHint: { color: MUTED, marginTop: 12, fontSize: 12 },
   header: { paddingHorizontal: 18, paddingVertical: 14, backgroundColor: '#fff', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, borderColor: '#E4E9F0' },
   headerEyebrow: { color: YELLOW, fontWeight: '900', fontSize: 12 },
   headerTitle: { color: NAVY, fontWeight: '900', fontSize: 24 },
-  iconButton: { width: 42, height: 42, borderRadius: 8, backgroundColor: '#EEF4FF', alignItems: 'center', justifyContent: 'center' },
-  screen: { padding: 16, paddingBottom: 104 },
-  memberBand: { backgroundColor: NAVY, borderRadius: 8, padding: 18, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  iconButton: { width: 46, height: 46, borderRadius: 14, backgroundColor: '#EEF4FF', alignItems: 'center', justifyContent: 'center' },
+  screen: { padding: 14, paddingBottom: 104 },
+  memberBand: { backgroundColor: NAVY, borderRadius: 18, padding: 18, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', shadowColor: '#061E4A', shadowOpacity: 0.18, shadowRadius: 18, elevation: 3 },
   memberGreeting: { color: YELLOW, fontSize: 12, fontWeight: '900', textTransform: 'uppercase', marginBottom: 5 },
   memberName: { color: '#fff', fontSize: 20, fontWeight: '900' },
   memberMeta: { color: '#CFE0FF', marginTop: 4 },
-  certifiedBadge: { backgroundColor: YELLOW, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 6, flexDirection: 'row', gap: 4, alignItems: 'center' },
+  certifiedBadge: { backgroundColor: YELLOW, borderRadius: 999, paddingHorizontal: 10, paddingVertical: 7, flexDirection: 'row', gap: 4, alignItems: 'center' },
   certifiedText: { color: NAVY, fontWeight: '900', fontSize: 12 },
   statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginVertical: 14 },
-  statCard: { flexBasis: '48%', flexGrow: 1, minHeight: 116, backgroundColor: '#fff', borderRadius: 8, padding: 14, borderWidth: 1, borderColor: '#E2E8F0' },
+  statCard: { flexBasis: '48%', flexGrow: 1, minHeight: 116, backgroundColor: '#fff', borderRadius: 16, padding: 14, borderWidth: 1, borderColor: '#E2E8F0' },
   statYellow: { borderColor: '#F5D66D', backgroundColor: '#FFF8E5' },
   statGreen: { borderColor: '#A7E0C2', backgroundColor: '#EDFFF4' },
   statTopLine: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  statLabel: { color: '#667085', fontSize: 12, fontWeight: '800', textTransform: 'uppercase' },
+  statLabel: { color: MUTED, fontSize: 12, fontWeight: '800', textTransform: 'uppercase' },
   statValue: { color: INK, fontSize: 17, fontWeight: '900', marginTop: 8 },
-  statHint: { color: '#667085', fontSize: 12, marginTop: 8, fontWeight: '700' },
-  card: { backgroundColor: '#fff', borderRadius: 8, marginTop: 14, borderWidth: 1, borderColor: '#E2E8F0', overflow: 'hidden', padding: 14 },
+  statHint: { color: MUTED, fontSize: 12, marginTop: 8, fontWeight: '700' },
+  card: { backgroundColor: '#fff', borderRadius: 16, marginTop: 14, borderWidth: 1, borderColor: '#E2E8F0', overflow: 'hidden', padding: 14 },
   cardTitle: { fontSize: 17, color: INK, fontWeight: '900', marginBottom: 8 },
   rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   listRow: { paddingVertical: 12, borderTopWidth: 1, borderColor: '#EEF2F6' },
   rowTitle: { color: INK, fontWeight: '800', fontSize: 15 },
-  rowSub: { color: '#667085', marginTop: 4, lineHeight: 19 },
-  dateText: { color: '#667085', fontSize: 12, fontWeight: '800' },
-  emptyText: { color: '#667085', paddingVertical: 12 },
-  actionNotice: { borderWidth: 1, borderColor: '#D7E7FF', backgroundColor: '#F4F8FF', borderRadius: 8, padding: 13, marginTop: 4 },
+  rowSub: { color: MUTED, marginTop: 4, lineHeight: 19 },
+  dateText: { color: MUTED, fontSize: 12, fontWeight: '800' },
+  emptyText: { color: MUTED, paddingVertical: 12 },
+  actionNotice: { borderWidth: 1, borderColor: '#D7E7FF', backgroundColor: '#F4F8FF', borderRadius: 14, padding: 13, marginTop: 4 },
   quickAction: { minHeight: 68, flexDirection: 'row', alignItems: 'center', gap: 12, borderTopWidth: 1, borderColor: '#EEF2F6', paddingVertical: 12 },
-  quickActionYellow: { backgroundColor: '#FFF8E5', borderRadius: 8, borderTopWidth: 0, paddingHorizontal: 10, marginBottom: 4 },
-  quickIcon: { width: 38, height: 38, borderRadius: 8, alignItems: 'center', justifyContent: 'center', backgroundColor: '#EEF4FF' },
+  quickActionYellow: { backgroundColor: '#FFF8E5', borderRadius: 14, borderTopWidth: 0, paddingHorizontal: 10, marginBottom: 4 },
+  quickIcon: { width: 42, height: 42, borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: '#EEF4FF' },
   quickText: { flex: 1 },
   quickLabel: { color: INK, fontWeight: '900', fontSize: 15 },
-  quickHelper: { color: '#667085', marginTop: 3, fontSize: 12, lineHeight: 17 },
+  quickHelper: { color: MUTED, marginTop: 3, fontSize: 12, lineHeight: 17 },
   pressed: { opacity: 0.72 },
   progressShell: { height: 10, borderRadius: 999, backgroundColor: '#E5EAF2', overflow: 'hidden', marginTop: 10, marginBottom: 6 },
   progressFill: { height: 10, backgroundColor: YELLOW },
@@ -1118,6 +1234,13 @@ const styles = StyleSheet.create({
   optionChipTextSelected: { color: BLUE },
   collateralOption: { borderWidth: 1, borderColor: '#D7DEE8', borderRadius: 8, backgroundColor: '#fff', padding: 12 },
   collateralSelected: { borderColor: BLUE, backgroundColor: '#F4F8FF' },
+  selectionCount: { color: BLUE, fontSize: 12, fontWeight: '900' },
+  selectedWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10, marginBottom: 8 },
+  selectedPill: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#FFF8E5', borderWidth: 1, borderColor: '#F5D66D', borderRadius: 999, paddingHorizontal: 10, paddingVertical: 7 },
+  selectedPillText: { color: NAVY, fontWeight: '900', fontSize: 12 },
+  searchBox: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderColor: BORDER, backgroundColor: '#FBFCFE', borderRadius: 12, paddingHorizontal: 12, marginTop: 10, marginBottom: 8 },
+  searchInput: { flex: 1, color: INK, fontSize: 14, paddingVertical: 10 },
+  searchResults: { gap: 8, marginTop: 4, marginBottom: 10 },
   guarantorChoice: { minHeight: 64, flexDirection: 'row', alignItems: 'center', gap: 10, borderWidth: 1, borderColor: '#D7DEE8', borderRadius: 8, backgroundColor: '#fff', padding: 10 },
   guarantorSelected: { borderColor: BLUE, backgroundColor: '#F4F8FF' },
   guarantorCheck: { width: 24, height: 24, borderRadius: 999, borderWidth: 1, borderColor: BLUE, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
@@ -1128,8 +1251,8 @@ const styles = StyleSheet.create({
   statusPill: { color: '#fff', backgroundColor: '#7D8797', overflow: 'hidden', borderRadius: 999, paddingHorizontal: 9, paddingVertical: 4, fontSize: 12, textTransform: 'capitalize' },
   statusActive: { backgroundColor: '#159A5B' },
   linkText: { color: BLUE, fontWeight: '800' },
-  tabBar: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 78, backgroundColor: '#fff', flexDirection: 'row', borderTopWidth: 1, borderColor: '#E4E9F0', paddingBottom: 10 },
-  tabButton: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 4 },
+  tabBar: { position: 'absolute', bottom: 0, left: 0, right: 0, height: 82, backgroundColor: '#fff', flexDirection: 'row', borderTopWidth: 1, borderColor: '#E4E9F0', paddingBottom: 10, shadowColor: '#061E4A', shadowOpacity: 0.08, shadowRadius: 16, elevation: 8 },
+  tabButton: { flex: 1, minHeight: 54, alignItems: 'center', justifyContent: 'center', gap: 4 },
   tabLabel: { color: '#7D8797', fontSize: 11, fontWeight: '700' },
   tabActive: { color: NAVY },
   dot: { position: 'absolute', top: 15, right: 22, width: 8, height: 8, borderRadius: 999, backgroundColor: '#D93030' }

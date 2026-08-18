@@ -439,9 +439,15 @@ def mobile_login():
         }), 429
 
     db = get_db()
-    user = db.execute(
-        'SELECT * FROM users WHERE username = ? AND is_active = 1', (username,),
-    ).fetchone()
+    user = db.execute('''
+        SELECT * FROM users
+        WHERE is_active = 1
+          AND (
+            lower(username) = lower(?)
+            OR lower(COALESCE(email, '')) = lower(?)
+          )
+        LIMIT 1
+    ''', (username, username)).fetchone()
 
     if not user or not check_password_hash(user['password_hash'], password):
         record_failed_login(login_key)

@@ -2,70 +2,69 @@
 
 {% block content %}
 <div class="container-fluid">
-    <div class="row mb-4">
-        <div class="col-12">
-            <h2><i class="fas fa-tachometer-alt"></i> Dashboard</h2>
-            <p class="text-muted">Welcome back, {{ current_user.username }}! Here's what's happening with the cooperative.</p>
+    <div class="page-hero">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+            <div>
+                <div class="page-hero-eyebrow">Cooperative command view</div>
+                <h2 class="page-hero-title">Good to see you, {{ current_user.full_name or current_user.username }}</h2>
+                <p class="page-hero-subtitle">A clean view of members, savings, loans, and financial movement across the society.</p>
+            </div>
+            <div class="d-flex flex-wrap gap-2">
+                <span class="trust-chip"><i class="fas fa-shield-alt"></i> Secure session</span>
+                <span class="trust-chip"><i class="fas fa-balance-scale"></i> Audit-ready records</span>
+            </div>
         </div>
     </div>
     
     <!-- Statistics Cards -->
-    <div class="row g-4 mb-4">
+    <div class="row g-3 mb-4">
         <div class="col-md-3">
-            <div class="card stat-card">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <h6 class="text-white-50">Total Members</h6>
-                            <h2 class="text-white mb-0">{{ members_count }}</h2>
-                            <small class="text-white-50">Active members</small>
-                        </div>
-                        <i class="fas fa-users"></i>
+            <div class="metric-card">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="metric-icon"><i class="fas fa-users"></i></div>
+                    <div>
+                        <div class="metric-label">Total Members</div>
+                        <div class="metric-value">{{ members_count }}</div>
+                        <small class="text-muted">Active members</small>
                     </div>
                 </div>
             </div>
         </div>
         
         <div class="col-md-3">
-            <div class="card stat-card" style="background: linear-gradient(135deg, #0d3f86 0%, #082b66 100%);">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <h6 class="text-white-50">Total Savings</h6>
-                            <h2 class="text-white mb-0">₦{{ "{:,.2f}".format(total_savings) }}</h2>
-                            <small class="text-white-50">All time</small>
-                        </div>
-                        <i class="fas fa-piggy-bank"></i>
+            <div class="metric-card metric-success">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="metric-icon"><i class="fas fa-piggy-bank"></i></div>
+                    <div>
+                        <div class="metric-label">Total Savings</div>
+                        <div class="metric-value">₦{{ "{:,.2f}".format(total_savings) }}</div>
+                        <small class="text-muted">All time</small>
                     </div>
                 </div>
             </div>
         </div>
         
         <div class="col-md-3">
-            <div class="card stat-card" style="background: linear-gradient(135deg, #0a3373 0%, #061e4a 100%);">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <h6 class="text-white-50">Active Loans</h6>
-                            <h2 class="text-white mb-0">₦{{ "{:,.2f}".format(total_loans) }}</h2>
-                            <small class="text-white-50">Outstanding</small>
-                        </div>
-                        <i class="fas fa-hand-holding-usd"></i>
+            <div class="metric-card metric-accent">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="metric-icon"><i class="fas fa-hand-holding-usd"></i></div>
+                    <div>
+                        <div class="metric-label">Active Loans</div>
+                        <div class="metric-value">₦{{ "{:,.2f}".format(total_loans) }}</div>
+                        <small class="text-muted">Outstanding</small>
                     </div>
                 </div>
             </div>
         </div>
         
         <div class="col-md-3">
-            <div class="card stat-card" style="background: linear-gradient(135deg, #123f7d 0%, #0a2b57 100%);">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <h6 class="text-white-50">Investments</h6>
-                            <h2 class="text-white mb-0">₦{{ "{:,.2f}".format(total_investments) }}</h2>
-                            <small class="text-white-50">Total portfolio</small>
-                        </div>
-                        <i class="fas fa-chart-line"></i>
+            <div class="metric-card metric-info">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="metric-icon"><i class="fas fa-chart-line"></i></div>
+                    <div>
+                        <div class="metric-label">Investments</div>
+                        <div class="metric-value">₦{{ "{:,.2f}".format(total_investments) }}</div>
+                        <small class="text-muted">Total portfolio</small>
                     </div>
                 </div>
             </div>
@@ -73,7 +72,7 @@
     </div>
     
     <!-- Charts Row -->
-    <div class="row g-4 mb-4">
+    <div class="row g-3 mb-4">
         <div class="col-md-6">
             <div class="card">
                 <div class="card-header">
@@ -98,7 +97,7 @@
     </div>
     
     <!-- Recent Transactions -->
-    <div class="row g-4">
+    <div class="row g-3">
         <div class="col-md-6">
             <div class="card">
                 <div class="card-header d-flex justify-content-between align-items-center">

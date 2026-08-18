@@ -8,6 +8,18 @@ type ApiOptions = {
   method?: 'GET' | 'POST' | 'PATCH';
   body?: Record<string, unknown>;
   token?: string | null;
+  timeoutMs?: number;
+};
+
+const TENANT_CODE_ALIASES: Record<string, string> = {
+  oou: 'ooucoop',
+  ooucoop: 'ooucoop',
+  ooucooperative: 'ooucoop',
+  ooucooperativecms: 'ooucoop',
+  smt: 'smtcoop',
+  smtcoop: 'smtcoop',
+  smtcooperative: 'smtcoop',
+  hq: 'hq'
 };
 
 export class ApiError extends Error {
@@ -23,6 +35,21 @@ async function parseResponse(response: Response) {
   return response.json().catch(() => ({} as Record<string, unknown>));
 }
 
+async function fetchWithTimeout(url: string, init: RequestInit = {}, timeoutMs = 15000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new ApiError('Connection timed out. Check your internet connection and try again.', 0);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function request<T>(path: string, options: ApiOptions = {}): Promise<T> {
   const headers: Record<string, string> = {
     Accept: 'application/json'
@@ -33,11 +60,11 @@ async function request<T>(path: string, options: ApiOptions = {}): Promise<T> {
   const base = getApiBase();
   if (!base) throw new ApiError('No cooperative selected.', 0);
 
-  const response = await fetch(`${base}${path}`, {
+  const response = await fetchWithTimeout(`${base}${path}`, {
     method: options.method || 'GET',
     headers,
     body: options.body ? JSON.stringify(options.body) : undefined
-  });
+  }, options.timeoutMs);
 
   const payload = await parseResponse(response);
   if (!response.ok || payload.success === false) {
@@ -50,10 +77,12 @@ async function request<T>(path: string, options: ApiOptions = {}): Promise<T> {
  *  Returns the resolved API base + display name so the app can target the right
  *  backend and brand its login screen. Throws ApiError with a friendly message. */
 export async function resolveTenant(code: string): Promise<{ base: string; coopName: string; logo: string }> {
-  const cleanCode = (code || '').trim().toLowerCase();
+  const rawCode = (code || '').trim().toLowerCase();
+  const compactCode = rawCode.replace(/[^a-z0-9.-]/g, '');
+  const cleanCode = TENANT_CODE_ALIASES[compactCode] || compactCode;
   if (!cleanCode) throw new ApiError('Enter your cooperative code.', 0);
   try {
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       `${HQ_API_BASE}/api/mobile/v1/tenants/resolve?code=${encodeURIComponent(cleanCode)}`,
       { headers: { Accept: 'application/json' } }
     );
@@ -73,9 +102,9 @@ export async function resolveTenant(code: string): Promise<{ base: string; coopN
   const base = codeToBaseUrl(cleanCode);
   let response: Response;
   try {
-    response = await fetch(`${base}/api/mobile/v1/tenant`, { headers: { Accept: 'application/json' } });
+    response = await fetchWithTimeout(`${base}/api/mobile/v1/tenant`, { headers: { Accept: 'application/json' } });
   } catch {
-    throw new ApiError('Could not reach that cooperative. Check the code and your connection.', 0);
+    throw new ApiError(`Could not reach ${base}. Check the cooperative code, your internet connection, and that the tenant is deployed.`, 0);
   }
   const payload = await parseResponse(response);
   if (!response.ok || payload.success !== true) {

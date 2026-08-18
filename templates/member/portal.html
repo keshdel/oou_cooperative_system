@@ -32,87 +32,87 @@
     {% endif %}
 
     <!-- Welcome Header -->
-    <div class="row mb-4">
-        <div class="col-12">
-            <div class="card bg-gradient-primary text-white">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <div>
-                            <h2 class="mb-1">Welcome back, {{ member.full_name }}! 👋</h2>
-                            <p class="mb-0 opacity-75">
-                                <i class="fas fa-id-card me-2"></i>Member #{{ member.member_number }}
-                                <span class="mx-3">|</span>
-                                <i class="fas fa-calendar me-2"></i>Joined: {{ member.date_joined|fmtdt('%B %d, %Y') }}
-                            </p>
-                        </div>
-                        <div class="text-end">
-                            <span class="badge bg-light text-dark p-3">
-                                <i class="fas fa-shield-alt me-2"></i>{{ member.status|title }} Member
-                            </span>
-                        </div>
-                    </div>
-                </div>
+    <div class="page-hero">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
+            <div>
+                <div class="page-hero-eyebrow">Member self-service</div>
+                <h2 class="page-hero-title">Welcome back, {{ member.full_name }}</h2>
+                <p class="page-hero-subtitle">
+                    Member #{{ member.member_number }} · Joined {{ member.date_joined|fmtdt('%B %d, %Y') }}
+                </p>
+            </div>
+            <div class="d-flex flex-wrap gap-2">
+                <span class="trust-chip"><i class="fas fa-shield-alt"></i>{{ member.status|title }} member</span>
+                <span class="trust-chip"><i class="fas fa-lock"></i>Private account view</span>
             </div>
         </div>
     </div>
 
+    {% if profile_completion is defined %}
+    <div class="card mb-4">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-2">
+                <div>
+                    <h5 class="mb-1">Profile readiness</h5>
+                    <p class="text-muted mb-0">Complete your profile to keep your account ready for savings, loans, and member services.</p>
+                </div>
+                <strong>{{ profile_completion }}%</strong>
+            </div>
+            <div class="progress">
+                <div class="progress-bar" style="width: {{ profile_completion }}%"></div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
     <!-- Quick Stats Cards -->
-    <div class="row g-4 mb-4">
+    <div class="row g-3 mb-4">
         <div class="col-md-3">
-            <div class="card stat-card bg-primary">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between">
-                        <div>
-                            <h6 class="text-white-50">Savings Balance</h6>
-                            <h3 class="text-white mb-0">₦{{ "{:,.2f}".format(member.total_savings) }}</h3>
-                            <small class="text-white-50">₦{{ "{:,.2f}".format(member.total_contributions) }} total contributions</small>
-                        </div>
-                        <i class="fas fa-piggy-bank fa-3x text-white-50"></i>
+            <div class="metric-card metric-success">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="metric-icon"><i class="fas fa-piggy-bank"></i></div>
+                    <div>
+                        <div class="metric-label">Savings Balance</div>
+                        <div class="metric-value">₦{{ "{:,.2f}".format(member.total_savings) }}</div>
+                        <small class="text-muted">₦{{ "{:,.2f}".format(member.total_contributions) }} contributions</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="metric-card metric-warning">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="metric-icon"><i class="fas fa-hand-holding-usd"></i></div>
+                    <div>
+                        <div class="metric-label">Active Loans</div>
+                        <div class="metric-value">₦{{ "{:,.2f}".format(active_loans_total) }}</div>
+                        <small class="text-muted">{{ active_loans_count }} loan(s) active</small>
                     </div>
                 </div>
             </div>
         </div>
 
         <div class="col-md-3">
-            <div class="card stat-card bg-success">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between">
-                        <div>
-                            <h6 class="text-white-50">Active Loans</h6>
-                            <h3 class="text-white mb-0">₦{{ "{:,.2f}".format(active_loans_total) }}</h3>
-                            <small class="text-white-50">{{ active_loans_count }} loan(s) active</small>
-                        </div>
-                        <i class="fas fa-hand-holding-usd fa-3x text-white-50"></i>
+            <div class="metric-card">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="metric-icon"><i class="fas fa-calculator"></i></div>
+                    <div>
+                        <div class="metric-label">Loan Eligibility</div>
+                        <div class="metric-value">₦{{ "{:,.2f}".format(member.loan_eligibility_amount) }}</div>
+                        <small class="text-muted">Available credit</small>
                     </div>
                 </div>
             </div>
         </div>
 
         <div class="col-md-3">
-            <div class="card stat-card bg-info">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between">
-                        <div>
-                            <h6 class="text-white-50">Loan Eligibility</h6>
-                            <h3 class="text-white mb-0">₦{{ "{:,.2f}".format(member.loan_eligibility_amount) }}</h3>
-                            <small class="text-white-50">Available credit</small>
-                        </div>
-                        <i class="fas fa-calculator fa-3x text-white-50"></i>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-md-3">
-            <div class="card stat-card bg-warning">
-                <div class="card-body">
-                    <div class="d-flex justify-content-between">
-                        <div>
-                            <h6 class="text-white-50">Share Capital</h6>
-                            <h3 class="text-white mb-0">₦{{ "{:,.2f}".format(member.share_capital) }}</h3>
-                            <small class="text-white-50">Your equity stake</small>
-                        </div>
-                        <i class="fas fa-chart-line fa-3x text-white-50"></i>
+            <div class="metric-card metric-accent">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="metric-icon"><i class="fas fa-chart-line"></i></div>
+                    <div>
+                        <div class="metric-label">Share Capital</div>
+                        <div class="metric-value">₦{{ "{:,.2f}".format(member.share_capital) }}</div>
+                        <small class="text-muted">Your equity stake</small>
                     </div>
                 </div>
             </div>
@@ -127,64 +127,46 @@
                     <h5 class="mb-0"><i class="fas fa-bolt me-2"></i>Quick Actions</h5>
                 </div>
                 <div class="card-body">
-                    <div class="row g-3">
-                        <div class="col-md-3 col-6">
-                            <a href="{{ url_for('portal.my_savings') }}" class="btn btn-outline-primary w-100 py-3">
-                                <i class="fas fa-piggy-bank fa-2x mb-2"></i>
-                                <br>My Savings
+                    <div class="action-grid">
+                            <a href="{{ url_for('portal.my_savings') }}" class="action-tile">
+                                <span class="action-tile-icon"><i class="fas fa-piggy-bank"></i></span>
+                                <span><span class="action-tile-title">My Savings</span><span class="action-tile-subtitle">Balance and statement</span></span>
                             </a>
-                        </div>
-                        <div class="col-md-3 col-6">
-                            <a href="{{ url_for('portal.apply_loan_member') }}" class="btn btn-outline-success w-100 py-3">
-                                <i class="fas fa-hand-holding-usd fa-2x mb-2"></i>
-                                <br>Apply for Loan
+                            <a href="{{ url_for('portal.apply_loan_member') }}" class="action-tile">
+                                <span class="action-tile-icon"><i class="fas fa-hand-holding-usd"></i></span>
+                                <span><span class="action-tile-title">Apply for Loan</span><span class="action-tile-subtitle">Check schedule first</span></span>
                             </a>
-                        </div>
-                        <div class="col-md-3 col-6">
-                            <a href="{{ url_for('portal.my_cards') }}" class="btn btn-outline-warning w-100 py-3">
-                                <i class="fas fa-id-card fa-2x mb-2"></i>
-                                <br>My Member Card
+                            <a href="{{ url_for('portal.my_cards') }}" class="action-tile">
+                                <span class="action-tile-icon"><i class="fas fa-id-card"></i></span>
+                                <span><span class="action-tile-title">Member Card</span><span class="action-tile-subtitle">Digital identity</span></span>
                             </a>
-                        </div>
-                        <div class="col-md-3 col-6">
-                            <a href="{{ url_for('portal.transactions') }}" class="btn btn-outline-info w-100 py-3">
-                                <i class="fas fa-history fa-2x mb-2"></i>
-                                <br>Transactions
+                            <a href="{{ url_for('portal.transactions') }}" class="action-tile">
+                                <span class="action-tile-icon"><i class="fas fa-history"></i></span>
+                                <span><span class="action-tile-title">Transactions</span><span class="action-tile-subtitle">Audit trail</span></span>
                             </a>
-                        </div>
-                        <div class="col-md-3 col-6">
-                            <a href="{{ url_for('portal.change_savings_request') }}" class="btn btn-outline-warning w-100 py-3">
-                                <i class="fas fa-edit fa-2x mb-2"></i>
-                                <br>Change Savings
+                            <a href="{{ url_for('portal.change_savings_request') }}" class="action-tile">
+                                <span class="action-tile-icon"><i class="fas fa-edit"></i></span>
+                                <span><span class="action-tile-title">Change Savings</span><span class="action-tile-subtitle">Request update</span></span>
                             </a>
-                        </div>
-                        <div class="col-md-3 col-6">
-                            <a href="{{ url_for('portal.loan_calculator') }}" class="btn btn-outline-secondary w-100 py-3">
-                                <i class="fas fa-calculator fa-2x mb-2"></i>
-                                <br>Loan Calculator
+                            <a href="{{ url_for('portal.loan_calculator') }}" class="action-tile">
+                                <span class="action-tile-icon"><i class="fas fa-calculator"></i></span>
+                                <span><span class="action-tile-title">Loan Calculator</span><span class="action-tile-subtitle">Repayment estimate</span></span>
                             </a>
-                        </div>
-                        <div class="col-md-3 col-6">
-                            <a href="{{ url_for('portal.statements') }}" class="btn btn-outline-danger w-100 py-3">
-                                <i class="fas fa-file-pdf fa-2x mb-2"></i>
-                                <br>Statement
+                            <a href="{{ url_for('portal.statements') }}" class="action-tile">
+                                <span class="action-tile-icon"><i class="fas fa-file-alt"></i></span>
+                                <span><span class="action-tile-title">Statement</span><span class="action-tile-subtitle">Download records</span></span>
                             </a>
-                        </div>
-                        <div class="col-md-3 col-6">
-                            <a href="{{ url_for('portal.edit_profile') }}" class="btn btn-outline-dark w-100 py-3">
-                                <i class="fas fa-user-edit fa-2x mb-2"></i>
-                                <br>Update Profile
+                            <a href="{{ url_for('portal.edit_profile') }}" class="action-tile">
+                                <span class="action-tile-icon"><i class="fas fa-user-edit"></i></span>
+                                <span><span class="action-tile-title">Update Profile</span><span class="action-tile-subtitle">Keep records current</span></span>
                             </a>
-                        </div>
-                        <div class="col-md-3 col-6">
-                            <a href="{{ url_for('portal.notifications') }}" class="btn btn-outline-primary w-100 py-3">
-                                <i class="fas fa-bell fa-2x mb-2"></i>
-                                <br>Notifications
+                            <a href="{{ url_for('portal.notifications') }}" class="action-tile">
+                                <span class="action-tile-icon"><i class="fas fa-bell"></i></span>
+                                <span><span class="action-tile-title">Notifications</span><span class="action-tile-subtitle">Messages and alerts</span></span>
                                 {% if unread_count > 0 %}
                                 <span class="badge bg-danger">{{ unread_count }}</span>
                                 {% endif %}
                             </a>
-                        </div>
                     </div>
                 </div>
             </div>

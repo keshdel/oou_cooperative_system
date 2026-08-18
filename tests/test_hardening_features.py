@@ -282,6 +282,22 @@ class HardeningFeatureTests(unittest.TestCase):
         )
         self.assertEqual(success.status_code, 200)
 
+    def test_mobile_login_accepts_email_case_insensitively(self):
+        suffix = int(time.time() * 1000)
+        email = f'mobile.email.login.{suffix}@example.com'
+        member_id = self.create_member()
+        self.create_member_user(member_id, email=email)
+        clear_login_attempts('mobile:127.0.0.1')
+
+        response = self.client.post(
+            '/api/mobile/login',
+            json={'username': email.upper(), 'password': 'MemberPass1!'},
+        )
+        self.assertEqual(response.status_code, 200)
+        payload = response.get_json()
+        self.assertTrue(payload['success'])
+        self.assertEqual(payload['user']['email'], email)
+
     def test_mobile_password_reset_request_is_generic_and_sends_email(self):
         suffix = int(time.time() * 1000)
         email = f'mobile.reset.{suffix}@example.com'
