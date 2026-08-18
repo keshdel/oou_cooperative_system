@@ -11,6 +11,18 @@
             </p>
         </div>
         <div class="col-md-4 text-end">
+            <a href="{{ url_for('loans.loan_application_pdf', loan_id=loan.id) }}" class="btn btn-outline-primary btn-sm" target="_blank">
+                <i class="fas fa-file-pdf"></i> Application PDF
+            </a>
+            {% if current_user.role in ['admin', 'treasurer', 'secretary'] and loan.status == 'pending' %}
+            <form method="post" action="{{ url_for('loans.resend_loan_alert', loan_id=loan.id) }}" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-outline-warning btn-sm"
+                        title="Send the alert and the application PDF to the exco again">
+                    <i class="fas fa-bell"></i> Re-send alert
+                </button>
+            </form>
+            {% endif %}
             <a href="{{ url_for('loans.loans_list') }}" class="btn btn-outline-secondary btn-sm"><i class="fas fa-arrow-left"></i> All Loans</a>
         </div>
     </div>
@@ -216,7 +228,7 @@
             <div class="alert alert-secondary">This loan is <strong>{{ stage_label }}</strong> — you are not the approver for this stage.</div>
             {% endif %}
 
-            <div class="card">
+            <div class="card mb-3">
                 <div class="card-header"><h6 class="mb-0">Approval Trail</h6></div>
                 <div class="card-body p-0">
                     <table class="table table-sm mb-0">
@@ -235,6 +247,43 @@
                             {% endfor %}
                         </tbody>
                     </table>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h6 class="mb-0">Notification Log</h6>
+                    <span class="small text-muted">
+                        {{ loan.alert_count or 0 }} alert{{ '' if (loan.alert_count or 0) == 1 else 's' }} sent
+                    </span>
+                </div>
+                <div class="card-body p-0">
+                    {% if alert_events %}
+                    <table class="table table-sm mb-0">
+                        <tbody>
+                            {% for e in alert_events %}
+                            <tr>
+                                <td>
+                                    <span class="badge bg-{{ 'danger' if e.event_type == 'escalated' else ('warning text-dark' if e.event_type == 'reminder_sent' else ('secondary' if e.status in ['skipped', 'failed'] else 'success')) }}">
+                                        {{ e.event_type|replace('_', ' ')|title }}
+                                    </span>
+                                    {% if e.recipient_name %}
+                                    <span class="small">{{ e.recipient_name }}{% if e.recipient_role %} ({{ e.recipient_role }}){% endif %}</span>
+                                    {% endif %}
+                                    {% if e.delivery %}<span class="small text-muted">via {{ e.delivery }}{% if e.status %} — {{ e.status }}{% endif %}</span>{% endif %}
+                                    {% if e.detail %}<div class="small text-muted">{{ e.detail }}</div>{% endif %}
+                                </td>
+                                <td class="text-end small text-muted">{{ e.created_at|string|truncate(19, True, '') }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}
+                    <div class="p-3 text-muted small">
+                        No alerts recorded for this request yet. Use <strong>Re-send alert</strong> above to
+                        notify the exco now.
+                    </div>
+                    {% endif %}
                 </div>
             </div>
         </div>

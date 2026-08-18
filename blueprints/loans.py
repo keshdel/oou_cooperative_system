@@ -1,39 +1,29 @@
 import csv
+import hmac
+import os
 import random
 from datetime import datetime, timedelta
 from io import StringIO, TextIOWrapper
 
-from flask import Blueprint, render_template, redirect, url_for, request, flash, make_response
+from flask import (Blueprint, render_template, redirect, url_for, request, flash,
+                   make_response, jsonify)
 from flask_login import login_required, current_user
 
 from database import get_db, last_insert_id
 from email_service import (send_loan_approval_email, send_loan_rejection_email,
                            send_loan_repayment_email, send_loan_stage_email,
                            send_guarantor_request_email)
-from utils import (role_required, audit, notify_member, notify, compute_loan_schedule,
+from utils import (role_required, audit, notify_member, compute_loan_schedule,
                    PURPOSE_SETTING_KEY, METHOD_LABELS, record_revenue, split_repayment,
                    member_savings_balance, member_for_user)
 from ledger import (post_journal_safe, get_default_cash_account, LOANS_RECEIVABLE, FEE_INCOME,
                     LOAN_INTEREST_INCOME, INSURANCE_PAYABLE)
 import loan_workflow as lw
+import loan_alerts as la
+from loan_pdf import build_loan_application_pdf
 from delinquency import portfolio_delinquency
 
 loans = Blueprint('loans', __name__)
-
-
-def _notify_role(db, role, title, message, action_url='/loans'):
-    """In-app + email notification to every active staff user of a role."""
-    try:
-        users = db.execute(
-            "SELECT id, email FROM users WHERE role = ? AND COALESCE(is_active, 1) = 1", (role,)
-        ).fetchall()
-        for u in users:
-            notify(db, u['id'], title, message, 'info', action_url)
-            if u['email']:
-                from email_service import send_email
-                send_email(u['email'], title, f'<p>{message}</p>')
-    except Exception:
-        pass
 
 
 def _loan_applicant_type(loan):
@@ -168,10 +158,14 @@ def loans_list():
     # against what has actually been repaid, and age the shortfall.
     ageing = portfolio_delinquency(db)
 
+    # Loan requests waiting on the committee — the queue that must never go quiet.
+    pipeline = la.pipeline_snapshot(db)
+
     return render_template('admin/loans.html', loans=all_loans, active_loans=active_loans,
                            active_count=active_count, total_outstanding=total_outstanding,
                            booked_interest=booked_interest,
-                           overdue_loans=ageing['loans'], ageing=ageing)
+                           overdue_loans=ageing['loans'], ageing=ageing,
+                           pipeline=pipeline)
 
 
 @loans.route('/loans/apply', methods=['GET', 'POST'])
@@ -290,12 +284,11 @@ def apply_loan():
                                   'warning', '/my-guarantor-requests')
                     send_guarantor_request_email(g['email'], g, member, loan_number, amount)
 
-            if initial_stage == lw.STAGE_SECRETARY:
-                _notify_role(db, 'secretary', 'Loan Awaiting Review',
-                             f"Loan {loan_number} (₦{amount:,.2f}) awaits Secretary review.")
-
             db.commit()
             audit(db, 'APPLY_LOAN', 'loans', f"Loan {loan_number} applied for member {member_id}")
+            # Log the request and alert the President, Treasurer, General Secretary
+            # and exco immediately — with the full application attached.
+            la.notify_loan_submitted(db, loan_id, channel='admin')
             g_msg = f" {len(guarantor_ids)} guarantor(s) notified." if guarantor_ids else ""
             flash(f'Loan application submitted!{g_msg} The approval workflow has started.', 'success')
             return redirect(url_for('loans.loan_detail', loan_id=loan_id))
@@ -338,7 +331,11 @@ def loan_detail(loan_id):
     stage = loan['approval_stage'] or 'secretary'
     can_act = lw.can_act(current_user.role, stage) and loan['status'] == 'pending'
     due_diligence_complete, due_diligence_checks = _due_diligence_complete(loan)
+    # First time an officer opens a pending request, start the response clock.
+    if loan['status'] == 'pending':
+        la.mark_first_response(db, loan_id, current_user.id, current_user.username, current_user.role)
     return render_template('admin/loan-detail.html',
+                           alert_events=la.loan_events(db, loan_id, limit=40),
                            loan=loan, guarantors=guarantors, history=history,
                            stage=stage, stage_label=lw.STAGE_LABELS.get(stage, stage),
                            accepted=accepted, required=required, can_act=can_act,
@@ -407,6 +404,77 @@ def update_due_diligence(loan_id):
     return redirect(url_for('loans.loan_detail', loan_id=loan_id))
 
 
+@loans.route('/loans/<int:loan_id>/application.pdf')
+@login_required
+@role_required('admin', 'treasurer', 'secretary', 'exco')
+def loan_application_pdf(loan_id):
+    """The member's full application as a PDF — the same file attached to the
+    alert emails, so an officer can always re-download it."""
+    db = get_db()
+    pdf_bytes, filename = build_loan_application_pdf(db, loan_id)
+    if not pdf_bytes:
+        flash('Could not build the application PDF for this loan.', 'danger')
+        return redirect(url_for('loans.loan_detail', loan_id=loan_id))
+    audit(db, 'LOAN_APPLICATION_PDF', 'loans', f'Downloaded application PDF for loan {loan_id}')
+    db.commit()
+    response = make_response(pdf_bytes)
+    response.headers['Content-Type'] = 'application/pdf'
+    response.headers['Content-Disposition'] = f'inline; filename={filename}'
+    return response
+
+
+@loans.route('/loans/<int:loan_id>/resend-alert', methods=['POST'])
+@login_required
+@role_required('admin', 'treasurer', 'secretary')
+def resend_loan_alert(loan_id):
+    """Re-send the committee alert for a request that was missed."""
+    db = get_db()
+    loan = db.execute('SELECT id, loan_number, approval_stage FROM loans WHERE id = ?',
+                      (loan_id,)).fetchone()
+    if not loan:
+        flash('Loan not found.', 'danger')
+        return redirect(url_for('loans.loans_list'))
+    sent = la.notify_loan_submitted(db, loan_id, channel='resend')
+    audit(db, 'LOAN_ALERT_RESEND', 'loans',
+          f"Re-sent loan request alert for {loan['loan_number']} to {sent} recipient(s)")
+    db.commit()
+    flash(f'Loan request alert re-sent to {sent} officer(s), with the application attached.'
+          if sent else 'No alert was sent — check that loan request alerts are enabled in Settings.',
+          'success' if sent else 'warning')
+    return redirect(url_for('loans.loan_detail', loan_id=loan_id))
+
+
+@loans.route('/tasks/loans/pipeline-sweep', methods=['GET', 'POST'])
+def loan_pipeline_sweep():
+    """Chase every loan request that has gone quiet: reminders past the SLA,
+    escalation to the President and exco past the escalation window.
+
+    Two ways in, so a cooperative can run it either way:
+      * a scheduler (cron, Render/Railway job, uptime pinger) calling this with
+        ``X-Task-Token``/``?token=`` matching the TASK_RUNNER_TOKEN env var;
+      * a logged-in officer pressing "Chase pending requests" in the UI.
+    """
+    db = get_db()
+    token = (os.environ.get('TASK_RUNNER_TOKEN', '') or '').strip()
+    provided = (request.headers.get('X-Task-Token', '') or request.args.get('token', '')).strip()
+    by_token = bool(token) and hmac.compare_digest(provided, token)
+    by_user = current_user.is_authenticated and getattr(current_user, 'role', '') in (
+        'admin', 'treasurer', 'secretary')
+    if not (by_token or by_user):
+        return jsonify({'success': False, 'error': 'Unauthorised'}), 403
+
+    summary = la.run_pipeline_sweep(db)
+    if by_user and not by_token:
+        audit(db, 'LOAN_PIPELINE_SWEEP', 'loans',
+              f"Manual chase: {summary['reminded']} reminded, {summary['escalated']} escalated")
+        db.commit()
+        flash(f"Checked {summary['checked']} pending request(s): {summary['reminded']} reminder(s), "
+              f"{summary['escalated']} escalation(s), {summary['guarantors_chased']} guarantor chase(s).",
+              'info')
+        return redirect(url_for('loans.loans_list'))
+    return jsonify({'success': True, **summary})
+
+
 @loans.route('/loans/<int:loan_id>/act', methods=['POST'])
 @login_required
 @role_required('admin', 'treasurer', 'secretary')
@@ -439,6 +507,10 @@ def loan_act(loan_id):
                 notify_member(db, member['email'], 'Loan Application Update',
                               f"Your loan was declined at the {lw.STAGE_ACTOR_LABEL.get(stage,'')} "
                               f"stage. Reason: {comment or 'Not stated'}.", 'warning', '/my-loans')
+            la.log_event(db, loan_id, 'decided', stage, 'workflow',
+                         {'user_id': current_user.id, 'name': current_user.username,
+                          'role': current_user.role},
+                         'system', 'sent', f'Rejected at {stage}: {comment or "no reason given"}')
             audit(db, 'LOAN_REJECT', 'loans', f"Loan {loan['loan_number']} rejected at {stage}: {comment}")
             db.commit()
             flash('Loan rejected. The member has been notified.', 'info')
@@ -456,6 +528,10 @@ def loan_act(loan_id):
         lw.record_action(db, loan_id, stage, 'approved', current_user.id, current_user.username, comment)
         if nxt == lw.STAGE_APPROVED:
             _disburse_loan(db, loan)
+            la.log_event(db, loan_id, 'decided', stage, 'workflow',
+                         {'user_id': current_user.id, 'name': current_user.username,
+                          'role': current_user.role},
+                         'system', 'sent', 'Final approval — loan disbursed')
             audit(db, 'LOAN_APPROVE_FINAL', 'loans', f"Loan {loan['loan_number']} approved & disbursed")
             db.commit()
             flash('Loan fully approved and disbursed. The member has been notified.', 'success')
@@ -465,12 +541,7 @@ def loan_act(loan_id):
                 notify_member(db, member['email'], 'Loan Application Progress',
                               f"Your loan passed the {lw.STAGE_ACTOR_LABEL.get(stage,'')} stage — "
                               f"now {lw.STAGE_LABELS.get(nxt,'')}.", 'info', '/my-loans')
-            next_role = lw.STAGE_ROLE.get(nxt)
-            if next_role:
-                _notify_role(db, next_role, 'Loan Awaiting Your Action',
-                             f"Loan {loan['loan_number']} (₦{loan['amount']:,.2f}) is now "
-                             f"{lw.STAGE_LABELS.get(nxt,'')}.",
-                             action_url=url_for('loans.loan_detail', loan_id=loan_id))
+            la.notify_stage_advanced(db, loan_id, nxt, actor_name=current_user.username)
             audit(db, 'LOAN_APPROVE_STAGE', 'loans', f"Loan {loan['loan_number']} {stage} -> {nxt}")
             db.commit()
             flash(f'Approved at {lw.STAGE_ACTOR_LABEL.get(stage,"")} stage. '

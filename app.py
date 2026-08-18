@@ -146,6 +146,8 @@ app.register_blueprint(mobile_api)
 csrf.exempt(mobile_api)
 csrf.exempt(app.view_functions['payments.paystack_webhook'])
 csrf.exempt(app.view_functions['payments.flutterwave_webhook'])
+# Scheduler-driven loan request sweep (authenticated with TASK_RUNNER_TOKEN).
+csrf.exempt(app.view_functions['loans.loan_pipeline_sweep'])
 
 # ── Context processor ─────────────────────────────────────────────────────────
 

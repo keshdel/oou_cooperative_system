@@ -13,10 +13,12 @@ from datetime import datetime, timedelta, UTC
 from functools import wraps
 
 import jwt
-from flask import Blueprint, current_app, g, jsonify, request
+from flask import Blueprint, current_app, g, jsonify, make_response, request
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import loan_workflow as lw
+import loan_alerts as la
+from loan_pdf import build_loan_application_pdf
 from crypto import encrypt_member_sensitive_fields, mask_member_sensitive_fields
 from database import get_db, last_insert_id
 from email_service import send_guarantor_request_email, send_password_reset_email
@@ -903,14 +905,12 @@ def mobile_apply_loan():
                               'warning', '/my-guarantor-requests')
                 send_guarantor_request_email(guarantor['email'], guarantor, member, loan_number, amount)
 
-        if initial_stage == lw.STAGE_SECRETARY:
-            for user in db.execute("SELECT id FROM users WHERE role = 'secretary'").fetchall():
-                notify(db, user['id'], 'Loan Awaiting Review',
-                       f"Loan {loan_number} (NGN {amount:,.2f}) awaits Secretary review.", 'info', '/loans')
-
         audit(db, 'MOBILE_LOAN_APPLICATION', 'loans',
               f"Member {member['id']} applied for NGN {amount:,.2f} {purpose} loan - {loan_number}")
         db.commit()
+        # Log the request and alert the President, Treasurer, General Secretary
+        # and exco right now — with the full application attached as a PDF.
+        la.notify_loan_submitted(db, loan_id, channel='mobile')
         loan = db.execute('SELECT * FROM loans WHERE id = ?', (loan_id,)).fetchone()
         return jsonify({'success': True, 'loan': _loan_payload(loan, include_schedule=True)}), 201
     except Exception as exc:
@@ -928,6 +928,25 @@ def mobile_loan_detail(loan_id):
     if not loan:
         return jsonify({'success': False, 'error': 'Loan not found'}), 404
     return jsonify({'success': True, 'loan': _loan_payload(loan, include_schedule=True)})
+
+
+@mobile_api.route('/api/mobile/v1/loans/<int:loan_id>/application.pdf')
+@member_required
+def mobile_loan_application_pdf(loan_id):
+    """Download your own loan application as a PDF from the mobile app."""
+    loan = g.db.execute(
+        'SELECT id FROM loans WHERE id = ? AND member_id = ?',
+        (loan_id, g.member['id']),
+    ).fetchone()
+    if not loan:
+        return jsonify({'success': False, 'error': 'Loan not found'}), 404
+    pdf_bytes, filename = build_loan_application_pdf(g.db, loan_id)
+    if not pdf_bytes:
+        return jsonify({'success': False, 'error': 'Could not build the application PDF'}), 500
+    response = make_response(pdf_bytes)
+    response.headers['Content-Type'] = 'application/pdf'
+    response.headers['Content-Disposition'] = f'inline; filename={filename}'
+    return response
 
 
 @mobile_api.route('/api/mobile/v1/loans/<int:loan_id>/withdraw', methods=['POST'])

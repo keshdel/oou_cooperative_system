@@ -13,6 +13,7 @@ All send_* helpers are fire-and-forget: they log failures but never raise,
 so an email error never crashes the main request.
 """
 import atexit
+import base64
 import os
 import json
 import logging
@@ -23,6 +24,7 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from email.utils import parseaddr
+from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text      import MIMEText
 
@@ -130,9 +132,48 @@ def _delivery_result(ok: bool, provider: str, error: str = '') -> dict:
     }
 
 
+# ── Attachments ────────────────────────────────────────────────────────────────
+#
+# An attachment is a plain dict so callers never need a provider-specific type:
+#     {'filename': 'loan-application.pdf',
+#      'content':  b'%PDF-1.4 ...',
+#      'mimetype': 'application/pdf'}       # mimetype optional
+# Every back-end below converts this into whatever the provider expects.
+
+MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024   # provider limits are ~10MB after base64
+
+
+def _clean_attachments(attachments) -> list:
+    """Drop empty/oversized entries and normalise keys. Never raises."""
+    cleaned = []
+    for item in attachments or []:
+        try:
+            content = item.get('content')
+            filename = (item.get('filename') or 'attachment').strip()
+            if not content:
+                continue
+            if isinstance(content, str):
+                content = content.encode('utf-8')
+            if len(content) > MAX_ATTACHMENT_BYTES:
+                log.warning('Attachment %s skipped: %d bytes exceeds limit', filename, len(content))
+                continue
+            cleaned.append({
+                'filename': filename,
+                'content': content,
+                'mimetype': item.get('mimetype') or 'application/octet-stream',
+            })
+        except Exception:
+            log.exception('Bad email attachment skipped')
+    return cleaned
+
+
+def _b64(content: bytes) -> str:
+    return base64.b64encode(content).decode('ascii')
+
+
 # ── Resend back-end ────────────────────────────────────────────────────────────
 
-def _send_via_resend(to: str, subject: str, html: str) -> bool:
+def _send_via_resend(to: str, subject: str, html: str, attachments=None) -> bool:
     api_key  = _cfg('RESEND_API_KEY', 'resend_api_key')
     from_addr = _cfg('MAIL_FROM',      'mail_from') or f'{_coop_name()} <noreply@cooperativems.com>'
     if not api_key:
@@ -140,12 +181,19 @@ def _send_via_resend(to: str, subject: str, html: str) -> bool:
     try:
         import resend
         resend.api_key = api_key
-        resend.Emails.send({
+        payload = {
             'from':    from_addr,
             'to':      [to] if isinstance(to, str) else list(to),
             'subject': subject,
             'html':    html,
-        })
+        }
+        files = _clean_attachments(attachments)
+        if files:
+            payload['attachments'] = [
+                {'filename': f['filename'], 'content': _b64(f['content'])}
+                for f in files
+            ]
+        resend.Emails.send(payload)
         log.info('Resend OK: "%s" → %s', subject, to)
         return True
     except Exception as exc:
@@ -169,7 +217,7 @@ def _recipient_list(to) -> list:
     return [{'email': parseaddr(recipient)[1] or recipient} for recipient in recipients]
 
 
-def _send_via_brevo(to: str, subject: str, html: str, text: str = '') -> bool:
+def _send_via_brevo(to: str, subject: str, html: str, text: str = '', attachments=None) -> bool:
     api_key = _cfg('BREVO_API_KEY', 'brevo_api_key', 'SENDINBLUE_API_KEY')
     from_addr = (
         _cfg('MAIL_FROM', 'mail_from', 'MAIL_DEFAULT_SENDER', 'COOP_EMAIL')
@@ -186,6 +234,12 @@ def _send_via_brevo(to: str, subject: str, html: str, text: str = '') -> bool:
     }
     if text:
         payload['textContent'] = text
+    files = _clean_attachments(attachments)
+    if files:
+        payload['attachment'] = [
+            {'name': f['filename'], 'content': _b64(f['content'])}
+            for f in files
+        ]
 
     request = urllib.request.Request(
         'https://api.brevo.com/v3/smtp/email',
@@ -215,7 +269,7 @@ def _send_via_brevo(to: str, subject: str, html: str, text: str = '') -> bool:
         return False
 
 
-def _send_via_smtp(to: str, subject: str, html: str, text: str = '') -> bool:
+def _send_via_smtp(to: str, subject: str, html: str, text: str = '', attachments=None) -> bool:
     host     = _cfg('SMTP_HOST',     'smtp_host', 'MAIL_SERVER')
     port_str = _cfg('SMTP_PORT',     'smtp_port', 'MAIL_PORT') or '587'
     user     = _cfg('SMTP_USER',     'smtp_user', 'MAIL_USERNAME')
@@ -232,13 +286,27 @@ def _send_via_smtp(to: str, subject: str, html: str, text: str = '') -> bool:
 
     try:
         port = int(port_str)
-        msg  = MIMEMultipart('alternative')
+        files = _clean_attachments(attachments)
+        body = MIMEMultipart('alternative')
+        if text:
+            body.attach(MIMEText(text, 'plain'))
+        body.attach(MIMEText(html, 'html'))
+
+        if files:
+            # Attachments require a mixed container with the text/html
+            # alternative part nested inside it.
+            msg = MIMEMultipart('mixed')
+            msg.attach(body)
+            for f in files:
+                subtype = f['mimetype'].split('/')[-1] or 'octet-stream'
+                part = MIMEApplication(f['content'], _subtype=subtype)
+                part.add_header('Content-Disposition', 'attachment', filename=f['filename'])
+                msg.attach(part)
+        else:
+            msg = body
         msg['Subject'] = subject
         msg['From']    = from_addr
         msg['To']      = to
-        if text:
-            msg.attach(MIMEText(text, 'plain'))
-        msg.attach(MIMEText(html, 'html'))
 
         ctx = ssl.create_default_context()
         smtp_cls = smtplib.SMTP_SSL if use_ssl else smtplib.SMTP
@@ -316,21 +384,21 @@ def _wrap_email(inner_html: str) -> str:
 </html>"""
 
 
-def _deliver(to: str, subject: str, html: str, text: str = '') -> bool:
+def _deliver(to: str, subject: str, html: str, text: str = '', attachments=None) -> bool:
     """Try each configured provider in order (Resend → Brevo → SMTP).
     Expects `html` already wrapped in the branded shell."""
     if _cfg('RESEND_API_KEY', 'resend_api_key'):
-        if _send_via_resend(to, subject, html):
+        if _send_via_resend(to, subject, html, attachments):
             return True
         log.warning('Resend failed; trying next email provider for "%s"', subject)
 
     if _cfg('BREVO_API_KEY', 'brevo_api_key', 'SENDINBLUE_API_KEY'):
-        if _send_via_brevo(to, subject, html, text):
+        if _send_via_brevo(to, subject, html, text, attachments):
             return True
         log.warning('Brevo API failed; trying SMTP fallback for "%s"', subject)
 
     if _cfg('SMTP_HOST', 'smtp_host', 'MAIL_SERVER'):
-        return _send_via_smtp(to, subject, html, text)
+        return _send_via_smtp(to, subject, html, text, attachments)
 
     log.warning('No email provider configured — skipped: "%s"', subject)
     return False
@@ -368,7 +436,7 @@ def _deliver_detailed(to: str, subject: str, html: str, text: str = '') -> dict:
 
 
 def send_email(to: str, subject: str, html: str, text: str = '',
-               background: bool = False) -> bool:
+               background: bool = False, attachments=None) -> bool:
     """
     Send one transactional email, wrapped in the branded shell.
     Tries Resend if configured, falls back to Brevo, then SMTP.
@@ -381,6 +449,9 @@ def send_email(to: str, subject: str, html: str, text: str = '',
     database is available) but the provider call is dispatched to a worker thread
     so the request returns immediately. Returns True to mean "queued" — the real
     outcome is logged. Use this for fire-and-forget notifications and bulk sends.
+
+    `attachments` is a list of {'filename', 'content' (bytes), 'mimetype'} dicts;
+    they are rendered for whichever provider ends up delivering the message.
     """
     if not _is_enabled():
         log.debug('Email disabled — skipped: "%s"', subject)
@@ -389,9 +460,9 @@ def send_email(to: str, subject: str, html: str, text: str = '',
     html = _wrap_email(html)
 
     if background:
-        run_in_background(_deliver, to, subject, html, text)
+        run_in_background(_deliver, to, subject, html, text, attachments)
         return True
-    return _deliver(to, subject, html, text)
+    return _deliver(to, subject, html, text, attachments)
 
 
 def send_email_detailed(to: str, subject: str, html: str, text: str = '') -> dict:

@@ -61,6 +61,15 @@ _DEFAULT_SETTINGS = {
     'reentry_fee': '5000',
     'loan_application_fee': '1000',
     'statement_fee': '500',
+    # Loan request alerts — see loan_alerts.py
+    'loan_alert_enabled': '1',
+    'loan_alert_attach_pdf': '1',
+    'loan_alert_roles': 'admin,treasurer,secretary,exco',
+    'loan_alert_extra_emails': '',
+    'loan_alert_sla_hours': '24',
+    'loan_alert_reminder_hours': '12',
+    'loan_alert_escalate_hours': '48',
+    'app_base_url': '',
 }
 
 _EDITABLE_SETTING_KEYS = set(_DEFAULT_SETTINGS) | {
@@ -105,6 +114,20 @@ _PASSWORD_POLICY_BOOLEAN_KEYS = {
     'password_require_lower',
     'password_require_number',
     'password_require_special',
+}
+
+# Switches on the Loan Settings tab. An unchecked box is not submitted at all,
+# so they are written explicitly from the form group rather than the value loop.
+_LOAN_ALERT_BOOLEAN_KEYS = {
+    'loan_alert_enabled',
+    'loan_alert_attach_pdf',
+}
+
+# Settings an admin must be able to blank out again (the generic loop skips
+# empty values so a stray empty field cannot wipe a configured value).
+_CLEARABLE_SETTING_KEYS = {
+    'loan_alert_extra_emails',
+    'app_base_url',
 }
 
 
@@ -379,17 +402,21 @@ def update_settings():
             for key in _PASSWORD_POLICY_BOOLEAN_KEYS:
                 _upsert_setting(db, key, '1' if request.form.get(key) == '1' else '0')
                 updated += 1
+        if settings_group == 'loan_alerts':
+            for key in _LOAN_ALERT_BOOLEAN_KEYS:
+                _upsert_setting(db, key, '1' if request.form.get(key) == '1' else '0')
+                updated += 1
         for key, value in request.form.items():
             if key == '_settings_group':
                 continue
             if key in _PROTECTED_SETTING_KEYS:
                 continue
-            if key in _PASSWORD_POLICY_BOOLEAN_KEYS:
+            if key in _PASSWORD_POLICY_BOOLEAN_KEYS or key in _LOAN_ALERT_BOOLEAN_KEYS:
                 continue
             if key not in _EDITABLE_SETTING_KEYS:
                 ignored.append(key)
                 continue
-            if not value:
+            if not value and key not in _CLEARABLE_SETTING_KEYS:
                 continue
             _upsert_setting(db, key, value)
             updated += 1
