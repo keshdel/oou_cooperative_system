@@ -6,6 +6,10 @@
     "orientation": "portrait",
     "scheme": "coopms",
     "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#083574",
+      "resizeMode": "contain"
+    },
     "assetBundlePatterns": [
       "**/*"
     ],
@@ -20,7 +24,10 @@
       }
     },
     "extra": {
-      "apiBaseUrl": "https://ooucoop.cooperativems.com"
+      "apiBaseUrl": "https://ooucoop.cooperativems.com",
+      "eas": {
+        "projectId": "1af475a1-aea5-42ad-939b-b1b64f8492e5"
+      }
     }
   }
 }
