@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Task Assignment - {{ coop_name }}{% endblock %}
 {% block content %}
+<style>.perm-table thead th { background-color:#e9eef5; color:#1f2937; }</style>
 <div class="container-fluid">
     <div class="row mb-3">
         <div class="col-md-8">
@@ -48,7 +49,7 @@
                 </button>
             </div>
             <div class="table-responsive">
-                <table class="table table-hover align-middle mb-0">
+                <table class="table perm-table table-hover align-middle mb-0">
                     <thead>
                         <tr>
                             <th style="min-width:280px;">Duty</th>
@@ -106,7 +107,7 @@
     <div class="card" id="officers">
         <div class="card-header"><h6 class="mb-0">Officers</h6></div>
         <div class="table-responsive">
-            <table class="table mb-0 align-middle">
+            <table class="table perm-table mb-0 align-middle">
                 <thead>
                     <tr><th>Officer</th><th>Office</th><th>Status</th><th>Personal overrides</th><th></th></tr>
                 </thead>

@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Duties — {{ officer.username }} - {{ coop_name }}{% endblock %}
 {% block content %}
+<style>.perm-table thead th { background-color:#e9eef5; color:#1f2937; }</style>
 <div class="container-fluid">
     <div class="row mb-3">
         <div class="col-md-8">
@@ -50,7 +51,7 @@
                 <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-save"></i> Save duties</button>
             </div>
             <div class="table-responsive">
-                <table class="table align-middle mb-0">
+                <table class="table perm-table align-middle mb-0">
                     <thead>
                         <tr>
                             <th style="min-width:280px;">Duty</th>
