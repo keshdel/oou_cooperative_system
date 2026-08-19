@@ -1071,6 +1071,17 @@
                             </button>
                         </div>
                     </div>
+                    <div class="alert alert-secondary d-flex flex-wrap justify-content-between align-items-center gap-2">
+                        <div>
+                            <i class="fas fa-user-shield"></i>
+                            Roles decide an officer's default duties. Change what each office may do — or
+                            give one officer extra access — on the Task Assignment screen.
+                        </div>
+                        <a href="{{ url_for('admin_panel.task_assignment') }}" class="btn btn-sm btn-dark">
+                            <i class="fas fa-sliders-h"></i> Open Task Assignment
+                        </a>
+                    </div>
+
                     <div id="userNoResults" class="alert alert-info d-none">
                         <i class="fas fa-info-circle me-2"></i>No users match your filter.
                     </div>
@@ -1121,6 +1132,12 @@
                                         {% endif %}
                                     </td>
                                     <td class="text-nowrap">
+                                        {% if user.role in ['treasurer', 'secretary', 'exco'] %}
+                                        <a class="btn btn-sm btn-outline-dark" title="Assign duties to this officer"
+                                           href="{{ url_for('admin_panel.user_permissions', user_id=user.id) }}">
+                                            <i class="fas fa-user-shield"></i>
+                                        </a>
+                                        {% endif %}
                                         {# Edit/disable blocked for super admins unless current user is also super admin #}
                                         {% if not user.is_super_admin or current_is_super %}
                                         <button class="btn btn-sm btn-primary" title="Edit User"

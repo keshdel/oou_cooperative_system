@@ -14,7 +14,7 @@
             <a href="{{ url_for('loans.loan_application_pdf', loan_id=loan.id) }}" class="btn btn-outline-primary btn-sm" target="_blank">
                 <i class="fas fa-file-pdf"></i> Application PDF
             </a>
-            {% if current_user.role in ['admin', 'treasurer', 'secretary'] and loan.status == 'pending' %}
+            {% if can('loans.approve') and loan.status == 'pending' %}
             <form method="post" action="{{ url_for('loans.resend_loan_alert', loan_id=loan.id) }}" class="d-inline">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <button type="submit" class="btn btn-outline-warning btn-sm"

@@ -124,7 +124,7 @@
       <a href="{{ url_for('accounting.journal_entry_view', entry_id=entry.id) }}" class="btn btn-outline-secondary btn-sm">
         Open full page
       </a>
-      {% if current_user.role in ['admin', 'treasurer']
+      {% if can('accounting.post')
             and not data.reversed_by and not entry.reversal_of and not entry_locked %}
       <form method="post" action="{{ url_for('accounting.reverse_entry', entry_id=entry.id) }}"
             onsubmit="return confirm('Post a reversing entry that cancels this one?');">

@@ -19,27 +19,44 @@ from security import log_audit
 
 class User(UserMixin):
     def __init__(self, id, username, password_hash, role, email='',
-                 must_change_password=0):
+                 must_change_password=0, is_super_admin=0):
         self.id                  = id
         self.username            = username
         self.password_hash       = password_hash
         self.role                = role
         self.email               = email
         self.must_change_password = bool(must_change_password)
+        self.is_super_admin      = bool(is_super_admin)
 
 
 # ── Role-based access control ─────────────────────────────────────────────────
 
 def role_required(*roles):
+    """Guard a view.
+
+    Access is decided by the permission catalogue when the endpoint is listed
+    in it (see permissions.py), so an admin can reassign who does what without
+    a code change. The literal `roles` remain the fallback for any endpoint
+    that is not catalogued — a new view is never left unguarded.
+    """
     def decorator(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
+            import permissions as perms
+            permission = perms.endpoint_permission(request.endpoint)
+            if permission:
+                if not perms.user_can(permission):
+                    flash(f'Access denied: you are not assigned "{perms.describe(permission)}". '
+                          f'Ask the President to assign it to you.', 'danger')
+                    return redirect(url_for('main.dashboard'))
+                return f(*args, **kwargs)
             if current_user.role not in roles:
                 flash('Access denied. Insufficient privileges.', 'danger')
                 return redirect(url_for('main.dashboard'))
             return f(*args, **kwargs)
         return decorated_function
     return decorator
+
 
 
 STAFF_ROLES = {'admin', 'treasurer', 'secretary', 'exco'}

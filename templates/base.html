@@ -114,52 +114,56 @@
                         </button>
                     </form>
                     {% endif %}
-                    {% if current_user.role in ['admin', 'secretary', 'exco'] %}
+                    {% if can('members.view') %}
                     <a href="{{ url_for('members.members_list') }}"
                        class="{% if request.blueprint == 'members' %}active{% endif %}">
                         <i class="fas fa-users"></i> Members
                     </a>
                     {% endif %}
-                    {% if current_user.role in ['admin', 'secretary'] %}
+                    {% if can('communications.manage') %}
                     <a href="{{ url_for('communications.index') }}"
                        class="{% if request.blueprint == 'communications' %}active{% endif %}">
                         <i class="fas fa-paper-plane"></i> Communications
                     </a>
                     {% endif %}
-                    {% if current_user.role in ['admin', 'secretary'] %}
+                    {% if can('governance.manage') %}
                     <a href="{{ url_for('governance.manage') }}"
                        class="{% if request.blueprint == 'governance' %}active{% endif %}">
                         <i class="fas fa-bullhorn"></i> Events &amp; Minutes
                     </a>
                     {% endif %}
+                    {% if can('savings.view') %}
                     <a href="{{ url_for('savings.savings_list') }}"
                        class="{% if request.blueprint == 'savings' %}active{% endif %}">
                         <i class="fas fa-piggy-bank"></i> Savings
                     </a>
-                    {% if current_user.role in ['admin', 'secretary', 'treasurer'] %}
+                    {% endif %}
+                    {% if can('members.savings_requests') %}
                     <a href="{{ url_for('members.savings_requests') }}"
                        class="{% if request.endpoint and 'savings_request' in request.endpoint %}active{% endif %}">
                         <i class="fas fa-hand-holding-usd"></i> Savings Requests
                         {% if pending_savings_requests %}<span class="badge bg-warning text-dark ms-1">{{ pending_savings_requests }}</span>{% endif %}
                     </a>
                     {% endif %}
+                    {% if can('loans.view') %}
                     <a href="{{ url_for('loans.loans_list') }}"
                        class="{% if request.blueprint == 'loans' %}active{% endif %}">
                         <i class="fas fa-hand-holding-usd"></i> Loans
                     </a>
-                    {% if current_user.role in ['admin', 'treasurer', 'exco'] %}
+                    {% endif %}
+                    {% if can('investments.manage') %}
                     <a href="{{ url_for('investments.investments_list') }}"
                        class="{% if request.blueprint == 'investments' %}active{% endif %}">
                         <i class="fas fa-chart-line"></i> Investments
                     </a>
                     {% endif %}
-                    {% if current_user.role in ['admin', 'treasurer', 'secretary', 'exco'] %}
+                    {% if can('reports.view') %}
                     <a href="{{ url_for('reports.reports_list') }}"
                        class="{% if request.blueprint == 'reports' %}active{% endif %}">
                         <i class="fas fa-file-alt"></i> Reports
                     </a>
                     {% endif %}
-                    {% if current_user.role in ['admin', 'treasurer'] %}
+                    {% if can('accounting.view') %}
                     <a href="{{ url_for('accounting.trial_balance_view') }}"
                        class="{% if request.blueprint == 'accounting' and 'dividend' not in (request.endpoint or '') %}active{% endif %}">
                         <i class="fas fa-balance-scale"></i> Accounting
@@ -169,27 +173,37 @@
                         <i class="fas fa-coins"></i> Dividends
                     </a>
                     {% endif %}
-                    {% if current_user.role == 'admin' %}
+                    {% if can('system.settings') %}
                     <a href="{{ url_for('admin_panel.settings') }}"
-                       class="{% if request.blueprint == 'admin_panel' %}active{% endif %}">
+                       class="{% if request.blueprint == 'admin_panel' and request.endpoint != 'admin_panel.task_assignment' %}active{% endif %}">
                         <i class="fas fa-cog"></i> Settings
                     </a>
+                    {% endif %}
+                    {% if can('system.permissions') %}
+                    <a href="{{ url_for('admin_panel.task_assignment') }}"
+                       class="{% if request.endpoint and 'task_assignment' in request.endpoint or 'permissions' in (request.endpoint or '') %}active{% endif %}">
+                        <i class="fas fa-user-shield"></i> Task Assignment
+                    </a>
+                    {% endif %}
+                    {% if can('migration.admin') %}
                     <a href="{{ url_for('migration.index') }}"
                        class="{% if request.blueprint == 'migration' %}active{% endif %}">
                         <i class="fas fa-database"></i> Data Migration
                     </a>
+                    {% endif %}
+                    {% if can('feedback.manage') %}
                     <a href="{{ url_for('feedback.admin') }}"
                        class="{% if request.blueprint == 'feedback' %}active{% endif %}">
                         <i class="fas fa-comment-dots"></i> Feedback
                     </a>
-                    {% if marketing_hq_enabled %}
+                    {% endif %}
+                    {% if marketing_hq_enabled and can('marketing.manage') %}
                     <a href="{{ url_for('marketing.leads_inbox') }}"
                        class="{% if request.blueprint == 'marketing' %}active{% endif %}">
                         <i class="fas fa-bullseye"></i> Leads
                     </a>
                     {% endif %}
-                    {% endif %}
-                    {% if current_user.role in ['admin', 'treasurer'] %}
+                    {% if can('finance.subscription') %}
                     <a href="{{ url_for('admin_panel.subscription_page') }}"
                        class="{% if request.endpoint == 'admin_panel.subscription_page' %}active{% endif %}">
                         <i class="fas fa-credit-card"></i> Subscription

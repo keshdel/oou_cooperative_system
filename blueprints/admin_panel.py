@@ -14,6 +14,7 @@ from utils import (role_required, audit, validate_image, logo_data_uri,
                    member_savings_balance, reconcile_member_savings, notify)
 from ledger import (post_journal_safe, get_default_cash_account, OPERATING_EXPENSES, FEE_INCOME,
                     HONORARIUM)
+import permissions as perms
 
 admin_panel = Blueprint('admin_panel', __name__)
 
@@ -1249,3 +1250,192 @@ def subscription_callback():
 
     flash(f'✅ Subscription renewed successfully! Active until {new_expiry}.', 'success')
     return redirect(url_for('admin_panel.subscription_page'))
+
+
+# ── Task assignment: who may do what ──────────────────────────────────────────
+#
+# The offices are fixed by the bye-laws, but what each office may do in the app
+# is not. These screens let the President reassign any permission to a role, or
+# to one named officer, without a code change. See permissions.py.
+
+def _officer_rows(db):
+    """Staff accounts that can be assigned work, newest office first."""
+    rows = db.execute(
+        '''SELECT id, username, full_name, email, role, is_active, is_super_admin
+           FROM users WHERE role IN ('admin', 'treasurer', 'secretary', 'exco')
+           ORDER BY CASE role WHEN 'admin' THEN 0 WHEN 'treasurer' THEN 1
+                             WHEN 'secretary' THEN 2 ELSE 3 END, username'''
+    ).fetchall()
+    customised = perms.officers_with_custom_access(db)
+    officers = []
+    for row in rows:
+        officers.append({
+            'id': row['id'],
+            'username': row['username'],
+            'full_name': row['full_name'] or row['username'],
+            'email': row['email'] or '',
+            'role': row['role'],
+            'role_label': perms.ROLE_LABELS.get(row['role'], row['role'].title()),
+            'is_active': bool(row['is_active'] if row['is_active'] is not None else 1),
+            'is_super_admin': bool(row['is_super_admin']),
+            'custom_count': customised.get(row['id'], 0),
+        })
+    return officers
+
+
+@admin_panel.route('/task-assignment')
+@login_required
+@role_required('admin')
+def task_assignment():
+    """The role matrix: what a Treasurer, General Secretary or Exco member may do."""
+    db = get_db()
+    overrides = perms.role_permission_overrides(db)
+    grid = {}
+    for permission in perms.PERMISSIONS:
+        key = permission['key']
+        grid[key] = {}
+        for role in perms.ASSIGNABLE_ROLES:
+            default = perms.default_allowed(key, role)
+            allowed = overrides.get((role, key), default)
+            grid[key][role] = {
+                'allowed': bool(allowed) and perms.assignable(key, role),
+                'default': bool(default),
+                'changed': (role, key) in overrides and bool(allowed) != default,
+                'assignable': perms.assignable(key, role),
+            }
+    return render_template('admin/task-assignment.html',
+                           groups=perms.permission_groups(),
+                           roles=perms.ASSIGNABLE_ROLES,
+                           role_labels=perms.ROLE_LABELS,
+                           grid=grid,
+                           officers=_officer_rows(db),
+                           changed_count=len(overrides))
+
+
+@admin_panel.route('/task-assignment/roles', methods=['POST'])
+@login_required
+@role_required('admin')
+def update_role_permissions():
+    """Save the role matrix. A box that is not ticked is a withdrawn permission,
+    so every assignable cell is written, not only the ticked ones."""
+    db = get_db()
+    ticked = set(request.form.getlist('permission'))   # values are "role:key"
+    changes = []
+    try:
+        for permission in perms.PERMISSIONS:
+            key = permission['key']
+            for role in perms.ASSIGNABLE_ROLES:
+                if not perms.assignable(key, role):
+                    continue
+                allowed = f'{role}:{key}' in ticked
+                if perms.role_allows(db, role, key) != allowed:
+                    changes.append(f"{perms.ROLE_LABELS.get(role, role)} "
+                                   f"{'granted' if allowed else 'lost'} {key}")
+                perms.set_role_permission(db, role, key, allowed)
+        audit(db, 'UPDATE_ROLE_PERMISSIONS', 'permissions',
+              f"Role permissions updated ({len(changes)} change(s)): "
+              f"{'; '.join(changes[:12]) or 'no change'}")
+        db.commit()
+        flash(f'Task assignment saved. {len(changes)} change(s) applied.'
+              if changes else 'Task assignment saved — nothing changed.', 'success')
+    except Exception as exc:
+        db.rollback()
+        flash(f'Could not save task assignment: {exc}', 'danger')
+    return redirect(url_for('admin_panel.task_assignment'))
+
+
+@admin_panel.route('/task-assignment/reset', methods=['POST'])
+@login_required
+@role_required('admin')
+def reset_permissions():
+    """Put every role back to the built-in defaults (per-officer overrides stay)."""
+    db = get_db()
+    try:
+        perms.reset_role_permissions(db)
+        audit(db, 'RESET_ROLE_PERMISSIONS', 'permissions',
+              'Role permissions reset to the built-in defaults')
+        db.commit()
+        flash('All roles restored to their default duties.', 'success')
+    except Exception as exc:
+        db.rollback()
+        flash(f'Could not reset task assignment: {exc}', 'danger')
+    return redirect(url_for('admin_panel.task_assignment'))
+
+
+@admin_panel.route('/task-assignment/officer/<int:user_id>')
+@login_required
+@role_required('admin')
+def user_permissions(user_id):
+    """One officer's duties: inherit from their office, or allow/deny by name."""
+    db = get_db()
+    user = db.execute(
+        'SELECT id, username, full_name, email, role, is_active, is_super_admin '
+        'FROM users WHERE id = ?', (user_id,)
+    ).fetchone()
+    if not user:
+        flash('Staff account not found.', 'danger')
+        return redirect(url_for('admin_panel.task_assignment'))
+    matrix = perms.permission_matrix(db, user_id, user['role'])
+    return render_template('admin/officer-permissions.html',
+                           officer=user,
+                           role_label=perms.ROLE_LABELS.get(user['role'], (user['role'] or '').title()),
+                           groups=perms.permission_groups(),
+                           matrix=matrix,
+                           full_access=(user['role'] == perms.FULL_ACCESS_ROLE
+                                        or bool(user['is_super_admin'])),
+                           override_count=sum(1 for m in matrix.values() if m['override'] is not None))
+
+
+@admin_panel.route('/task-assignment/officer/<int:user_id>', methods=['POST'])
+@login_required
+@role_required('admin')
+def update_user_permissions(user_id):
+    """Save one officer's overrides. Each permission posts inherit/allow/deny."""
+    db = get_db()
+    user = db.execute('SELECT id, username, role FROM users WHERE id = ?', (user_id,)).fetchone()
+    if not user:
+        flash('Staff account not found.', 'danger')
+        return redirect(url_for('admin_panel.task_assignment'))
+    try:
+        changed = 0
+        for permission in perms.PERMISSIONS:
+            key = permission['key']
+            choice = request.form.get(f'perm__{key}', 'inherit')
+            if not perms.assignable(key, user['role']):
+                continue
+            allowed = {'allow': True, 'deny': False}.get(choice, None)
+            before = perms.permission_matrix(db, user_id, user['role'])[key]['override']
+            if before != allowed:
+                changed += 1
+            perms.set_user_permission(db, user_id, key, allowed, granted_by=current_user.id)
+        audit(db, 'UPDATE_USER_PERMISSIONS', 'permissions',
+              f"Duties updated for {user['username']} ({changed} change(s))")
+        db.commit()
+        flash(f"Duties saved for {user['username']}. {changed} change(s) applied."
+              if changed else f"No change to {user['username']}'s duties.", 'success')
+    except Exception as exc:
+        db.rollback()
+        flash(f'Could not save duties: {exc}', 'danger')
+    return redirect(url_for('admin_panel.user_permissions', user_id=user_id))
+
+
+@admin_panel.route('/task-assignment/officer/<int:user_id>/reset', methods=['POST'])
+@login_required
+@role_required('admin')
+def reset_user_permissions(user_id):
+    """Drop this officer's personal overrides — back to whatever their office allows."""
+    db = get_db()
+    user = db.execute('SELECT id, username FROM users WHERE id = ?', (user_id,)).fetchone()
+    if not user:
+        flash('Staff account not found.', 'danger')
+        return redirect(url_for('admin_panel.task_assignment'))
+    try:
+        perms.clear_user_permissions(db, user_id)
+        audit(db, 'RESET_USER_PERMISSIONS', 'permissions',
+              f"Personal duty overrides cleared for {user['username']}")
+        db.commit()
+        flash(f"{user['username']} now follows their office's duties exactly.", 'success')
+    except Exception as exc:
+        db.rollback()
+        flash(f'Could not reset duties: {exc}', 'danger')
+    return redirect(url_for('admin_panel.user_permissions', user_id=user_id))

@@ -20,6 +20,7 @@ from ledger import (post_journal_safe, get_default_cash_account, LOANS_RECEIVABL
                     LOAN_INTEREST_INCOME, INSURANCE_PAYABLE)
 import loan_workflow as lw
 import loan_alerts as la
+import permissions as la_permissions
 from loan_pdf import build_loan_application_pdf
 from delinquency import portfolio_delinquency
 
@@ -458,8 +459,7 @@ def loan_pipeline_sweep():
     token = (os.environ.get('TASK_RUNNER_TOKEN', '') or '').strip()
     provided = (request.headers.get('X-Task-Token', '') or request.args.get('token', '')).strip()
     by_token = bool(token) and hmac.compare_digest(provided, token)
-    by_user = current_user.is_authenticated and getattr(current_user, 'role', '') in (
-        'admin', 'treasurer', 'secretary')
+    by_user = current_user.is_authenticated and la_permissions.user_can('loans.approve')
     if not (by_token or by_user):
         return jsonify({'success': False, 'error': 'Unauthorised'}), 403
 

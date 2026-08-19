@@ -918,6 +918,35 @@ def init_db():
         )
     '''))
 
+    # ── Task assignment (who may do what) ─────────────────────────────────────
+    # Role defaults an admin has changed, and per-officer overrides on top of
+    # them. Anything absent falls back to permissions.PERMISSIONS defaults, so
+    # a fresh database behaves exactly like the old hard-coded role checks.
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS role_permissions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            role TEXT NOT NULL,
+            permission TEXT NOT NULL,
+            allowed INTEGER DEFAULT 1,
+            updated_by INTEGER,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    '''))
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS user_permissions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            permission TEXT NOT NULL,
+            allowed INTEGER DEFAULT 1,
+            granted_by INTEGER,
+            granted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users (id)
+        )
+    '''))
+    _exec_ignore(db, 'CREATE UNIQUE INDEX IF NOT EXISTS uq_role_permissions ON role_permissions(role, permission)')
+    _exec_ignore(db, 'CREATE UNIQUE INDEX IF NOT EXISTS uq_user_permissions ON user_permissions(user_id, permission)')
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_user_permissions_user ON user_permissions(user_id)')
+
     # Audit log table
     db.execute(_adapt('''
         CREATE TABLE IF NOT EXISTS audit_log (

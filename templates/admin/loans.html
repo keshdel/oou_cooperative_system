@@ -38,7 +38,7 @@
             <span class="badge bg-warning text-dark ms-1">{{ pipeline.never_alerted }} never alerted</span>
             {% endif %}
         </div>
-        {% if current_user.role in ['admin', 'treasurer', 'secretary'] %}
+        {% if can('loans.approve') %}
         <form method="post" action="{{ url_for('loans.loan_pipeline_sweep') }}" class="m-0">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="btn btn-sm btn-outline-dark">
@@ -254,7 +254,7 @@
                                     <td>{{ loan.date_applied[:10] }}</td>
                                     <td>
                                         <div class="btn-group btn-group-sm">
-                                            {% if current_user.role in ['admin', 'treasurer'] %}
+                                            {% if can('loans.repayments') %}
                                             <button class="btn btn-warning" title="Record Repayment"
                                                     onclick="showRepaymentModal({{ loan.id }}, {{ loan.balance }})">
                                                 <i class="fas fa-money-bill"></i>
@@ -294,7 +294,7 @@
                                     <td>₦{{ "{:,.2f}".format(loan.total_repayment) }}</td>
                                     <td>{{ loan.date_applied[:10] }}</td>
                                     <td>
-                                        {% if current_user.role in ['admin', 'treasurer', 'secretary', 'exco'] %}
+                                        {% if can('loans.view') %}
                                         <a href="{{ url_for('loans.loan_detail', loan_id=loan.id) }}" class="btn btn-primary btn-sm">
                                             <i class="fas fa-tasks"></i> Review
                                         </a>
@@ -428,7 +428,7 @@
                                     <td>
                                         <a href="{{ url_for('loans.loan_detail', loan_id=loan.id) }}" class="btn btn-outline-secondary btn-sm" title="View">
                                             <i class="fas fa-eye"></i></a>
-                                        {% if current_user.role in ['admin', 'treasurer'] %}
+                                        {% if can('loans.repayments') %}
                                         <button class="btn btn-warning btn-sm" title="Record Repayment"
                                                 onclick="showRepaymentModal({{ loan.id }}, {{ loan.balance }})">
                                             <i class="fas fa-money-bill"></i>
