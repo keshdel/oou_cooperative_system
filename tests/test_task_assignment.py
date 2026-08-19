@@ -89,7 +89,7 @@ class TaskAssignmentTests(unittest.TestCase):
         import ast, glob
         uncatalogued = []
         for path in glob.glob('blueprints/*.py'):
-            tree = ast.parse(open(path).read())
+            tree = ast.parse(open(path, encoding='utf-8').read())
             blueprint = None
             for node in tree.body:
                 if (isinstance(node, ast.Assign) and isinstance(node.value, ast.Call)
