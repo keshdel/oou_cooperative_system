@@ -399,6 +399,7 @@
                 <!-- 3. LOAN SETTINGS TAB -->
                 <div class="tab-pane fade" id="loans-settings" role="tabpanel">
                     <form method="POST" action="{{ url_for('admin_panel.update_settings') }}">
+                        <input type="hidden" name="_settings_group" value="loan_alerts">
                         <div class="row">
                             <div class="col-md-6">
                                 <h5 class="mb-3">Loan Qualification Rules (Bye-laws Section 9)</h5>
@@ -465,6 +466,82 @@
                             </div>
                         </div>
                         
+                        <hr>
+                        <h6 class="text-primary"><i class="fas fa-bell"></i> Loan Request Alerts</h6>
+                        <p class="text-muted small">
+                            A loan request is treated like an order: the moment a member submits one it is
+                            logged and every officer below is alerted — in-app, by push and by email with the
+                            full application attached as a PDF. Requests that go unanswered are chased
+                            automatically.
+                        </p>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3 form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" role="switch"
+                                           id="loan_alert_enabled" name="loan_alert_enabled" value="1"
+                                           {% if settings.loan_alert_enabled|default('1') == '1' %}checked{% endif %}>
+                                    <label class="form-check-label" for="loan_alert_enabled">
+                                        Alert the exco automatically on every new loan request
+                                    </label>
+                                </div>
+
+                                <div class="mb-3 form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" role="switch"
+                                           id="loan_alert_attach_pdf" name="loan_alert_attach_pdf" value="1"
+                                           {% if settings.loan_alert_attach_pdf|default('1') == '1' %}checked{% endif %}>
+                                    <label class="form-check-label" for="loan_alert_attach_pdf">
+                                        Attach the application PDF to alert emails
+                                    </label>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label">Officers Alerted (roles)</label>
+                                    <input type="text" class="form-control" name="loan_alert_roles"
+                                           value="{{ settings.loan_alert_roles|default('admin,treasurer,secretary,exco') }}">
+                                    <small class="text-muted">Comma separated. admin = President, secretary = General Secretary.</small>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label">Copy These Addresses</label>
+                                    <input type="text" class="form-control" name="loan_alert_extra_emails"
+                                           value="{{ settings.loan_alert_extra_emails|default('') }}"
+                                           placeholder="chairman@example.org, loans@example.org">
+                                    <small class="text-muted">Extra addresses copied on every loan request alert.</small>
+                                </div>
+                            </div>
+
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">Response Standard (hours)</label>
+                                    <input type="number" class="form-control" name="loan_alert_sla_hours"
+                                           value="{{ settings.loan_alert_sla_hours|default(24) }}" min="1" max="336">
+                                    <small class="text-muted">A stage untouched for longer than this is chased.</small>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label">Minimum Gap Between Reminders (hours)</label>
+                                    <input type="number" class="form-control" name="loan_alert_reminder_hours"
+                                           value="{{ settings.loan_alert_reminder_hours|default(12) }}" min="1" max="336">
+                                    <small class="text-muted">Stops the same request being chased repeatedly.</small>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label">Escalate to President &amp; Exco After (hours)</label>
+                                    <input type="number" class="form-control" name="loan_alert_escalate_hours"
+                                           value="{{ settings.loan_alert_escalate_hours|default(48) }}" min="1" max="720">
+                                    <small class="text-muted">The whole committee is alerted once a request passes this age.</small>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label">System URL (for links in alerts)</label>
+                                    <input type="url" class="form-control" name="app_base_url"
+                                           value="{{ settings.app_base_url|default('') }}"
+                                           placeholder="https://coop.example.org">
+                                    <small class="text-muted">Used to build "Open the application" links in emails sent by scheduled reminders.</small>
+                                </div>
+                            </div>
+                        </div>
+
                         <div class="row mt-3">
                             <div class="col-md-12">
                                 <div class="alert alert-info">
@@ -994,6 +1071,17 @@
                             </button>
                         </div>
                     </div>
+                    <div class="alert alert-secondary d-flex flex-wrap justify-content-between align-items-center gap-2">
+                        <div>
+                            <i class="fas fa-user-shield"></i>
+                            Roles decide an officer's default duties. Change what each office may do — or
+                            give one officer extra access — on the Task Assignment screen.
+                        </div>
+                        <a href="{{ url_for('admin_panel.task_assignment') }}" class="btn btn-sm btn-dark">
+                            <i class="fas fa-sliders-h"></i> Open Task Assignment
+                        </a>
+                    </div>
+
                     <div id="userNoResults" class="alert alert-info d-none">
                         <i class="fas fa-info-circle me-2"></i>No users match your filter.
                     </div>
@@ -1044,6 +1132,12 @@
                                         {% endif %}
                                     </td>
                                     <td class="text-nowrap">
+                                        {% if user.role in ['treasurer', 'secretary', 'exco'] %}
+                                        <a class="btn btn-sm btn-outline-dark" title="Assign duties to this officer"
+                                           href="{{ url_for('admin_panel.user_permissions', user_id=user.id) }}">
+                                            <i class="fas fa-user-shield"></i>
+                                        </a>
+                                        {% endif %}
                                         {# Edit/disable blocked for super admins unless current user is also super admin #}
                                         {% if not user.is_super_admin or current_is_super %}
                                         <button class="btn btn-sm btn-primary" title="Edit User"

@@ -18,6 +18,8 @@ from utils import (audit, notify_member, notify, compute_loan_schedule, METHOD_L
                    member_for_user, member_savings_balance, member_share_capital,
                    validate_image)
 import loan_workflow as lw
+import loan_alerts as la
+from loan_pdf import build_loan_application_pdf
 
 portal = Blueprint('portal', __name__)
 STAFF_ROLES = {'admin', 'treasurer', 'secretary', 'exco'}
@@ -581,6 +583,27 @@ def loan_detail(loan_id):
 
 # ── Guarantor Requests ────────────────────────────────────────────────────────────
 
+@portal.route('/loan-detail/<int:loan_id>/application.pdf')
+@login_required
+def my_loan_application_pdf(loan_id):
+    """Let a member download their own signed application — the same document
+    the management committee receives."""
+    db     = get_db()
+    member = member_for_user(db)
+    loan   = db.execute('SELECT id, member_id FROM loans WHERE id = ?', (loan_id,)).fetchone()
+    if not loan or not member or loan['member_id'] != member['id']:
+        flash('Loan not found.', 'danger')
+        return redirect(url_for('portal.my_loans'))
+    pdf_bytes, filename = build_loan_application_pdf(db, loan_id)
+    if not pdf_bytes:
+        flash('Could not build your application PDF. Please contact the office.', 'danger')
+        return redirect(url_for('portal.loan_detail', loan_id=loan_id))
+    response = make_response(pdf_bytes)
+    response.headers['Content-Type'] = 'application/pdf'
+    response.headers['Content-Disposition'] = f'inline; filename={filename}'
+    return response
+
+
 @portal.route('/loan-detail/<int:loan_id>/withdraw', methods=['POST'])
 @login_required
 def withdraw_loan_application(loan_id):
@@ -682,10 +705,7 @@ def respond_guarantor(gid, action):
                 notify_member(db, applicant['email'], 'Guarantors Complete',
                               f"All guarantors accepted for loan {loan['loan_number']}. "
                               f"It is now awaiting Secretary review.", 'success', '/my-loans')
-            for u in db.execute("SELECT id FROM users WHERE role = 'secretary'").fetchall():
-                notify(db, u['id'], 'Loan Awaiting Review',
-                       f"Loan {loan['loan_number']} guarantors complete — awaiting Secretary review.",
-                       'info', '/loans')
+            la.notify_guarantors_complete(db, g['loan_id'])
     else:
         if applicant and applicant['email']:
             notify_member(db, applicant['email'], 'Guarantor Declined',
@@ -872,14 +892,12 @@ def apply_loan_member():
                                   'warning', '/my-guarantor-requests')
                     send_guarantor_request_email(g['email'], g, member, loan_number, amount)
 
-            if initial_stage == lw.STAGE_SECRETARY:
-                for u in db.execute("SELECT id FROM users WHERE role = 'secretary'").fetchall():
-                    notify(db, u['id'], 'Loan Awaiting Review',
-                           f"Loan {loan_number} (₦{amount:,.2f}) awaits Secretary review.", 'info', '/loans')
-
             db.commit()
             audit(db, 'MEMBER_LOAN_APPLICATION', 'loans',
                   f"Member {member['id']} applied for ₦{amount:,.2f} {purpose} loan – {loan_number}")
+            # Log the request and alert the President, Treasurer, General Secretary
+            # and exco right now — with the full application attached as a PDF.
+            la.notify_loan_submitted(db, loan_id, channel='member_portal')
             flash(f'Loan application submitted! Reference: {loan_number}. The approval workflow has started.', 'success')
             return redirect(url_for('portal.my_loans'))
 

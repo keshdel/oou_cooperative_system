@@ -12,7 +12,7 @@
         <div class="col-auto align-self-center">
             <a href="{{ url_for('accounting.journal_register') }}" class="btn btn-outline-secondary btn-sm">
                 <i class="fas fa-arrow-left"></i> Journal Register</a>
-            {% if current_user.role in ['admin', 'treasurer']
+            {% if can('accounting.post')
                   and not data.reversed_by and not entry.reversal_of and not entry_locked %}
             <form method="post" action="{{ url_for('accounting.reverse_entry', entry_id=entry.id) }}" class="d-inline"
                   onsubmit="return confirm('Post a reversing entry that cancels this one?{% if entry.source_module == 'savings_deposit' %}\n\nThis will also reverse the member savings deposit (their balance goes down).{% elif entry.source_module == 'loan_repayment' %}\n\nThis will also reverse the loan repayment (the loan balance goes back up).{% elif entry.source_module and entry.source_module not in ['manual','reversal','opening',''] %}\n\nNote: this entry came from the {{ entry.source_module }} module. Reversing corrects the LEDGER only — review the original record separately.{% endif %}');">

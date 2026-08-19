@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}Duties — {{ officer.username }} - {{ coop_name }}{% endblock %}
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-3">
+        <div class="col-md-8">
+            <h2><i class="fas fa-user-cog"></i> {{ officer.full_name or officer.username }}</h2>
+            <p class="text-muted mb-0">
+                {{ role_label }} · {{ officer.username }}{% if officer.email %} · {{ officer.email }}{% endif %}
+            </p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="{{ url_for('admin_panel.task_assignment') }}" class="btn btn-outline-secondary btn-sm">
+                <i class="fas fa-arrow-left"></i> Task Assignment
+            </a>
+            {% if not full_access %}
+            <form method="post" action="{{ url_for('admin_panel.reset_user_permissions', user_id=officer.id) }}" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button type="submit" class="btn btn-outline-warning btn-sm"
+                        onclick="return confirm('Clear this officer\'s personal duties and follow their office exactly?');">
+                    <i class="fas fa-undo"></i> Follow the office
+                </button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if full_access %}
+    <div class="alert alert-secondary">
+        <i class="fas fa-crown"></i>
+        This account holds the <strong>{{ role_label }}</strong> office and therefore has every duty.
+        To limit it, change the account's role first under Settings → Users.
+    </div>
+    {% else %}
+    <div class="alert alert-info">
+        <i class="fas fa-info-circle"></i>
+        <strong>Follow office</strong> keeps this officer in step with the {{ role_label }} duties
+        set on the Task Assignment screen. <strong>Always allow</strong> and <strong>Never allow</strong>
+        override the office for this person only.
+        {% if override_count %}
+        <span class="badge bg-warning text-dark ms-1">{{ override_count }} personal override(s) in force</span>
+        {% endif %}
+    </div>
+
+    <form method="post" action="{{ url_for('admin_panel.update_user_permissions', user_id=officer.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h6 class="mb-0">Duties</h6>
+                <button type="submit" class="btn btn-primary btn-sm"><i class="fas fa-save"></i> Save duties</button>
+            </div>
+            <div class="table-responsive">
+                <table class="table align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th style="min-width:280px;">Duty</th>
+                            <th class="text-center" style="width:140px;">Office allows</th>
+                            <th class="text-center" style="width:330px;">This officer</th>
+                            <th class="text-center" style="width:110px;">Result</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for group, permissions in groups %}
+                        <tr class="table-secondary"><td colspan="4"><strong>{{ group }}</strong></td></tr>
+                        {% for permission in permissions %}
+                        {% set cell = matrix[permission.key] %}
+                        <tr>
+                            <td>
+                                <div>{{ permission.label }}</div>
+                                <div class="small text-muted">{{ permission.description }}</div>
+                            </td>
+                            <td class="text-center">
+                                <span class="badge bg-{{ 'success' if cell.role_default else 'secondary' }}">
+                                    {{ 'Yes' if cell.role_default else 'No' }}
+                                </span>
+                            </td>
+                            <td class="text-center">
+                                {% if cell.assignable %}
+                                <div class="btn-group btn-group-sm" role="group">
+                                    <input type="radio" class="btn-check" name="perm__{{ permission.key }}"
+                                           id="inherit-{{ permission.key }}" value="inherit"
+                                           {% if cell.override is none %}checked{% endif %}>
+                                    <label class="btn btn-outline-secondary" for="inherit-{{ permission.key }}">Follow office</label>
+
+                                    <input type="radio" class="btn-check" name="perm__{{ permission.key }}"
+                                           id="allow-{{ permission.key }}" value="allow"
+                                           {% if cell.override is not none and cell.override %}checked{% endif %}>
+                                    <label class="btn btn-outline-success" for="allow-{{ permission.key }}">Always allow</label>
+
+                                    <input type="radio" class="btn-check" name="perm__{{ permission.key }}"
+                                           id="deny-{{ permission.key }}" value="deny"
+                                           {% if cell.override is not none and not cell.override %}checked{% endif %}>
+                                    <label class="btn btn-outline-danger" for="deny-{{ permission.key }}">Never allow</label>
+                                </div>
+                                {% else %}
+                                <span class="text-muted small">Reserved to the President</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                <span class="badge bg-{{ 'success' if cell.effective else 'secondary' }}">
+                                    {{ 'Allowed' if cell.effective else 'Blocked' }}
+                                </span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="card-footer text-end">
+                <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save duties</button>
+            </div>
+        </div>
+    </form>
+    {% endif %}
+</div>
+{% endblock %}

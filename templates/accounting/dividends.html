@@ -67,7 +67,7 @@
                     <input type="hidden" name="honorarium_pct" value="{{ honorarium_pct }}">
                     <input type="hidden" name="other_pct" value="{{ other_pct }}">
                     <input type="hidden" name="patronage_split" value="{{ patronage_split }}">
-                    {% if current_user.role == 'admin' %}
+                    {% if can('accounting.admin') %}
                     <button type="submit" class="btn btn-success">
                         <i class="fas fa-check-circle"></i> Declare &amp; credit members (₦{{ "{:,.2f}".format(sched.allocated) }})
                     </button>

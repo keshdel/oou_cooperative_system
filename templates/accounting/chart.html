@@ -27,7 +27,7 @@
     </div>
   </div>
 
-  {% if current_user.role == 'admin' %}
+  {% if can('accounting.admin') %}
   <div class="card coa-panel mb-4">
     <div class="card-header">
       <h6 class="mb-0"><i class="fas fa-wallet"></i> Default Cash / Bank Posting Account</h6>
@@ -154,7 +154,7 @@
               <th style="width:130px">Normal</th>
               <th style="width:160px">Role</th>
               <th style="width:120px">Status</th>
-              {% if current_user.role == 'admin' %}<th style="width:130px"></th>{% endif %}
+              {% if can('accounting.admin') %}<th style="width:130px"></th>{% endif %}
             </tr>
           </thead>
           <tbody>
@@ -184,7 +184,7 @@
                 {% endif %}
               </td>
               <td>{% if a.is_active %}<span class="badge bg-success">Active</span>{% else %}<span class="badge bg-secondary">Inactive</span>{% endif %}</td>
-              {% if current_user.role == 'admin' %}
+              {% if can('accounting.admin') %}
               <td>
                 <form method="post" action="{{ url_for('accounting.toggle_account', code=a.code) }}">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

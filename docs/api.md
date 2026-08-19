@@ -81,6 +81,7 @@ policy.
 - `POST /api/mobile/v1/loans/apply`
 - `GET /api/mobile/v1/loans/<loan_id>`
 - `POST /api/mobile/v1/loans/<loan_id>/withdraw`
+- `GET /api/mobile/v1/loans/<loan_id>/application.pdf`
 - `GET /api/mobile/v1/notifications`
 - `POST /api/mobile/v1/notifications/<notification_id>/read`
 - `POST /api/mobile/v1/notifications/mark-all-read`
@@ -130,3 +131,32 @@ Only works when the loan is still `pending`.
 ```
 
 The server keeps the loan record as `withdrawn`, records the approval-trail entry, notifies staff, and does not post any ledger entry.
+
+### Loan Application PDF
+
+`GET /api/mobile/v1/loans/<loan_id>/application.pdf`
+
+Returns the member's own signed application as `application/pdf` — the same
+document that is attached to the alert emails sent to the President, Treasurer,
+General Secretary and exco when the request is submitted. A member can only
+fetch their own loans; anything else returns `404`.
+
+### Loan Request Alerts
+
+`POST /api/mobile/v1/loans/apply` no longer ends with a silent record in the
+database. On success the server logs the request in `loan_request_events` and
+immediately alerts every configured officer by in-app notification, push and
+email with the application PDF attached, and sends the applicant a receipt.
+See `docs/loan-request-alerts.md`.
+
+### Scheduled Loan Request Sweep
+
+`POST /tasks/loans/pipeline-sweep`
+
+Chases loan requests that no officer has acted on. Authenticate either with the
+`X-Task-Token` header (or `?token=`) matching the `TASK_RUNNER_TOKEN`
+environment variable, or as a logged-in admin/treasurer/secretary. Returns:
+
+```json
+{"success": true, "checked": 4, "reminded": 2, "escalated": 1, "guarantors_chased": 1}
+```

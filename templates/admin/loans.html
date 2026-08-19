@@ -22,6 +22,33 @@
         </div>
     </div>
     
+    <!-- Loan request queue — a request that goes quiet is a member left waiting -->
+    {% if pipeline and pipeline.pending %}
+    <div class="alert {{ 'alert-danger' if pipeline.overdue else 'alert-info' }} d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <div>
+            <i class="fas fa-bell"></i>
+            <strong>{{ pipeline.pending }}</strong> loan request{{ '' if pipeline.pending == 1 else 's' }} awaiting the committee.
+            {% if pipeline.overdue %}
+            <strong>{{ pipeline.overdue }}</strong> past the {{ pipeline.sla_hours|int }}h service standard
+            (oldest has waited {{ pipeline.oldest_hours|round(0)|int }}h).
+            {% else %}
+            All within the {{ pipeline.sla_hours|int }}h service standard.
+            {% endif %}
+            {% if pipeline.never_alerted %}
+            <span class="badge bg-warning text-dark ms-1">{{ pipeline.never_alerted }} never alerted</span>
+            {% endif %}
+        </div>
+        {% if can('loans.approve') %}
+        <form method="post" action="{{ url_for('loans.loan_pipeline_sweep') }}" class="m-0">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-sm btn-outline-dark">
+                <i class="fas fa-paper-plane"></i> Chase pending requests
+            </button>
+        </form>
+        {% endif %}
+    </div>
+    {% endif %}
+
     <!-- Loan Summary -->
     <div class="row g-3 mb-4">
         <div class="col-sm-6 col-xl-3">
@@ -227,7 +254,7 @@
                                     <td>{{ loan.date_applied[:10] }}</td>
                                     <td>
                                         <div class="btn-group btn-group-sm">
-                                            {% if current_user.role in ['admin', 'treasurer'] %}
+                                            {% if can('loans.repayments') %}
                                             <button class="btn btn-warning" title="Record Repayment"
                                                     onclick="showRepaymentModal({{ loan.id }}, {{ loan.balance }})">
                                                 <i class="fas fa-money-bill"></i>
@@ -267,7 +294,7 @@
                                     <td>₦{{ "{:,.2f}".format(loan.total_repayment) }}</td>
                                     <td>{{ loan.date_applied[:10] }}</td>
                                     <td>
-                                        {% if current_user.role in ['admin', 'treasurer', 'secretary', 'exco'] %}
+                                        {% if can('loans.view') %}
                                         <a href="{{ url_for('loans.loan_detail', loan_id=loan.id) }}" class="btn btn-primary btn-sm">
                                             <i class="fas fa-tasks"></i> Review
                                         </a>
@@ -401,7 +428,7 @@
                                     <td>
                                         <a href="{{ url_for('loans.loan_detail', loan_id=loan.id) }}" class="btn btn-outline-secondary btn-sm" title="View">
                                             <i class="fas fa-eye"></i></a>
-                                        {% if current_user.role in ['admin', 'treasurer'] %}
+                                        {% if can('loans.repayments') %}
                                         <button class="btn btn-warning btn-sm" title="Record Repayment"
                                                 onclick="showRepaymentModal({{ loan.id }}, {{ loan.balance }})">
                                             <i class="fas fa-money-bill"></i>

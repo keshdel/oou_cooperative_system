@@ -91,6 +91,7 @@ def load_user(user_id):
             user['id'], user['username'], user['password_hash'], user['role'],
             user['email'] if 'email' in keys else '',
             user['must_change_password'] if 'must_change_password' in keys else 0,
+            user['is_super_admin'] if 'is_super_admin' in keys else 0,
         )
     return None
 
@@ -146,6 +147,8 @@ app.register_blueprint(mobile_api)
 csrf.exempt(mobile_api)
 csrf.exempt(app.view_functions['payments.paystack_webhook'])
 csrf.exempt(app.view_functions['payments.flutterwave_webhook'])
+# Scheduler-driven loan request sweep (authenticated with TASK_RUNNER_TOKEN).
+csrf.exempt(app.view_functions['loans.loan_pipeline_sweep'])
 
 # ── Context processor ─────────────────────────────────────────────────────────
 
@@ -186,6 +189,15 @@ def _logo_src(value):
     if text.startswith('data:') or text.startswith('http://') or text.startswith('https://'):
         return text
     return url_for('static', filename=text)
+
+
+def _can_permission(permission):
+    """Template helper: does the logged-in user hold this permission?"""
+    try:
+        from permissions import user_can
+        return user_can(permission)
+    except Exception:
+        return False
 
 
 @app.context_processor
@@ -249,6 +261,9 @@ def utility_processor():
         'feedback_features':        feedback_features,
         'feedback_improve_options': feedback_improve_options,
         'marketing_hq_enabled':     os.environ.get('MARKETING_HQ', '0') == '1',
+        # Menus and buttons follow the officer's assigned permissions, not their
+        # role — see permissions.py and Settings → Task Assignment.
+        'can':                      _can_permission,
     }
 
 

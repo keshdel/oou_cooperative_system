@@ -13,6 +13,10 @@
             <a href="{{ url_for('portal.my_loans') }}" class="btn btn-secondary">
                 <i class="fas fa-arrow-left"></i> Back to Loans
             </a>
+            <a href="{{ url_for('portal.my_loan_application_pdf', loan_id=loan.id) }}"
+               class="btn btn-outline-primary" target="_blank">
+                <i class="fas fa-file-pdf"></i> Application PDF
+            </a>
             <button class="btn btn-primary" onclick="window.print()">
                 <i class="fas fa-print"></i> Print
             </button>

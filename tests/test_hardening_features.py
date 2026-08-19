@@ -2374,7 +2374,7 @@ class HardeningFeatureTests(unittest.TestCase):
         original_deliver = email_service._deliver
         calls = []
 
-        def fake_deliver(to, subject, html, text=''):
+        def fake_deliver(to, subject, html, text='', attachments=None):
             calls.append((to, subject, html, text))
             return True
 
@@ -2454,7 +2454,7 @@ class HardeningFeatureTests(unittest.TestCase):
                 'MAIL_FROM': 'OOU Coop <coop@example.test>',
                 'SMTP_USE_TLS': 'true',
             })
-            email_service._send_via_resend = lambda to, subject, html: False
+            email_service._send_via_resend = lambda to, subject, html, attachments=None: False
             email_service.smtplib.SMTP = FakeSMTP
 
             ok = email_service.send_email(

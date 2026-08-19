@@ -498,6 +498,15 @@ def init_db():
     _add_col(db, 'loans', 'withdrawn_at', 'TIMESTAMP')
     _add_col(db, 'loans', 'withdrawn_by', 'INTEGER')
     _add_col(db, 'loans', 'withdrawal_reason', 'TEXT')
+    # Loan request alert pipeline (see loan_alerts.py)
+    _add_col(db, 'loans', 'submission_channel', 'TEXT')
+    _add_col(db, 'loans', 'stage_entered_at', 'TIMESTAMP')
+    _add_col(db, 'loans', 'alert_count', 'INTEGER DEFAULT 0')
+    _add_col(db, 'loans', 'first_alert_at', 'TIMESTAMP')
+    _add_col(db, 'loans', 'last_alert_at', 'TIMESTAMP')
+    _add_col(db, 'loans', 'last_reminder_at', 'TIMESTAMP')
+    _add_col(db, 'loans', 'escalated_at', 'TIMESTAMP')
+    _add_col(db, 'loans', 'first_response_at', 'TIMESTAMP')
     _add_col(db, 'loans', 'completed_at', 'TIMESTAMP')
     _add_col(db, 'loans', 'defaulted', 'INTEGER DEFAULT 0')
     _add_col(db, 'loans', 'notes', 'TEXT')
@@ -570,6 +579,32 @@ def init_db():
     _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_loan_guarantors_loan ON loan_guarantors(loan_id)')
     _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_loan_guarantors_member ON loan_guarantors(member_id)')
     _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_loan_approvals_loan ON loan_approvals(loan_id)')
+
+    # Loan request pipeline events — every alert, reminder, escalation and view
+    # raised for a loan application is logged here. A loan request is treated
+    # like a sales lead: it must be acknowledged fast, and the cooperative must
+    # be able to prove who was told what, and when.
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS loan_request_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            loan_id INTEGER NOT NULL,
+            event_type TEXT NOT NULL,
+            stage TEXT,
+            channel TEXT,
+            recipient_user_id INTEGER,
+            recipient_name TEXT,
+            recipient_role TEXT,
+            recipient_email TEXT,
+            delivery TEXT,
+            status TEXT DEFAULT 'sent',
+            detail TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (loan_id) REFERENCES loans (id)
+        )
+    '''))
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_loan_request_events_loan ON loan_request_events(loan_id)')
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_loan_request_events_type ON loan_request_events(event_type)')
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_loan_request_events_created ON loan_request_events(created_at)')
 
     # Investments table
     db.execute(_adapt('''
@@ -883,6 +918,35 @@ def init_db():
         )
     '''))
 
+    # ── Task assignment (who may do what) ─────────────────────────────────────
+    # Role defaults an admin has changed, and per-officer overrides on top of
+    # them. Anything absent falls back to permissions.PERMISSIONS defaults, so
+    # a fresh database behaves exactly like the old hard-coded role checks.
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS role_permissions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            role TEXT NOT NULL,
+            permission TEXT NOT NULL,
+            allowed INTEGER DEFAULT 1,
+            updated_by INTEGER,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    '''))
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS user_permissions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            permission TEXT NOT NULL,
+            allowed INTEGER DEFAULT 1,
+            granted_by INTEGER,
+            granted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users (id)
+        )
+    '''))
+    _exec_ignore(db, 'CREATE UNIQUE INDEX IF NOT EXISTS uq_role_permissions ON role_permissions(role, permission)')
+    _exec_ignore(db, 'CREATE UNIQUE INDEX IF NOT EXISTS uq_user_permissions ON user_permissions(user_id, permission)')
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_user_permissions_user ON user_permissions(user_id)')
+
     # Audit log table
     db.execute(_adapt('''
         CREATE TABLE IF NOT EXISTS audit_log (
@@ -1187,6 +1251,16 @@ def init_db():
         ('smtp_port',      '587','SMTP port (587 for TLS, 465 for SSL)'),
         ('smtp_user',      '',   'SMTP login username (your email address)'),
         ('smtp_pass',      '',   'SMTP login password or app password'),
+        # ── Loan request alerts (see loan_alerts.py) ──────────────────────────
+        ('loan_alert_enabled',        '1', 'Alert the exco automatically the moment a member submits a loan request'),
+        ('loan_alert_attach_pdf',     '1', 'Attach the full loan application as a PDF to exco alert emails'),
+        ('loan_alert_roles',          'admin,treasurer,secretary,exco',
+         'Roles alerted on every new loan request (President=admin, Treasurer, General Secretary=secretary, Exco)'),
+        ('loan_alert_extra_emails',   '',  'Extra addresses copied on every loan request alert (comma separated)'),
+        ('loan_alert_sla_hours',      '24', 'Hours an approval stage may sit untouched before it is treated as overdue'),
+        ('loan_alert_reminder_hours', '12', 'Minimum hours between repeat reminders on the same loan'),
+        ('loan_alert_escalate_hours', '48', 'Hours before an untouched loan request is escalated to the President and all exco'),
+        ('app_base_url',             '',   'Public URL of this system, e.g. https://coop.example.org — used for links in alert emails'),
     ]
 
     for key, value, desc in default_settings:
