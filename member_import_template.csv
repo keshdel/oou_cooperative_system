@@ -1,0 +1,2 @@
+employee_id,first_name,last_name,email,phone,address,occupation,date_joined,monthly_savings,status
+EMP001,John,Doe,john@example.com,08012345678,Lagos,Teacher,2023-01-15,5000,active

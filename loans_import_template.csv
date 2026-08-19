@@ -1,0 +1,2 @@
+employee_id,phone,loan_number,amount,outstanding_balance,total_repaid,purpose,tenure,interest_rate,date_applied,date_approved,monthly_payment
+EMP001,08012345678,LOAN-001,200000,150000,50000,Housing,12,9,2024-02-01,2024-02-05,17500
