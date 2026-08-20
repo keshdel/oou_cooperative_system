@@ -17,6 +17,65 @@
 
     <div class="row g-3">
         <div class="col-lg-8">
+        {% if inv.status == 'draft' %}
+            <form method="post" action="{{ url_for('hq_billing.edit_invoice', invoice_id=inv.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="card mb-3">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span><i class="fas fa-pen"></i> Edit draft</span>
+                        <button class="btn btn-sm btn-primary"><i class="fas fa-save"></i> Save changes</button>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-2 mb-3">
+                            <div class="col-md-4"><label class="form-label small">Period label</label>
+                                <input class="form-control form-control-sm" name="period_label" value="{{ inv.period_label or '' }}"></div>
+                            <div class="col-md-4"><label class="form-label small">Due date</label>
+                                <input class="form-control form-control-sm" type="date" name="due_date" value="{{ inv.due_date or '' }}"></div>
+                            <div class="col-md-4"><label class="form-label small">Notes</label>
+                                <input class="form-control form-control-sm" name="notes" value="{{ inv.notes or '' }}"></div>
+                        </div>
+                        <div class="table-responsive">
+                        <table class="table perm-table table-sm align-middle mb-2">
+                            <thead><tr><th>Description</th><th class="text-end" style="width:90px">Qty</th>
+                                <th class="text-end" style="width:130px">Unit ₦</th><th class="text-end" style="width:60px">Del</th></tr></thead>
+                            <tbody id="itemRows">
+                            {% for it in items %}
+                            <tr>
+                                <td><input type="hidden" name="item_id" value="{{ it.id }}">
+                                    <input class="form-control form-control-sm" name="item_desc" value="{{ it.description }}">
+                                    <span class="badge bg-light text-dark">{{ it.item_type }}</span></td>
+                                <td><input class="form-control form-control-sm text-end" type="number" step="0.01" name="item_qty" value="{{ "%g"|format(it.quantity or 0) }}"></td>
+                                <td><input class="form-control form-control-sm text-end" type="number" step="0.01" name="item_unit" value="{{ it.unit_price }}"></td>
+                                <td class="text-end"><input class="form-check-input" type="checkbox" name="delete_ids" value="{{ it.id }}" title="Remove this line"></td>
+                            </tr>
+                            {% endfor %}
+                            </tbody>
+                        </table>
+                        </div>
+                        <div id="newItemRows"></div>
+                        <button type="button" class="btn btn-sm btn-outline-secondary mt-1" onclick="addEditLine()"><i class="fas fa-plus"></i> Add service fee</button>
+                    </div>
+                    <div class="card-footer text-end">Current total: <strong>₦{{ "{:,.2f}".format(inv.amount or 0) }}</strong>
+                        <span class="text-muted small">(recalculated on save)</span></div>
+                </div>
+            </form>
+            <script>
+            const EDIT_TYPES = ['support','migration','customization','training','other'];
+            function addEditLine() {
+                const wrap = document.getElementById('newItemRows');
+                const row = document.createElement('div');
+                row.className = 'row g-2 mb-1 align-items-center';
+                row.innerHTML =
+                  '<div class="col-md-3"><select class="form-select form-select-sm" name="new_type">' +
+                    EDIT_TYPES.map(t => `<option value="${t}">${t.charAt(0).toUpperCase()+t.slice(1)}</option>`).join('') +
+                  '</select></div>' +
+                  '<div class="col-md-6"><input class="form-control form-control-sm" name="new_desc" placeholder="Description (optional)"></div>' +
+                  '<div class="col-md-2"><input class="form-control form-control-sm" type="number" step="0.01" name="new_amount" placeholder="Amount ₦"></div>' +
+                  '<div class="col-md-1"><button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest(\'.row\').remove()">&times;</button></div>';
+                wrap.appendChild(row);
+            }
+            </script>
+        {% else %}
             <div class="card mb-3"><div class="table-responsive">
                 <table class="table perm-table mb-0">
                     <thead><tr><th>Description</th><th class="text-end">Qty</th><th class="text-end">Unit</th><th class="text-end">Amount</th></tr></thead>
@@ -34,6 +93,7 @@
                 </table>
             </div></div>
             {% if inv.notes %}<div class="card"><div class="card-body"><div class="small text-muted">Notes</div>{{ inv.notes }}</div></div>{% endif %}
+        {% endif %}
         </div>
 
         <div class="col-lg-4">

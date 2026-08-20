@@ -446,6 +446,78 @@ def invoice_detail(invoice_id):
     return render_template('hq/invoice-detail.html', inv=inv, items=items)
 
 
+@hq_billing.route('/hq/invoices/<int:invoice_id>/edit', methods=['POST'])
+@hq_admin_required
+def edit_invoice(invoice_id):
+    """Edit a DRAFT invoice: change/delete existing line items, edit their qty and
+    unit price, add service fees, and edit period/due/notes. Sent, paid or void
+    invoices are locked. Subscription/top-up quantity changes adjust the client's
+    billed_user_count so future top-ups stay correct."""
+    db = get_db()
+    inv = db.execute('SELECT * FROM hq_invoices WHERE id = ?', (invoice_id,)).fetchone()
+    if not inv:
+        abort(404)
+    if inv['status'] != 'draft':
+        flash('Only draft invoices can be edited.', 'warning')
+        return redirect(url_for('hq_billing.invoice_detail', invoice_id=invoice_id))
+
+    def _sub_qty():
+        return db.execute("SELECT COALESCE(SUM(quantity), 0) FROM hq_invoice_items "
+                          "WHERE invoice_id = ? AND item_type IN ('subscription','topup')",
+                          (invoice_id,)).fetchone()[0] or 0
+    old_sub = _sub_qty()
+
+    delete_ids = set(request.form.getlist('delete_ids'))
+    ids = request.form.getlist('item_id')
+    descs = request.form.getlist('item_desc')
+    qtys = request.form.getlist('item_qty')
+    units = request.form.getlist('item_unit')
+    for i, iid in enumerate(ids):
+        if iid in delete_ids:
+            db.execute('DELETE FROM hq_invoice_items WHERE id = ? AND invoice_id = ?', (iid, invoice_id))
+            continue
+        try:
+            q = float(qtys[i]); u = float(units[i])
+        except (ValueError, IndexError):
+            continue
+        db.execute('UPDATE hq_invoice_items SET description = ?, quantity = ?, unit_price = ?, amount = ? '
+                   'WHERE id = ? AND invoice_id = ?',
+                   ((descs[i] if i < len(descs) else '').strip(), q, u, round(q * u, 2), iid, invoice_id))
+
+    ntypes = request.form.getlist('new_type')
+    ndescs = request.form.getlist('new_desc')
+    namounts = request.form.getlist('new_amount')
+    for i, itype in enumerate(ntypes):
+        try:
+            amt = float(namounts[i])
+        except (ValueError, IndexError):
+            continue
+        if amt <= 0:
+            continue
+        desc = (ndescs[i] if i < len(ndescs) else '').strip()
+        itype = itype if itype in SERVICE_ITEM_TYPES else 'other'
+        label = f"{itype.title()}: {desc}" if desc else itype.title()
+        db.execute("INSERT INTO hq_invoice_items (invoice_id, item_type, description, quantity, unit_price, amount) "
+                   "VALUES (?, 'service', ?, 1, ?, ?)", (invoice_id, label, round(amt, 2), round(amt, 2)))
+
+    new_sub = _sub_qty()
+    if new_sub != old_sub:
+        cur = db.execute('SELECT billed_user_count FROM hq_clients WHERE id = ?',
+                         (inv['client_id'],)).fetchone()[0] or 0
+        db.execute('UPDATE hq_clients SET billed_user_count = ?, updated_at = ? WHERE id = ?',
+                   (max(0, int(cur + (new_sub - old_sub))), datetime.now(), inv['client_id']))
+
+    db.execute('UPDATE hq_invoices SET period_label = ?, due_date = ?, notes = ? WHERE id = ?',
+               ((request.form.get('period_label') or '').strip(),
+                (request.form.get('due_date') or '').strip() or None,
+                (request.form.get('notes') or '').strip(), invoice_id))
+    total = _recalc_invoice_total(db, invoice_id)
+    audit(db, 'HQ_INVOICE_EDIT', 'hq_billing', f"Edited draft {inv['invoice_number']}: NGN {_money(total)}")
+    db.commit()
+    flash(f'Invoice updated — new total ₦{_money(total)}.', 'success')
+    return redirect(url_for('hq_billing.invoice_detail', invoice_id=invoice_id))
+
+
 @hq_billing.route('/hq/invoices/<int:invoice_id>/mark-paid', methods=['POST'])
 @hq_admin_required
 def mark_paid(invoice_id):

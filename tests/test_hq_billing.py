@@ -107,6 +107,51 @@ class HqBillingTests(unittest.TestCase):
             self.assertEqual(inv['status'], 'paid')
             self.assertEqual(inv['paid_method'], 'manual')
 
+    def test_draft_invoice_is_editable(self):
+        self.login_admin()
+        cid = self._add_client('Editable', 10, 5000)
+        self.client.post('/hq/invoices/new', data={
+            'client_id': cid, 'sub_mode': 'full', 'sub_qty': '10', 'sub_unit': '5000'})
+        with self.app.app_context():
+            db = get_db()
+            inv_id = db.execute('SELECT id FROM hq_invoices WHERE client_id = ? ORDER BY id DESC',
+                                (cid,)).fetchone()['id']
+            sub_id = db.execute("SELECT id FROM hq_invoice_items WHERE invoice_id = ? AND item_type = 'subscription'",
+                                (inv_id,)).fetchone()['id']
+        # Reduce subscription to 8 members, add a support fee of 15,000, edit notes.
+        r = self.client.post(f'/hq/invoices/{inv_id}/edit', data={
+            'item_id': [str(sub_id)], 'item_desc': ['Annual subscription'],
+            'item_qty': ['8'], 'item_unit': ['5000'],
+            'new_type': ['support'], 'new_desc': ['1yr'], 'new_amount': ['15000'],
+            'period_label': '2026', 'due_date': '', 'notes': 'edited'}, follow_redirects=False)
+        self.assertIn(r.status_code, (302, 303))
+        with self.app.app_context():
+            db = get_db()
+            inv = db.execute('SELECT amount, notes FROM hq_invoices WHERE id = ?', (inv_id,)).fetchone()
+            self.assertAlmostEqual(float(inv['amount']), 55000.0, places=2)   # 8×5,000 + 15,000
+            self.assertEqual(inv['notes'], 'edited')
+            billed = db.execute('SELECT billed_user_count FROM hq_clients WHERE id = ?', (cid,)).fetchone()[0]
+            self.assertEqual(billed, 8)   # 10 + (8 − 10)
+            n_service = db.execute("SELECT COUNT(*) FROM hq_invoice_items WHERE invoice_id = ? AND item_type = 'service'",
+                                   (inv_id,)).fetchone()[0]
+            self.assertEqual(n_service, 1)
+
+    def test_non_draft_invoice_cannot_be_edited(self):
+        self.login_admin()
+        cid = self._add_client('Locked', 5, 5000)
+        self.client.post('/hq/invoices/new', data={
+            'client_id': cid, 'sub_mode': 'full', 'sub_qty': '5', 'sub_unit': '5000'})
+        with self.app.app_context():
+            inv_id = get_db().execute('SELECT id FROM hq_invoices WHERE client_id = ? ORDER BY id DESC',
+                                      (cid,)).fetchone()['id']
+        self.client.post(f'/hq/invoices/{inv_id}/mark-paid', data={'reference': 'x'})
+        self.client.post(f'/hq/invoices/{inv_id}/edit', data={
+            'new_type': ['support'], 'new_desc': ['sneak'], 'new_amount': ['99999'], 'period_label': 'x'})
+        with self.app.app_context():
+            inv = get_db().execute('SELECT amount, status FROM hq_invoices WHERE id = ?', (inv_id,)).fetchone()
+            self.assertEqual(inv['status'], 'paid')
+            self.assertAlmostEqual(float(inv['amount']), 25000.0, places=2)   # unchanged
+
     def test_member_count_endpoint_is_token_guarded(self):
         os.environ['HQ_SYNC_TOKEN'] = 'sync-secret'
         try:
