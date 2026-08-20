@@ -121,6 +121,7 @@ from blueprints.communications import communications
 from blueprints.security     import security_bp
 from blueprints.feedback     import feedback_bp
 from blueprints.marketing    import marketing
+from blueprints.hq_billing   import hq_billing
 from mobile_api             import mobile_api
 
 app.register_blueprint(auth)
@@ -142,6 +143,7 @@ app.register_blueprint(communications)
 app.register_blueprint(security_bp)
 app.register_blueprint(feedback_bp)
 app.register_blueprint(marketing)
+app.register_blueprint(hq_billing)
 app.register_blueprint(mobile_api)
 
 csrf.exempt(mobile_api)

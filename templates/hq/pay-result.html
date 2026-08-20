@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{ inv.invoice_number }} — Payment</title>
+    <style>
+        body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+               background:#f4f6fb; margin:0; padding:0; color:#1f2937; }
+        .box { max-width:460px; margin:8vh auto; background:#fff; border-radius:12px;
+               box-shadow:0 8px 30px rgba(8,43,102,.12); padding:36px; text-align:center; }
+        .icon { width:64px; height:64px; border-radius:50%; margin:0 auto 16px; display:flex;
+                align-items:center; justify-content:center; font-size:32px; color:#fff; }
+        .ok { background:#16a34a; } .bad { background:#dc2626; }
+        h1 { font-size:20px; margin:0 0 8px; }
+        p { color:#555; line-height:1.5; }
+        .num { font-family:ui-monospace, monospace; color:#082B66; font-weight:600; }
+    </style>
+</head>
+<body>
+    <div class="box">
+        {% if ok %}
+        <div class="icon ok">&#10003;</div>
+        <h1>{% if already %}Already paid{% else %}Payment received{% endif %}</h1>
+        <p>Invoice <span class="num">{{ inv.invoice_number }}</span>
+           {% if already %}has already been settled.{% else %}has been paid. Thank you!{% endif %}</p>
+        {% else %}
+        <div class="icon bad">!</div>
+        <h1>Payment not completed</h1>
+        <p>{{ message or 'The payment could not be completed.' }}</p>
+        <p>Invoice <span class="num">{{ inv.invoice_number }}</span></p>
+        {% endif %}
+    </div>
+</body>
+</html>

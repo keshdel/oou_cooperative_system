@@ -762,6 +762,68 @@ def init_db():
     _add_col(db, 'coop_tenants', 'updated_at', 'TIMESTAMP')
     _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_coop_tenants_code ON coop_tenants(code, is_active)')
 
+    # ── HQ billing (operator-side): client registry, invoices, line items ──
+    # Only used by the HQ instance (MARKETING_HQ=1). Each client is a tenant
+    # cooperative the operator bills; per-user subscription plus service fees.
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS hq_clients (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            code TEXT,
+            billing_email TEXT,
+            phone TEXT,
+            user_count INTEGER DEFAULT 0,
+            billed_user_count INTEGER DEFAULT 0,
+            rate_per_user REAL DEFAULT 5000,
+            billing_cycle TEXT DEFAULT 'annual',
+            period_start DATE,
+            period_end DATE,
+            status TEXT DEFAULT 'active',
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    '''))
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_hq_clients_status ON hq_clients(status)')
+
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS hq_invoices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            invoice_number TEXT UNIQUE,
+            client_id INTEGER NOT NULL,
+            period_label TEXT,
+            issue_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            due_date DATE,
+            amount REAL NOT NULL DEFAULT 0,
+            currency TEXT DEFAULT 'NGN',
+            status TEXT DEFAULT 'draft',
+            payment_reference TEXT,
+            paid_at TIMESTAMP,
+            paid_method TEXT,
+            pay_token TEXT,
+            sent_at TIMESTAMP,
+            notes TEXT,
+            created_by INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (client_id) REFERENCES hq_clients (id)
+        )
+    '''))
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_hq_invoices_client ON hq_invoices(client_id, status)')
+
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS hq_invoice_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            invoice_id INTEGER NOT NULL,
+            item_type TEXT DEFAULT 'service',
+            description TEXT,
+            quantity REAL DEFAULT 1,
+            unit_price REAL DEFAULT 0,
+            amount REAL DEFAULT 0,
+            FOREIGN KEY (invoice_id) REFERENCES hq_invoices (id)
+        )
+    '''))
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_hq_invoice_items_invoice ON hq_invoice_items(invoice_id)')
+
     # Member communication campaigns and delivery attempts.
     db.execute(_adapt('''
         CREATE TABLE IF NOT EXISTS communication_campaigns (

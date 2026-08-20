@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}{{ inv.invoice_number }} - {{ coop_name }}{% endblock %}
+{% block content %}
+<style>.perm-table thead th { background-color:#e9eef5; color:#1f2937; }</style>
+<div class="container-fluid">
+    <div class="row mb-3">
+        <div class="col-md-7">
+            <h2 class="mb-1"><i class="fas fa-file-invoice"></i> {{ inv.invoice_number }}</h2>
+            <span class="badge bg-{{ {'paid':'success','sent':'info','draft':'secondary','void':'dark'}.get(inv.status,'secondary') }}">{{ inv.status|title }}</span>
+            <span class="text-muted ms-2">{{ inv.client_name }}</span>
+        </div>
+        <div class="col-md-5 text-end">
+            <a href="{{ url_for('hq_billing.invoice_pdf', invoice_id=inv.id) }}" class="btn btn-outline-secondary" target="_blank"><i class="fas fa-file-pdf"></i> PDF</a>
+            <a href="{{ url_for('hq_billing.invoices') }}" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> Back</a>
+        </div>
+    </div>
+
+    <div class="row g-3">
+        <div class="col-lg-8">
+            <div class="card mb-3"><div class="table-responsive">
+                <table class="table perm-table mb-0">
+                    <thead><tr><th>Description</th><th class="text-end">Qty</th><th class="text-end">Unit</th><th class="text-end">Amount</th></tr></thead>
+                    <tbody>
+                    {% for it in items %}
+                    <tr><td>{{ it.description }}<span class="badge bg-light text-dark ms-1">{{ it.item_type }}</span></td>
+                        <td class="text-end">{{ "%g"|format(it.quantity or 0) }}</td>
+                        <td class="text-end">₦{{ "{:,.2f}".format(it.unit_price or 0) }}</td>
+                        <td class="text-end">₦{{ "{:,.2f}".format(it.amount or 0) }}</td></tr>
+                    {% endfor %}
+                    </tbody>
+                    <tfoot class="table-secondary fw-bold"><tr>
+                        <td colspan="3" class="text-end">Total</td>
+                        <td class="text-end">₦{{ "{:,.2f}".format(inv.amount or 0) }}</td></tr></tfoot>
+                </table>
+            </div></div>
+            {% if inv.notes %}<div class="card"><div class="card-body"><div class="small text-muted">Notes</div>{{ inv.notes }}</div></div>{% endif %}
+        </div>
+
+        <div class="col-lg-4">
+            <div class="card mb-3"><div class="card-body">
+                <div class="row small">
+                    <div class="col-6 text-muted">Issued</div><div class="col-6 text-end">{{ inv.issue_date|string|truncate(10, True, '') }}</div>
+                    <div class="col-6 text-muted">Due</div><div class="col-6 text-end">{{ inv.due_date or '—' }}</div>
+                    <div class="col-6 text-muted">Period</div><div class="col-6 text-end">{{ inv.period_label or '—' }}</div>
+                    <div class="col-6 text-muted">Billing email</div><div class="col-6 text-end">{{ inv.billing_email or '—' }}</div>
+                    {% if inv.payment_reference %}<div class="col-6 text-muted">Reference</div><div class="col-6 text-end font-monospace">{{ inv.payment_reference }}</div>{% endif %}
+                    {% if inv.paid_at %}<div class="col-6 text-muted">Paid</div><div class="col-6 text-end">{{ inv.paid_at|string|truncate(16, True, '') }} ({{ inv.paid_method }})</div>{% endif %}
+                </div>
+            </div></div>
+
+            {% if inv.status != 'paid' and inv.status != 'void' %}
+            <div class="card mb-3"><div class="card-body">
+                <form method="post" action="{{ url_for('hq_billing.send_invoice', invoice_id=inv.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="btn btn-primary w-100 mb-2" {{ 'disabled' if not inv.billing_email }}>
+                        <i class="fas fa-paper-plane"></i> Email invoice + pay link</button>
+                </form>
+                <div class="input-group input-group-sm mb-3">
+                    <span class="input-group-text">Pay link</span>
+                    <input class="form-control" readonly onclick="this.select()"
+                           value="{{ url_for('hq_billing.pay_invoice', invoice_number=inv.invoice_number, token=inv.pay_token, _external=True) }}">
+                </div>
+                <form method="post" action="{{ url_for('hq_billing.mark_paid', invoice_id=inv.id) }}" class="mb-2">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <div class="input-group input-group-sm">
+                        <input class="form-control" name="reference" placeholder="Bank transfer ref (optional)">
+                        <button class="btn btn-success"><i class="fas fa-check"></i> Mark paid</button>
+                    </div>
+                </form>
+                <form method="post" action="{{ url_for('hq_billing.void_invoice', invoice_id=inv.id) }}"
+                      onsubmit="return confirm('Void this invoice?');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="btn btn-outline-danger btn-sm w-100"><i class="fas fa-ban"></i> Void invoice</button>
+                </form>
+            </div></div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,146 @@
+{% extends "base.html" %}
+{% block title %}HQ Invoices - {{ coop_name }}{% endblock %}
+{% block content %}
+<style>.perm-table thead th { background-color:#e9eef5; color:#1f2937; }</style>
+<div class="container-fluid">
+    <div class="row mb-3">
+        <div class="col-md-7">
+            <h2><i class="fas fa-file-invoice-dollar"></i> Invoices</h2>
+            <p class="text-muted mb-0">Bill tenant cooperatives — subscription, mid-year top-ups and service fees.</p>
+        </div>
+        <div class="col-md-5 text-end">
+            <a href="{{ url_for('hq_billing.clients') }}" class="btn btn-outline-secondary"><i class="fas fa-building"></i> Clients</a>
+            <button class="btn btn-outline-primary" data-bs-toggle="collapse" data-bs-target="#bulkForm"><i class="fas fa-layer-group"></i> Invoice all</button>
+            <button class="btn btn-primary" data-bs-toggle="collapse" data-bs-target="#newForm"><i class="fas fa-plus"></i> New invoice</button>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-md-4"><div class="card h-100"><div class="card-body">
+            <div class="small text-muted">Billed (excl. void)</div>
+            <div class="h4 mb-0">₦{{ "{:,.2f}".format(totals.billed or 0) }}</div></div></div></div>
+        <div class="col-md-4"><div class="card h-100"><div class="card-body">
+            <div class="small text-muted">Collected</div>
+            <div class="h4 mb-0 text-success">₦{{ "{:,.2f}".format(totals.collected or 0) }}</div></div></div></div>
+        <div class="col-md-4"><div class="card h-100"><div class="card-body">
+            <div class="small text-muted">Outstanding</div>
+            <div class="h4 mb-0 text-warning">₦{{ "{:,.2f}".format(totals.outstanding or 0) }}</div></div></div></div>
+    </div>
+
+    <!-- Bulk subscription -->
+    <div class="collapse mb-3" id="bulkForm"><div class="card border-primary"><div class="card-body">
+        <form method="post" action="{{ url_for('hq_billing.bulk_subscription') }}" class="row g-2 align-items-end"
+              onsubmit="return confirm('Generate a full-subscription invoice for every active client with a user count?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="col-md-4"><label class="form-label">Period label</label>
+                <input class="form-control" name="period_label" placeholder="2026"></div>
+            <div class="col-md-4"><label class="form-label">Due date</label>
+                <input class="form-control" type="date" name="due_date" value="{{ default_due }}"></div>
+            <div class="col-md-4"><button class="btn btn-primary w-100"><i class="fas fa-layer-group"></i> Generate for all active clients</button></div>
+        </form>
+    </div></div></div>
+
+    <!-- New single invoice -->
+    <div class="collapse mb-4" id="newForm"><div class="card"><div class="card-body">
+        <form method="post" action="{{ url_for('hq_billing.new_invoice') }}" class="row g-3">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="col-md-5"><label class="form-label">Client *</label>
+                <select class="form-select" name="client_id" required>
+                    <option value="">Choose…</option>
+                    {% for c in clients %}
+                    <option value="{{ c.id }}" data-users="{{ c.user_count }}" data-billed="{{ c.billed_user_count }}" data-rate="{{ c.rate_per_user }}">
+                        {{ c.name }} ({{ c.user_count }} users, {{ c.user_count - c.billed_user_count }} unbilled)
+                    </option>
+                    {% endfor %}
+                </select></div>
+            <div class="col-md-4"><label class="form-label">Period label</label>
+                <input class="form-control" name="period_label" placeholder="2026 / Aug 2026"></div>
+            <div class="col-md-3"><label class="form-label">Due date</label>
+                <input class="form-control" type="date" name="due_date" value="{{ default_due }}"></div>
+
+            <div class="col-12"><hr class="my-1"><strong>Subscription</strong></div>
+            <div class="col-md-4"><label class="form-label">Charge</label>
+                <select class="form-select" name="sub_mode" id="subMode">
+                    <option value="none">None (service fees only)</option>
+                    <option value="full">Full subscription (all users)</option>
+                    <option value="topup">Top-up (new members only)</option>
+                </select></div>
+            <div class="col-md-4"><label class="form-label">Members (qty)</label>
+                <input class="form-control" type="number" min="0" name="sub_qty" id="subQty"></div>
+            <div class="col-md-4"><label class="form-label">Rate / member (₦)</label>
+                <input class="form-control" type="number" step="0.01" name="sub_unit" id="subUnit"></div>
+
+            <div class="col-12 d-flex justify-content-between align-items-center">
+                <strong>Service fees</strong>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="addServiceRow()"><i class="fas fa-plus"></i> Add fee</button>
+            </div>
+            <div class="col-12"><div id="serviceRows" class="row g-2"></div></div>
+
+            <div class="col-12"><label class="form-label">Notes (optional)</label>
+                <input class="form-control" name="notes"></div>
+            <div class="col-12"><button class="btn btn-primary"><i class="fas fa-file-invoice"></i> Create invoice</button></div>
+        </form>
+    </div></div></div>
+
+    <!-- Filter + list -->
+    <div class="mb-2">
+        {% for s in ['', 'draft', 'sent', 'paid', 'void'] %}
+        <a href="{{ url_for('hq_billing.invoices', status=s) }}"
+           class="btn btn-sm {{ 'btn-primary' if active_status == s else 'btn-outline-secondary' }}">
+            {{ s|title if s else 'All' }}</a>
+        {% endfor %}
+    </div>
+    <div class="card"><div class="table-responsive">
+        <table class="table perm-table align-middle mb-0">
+            <thead><tr><th>Invoice</th><th>Client</th><th>Period</th><th>Issued</th><th>Due</th>
+                <th class="text-end">Amount</th><th>Status</th></tr></thead>
+            <tbody>
+            {% for i in invoices %}
+            <tr>
+                <td><a href="{{ url_for('hq_billing.invoice_detail', invoice_id=i.id) }}" class="font-monospace">{{ i.invoice_number }}</a></td>
+                <td>{{ i.client_name }}</td>
+                <td>{{ i.period_label or '—' }}</td>
+                <td>{{ i.issue_date|string|truncate(10, True, '') }}</td>
+                <td>{{ i.due_date or '—' }}</td>
+                <td class="text-end">₦{{ "{:,.2f}".format(i.amount or 0) }}</td>
+                <td><span class="badge bg-{{ {'paid':'success','sent':'info','draft':'secondary','void':'dark'}.get(i.status,'secondary') }}">{{ i.status|title }}</span></td>
+            </tr>
+            {% else %}
+            <tr><td colspan="7" class="text-center text-muted py-4">No invoices yet.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div></div>
+</div>
+
+<script>
+const SERVICE_TYPES = ['support','migration','customization','training','other'];
+function addServiceRow(type='support', desc='', amount='') {
+    const wrap = document.getElementById('serviceRows');
+    const row = document.createElement('div');
+    row.className = 'row g-2 mb-1 align-items-center';
+    row.innerHTML =
+      '<div class="col-md-3"><select class="form-select form-select-sm" name="service_type">' +
+        SERVICE_TYPES.map(t => `<option value="${t}" ${t===type?'selected':''}>${t.charAt(0).toUpperCase()+t.slice(1)}</option>`).join('') +
+      '</select></div>' +
+      '<div class="col-md-6"><input class="form-control form-control-sm" name="service_desc" placeholder="Description (optional)" value="'+desc+'"></div>' +
+      '<div class="col-md-2"><input class="form-control form-control-sm" type="number" step="0.01" name="service_amount" placeholder="Amount ₦" value="'+amount+'"></div>' +
+      '<div class="col-md-1"><button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest(\'.row\').remove()">&times;</button></div>';
+    wrap.appendChild(row);
+}
+// Prefill subscription qty/rate from the chosen client + mode.
+const sel = document.querySelector('select[name=client_id]');
+const mode = document.getElementById('subMode');
+function syncSub() {
+    const o = sel.options[sel.selectedIndex];
+    if (!o || !o.value) return;
+    const users = +o.dataset.users || 0, billed = +o.dataset.billed || 0, rate = +o.dataset.rate || 0;
+    document.getElementById('subUnit').value = rate;
+    if (mode.value === 'full') document.getElementById('subQty').value = users;
+    else if (mode.value === 'topup') document.getElementById('subQty').value = Math.max(0, users - billed);
+    else document.getElementById('subQty').value = 0;
+}
+sel && sel.addEventListener('change', syncSub);
+mode && mode.addEventListener('change', syncSub);
+</script>
+{% endblock %}

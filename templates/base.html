@@ -203,6 +203,12 @@
                         <i class="fas fa-bullseye"></i> Leads
                     </a>
                     {% endif %}
+                    {% if marketing_hq_enabled and (current_user.role == 'admin' or current_user.is_super_admin) %}
+                    <a href="{{ url_for('hq_billing.invoices') }}"
+                       class="{% if request.blueprint == 'hq_billing' %}active{% endif %}">
+                        <i class="fas fa-file-invoice-dollar"></i> Billing
+                    </a>
+                    {% endif %}
                     {% if can('finance.subscription') %}
                     <a href="{{ url_for('admin_panel.subscription_page') }}"
                        class="{% if request.endpoint == 'admin_panel.subscription_page' %}active{% endif %}">
