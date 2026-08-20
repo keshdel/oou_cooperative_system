@@ -19,9 +19,12 @@ Design notes:
     catalogue (it is operator-only, not a delegated tenant duty).
 """
 
+import base64
 import io
+import json
 import os
 import secrets
+import urllib.request
 from datetime import datetime, date, timedelta
 from functools import wraps
 
@@ -69,7 +72,33 @@ def _settings(db):
 
 
 def _operator_name(db):
-    return (_settings(db).get('coop_name') or 'CoopMS').strip() or 'CoopMS'
+    s = _settings(db)
+    return (s.get('hq_business_name') or s.get('coop_name') or 'CoopMS').strip() or 'CoopMS'
+
+
+def _billing_brand(db):
+    """Invoice branding: business name, logo (data URI) and default payment
+    instructions. Falls back to the instance's coop_name / coop_logo so it works
+    before the operator fills in HQ-specific billing settings."""
+    s = _settings(db)
+    return {
+        'name': (s.get('hq_business_name') or s.get('coop_name') or 'CoopMS').strip() or 'CoopMS',
+        'logo': (s.get('hq_business_logo') or s.get('coop_logo') or '').strip(),
+        'pay_instructions': (s.get('hq_payment_instructions') or '').strip(),
+    }
+
+
+def _client_base_url(client):
+    """Resolve a client's API base from its code: a full URL as-is, a domain to
+    https://<domain>, otherwise https://<code>.cooperativems.com."""
+    code = (client['code'] or '').strip().lower()
+    if not code:
+        return ''
+    if code.startswith('http://') or code.startswith('https://'):
+        return code.rstrip('/')
+    if '.' in code:
+        return f'https://{code}'
+    return f'https://{code}.cooperativems.com'
 
 
 def _money(value):
@@ -195,6 +224,63 @@ def edit_client(client_id):
     return redirect(url_for('hq_billing.clients'))
 
 
+@hq_billing.route('/hq/billing-settings', methods=['POST'])
+@hq_admin_required
+def billing_settings():
+    """Save invoice branding: business name shown on invoices and the default
+    payment instructions (e.g. bank details) appended to every invoice."""
+    db = get_db()
+    for key in ('hq_business_name', 'hq_payment_instructions'):
+        val = (request.form.get(key) or '').strip()
+        db.execute('DELETE FROM settings WHERE key = ?', (key,))
+        if val:
+            db.execute('INSERT INTO settings (key, value) VALUES (?, ?)', (key, val))
+    audit(db, 'HQ_BILLING_SETTINGS', 'hq_billing', 'Updated invoice branding')
+    db.commit()
+    flash('Billing settings saved. The logo comes from Settings → your logo.', 'success')
+    return redirect(url_for('hq_billing.invoices'))
+
+
+@hq_billing.route('/hq/clients/sync-members', methods=['POST'])
+@hq_admin_required
+def sync_members():
+    """Pull each active client's live active-member count from its own app and
+    store it as user_count. Each tenant exposes GET /api/hq/member-count guarded
+    by the shared HQ_SYNC_TOKEN."""
+    db = get_db()
+    token = (os.environ.get('HQ_SYNC_TOKEN') or '').strip()
+    if not token:
+        flash('Set HQ_SYNC_TOKEN in the HQ environment (and on each tenant) to enable syncing.', 'warning')
+        return redirect(url_for('hq_billing.clients'))
+    clients_ = db.execute("SELECT * FROM hq_clients WHERE status = 'active'").fetchall()
+    ok, failed = 0, []
+    for c in clients_:
+        base = _client_base_url(c)
+        if not base:
+            failed.append(f"{c['name']} (no code)")
+            continue
+        try:
+            req = urllib.request.Request(
+                f'{base}/api/hq/member-count',
+                headers={'X-HQ-Token': token, 'Accept': 'application/json'})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read())
+            count = int(data.get('active_members'))
+            db.execute('UPDATE hq_clients SET user_count = ?, updated_at = ? WHERE id = ?',
+                       (count, datetime.now(), c['id']))
+            ok += 1
+        except Exception as exc:  # pragma: no cover - network
+            current_app.logger.warning('HQ member sync failed for %s: %s', c['name'], exc)
+            failed.append(c['name'])
+    audit(db, 'HQ_MEMBER_SYNC', 'hq_billing', f"Synced {ok} client(s); {len(failed)} failed")
+    db.commit()
+    msg = f'Updated user counts for {ok} client(s).'
+    if failed:
+        msg += f' Could not reach: {", ".join(failed[:8])}.'
+    flash(msg, 'success' if ok else 'warning')
+    return redirect(url_for('hq_billing.clients'))
+
+
 # ── Invoices ──────────────────────────────────────────────────────────────────
 
 @hq_billing.route('/hq/invoices')
@@ -221,7 +307,7 @@ def invoices():
     ''').fetchone()
     clients_ = db.execute("SELECT * FROM hq_clients WHERE status = 'active' ORDER BY name").fetchall()
     return render_template('hq/invoices.html', invoices=rows, totals=totals,
-                           clients=clients_, active_status=status,
+                           clients=clients_, active_status=status, brand=_billing_brand(db),
                            default_due=(date.today() + timedelta(days=14)).isoformat())
 
 
@@ -404,7 +490,7 @@ def invoice_pdf(invoice_id):
     inv, items = _invoice_with_items(db, invoice_id)
     if not inv:
         abort(404)
-    pdf = _build_invoice_pdf(_operator_name(db), inv, items)
+    pdf = _build_invoice_pdf(_billing_brand(db), inv, items)
     resp = make_response(pdf)
     resp.headers['Content-Type'] = 'application/pdf'
     resp.headers['Content-Disposition'] = \
@@ -425,7 +511,8 @@ def send_invoice(invoice_id):
 
     pay_url = url_for('hq_billing.pay_invoice', invoice_number=inv['invoice_number'],
                       token=inv['pay_token'], _external=True)
-    operator = _operator_name(db)
+    brand = _billing_brand(db)
+    operator = brand['name']
     rows_html = ''.join(
         f"<tr><td style='padding:6px 10px;border-bottom:1px solid #eee'>{it['description']}</td>"
         f"<td style='padding:6px 10px;border-bottom:1px solid #eee;text-align:right'>₦{_money(it['amount'])}</td></tr>"
@@ -443,6 +530,7 @@ def send_invoice(invoice_id):
       <p><a href="{pay_url}" style="display:inline-block;background:#082B66;color:#fff;
         padding:12px 22px;border-radius:6px;text-decoration:none;font-weight:bold">Pay now</a></p>
       <p style="color:#666;font-size:13px">Or pay by bank transfer and we will mark this invoice settled.</p>
+      {('<p style="color:#444;font-size:13px;white-space:pre-line">' + brand['pay_instructions'] + '</p>') if brand['pay_instructions'] else ''}
     """
     result = send_email_detailed(inv['billing_email'], f"Invoice {inv['invoice_number']} from {operator}", html)
     if result.get('success'):
@@ -529,9 +617,26 @@ def pay_callback():
 
 # ── PDF ───────────────────────────────────────────────────────────────────────
 
-def _build_invoice_pdf(operator, inv, items) -> bytes:
-    """Render a simple, self-contained invoice PDF. Uses 'NGN' (Helvetica has no
-    naira glyph)."""
+def _logo_flowable(logo_uri, mm):
+    """Turn a data: URI logo into a sized reportlab Image, or None."""
+    if not logo_uri or not logo_uri.startswith('data:') or ',' not in logo_uri:
+        return None
+    try:
+        from reportlab.platypus import Image as RLImage
+        raw = base64.b64decode(logo_uri.split(',', 1)[1])
+        img = RLImage(io.BytesIO(raw))
+        max_w = 42 * mm
+        if img.imageWidth:
+            img.drawWidth = max_w
+            img.drawHeight = max_w * (img.imageHeight / float(img.imageWidth))
+        return img
+    except Exception:
+        return None
+
+
+def _build_invoice_pdf(brand, inv, items) -> bytes:
+    """Render a simple, self-contained invoice PDF with the operator's logo and
+    business name. Uses 'NGN' (Helvetica has no naira glyph)."""
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.units import mm
     from reportlab.lib import colors
@@ -542,11 +647,17 @@ def _build_invoice_pdf(operator, inv, items) -> bytes:
     doc = SimpleDocTemplate(buf, pagesize=A4, topMargin=20 * mm, bottomMargin=20 * mm,
                             leftMargin=18 * mm, rightMargin=18 * mm, title=inv['invoice_number'])
     styles = getSampleStyleSheet()
-    h = ParagraphStyle('h', parent=styles['Title'], fontSize=20, textColor=colors.HexColor('#082B66'))
+    h = ParagraphStyle('h', parent=styles['Title'], fontSize=20, alignment=0,
+                       textColor=colors.HexColor('#082B66'))
     small = ParagraphStyle('small', parent=styles['Normal'], fontSize=9, textColor=colors.HexColor('#555'))
-    story = [Paragraph(operator, h),
-             Paragraph('INVOICE', ParagraphStyle('t', parent=styles['Heading2'])),
-             Spacer(1, 6 * mm)]
+    story = []
+    logo = _logo_flowable(brand.get('logo'), mm)
+    if logo is not None:
+        logo.hAlign = 'LEFT'
+        story += [logo, Spacer(1, 4 * mm)]
+    story += [Paragraph(brand.get('name') or 'Invoice', h),
+              Paragraph('INVOICE', ParagraphStyle('t', parent=styles['Heading2'])),
+              Spacer(1, 6 * mm)]
 
     meta = [
         [Paragraph('<b>Invoice</b>', small), Paragraph(inv['invoice_number'], small),
@@ -585,5 +696,8 @@ def _build_invoice_pdf(operator, inv, items) -> bytes:
     story.append(Paragraph(f"Status: <b>{status}</b>", small))
     if inv['notes']:
         story += [Spacer(1, 4 * mm), Paragraph(inv['notes'], small)]
+    if brand.get('pay_instructions'):
+        story += [Spacer(1, 4 * mm),
+                  Paragraph(brand['pay_instructions'].replace('\n', '<br/>'), small)]
     doc.build(story)
     return buf.getvalue()

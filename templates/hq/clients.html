@@ -12,6 +12,12 @@
             <a href="{{ url_for('hq_billing.invoices') }}" class="btn btn-outline-primary">
                 <i class="fas fa-file-invoice"></i> Invoices
             </a>
+            <form method="post" action="{{ url_for('hq_billing.sync_members') }}" class="d-inline"
+                  onsubmit="return confirm('Pull the latest active-member count from each active client?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-outline-secondary" title="Update user counts from each client's live app">
+                    <i class="fas fa-sync"></i> Sync counts</button>
+            </form>
             <button class="btn btn-primary" data-bs-toggle="collapse" data-bs-target="#addClient">
                 <i class="fas fa-plus"></i> Add client
             </button>

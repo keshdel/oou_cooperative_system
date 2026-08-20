@@ -107,6 +107,42 @@ class HqBillingTests(unittest.TestCase):
             self.assertEqual(inv['status'], 'paid')
             self.assertEqual(inv['paid_method'], 'manual')
 
+    def test_member_count_endpoint_is_token_guarded(self):
+        os.environ['HQ_SYNC_TOKEN'] = 'sync-secret'
+        try:
+            with self.app.app_context():
+                db = get_db()
+                db.execute("INSERT INTO members (member_number, first_name, last_name, email, phone, "
+                           "status, monthly_savings, total_savings, date_joined) "
+                           "VALUES ('HQ/SYNC/1','A','B','sync@x.com','080','active',0,0,'2024-01-01')")
+                db.commit()
+            self.assertEqual(self.client.get('/api/hq/member-count').status_code, 403)
+            r = self.client.get('/api/hq/member-count', headers={'X-HQ-Token': 'sync-secret'})
+            self.assertEqual(r.status_code, 200)
+            body = r.get_json()
+            self.assertTrue(body['success'])
+            self.assertGreaterEqual(body['active_members'], 1)
+        finally:
+            os.environ.pop('HQ_SYNC_TOKEN', None)
+
+    def test_billing_settings_saved_and_pdf_renders(self):
+        self.login_admin()
+        self.client.post('/hq/billing-settings', data={
+            'hq_business_name': 'Adekail Professional Services',
+            'hq_payment_instructions': 'Kuda Bank 3000428469'})
+        with self.app.app_context():
+            v = get_db().execute("SELECT value FROM settings WHERE key = 'hq_business_name'").fetchone()
+            self.assertEqual(v['value'], 'Adekail Professional Services')
+        cid = self._add_client('Delta', 4, 5000)
+        self.client.post('/hq/invoices/new', data={
+            'client_id': cid, 'sub_mode': 'full', 'sub_qty': '4', 'sub_unit': '5000'})
+        with self.app.app_context():
+            inv_id = get_db().execute('SELECT id FROM hq_invoices WHERE client_id = ? ORDER BY id DESC',
+                                      (cid,)).fetchone()['id']
+        r = self.client.get(f'/hq/invoices/{inv_id}.pdf')
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.content_type, 'application/pdf')
+
 
 if __name__ == '__main__':
     unittest.main()

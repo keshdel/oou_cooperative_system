@@ -5,6 +5,7 @@ Existing routes under /api/mobile remain available for backward compatibility.
 New member-facing app routes use /api/mobile/v1.
 """
 
+import hmac
 import json
 import os
 import random
@@ -1085,6 +1086,19 @@ def mobile_tenant():
         'coop_short_name': _setting('coop_short_name', coop_name),
         'logo': _setting('coop_logo', ''),
     })
+
+
+@mobile_api.route('/api/hq/member-count', methods=['GET'])
+def hq_member_count():
+    """Report this cooperative's active-member count to HQ for billing.
+    Guarded by the shared HQ_SYNC_TOKEN (header X-HQ-Token); not public."""
+    token = (os.environ.get('HQ_SYNC_TOKEN') or '').strip()
+    provided = (request.headers.get('X-HQ-Token') or '').strip()
+    if not token or not hmac.compare_digest(provided, token):
+        return jsonify({'success': False, 'error': 'Unauthorised'}), 403
+    db = get_db()
+    n = db.execute("SELECT COUNT(*) FROM members WHERE status = 'active'").fetchone()[0] or 0
+    return jsonify({'success': True, 'active_members': int(n)})
 
 
 @mobile_api.route('/api/mobile/v1/tenants/resolve', methods=['GET'])
