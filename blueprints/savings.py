@@ -308,7 +308,7 @@ def salary_upload():
 
                     payment_date = _parse_date(row.get('date', '')) or datetime.now()
                     row_month = (row.get('month') or month).strip() or month
-                    notes = (row.get('notes') or '').strip() or f'Salary deduction batch {batch_ref}'
+                    notes = (row.get('notes') or '').strip() or f'Savings batch {batch_ref}'
                     receipt_number = (row.get('receipt_number') or '').strip()
                     if not receipt_number:
                         receipt_number = f"PAYROLL/{row_month.replace('-', '')}/{batch_ref.split('/')[-1]}/{row_num:04d}"
@@ -385,7 +385,7 @@ def salary_upload():
             db.commit()
             audit(db, 'IMPORT_SALARY_SAVINGS', 'savings',
                   f"Batch {batch_ref}: imported {success}, skipped {skipped}, errors {len(errors)}")
-            flash(f'Batch {batch_ref}: imported {success} salary savings record(s), skipped {skipped}.', 'success')
+            flash(f'Batch {batch_ref}: imported {success} savings record(s), skipped {skipped}.', 'success')
             for error in errors[:8]:
                 flash(error, 'warning')
             if len(errors) > 8:
