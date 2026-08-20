@@ -3,6 +3,7 @@
 {% block title %}Savings Batch - {{ batch.batch_ref }}{% endblock %}
 
 {% block content %}
+<style>.perm-table thead th { background-color:#e9eef5; color:#1f2937; }</style>
 <div class="container-fluid">
     <div class="row mb-3">
         <div class="col-md-8">
@@ -67,14 +68,50 @@
         </div>
     </div>
 
+    {% if can('accounting.post') %}
+    {% if batch.reversed_entries and not batch.active_entries %}
+    <div class="alert alert-secondary d-flex align-items-center">
+        <i class="fas fa-rotate-left me-2"></i>
+        This upload has been reversed. Member savings, shares and the ledger were restored; the
+        original rows remain for audit. Re-upload the corrected payments under a new batch.
+    </div>
+    {% elif batch.active_entries %}
+    <div class="card border-danger mb-3">
+        <div class="card-header bg-danger text-white d-flex justify-content-between align-items-center">
+            <span><i class="fas fa-triangle-exclamation"></i> Reverse this upload</span>
+            {% if batch.reversed_entries %}<span class="badge bg-light text-dark">{{ batch.reversed_entries }} already reversed</span>{% endif %}
+        </div>
+        <form method="post" action="{{ url_for('savings.salary_batch_reverse', batch_ref=batch.batch_ref) }}"
+              onsubmit="return confirm('Reverse all {{ batch.active_entries }} remaining row(s) in this upload? Member balances and the ledger will be restored. This is logged.');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="card-body">
+                <p class="mb-2 small text-muted">
+                    Undo a mistaken upload (e.g. a wrong share-capital split). This does not delete anything —
+                    it posts balancing ledger entries and restores each member's savings and shares. After
+                    reversing, fix the setting and re-upload under a <strong>new batch reference</strong>.
+                </p>
+                <label class="form-label mb-1">Reason (required)</label>
+                <textarea name="reason" class="form-control mb-2" rows="2" required
+                          placeholder="e.g. Share capital was set to 5% by mistake; savings under-recorded."></textarea>
+            </div>
+            <div class="card-footer text-end">
+                <button type="submit" class="btn btn-danger">
+                    <i class="fas fa-rotate-left"></i> Reverse {{ batch.active_entries }} row(s)
+                </button>
+            </div>
+        </form>
+    </div>
+    {% endif %}
+    {% endif %}
+
     <div class="card">
         <div class="card-header bg-light">
             <h5 class="mb-0">Batch Rows</h5>
         </div>
         <div class="table-responsive">
-            <table class="table table-sm table-hover align-middle mb-0">
+            <table class="table perm-table table-sm table-hover align-middle mb-0">
                 <caption class="px-3 text-muted">Imported payroll deduction rows with ledger posting status.</caption>
-                <thead class="table-light">
+                <thead>
                     <tr>
                         <th>#</th>
                         <th>Member</th>

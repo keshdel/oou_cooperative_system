@@ -219,7 +219,7 @@ PERMISSIONS = [
         'description': 'Raise journal entries, reverse them and close an accounting period.',
         'default_roles': ('admin', 'treasurer'),
         'endpoints': ('accounting.new_journal', 'accounting.reverse_entry',
-                      'accounting.period_close'),
+                      'accounting.period_close', 'savings.salary_batch_reverse'),
     },
     {
         'key': 'accounting.admin',

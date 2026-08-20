@@ -1801,6 +1801,117 @@ class HardeningFeatureTests(unittest.TestCase):
         self.assertEqual(export.status_code, 200)
         self.assertIn(b'posted_to_gl', export.data)
 
+    def test_salary_batch_reverse_restores_savings_shares_and_ledger(self):
+        """A mistaken upload can be reversed with a reason: member savings and
+        shares are restored, the ledger gets a balancing entry, nothing is
+        deleted, and a re-run is a no-op. Models the ooucoop 5%-share incident."""
+        self.login_admin()
+        member_id = self.create_member()
+        batch = 'SAL-SAV/REVTEST/0007'
+        month = '2026-09'
+        base_sav = base_shr = 0.0
+        deposit_receipt = None
+        try:
+            with self.app.app_context():
+                db = get_db()
+                m0 = db.execute('SELECT total_savings, shares_value FROM members WHERE id = ?',
+                                (member_id,)).fetchone()
+                base_sav = float(m0['total_savings'] or 0)
+                base_shr = float((m0['shares_value'] if 'shares_value' in m0.keys() else 0) or 0)
+                # Reproduce the incident: 5% of each contribution diverted to shares.
+                db.execute("DELETE FROM settings WHERE key = 'share_capital_pct'")
+                db.execute("INSERT INTO settings (key, value) VALUES ('share_capital_pct', '5')")
+                db.commit()
+
+            csv_body = (
+                'member_number,employee_id,email,phone,amount,month,date,receipt_number,notes\n'
+                f'OOU/TEST/0001,EMP001,ada.audit@example.com,08000000001,10000,{month},{month}-05,,Sept payroll\n'
+            )
+            up = self.client.post(
+                '/savings/salary-upload',
+                data={'month': month, 'batch_ref': batch,
+                      'file': (BytesIO(csv_body.encode('utf-8')), 'salary.csv')},
+                content_type='multipart/form-data', follow_redirects=False)
+            self.assertIn(up.status_code, (302, 303))
+
+            with self.app.app_context():
+                db = get_db()
+                sav = db.execute('SELECT * FROM savings WHERE import_batch = ? AND member_id = ?',
+                                 (batch, member_id)).fetchone()
+                self.assertIsNotNone(sav)
+                sav_id = sav['id']
+                deposit_receipt = sav['receipt_number']
+                self.assertAlmostEqual(float(sav['amount']), 9500.0, places=2)            # 95% deposit
+                self.assertAlmostEqual(float(sav['share_capital'] or 0), 500.0, places=2)  # 5% shares
+                m1 = db.execute('SELECT total_savings, shares_value FROM members WHERE id = ?',
+                                (member_id,)).fetchone()
+                self.assertAlmostEqual(float(m1['total_savings']), base_sav + 9500.0, places=2)
+                self.assertAlmostEqual(float(m1['shares_value'] or 0), base_shr + 500.0, places=2)
+
+            # A reason is required — a blank one changes nothing.
+            no_reason = self.client.post(f'/savings/batch/{batch}/reverse',
+                                         data={'reason': '   '}, follow_redirects=False)
+            self.assertIn(no_reason.status_code, (302, 303))
+            with self.app.app_context():
+                db = get_db()
+                je = db.execute("SELECT reversed_at FROM journal_entries "
+                                "WHERE source_module = 'savings_deposit' AND source_id = ?",
+                                (sav_id,)).fetchone()
+                self.assertIsNone(je['reversed_at'])
+
+            # Reverse for real.
+            rv = self.client.post(f'/savings/batch/{batch}/reverse',
+                                  data={'reason': 'Share capital was 5% by mistake'},
+                                  follow_redirects=False)
+            self.assertIn(rv.status_code, (302, 303))
+            with self.app.app_context():
+                db = get_db()
+                je = db.execute("SELECT id, reversed_at FROM journal_entries "
+                                "WHERE source_module = 'savings_deposit' AND source_id = ?",
+                                (sav_id,)).fetchone()
+                self.assertIsNotNone(je['reversed_at'])                    # original marked reversed
+                rev_count = db.execute("SELECT COUNT(*) FROM journal_entries WHERE reversal_of = ?",
+                                       (je['id'],)).fetchone()[0]
+                self.assertEqual(rev_count, 1)                             # one balancing entry posted
+                m2 = db.execute('SELECT total_savings, shares_value FROM members WHERE id = ?',
+                                (member_id,)).fetchone()
+                self.assertAlmostEqual(float(m2['total_savings']), base_sav, places=2)   # restored
+                self.assertAlmostEqual(float(m2['shares_value'] or 0), base_shr, places=2)
+                aud = db.execute("SELECT description FROM audit_log "
+                                 "WHERE action = 'REVERSE_SAVINGS_BATCH' ORDER BY id DESC").fetchone()
+                self.assertIsNotNone(aud)
+                self.assertIn('5%', aud['description'])                    # reason captured
+
+            # Re-running is a no-op.
+            again = self.client.post(f'/savings/batch/{batch}/reverse',
+                                     data={'reason': 'again'}, follow_redirects=False)
+            self.assertIn(again.status_code, (302, 303))
+            with self.app.app_context():
+                db = get_db()
+                je = db.execute("SELECT id FROM journal_entries "
+                                "WHERE source_module = 'savings_deposit' AND source_id = ?",
+                                (sav_id,)).fetchone()
+                rev_count = db.execute("SELECT COUNT(*) FROM journal_entries WHERE reversal_of = ?",
+                                       (je['id'],)).fetchone()[0]
+                self.assertEqual(rev_count, 1)                             # still just one
+        finally:
+            with self.app.app_context():
+                db = get_db()
+                db.execute("DELETE FROM settings WHERE key = 'share_capital_pct'")
+                # Remove ledger + savings traces so shared-DB reconciliation tests stay clean.
+                if deposit_receipt:
+                    ids = [d['id'] for d in db.execute(
+                        "SELECT id FROM journal_entries WHERE reference = ?", (deposit_receipt,)).fetchall()]
+                    ids += [r['id'] for did in list(ids) for r in db.execute(
+                        "SELECT id FROM journal_entries WHERE reversal_of = ?", (did,)).fetchall()]
+                    for jid in ids:
+                        db.execute("DELETE FROM journal_lines WHERE entry_id = ?", (jid,))
+                        db.execute("DELETE FROM journal_entries WHERE id = ?", (jid,))
+                db.execute("DELETE FROM savings WHERE member_id = ? AND month = ?", (member_id, month))
+                db.execute("UPDATE members SET total_savings = ?, shares_value = ? WHERE id = ?",
+                           (base_sav, base_shr, member_id))
+                db.commit()
+
     def test_accounting_exports_journal_and_gl_register_csv(self):
         self.login_admin()
         with self.app.app_context():

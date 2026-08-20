@@ -12,7 +12,8 @@ from database import get_db, last_insert_id
 from email_service import send_payment_confirmation_email
 from utils import (role_required, audit, notify_member, record_revenue, share_capital_split,
                    member_savings_balance)
-from ledger import post_journal_safe, get_default_cash_account, MEMBER_DEPOSITS, FEE_INCOME, SHARE_CAPITAL
+from ledger import (post_journal_safe, get_default_cash_account, reverse_journal_entry,
+                    PeriodLockedError, MEMBER_DEPOSITS, FEE_INCOME, SHARE_CAPITAL)
 
 savings = Blueprint('savings', __name__)
 
@@ -114,6 +115,19 @@ def salary_batch_detail(batch_ref):
         flash('Savings batch not found.', 'warning')
         return redirect(url_for('savings.savings_list'))
 
+    # How many of this batch's ledger entries are still active (reversible) vs
+    # already reversed — drives the Reverse-upload control.
+    sav_ids = [r['id'] for r in rows]
+    active_entries = reversed_entries = 0
+    if sav_ids:
+        placeholders = ','.join('?' for _ in sav_ids)
+        active_entries = db.execute(
+            f"SELECT COUNT(*) FROM journal_entries WHERE source_module = 'savings_deposit' "
+            f"AND source_id IN ({placeholders}) AND reversed_at IS NULL", sav_ids).fetchone()[0]
+        reversed_entries = db.execute(
+            f"SELECT COUNT(*) FROM journal_entries WHERE source_module = 'savings_deposit' "
+            f"AND source_id IN ({placeholders}) AND reversed_at IS NOT NULL", sav_ids).fetchone()[0]
+
     summary = {
         'batch_ref': batch_ref,
         'source_file': rows[0]['source_file'] or '',
@@ -121,6 +135,8 @@ def salary_batch_detail(batch_ref):
         'total_amount': sum(float(r['amount'] or 0) for r in rows),
         'total_late_fee': sum(float(r['late_fee'] or 0) for r in rows),
         'posted_count': sum(1 for r in rows if r['posted_to_gl']),
+        'active_entries': active_entries,
+        'reversed_entries': reversed_entries,
         'first_date': rows[0]['date'],
         'last_date': rows[-1]['date'],
     }
@@ -159,6 +175,67 @@ def salary_batch_export(batch_ref):
     safe_name = batch_ref.replace('/', '_').replace('\\', '_')
     response.headers['Content-Disposition'] = f'attachment; filename=savings_batch_{safe_name}.csv'
     return response
+
+
+@savings.route('/savings/batch/<path:batch_ref>/reverse', methods=['POST'])
+@login_required
+@role_required('admin', 'treasurer')
+def salary_batch_reverse(batch_ref):
+    """Reverse an entire savings upload after a mistake (e.g. a wrong share
+    split). Reversal, not deletion: for each row it posts a balancing journal
+    entry, restores the member's savings + shares, and leaves a compensating
+    record — the original rows and their reason stay for audit. Re-run safe:
+    rows already reversed are skipped."""
+    db = get_db()
+    reason = (request.form.get('reason') or '').strip()
+    if not reason:
+        flash('Please give a reason for reversing this upload.', 'danger')
+        return redirect(url_for('savings.salary_batch_detail', batch_ref=batch_ref))
+
+    rows = db.execute('SELECT id FROM savings WHERE import_batch = ?', (batch_ref,)).fetchall()
+    if not rows:
+        flash('Savings batch not found.', 'warning')
+        return redirect(url_for('savings.savings_list'))
+
+    reversed_n = skipped_n = 0
+    errors = []
+    try:
+        for s in rows:
+            entry = db.execute(
+                "SELECT id FROM journal_entries "
+                "WHERE source_module = 'savings_deposit' AND source_id = ? AND reversed_at IS NULL",
+                (s['id'],)).fetchone()
+            if not entry:
+                skipped_n += 1          # already reversed, or never posted to GL
+                continue
+            try:
+                reverse_journal_entry(db, entry['id'], created_by=current_user.id)
+                reversed_n += 1
+            except PeriodLockedError as ple:
+                errors.append(str(ple))
+            except ValueError:
+                skipped_n += 1          # itself a reversal / already reversed / no lines
+        audit(db, 'REVERSE_SAVINGS_BATCH', 'savings',
+              f"Batch {batch_ref}: reversed {reversed_n}, skipped {skipped_n}. Reason: {reason}")
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        flash(f'Could not reverse the upload: {e}', 'danger')
+        return redirect(url_for('savings.salary_batch_detail', batch_ref=batch_ref))
+
+    if reversed_n:
+        msg = (f'Reversed {reversed_n} row(s) from this upload. Member savings, shares and '
+               f'the ledger have been restored.')
+        if skipped_n:
+            msg += f' {skipped_n} row(s) were already reversed or had no ledger entry.'
+        flash(msg, 'success')
+    elif errors:
+        flash('Nothing was reversed — see the messages below.', 'warning')
+    else:
+        flash('Nothing to reverse — every row in this upload was already reversed.', 'info')
+    for err in errors[:5]:
+        flash(err, 'warning')
+    return redirect(url_for('savings.salary_batch_detail', batch_ref=batch_ref))
 
 
 @savings.route('/savings/salary-template')
