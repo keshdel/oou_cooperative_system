@@ -210,6 +210,15 @@ def salary_batch_reverse(batch_ref):
                 continue
             try:
                 reverse_journal_entry(db, entry['id'], created_by=current_user.id)
+                # Mark the original row reversed and free its receipt number, so
+                # the corrected batch can be re-uploaded (excluded from the
+                # duplicate check; no clash with the unique receipt index).
+                db.execute(
+                    "UPDATE savings SET reversed_at = ?, "
+                    "receipt_number = CASE WHEN receipt_number IS NOT NULL AND receipt_number != '' "
+                    "THEN receipt_number || '~REV' || CAST(id AS TEXT) ELSE receipt_number END "
+                    "WHERE id = ? AND reversed_at IS NULL",
+                    (datetime.now(), s['id']))
                 reversed_n += 1
             except PeriodLockedError as ple:
                 errors.append(str(ple))
@@ -313,9 +322,13 @@ def salary_upload():
                     if not receipt_number:
                         receipt_number = f"PAYROLL/{row_month.replace('-', '')}/{batch_ref.split('/')[-1]}/{row_num:04d}"
 
+                    # Duplicate = the same receipt already imported (makes re-running
+                    # a batch idempotent). A member may legitimately have several
+                    # savings in one month — salary deduction plus voluntary savings —
+                    # so month is NOT a uniqueness criterion; only the receipt is.
                     exists = db.execute(
-                        'SELECT id FROM savings WHERE receipt_number = ? OR (import_batch = ? AND member_id = ? AND month = ?)',
-                        (receipt_number, batch_ref, member['id'], row_month),
+                        'SELECT id FROM savings WHERE reversed_at IS NULL AND receipt_number = ?',
+                        (receipt_number,),
                     ).fetchone()
                     if exists:
                         skipped += 1

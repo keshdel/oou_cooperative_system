@@ -434,6 +434,9 @@ def init_db():
     _add_col(db, 'savings', 'verified_at', 'TIMESTAMP')
     _add_col(db, 'savings', 'import_batch', 'TEXT')
     _add_col(db, 'savings', 'source_file', 'TEXT')
+    # Set when an upload batch is reversed, so the row no longer blocks a
+    # corrected re-upload (excluded from the duplicate check; receipt freed).
+    _add_col(db, 'savings', 'reversed_at', 'TIMESTAMP')
 
     # Loans table
     db.execute(_adapt('''
@@ -1363,6 +1366,27 @@ def init_db():
             print(f"  [auth] Created user '{username}' with role '{role}'.")
         except Exception as e:
             print(f"Error creating user {username}: {e}")
+
+    # Heal any savings rows whose deposit was reversed BEFORE reversed_at existed:
+    # mark them reversed and free their receipt number, so a corrected batch can
+    # be re-uploaded without tripping the duplicate check or the unique receipt
+    # index. Idempotent (skips rows already suffixed).
+    try:
+        db.execute('''
+            UPDATE savings SET reversed_at = CURRENT_TIMESTAMP,
+                receipt_number = CASE
+                    WHEN receipt_number IS NOT NULL AND receipt_number != ''
+                    THEN receipt_number || '~REV' || CAST(id AS TEXT)
+                    ELSE receipt_number END
+            WHERE reversed_at IS NULL
+              AND (receipt_number IS NULL OR receipt_number NOT LIKE '%~REV%')
+              AND id IN (
+                SELECT source_id FROM journal_entries
+                WHERE source_module = 'savings_deposit' AND source_id IS NOT NULL
+                  AND reversed_at IS NOT NULL)
+        ''')
+    except Exception as exc:
+        print(f"[schema] skipped reversed-savings backfill: {exc}")
 
     backend = 'PostgreSQL' if USE_POSTGRES else 'SQLite'
     print(f"\n{'=' * 60}")

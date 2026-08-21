@@ -1912,6 +1912,122 @@ class HardeningFeatureTests(unittest.TestCase):
                            (base_sav, base_shr, member_id))
                 db.commit()
 
+    def test_reupload_after_reversal_is_not_blocked_and_no_share_split_at_zero(self):
+        """The ooucoop case: after a batch is reversed, the SAME data (same
+        receipts, as from the batch export) must re-upload cleanly, and with
+        share_capital_pct=0 nothing is diverted to shares."""
+        self.login_admin()
+        member_id = self.create_member()
+        batch = 'SAL-SAV/REUP/0001'
+        month = '2026-10'
+        receipt = 'PAYROLL/REUP/0001/0001'
+        base_sav = base_shr = 0.0
+        try:
+            with self.app.app_context():
+                db = get_db()
+                m0 = db.execute('SELECT total_savings, shares_value FROM members WHERE id = ?',
+                                (member_id,)).fetchone()
+                base_sav = float(m0['total_savings'] or 0)
+                base_shr = float((m0['shares_value'] if 'shares_value' in m0.keys() else 0) or 0)
+                db.execute("DELETE FROM settings WHERE key = 'share_capital_pct'")
+                db.execute("INSERT INTO settings (key, value) VALUES ('share_capital_pct', '0')")
+                db.commit()
+
+            csv_body = (
+                'member_number,employee_id,email,phone,amount,month,date,receipt_number,notes\n'
+                f'OOU/TEST/0001,EMP001,ada.audit@example.com,08000000001,10000,{month},{month}-05,{receipt},Oct\n')
+
+            def _upload(follow):
+                return self.client.post('/savings/salary-upload',
+                    data={'month': month, 'batch_ref': batch,
+                          'file': (BytesIO(csv_body.encode('utf-8')), 's.csv')},
+                    content_type='multipart/form-data', follow_redirects=follow)
+
+            self.assertIn(_upload(False).status_code, (302, 303))
+            with self.app.app_context():
+                db = get_db()
+                row = db.execute('SELECT * FROM savings WHERE receipt_number = ?', (receipt,)).fetchone()
+                self.assertIsNotNone(row)
+                self.assertAlmostEqual(float(row['amount']), 10000.0, places=2)          # no split
+                self.assertAlmostEqual(float(row['share_capital'] or 0), 0.0, places=2)
+                orig_id = row['id']
+
+            # Reverse the batch.
+            rv = self.client.post(f'/savings/batch/{batch}/reverse',
+                                  data={'reason': 'wrong data'}, follow_redirects=False)
+            self.assertIn(rv.status_code, (302, 303))
+            with self.app.app_context():
+                db = get_db()
+                orig = db.execute('SELECT reversed_at, receipt_number FROM savings WHERE id = ?', (orig_id,)).fetchone()
+                self.assertIsNotNone(orig['reversed_at'])          # marked reversed
+                self.assertIn('~REV', orig['receipt_number'])      # receipt freed
+
+            # Re-upload the SAME rows (same receipt) — previously blocked as duplicate.
+            self.assertEqual(_upload(True).status_code, 200)
+            with self.app.app_context():
+                db = get_db()
+                fresh = db.execute("SELECT * FROM savings WHERE receipt_number = ? AND reversed_at IS NULL",
+                                   (receipt,)).fetchone()
+                self.assertIsNotNone(fresh)                        # re-upload succeeded
+                self.assertAlmostEqual(float(fresh['amount']), 10000.0, places=2)
+                self.assertAlmostEqual(float(fresh['share_capital'] or 0), 0.0, places=2)
+        finally:
+            with self.app.app_context():
+                db = get_db()
+                db.execute("DELETE FROM settings WHERE key = 'share_capital_pct'")
+                ids = [r['id'] for r in db.execute('SELECT id FROM savings WHERE member_id = ? AND month = ?',
+                                                   (member_id, month)).fetchall()]
+                for sid in ids:
+                    deps = [d['id'] for d in db.execute(
+                        "SELECT id FROM journal_entries WHERE source_module = 'savings_deposit' AND source_id = ?",
+                        (sid,)).fetchall()]
+                    alljes = list(deps)
+                    for did in deps:
+                        alljes += [r['id'] for r in db.execute(
+                            'SELECT id FROM journal_entries WHERE reversal_of = ?', (did,)).fetchall()]
+                    for jid in alljes:
+                        db.execute('DELETE FROM journal_lines WHERE entry_id = ?', (jid,))
+                        db.execute('DELETE FROM journal_entries WHERE id = ?', (jid,))
+                db.execute('DELETE FROM savings WHERE member_id = ? AND month = ?', (member_id, month))
+                db.execute('UPDATE members SET total_savings = ?, shares_value = ? WHERE id = ?',
+                           (base_sav, base_shr, member_id))
+                db.commit()
+
+    def test_member_can_have_two_savings_in_one_month(self):
+        """Salary deduction + voluntary savings in the same month must both
+        import — month is not a uniqueness criterion."""
+        self.login_admin()
+        member_id = self.create_member()
+        batch = 'SAL-SAV/MULTI/0001'
+        month = '2026-11'
+        try:
+            csv_body = (
+                'member_number,employee_id,email,phone,amount,month,date,receipt_number,notes\n'
+                f'OOU/TEST/0001,EMP001,ada.audit@example.com,08000000001,8000,{month},{month}-05,,Salary deduction\n'
+                f'OOU/TEST/0001,EMP001,ada.audit@example.com,08000000001,5000,{month},{month}-20,,Voluntary savings\n')
+            r = self.client.post('/savings/salary-upload',
+                data={'month': month, 'batch_ref': batch,
+                      'file': (BytesIO(csv_body.encode('utf-8')), 's.csv')},
+                content_type='multipart/form-data', follow_redirects=False)
+            self.assertIn(r.status_code, (302, 303))
+            with self.app.app_context():
+                n = get_db().execute('SELECT COUNT(*) FROM savings WHERE import_batch = ? AND member_id = ?',
+                                     (batch, member_id)).fetchone()[0]
+                self.assertEqual(n, 2)   # both rows imported, same month
+        finally:
+            with self.app.app_context():
+                db = get_db()
+                ids = [r['id'] for r in db.execute('SELECT id FROM savings WHERE member_id = ? AND month = ?',
+                                                   (member_id, month)).fetchall()]
+                for sid in ids:
+                    for j in db.execute("SELECT id FROM journal_entries WHERE source_module = 'savings_deposit' AND source_id = ?",
+                                        (sid,)).fetchall():
+                        db.execute('DELETE FROM journal_lines WHERE entry_id = ?', (j['id'],))
+                        db.execute('DELETE FROM journal_entries WHERE id = ?', (j['id'],))
+                db.execute('DELETE FROM savings WHERE member_id = ? AND month = ?', (member_id, month))
+                db.execute('UPDATE members SET total_savings = 0, shares_value = 0 WHERE id = ?', (member_id,))
+                db.commit()
+
     def test_accounting_exports_journal_and_gl_register_csv(self):
         self.login_admin()
         with self.app.app_context():

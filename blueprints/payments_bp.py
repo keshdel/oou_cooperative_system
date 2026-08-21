@@ -98,10 +98,10 @@ def _record_payment(db, reference: str) -> bool:
 
     if ptype == 'savings':
         month = row['month']
-        # Idempotency: skip if this month's savings already recorded
+        # Idempotency is per PAYMENT (reference), not per month — a member may
+        # save more than once in a month (e.g. salary deduction + voluntary).
         exists = db.execute(
-            'SELECT id FROM savings WHERE member_id = ? AND month = ?',
-            (member_id, month)
+            'SELECT id FROM savings WHERE reference = ?', (reference,)
         ).fetchone()
         if not exists:
             db.execute(
@@ -206,14 +206,9 @@ def initiate_savings():
         flash(f'Invalid payment details: {exc}', 'danger')
         return redirect(url_for('portal.my_savings'))
 
-    # Check for duplicate (same month already paid)
-    exists = db.execute(
-        'SELECT id FROM savings WHERE member_id = ? AND month = ?',
-        (member['id'], month)
-    ).fetchone()
-    if exists:
-        flash(f'Savings for {month} have already been recorded.', 'warning')
-        return redirect(url_for('portal.my_savings'))
+    # A member may save more than once in a month (salary deduction + voluntary),
+    # so we do not block on month here. Each payment is a distinct transaction and
+    # is de-duplicated by its gateway reference when confirmed.
 
     gateway_name = db.execute(
         "SELECT value FROM settings WHERE key = 'active_gateway'"
