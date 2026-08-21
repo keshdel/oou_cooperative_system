@@ -65,13 +65,21 @@ def _batch_ref(month):
 @role_required('admin', 'treasurer', 'secretary', 'exco')
 def savings_list():
     db = get_db()
+    # Hide reversal bookkeeping from the records list: the compensating negative
+    # rows (payment_type='reversal') and the originals they cancelled
+    # (reversed_at set). They net to zero, so the totals are unchanged, but the
+    # list shows only live contributions. The full trail stays on the batch page.
     all_savings = db.execute('''
         SELECT s.*, m.first_name || ' ' || m.last_name as member_name
         FROM savings s
         JOIN members m ON s.member_id = m.id
+        WHERE COALESCE(s.payment_type, '') != 'reversal' AND s.reversed_at IS NULL
         ORDER BY s.date DESC
     ''').fetchall()
-    total_savings = db.execute('SELECT SUM(amount) FROM savings').fetchone()[0] or 0
+    total_savings = db.execute(
+        "SELECT SUM(amount) FROM savings "
+        "WHERE COALESCE(payment_type, '') != 'reversal' AND reversed_at IS NULL"
+    ).fetchone()[0] or 0
     batches = db.execute('''
         SELECT import_batch, source_file, MIN(date) AS first_date, MAX(date) AS last_date,
                COUNT(*) AS row_count,

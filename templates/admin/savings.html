@@ -85,8 +85,8 @@
                         </td>
                         <td>{{ batch.source_file or '-' }}</td>
                         <td>{{ batch.row_count }}</td>
-                        <td class="text-end">â‚¦{{ "{:,.2f}".format(batch.total_amount) }}</td>
-                        <td class="text-end">â‚¦{{ "{:,.2f}".format(batch.total_late_fee) }}</td>
+                        <td class="text-end">&#8358;{{ "{:,.2f}".format(batch.total_amount) }}</td>
+                        <td class="text-end">&#8358;{{ "{:,.2f}".format(batch.total_late_fee) }}</td>
                         <td>{{ batch.last_date|string|truncate(10, True, '') }}</td>
                     </tr>
                     {% endfor %}
