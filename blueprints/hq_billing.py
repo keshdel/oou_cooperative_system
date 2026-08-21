@@ -101,6 +101,41 @@ def _client_base_url(client):
     return f'https://{code}.cooperativems.com'
 
 
+def _set_tenant_access(client, suspend):
+    """Call a client's token-guarded set-status endpoint. Returns (ok, message)."""
+    token = (os.environ.get('HQ_SYNC_TOKEN') or '').strip()
+    if not token:
+        return False, 'HQ_SYNC_TOKEN is not set in the HQ environment.'
+    base = _client_base_url(client)
+    if not base:
+        return False, 'client has no code/subdomain to reach.'
+    try:
+        body = json.dumps({'suspended': suspend}).encode('utf-8')
+        req = urllib.request.Request(
+            f'{base}/api/hq/set-status', data=body, method='POST',
+            headers={'X-HQ-Token': token, 'Content-Type': 'application/json', 'Accept': 'application/json'})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read())
+        return bool(data.get('success')), ('' if data.get('success') else 'the tenant rejected the request.')
+    except Exception as exc:  # pragma: no cover - network
+        return False, str(exc)
+
+
+def _maybe_auto_reactivate(db, client_id):
+    """Reactivate a suspended client when they pay. Best-effort: if the tenant
+    can't be reached the invoice still records as paid. Returns True if it
+    flipped the client back to active."""
+    client = db.execute('SELECT * FROM hq_clients WHERE id = ?', (client_id,)).fetchone()
+    if not client or client['access_state'] != 'suspended':
+        return False
+    ok, _ = _set_tenant_access(client, False)
+    if ok:
+        db.execute("UPDATE hq_clients SET access_state = 'active', updated_at = ? WHERE id = ?",
+                   (datetime.now(), client_id))
+        audit(db, 'HQ_CLIENT_ACCESS', 'hq_billing', f"Auto-reactivated {client['name']} on payment")
+    return ok
+
+
 def _money(value):
     try:
         return f"{float(value or 0):,.2f}"
@@ -266,33 +301,18 @@ def set_client_access(client_id):
     if not client:
         abort(404)
     suspend = request.form.get('suspend') == '1'
-    token = (os.environ.get('HQ_SYNC_TOKEN') or '').strip()
-    if not token:
-        flash('Set HQ_SYNC_TOKEN in the HQ environment (and each tenant) first.', 'warning')
-        return redirect(url_for('hq_billing.clients'))
-    base = _client_base_url(client)
-    if not base:
-        flash(f'{client["name"]} has no code/subdomain to reach — add one first.', 'danger')
-        return redirect(url_for('hq_billing.clients'))
-    try:
-        body = json.dumps({'suspended': suspend}).encode('utf-8')
-        req = urllib.request.Request(
-            f'{base}/api/hq/set-status', data=body, method='POST',
-            headers={'X-HQ-Token': token, 'Content-Type': 'application/json', 'Accept': 'application/json'})
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            data = json.loads(resp.read())
-        if data.get('success'):
-            db.execute('UPDATE hq_clients SET access_state = ?, updated_at = ? WHERE id = ?',
-                       ('suspended' if suspend else 'active', datetime.now(), client_id))
-            audit(db, 'HQ_CLIENT_ACCESS', 'hq_billing',
-                  f"{'Suspended' if suspend else 'Reactivated'} {client['name']}")
-            db.commit()
-            flash(f"{client['name']} has been {'suspended' if suspend else 'reactivated'}.", 'success')
-        else:
-            flash(f"{client['name']} rejected the request — check the shared token matches.", 'danger')
-    except Exception as exc:  # pragma: no cover - network
-        current_app.logger.warning('HQ set-access failed for %s: %s', client['name'], exc)
-        flash(f"Could not reach {client['name']}. Check its code and that it is deployed with the token.", 'danger')
+    ok, message = _set_tenant_access(client, suspend)
+    if ok:
+        db.execute('UPDATE hq_clients SET access_state = ?, updated_at = ? WHERE id = ?',
+                   ('suspended' if suspend else 'active', datetime.now(), client_id))
+        audit(db, 'HQ_CLIENT_ACCESS', 'hq_billing',
+              f"{'Suspended' if suspend else 'Reactivated'} {client['name']}")
+        db.commit()
+        flash(f"{client['name']} has been {'suspended' if suspend else 'reactivated'}.", 'success')
+    else:
+        current_app.logger.warning('HQ set-access failed for %s: %s', client['name'], message)
+        flash(f"Could not update {client['name']}: {message} "
+              f"Check its code and that it is deployed with the shared token.", 'danger')
     return redirect(url_for('hq_billing.clients'))
 
 
@@ -636,8 +656,9 @@ def mark_paid(invoice_id):
                     payment_reference = ? WHERE id = ?''', (datetime.now(), ref, invoice_id))
     audit(db, 'HQ_INVOICE_PAID_MANUAL', 'hq_billing',
           f"Invoice {inv['invoice_number']} marked paid (manual, ref {ref})")
+    reactivated = _maybe_auto_reactivate(db, inv['client_id'])
     db.commit()
-    flash('Invoice marked as paid.', 'success')
+    flash('Invoice marked as paid.' + (' Client access has been reactivated.' if reactivated else ''), 'success')
     return redirect(url_for('hq_billing.invoice_detail', invoice_id=invoice_id))
 
 
@@ -794,6 +815,7 @@ def pay_callback():
                    "WHERE id = ?", (datetime.now(), inv['id']))
         audit(db, 'HQ_INVOICE_PAID_ONLINE', 'hq_billing',
               f"Invoice {inv['invoice_number']} paid online (ref {reference})")
+        _maybe_auto_reactivate(db, inv['client_id'])
         db.commit()
         return render_template('hq/pay-result.html', ok=True, already=False, inv=inv)
     return render_template('hq/pay-result.html', ok=False, already=False, inv=inv,

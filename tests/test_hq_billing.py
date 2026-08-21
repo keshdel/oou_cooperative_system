@@ -274,6 +274,29 @@ class HqBillingTests(unittest.TestCase):
         finally:
             os.environ.pop('HQ_SYNC_TOKEN', None)
 
+    def test_marking_invoice_paid_auto_reactivates_a_suspended_client(self):
+        from unittest.mock import patch
+        self.login_admin()
+        cid = self._add_client('Reinstate', 5, 5000)
+        with self.app.app_context():
+            db = get_db()
+            db.execute("UPDATE hq_clients SET access_state = 'suspended' WHERE id = ?", (cid,))
+            db.commit()
+        self.client.post('/hq/invoices/new', data={
+            'client_id': cid, 'sub_mode': 'full', 'sub_qty': '5', 'sub_unit': '5000'})
+        with self.app.app_context():
+            inv_id = get_db().execute('SELECT id FROM hq_invoices WHERE client_id = ? ORDER BY id DESC',
+                                      (cid,)).fetchone()['id']
+        # The tenant call is stubbed to succeed (no real network in tests).
+        with patch('blueprints.hq_billing._set_tenant_access', return_value=(True, '')):
+            r = self.client.post(f'/hq/invoices/{inv_id}/mark-paid', data={'reference': 'TRF'}, follow_redirects=False)
+        self.assertIn(r.status_code, (302, 303))
+        with self.app.app_context():
+            row = get_db().execute('SELECT i.status AS inv_status, c.access_state FROM hq_invoices i '
+                                   'JOIN hq_clients c ON c.id = i.client_id WHERE i.id = ?', (inv_id,)).fetchone()
+            self.assertEqual(row['inv_status'], 'paid')
+            self.assertEqual(row['access_state'], 'active')   # auto-reactivated
+
     def test_tenant_suspend_endpoint_and_enforcement(self):
         os.environ['HQ_SYNC_TOKEN'] = 'access-secret'
         self.login_admin()
