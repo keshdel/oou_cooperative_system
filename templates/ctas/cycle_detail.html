@@ -115,7 +115,8 @@
                 <td class="text-end">{{ s.tenure_months }}m</td>
                 <td class="text-end">₦{{ "{:,.2f}".format(s.monthly_deduction or 0) }}</td>
                 <td class="text-end">₦{{ "{:,.2f}".format(s.admin_fee or 0) }}</td>
-                <td><span class="badge bg-{{ {'enrolled':'primary','scheduled':'info','active_recovery':'success','completed':'success','rejected':'dark','submitted':'secondary'}.get(s.status,'secondary') }}">{{ s.status|replace('_',' ')|title }}</span></td>
+                <td><span class="badge bg-{{ {'enrolled':'primary','scheduled':'info','active_recovery':'success','completed':'success','rejected':'dark','submitted':'secondary'}.get(s.status,'secondary') }}">{{ s.status|replace('_',' ')|title }}</span>
+                    {% if s.arrears_amount and s.arrears_amount > 0 %}<span class="badge bg-danger" title="In arrears">Arrears ₦{{ "{:,.0f}".format(s.arrears_amount) }}</span>{% endif %}</td>
                 <td class="text-end">{{ s.payout_month or '—' }}</td>
                 <td class="text-end">₦{{ "{:,.2f}".format(s.total_recovered or 0) }}{% if s.status in ['active_recovery','completed'] %}<div class="small text-muted">of ₦{{ "{:,.0f}".format(s.target_amount or 0) }}</div>{% endif %}</td>
                 <td class="text-nowrap">
@@ -146,6 +147,9 @@
                               onsubmit="return confirm('Pay out ₦{{ "{:,.2f}".format(s.target_amount or 0) }} to {{ s.member_name }}? This posts to the ledger.');">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <button class="btn btn-sm btn-success"><i class="fas fa-money-bill-wave"></i> Pay out</button></form>
+                    {% elif s.status == 'active_recovery' %}
+                        <a href="{{ url_for('ctas.exit_settle', sub_id=s.id) }}" class="btn btn-sm btn-outline-danger"
+                           title="Settle the outstanding balance on member exit">Exit / settle</a>
                     {% else %}<span class="text-muted small">—</span>{% endif %}
                 </td>
             </tr>

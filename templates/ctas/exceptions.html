@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}CTAS Exceptions - {{ coop_name }}{% endblock %}
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-3">
+        <div class="col-md-8">
+            <h2><i class="fas fa-triangle-exclamation text-warning"></i> CTAS Exceptions</h2>
+            <p class="text-muted mb-0">Missed/partial deductions and exit settlements needing attention.</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="{{ url_for('ctas.exceptions', status='open') }}" class="btn btn-sm {{ 'btn-primary' if show=='open' else 'btn-outline-secondary' }}">Open</a>
+            <a href="{{ url_for('ctas.exceptions', status='all') }}" class="btn btn-sm {{ 'btn-primary' if show=='all' else 'btn-outline-secondary' }}">All</a>
+            <a href="{{ url_for('ctas.dashboard') }}" class="btn btn-secondary btn-sm"><i class="fas fa-arrow-left"></i> Cycles</a>
+        </div>
+    </div>
+
+    <div class="card"><div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead><tr><th>Raised</th><th>Type</th><th>Member</th><th class="text-end">Month</th>
+                <th class="text-end">Amount</th><th>Description</th><th>Status</th><th></th></tr></thead>
+            <tbody>
+            {% for e in rows %}
+            <tr>
+                <td>{{ e.created_at|string|truncate(10, True, '') }}</td>
+                <td><span class="badge bg-{{ 'danger' if e.case_type=='missed_deduction' else 'secondary' }}">{{ e.case_type|replace('_',' ')|title }}</span></td>
+                <td>{{ e.member_name }}<div class="small text-muted">{{ e.member_number }}</div></td>
+                <td class="text-end">{{ e.month_number or '—' }}</td>
+                <td class="text-end">₦{{ "{:,.2f}".format(e.amount or 0) }}</td>
+                <td class="small">{{ e.description }}{% if e.resolution_note %}<div class="text-muted">Resolution: {{ e.resolution_note }}</div>{% endif %}</td>
+                <td><span class="badge bg-{{ 'success' if e.status=='resolved' else 'warning text-dark' }}">{{ e.status|title }}</span></td>
+                <td class="text-end">
+                    {% if e.status == 'open' %}
+                    <form method="post" action="{{ url_for('ctas.resolve_exception', case_id=e.id) }}" class="d-flex gap-1">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input class="form-control form-control-sm" name="resolution_note" placeholder="Resolution note" style="min-width:160px">
+                        <button class="btn btn-sm btn-outline-success">Resolve</button>
+                    </form>
+                    {% endif %}
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="8" class="text-center text-muted py-4">No exceptions {{ 'open' if show=='open' else 'recorded' }}.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div></div>
+</div>
+{% endblock %}

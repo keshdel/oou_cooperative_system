@@ -946,6 +946,26 @@ def init_db():
         )
     '''))
     _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_ctas_payroll_lines_sub ON ctas_payroll_lines(subscription_id)')
+    _add_col(db, 'ctas_subscriptions', 'arrears_amount', 'REAL DEFAULT 0')
+
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS ctas_exceptions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            subscription_id INTEGER NOT NULL,
+            case_type TEXT DEFAULT 'missed_deduction',
+            status TEXT DEFAULT 'open',
+            month_number INTEGER,
+            amount REAL DEFAULT 0,
+            description TEXT,
+            resolution_note TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            resolved_at TIMESTAMP,
+            resolved_by INTEGER,
+            FOREIGN KEY (subscription_id) REFERENCES ctas_subscriptions (id)
+        )
+    '''))
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_ctas_exceptions_status ON ctas_exceptions(status, case_type)')
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_ctas_exceptions_sub ON ctas_exceptions(subscription_id)')
 
     # Member communication campaigns and delivery attempts.
     db.execute(_adapt('''

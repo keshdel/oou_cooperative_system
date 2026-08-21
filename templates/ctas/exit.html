@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block title %}Exit settlement - {{ coop_name }}{% endblock %}
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-3">
+        <div class="col-md-8">
+            <h2><i class="fas fa-door-open"></i> Exit settlement</h2>
+            <p class="text-muted mb-0">{{ sub.member_name }} ({{ sub.member_number }}) — settle the outstanding advance on exit.</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="{{ url_for('ctas.cycle_detail', cycle_id=sub.cycle_id) }}" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> Back</a>
+        </div>
+    </div>
+
+    <div class="row g-3">
+        <div class="col-lg-7">
+            <div class="card mb-3"><div class="card-header bg-light"><h6 class="mb-0">Net-off waterfall</h6></div>
+            <div class="card-body">
+                <p class="text-muted small">Outstanding is recovered in order: savings → share capital → other recoveries → write-off.</p>
+                <table class="table mb-0">
+                    <tr><td>Outstanding advance</td><td class="text-end fw-bold">₦{{ "{:,.2f}".format(outstanding) }}</td></tr>
+                    <tr><td>From savings <span class="text-muted small">(available ₦{{ "{:,.0f}".format(savings) }})</span></td>
+                        <td class="text-end">₦{{ "{:,.2f}".format(wf.from_savings) }}</td></tr>
+                    <tr><td>From share capital <span class="text-muted small">(available ₦{{ "{:,.0f}".format(shares) }})</span></td>
+                        <td class="text-end">₦{{ "{:,.2f}".format(wf.from_shares) }}</td></tr>
+                    <tr><td>From other recoveries <span class="text-muted small">(you enter)</span></td>
+                        <td class="text-end" id="otherCell">₦0.00</td></tr>
+                    <tr class="table-warning"><td>Write-off (committee approval)</td>
+                        <td class="text-end" id="writeoffCell">₦{{ "{:,.2f}".format(wf.write_off) }}</td></tr>
+                </table>
+            </div></div>
+        </div>
+        <div class="col-lg-5">
+            <div class="card border-danger"><div class="card-body">
+                <form method="post" action="{{ url_for('ctas.exit_settle', sub_id=sub.id) }}"
+                      onsubmit="return confirm('Settle this exit and post to the ledger? Member savings and share capital will be reduced and any remainder written off.');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <div class="mb-3"><label class="form-label">Other recoveries received (₦)</label>
+                        <input class="form-control" type="number" step="0.01" min="0" name="other_recovery" id="other" value="0">
+                        <div class="form-text">Dividends, terminal benefits or a cash top-up applied to the balance.</div></div>
+                    <div class="mb-3"><label class="form-label">Reason / note</label>
+                        <textarea class="form-control" name="reason" rows="2" placeholder="e.g. Resignation effective 2026-09-30"></textarea></div>
+                    <button class="btn btn-danger w-100"><i class="fas fa-gavel"></i> Settle exit</button>
+                </form>
+            </div></div>
+        </div>
+    </div>
+</div>
+<script>
+(function(){
+    var out={{ outstanding }}, sav={{ wf.from_savings }}, shr={{ wf.from_shares }};
+    var other=document.getElementById('other');
+    function fmt(n){ return '₦'+n.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+    function calc(){
+        var o=Math.max(0, parseFloat(other.value)||0);
+        var afterSS = out - sav - shr;                 // remaining after savings+shares
+        var usedOther = Math.max(0, Math.min(o, afterSS));
+        var wo = Math.max(0, afterSS - usedOther);
+        document.getElementById('otherCell').textContent = fmt(usedOther);
+        document.getElementById('writeoffCell').textContent = fmt(wo);
+    }
+    other.addEventListener('input', calc); calc();
+})();
+</script>
+{% endblock %}

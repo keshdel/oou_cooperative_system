@@ -25,10 +25,12 @@ from flask_login import current_user, login_required
 
 from database import get_db, last_insert_id
 from utils import audit, role_required, member_for_user, notify_member
-from ledger import post_journal_safe, get_default_cash_account
+from ledger import post_journal_safe, get_default_cash_account, MEMBER_DEPOSITS, SHARE_CAPITAL
 import ctas_engine as ce
 
 ctas = Blueprint('ctas', __name__)
+
+CTAS_WRITEOFF = '5150'   # expense — outstanding CTAS advance written off on member exit
 
 
 def _notify_member(db, member_id, title, message, action_url='/my-ctas'):
@@ -36,6 +38,13 @@ def _notify_member(db, member_id, title, message, action_url='/my-ctas'):
     row = db.execute('SELECT email FROM members WHERE id = ?', (member_id,)).fetchone()
     if row and row['email']:
         notify_member(db, row['email'], title, message, 'info', action_url)
+
+
+def _raise_exception(db, subscription_id, case_type, month, amount, description):
+    """Log a CTAS exception case (missed deduction, exit recovery, override)."""
+    db.execute("INSERT INTO ctas_exceptions (subscription_id, case_type, status, month_number, "
+               "amount, description) VALUES (?, ?, 'open', ?, ?, ?)",
+               (subscription_id, case_type, month, amount, description))
 
 CTAS_ADVANCES = '1150'            # asset — advances paid out, recovered via payroll
 CTAS_ADMIN_FEE_INCOME = '4150'   # income — admin fee charged on subscription
@@ -57,6 +66,7 @@ def ctas_ensure_accounts(db) -> None:
     for code, name, atype, normal in (
         (CTAS_ADVANCES, 'CTAS Advances Receivable', 'asset', 'debit'),
         (CTAS_ADMIN_FEE_INCOME, 'CTAS Admin Fee Income', 'income', 'credit'),
+        (CTAS_WRITEOFF, 'CTAS Write-offs', 'expense', 'debit'),
     ):
         try:
             db.execute(
@@ -525,6 +535,13 @@ def payroll_import(cycle_id):
                 db.execute("INSERT INTO ctas_payroll_lines (batch_id, subscription_id, expected_amount, "
                            "actual_amount, status) VALUES (?, ?, ?, 0, 'missed')",
                            (batch_id, sub['id'], expected))
+                db.execute("UPDATE ctas_subscriptions SET arrears_amount = COALESCE(arrears_amount, 0) + ? "
+                           "WHERE id = ?", (expected, sub['id']))
+                _raise_exception(db, sub['id'], 'missed_deduction', month, expected,
+                                 f'Missed deduction (month {month}): ₦{expected:,.2f} not received.')
+                _notify_member(db, sub['member_id'], 'Target Advance — missed deduction',
+                               f'Your month {month} deduction of ₦{expected:,.2f} was not received. '
+                               f'Please arrange payment to avoid arrears.')
                 missed += 1
                 continue
 
@@ -534,6 +551,10 @@ def payroll_import(cycle_id):
             if amt <= 0:
                 skipped += 1
                 continue
+            # Arrears: a short deduction adds to arrears; an over-deduction pays arrears down.
+            shortfall = round(max(0.0, expected - actual), 2)
+            over = round(max(0.0, actual - expected), 2)
+            new_arrears = round(max(0.0, float(sub['arrears_amount'] or 0) + shortfall - over), 2)
 
             post_journal_safe(
                 db, f"CTAS recovery month {month} - subscription {sub['id']}",
@@ -545,13 +566,21 @@ def payroll_import(cycle_id):
             recovered = round(float(sub['total_recovered'] or 0) + amt, 2)
             new_out = round(float(sub['target_amount']) - recovered, 2)
             status = 'completed' if new_out <= 0 else 'active_recovery'
-            db.execute("UPDATE ctas_subscriptions SET total_recovered = ?, outstanding = ?, status = ?, "
-                       "completed_at = ? WHERE id = ?",
-                       (recovered, max(0.0, new_out), status,
+            db.execute("UPDATE ctas_subscriptions SET total_recovered = ?, outstanding = ?, "
+                       "arrears_amount = ?, status = ?, completed_at = ? WHERE id = ?",
+                       (recovered, max(0.0, new_out), new_arrears, status,
                         datetime.now() if status == 'completed' else None, sub['id']))
             db.execute("INSERT INTO ctas_payroll_lines (batch_id, subscription_id, expected_amount, "
+                       "actual_amount, status) VALUES (?, ?, ?, ?, 'partial')" if shortfall > 0 else
+                       "INSERT INTO ctas_payroll_lines (batch_id, subscription_id, expected_amount, "
                        "actual_amount, status) VALUES (?, ?, ?, ?, 'deducted')",
                        (batch_id, sub['id'], expected, amt))
+            if shortfall > 0:
+                _raise_exception(db, sub['id'], 'missed_deduction', month, shortfall,
+                                 f'Partial deduction (month {month}): short by ₦{shortfall:,.2f}.')
+                _notify_member(db, sub['member_id'], 'Target Advance — partial deduction',
+                               f'Only ₦{actual:,.2f} of your ₦{expected:,.2f} month {month} deduction '
+                               f'was received.')
             posted += 1
 
         audit(db, 'CTAS_RECOVERY_IMPORT', 'ctas',
@@ -633,3 +662,117 @@ def my_ctas_apply():
     note = '' if result['eligible'] else ' Affordability will be reviewed by the committee.'
     flash('Your target-advance application has been submitted for review.' + note, 'success')
     return redirect(url_for('ctas.my_ctas'))
+
+
+# ── Exceptions: member exit (net-off waterfall) + arrears dashboard ────────────
+
+@ctas.route('/ctas/subscriptions/<int:sub_id>/exit', methods=['GET', 'POST'])
+@ctas_required
+@role_required('admin', 'treasurer')
+def exit_settle(sub_id):
+    """Settle a member's outstanding advance on exit/resignation via the net-off
+    waterfall: savings -> share capital -> other recoveries -> write-off."""
+    db = get_db()
+    sub = db.execute('''SELECT s.*, m.first_name || ' ' || m.last_name AS member_name,
+                               m.total_savings, m.shares_value
+                        FROM ctas_subscriptions s JOIN members m ON m.id = s.member_id
+                        WHERE s.id = ?''', (sub_id,)).fetchone()
+    if not sub:
+        abort(404)
+    if sub['status'] != ce.SUB_ACTIVE_RECOVERY:
+        flash('Only a subscription in recovery can be settled on exit.', 'warning')
+        return redirect(url_for('ctas.cycle_detail', cycle_id=sub['cycle_id']))
+    outstanding = round(float(sub['target_amount']) - float(sub['total_recovered'] or 0), 2)
+    savings = float(sub['total_savings'] or 0)
+    shares = float(sub['shares_value'] or 0)
+
+    if request.method == 'GET':
+        wf = ce.net_off_waterfall(outstanding, savings, shares, 0)
+        return render_template('ctas/exit.html', sub=sub, outstanding=outstanding,
+                               savings=savings, shares=shares, wf=wf)
+
+    try:
+        other = float(request.form.get('other_recovery') or 0)
+    except ValueError:
+        other = 0.0
+    reason = (request.form.get('reason') or '').strip()
+    wf = ce.net_off_waterfall(outstanding, savings, shares, other)
+    ctas_ensure_accounts(db)
+    cash = get_default_cash_account(db)
+    try:
+        lines = []
+        if wf['from_savings'] > 0:
+            lines.append({'account': MEMBER_DEPOSITS, 'debit': wf['from_savings'], 'memo': 'CTAS exit: from savings'})
+        if wf['from_shares'] > 0:
+            lines.append({'account': SHARE_CAPITAL, 'debit': wf['from_shares'], 'memo': 'CTAS exit: from share capital'})
+        if wf['from_other'] > 0:
+            lines.append({'account': cash, 'debit': wf['from_other'], 'memo': 'CTAS exit: other recoveries'})
+        if wf['write_off'] > 0:
+            lines.append({'account': CTAS_WRITEOFF, 'debit': wf['write_off'], 'memo': 'CTAS exit: write-off'})
+        if outstanding > 0:
+            lines.append({'account': CTAS_ADVANCES, 'credit': outstanding,
+                          'memo': f'CTAS exit settlement sub {sub_id}'})
+        if lines:
+            post_journal_safe(db, f"CTAS exit settlement - subscription {sub_id}", lines,
+                              date=datetime.now(), reference=f"CTAS-EXIT-{sub_id}",
+                              source_module='ctas_exit', source_id=sub_id, created_by=current_user.id)
+        db.execute("UPDATE members SET total_savings = COALESCE(total_savings, 0) - ?, "
+                   "shares_value = COALESCE(shares_value, 0) - ? WHERE id = ?",
+                   (wf['from_savings'], wf['from_shares'], sub['member_id']))
+        db.execute("UPDATE ctas_subscriptions SET total_recovered = target_amount, outstanding = 0, "
+                   "arrears_amount = 0, status = 'completed', completed_at = ? WHERE id = ?",
+                   (datetime.now(), sub_id))
+        db.execute("INSERT INTO ctas_exceptions (subscription_id, case_type, status, amount, description, "
+                   "resolution_note, resolved_at, resolved_by) "
+                   "VALUES (?, 'exit_recovery', 'resolved', ?, ?, ?, ?, ?)",
+                   (sub_id, outstanding, f"Member exit; outstanding ₦{outstanding:,.2f}. {reason}",
+                    f"savings ₦{wf['from_savings']:,.2f}, shares ₦{wf['from_shares']:,.2f}, "
+                    f"other ₦{wf['from_other']:,.2f}, write-off ₦{wf['write_off']:,.2f}",
+                    datetime.now(), current_user.id))
+        audit(db, 'CTAS_EXIT', 'ctas',
+              f"Exit settle sub #{sub_id}: outstanding {outstanding}, write-off {wf['write_off']}")
+        _notify_member(db, sub['member_id'], 'Target Advance — settled on exit',
+                       f"Your target advance was settled. Outstanding ₦{outstanding:,.2f} recovered from your "
+                       f"balances" + (f", ₦{wf['write_off']:,.2f} written off." if wf['write_off'] else "."))
+        db.commit()
+        flash(f"Exit settled — savings ₦{wf['from_savings']:,.2f}, shares ₦{wf['from_shares']:,.2f}"
+              + (f", other ₦{wf['from_other']:,.2f}" if wf['from_other'] else "")
+              + (f", written off ₦{wf['write_off']:,.2f}" if wf['write_off'] else "") + ".", 'success')
+    except Exception as e:
+        db.rollback()
+        flash(f'Could not settle the exit: {e}', 'danger')
+    return redirect(url_for('ctas.cycle_detail', cycle_id=sub['cycle_id']))
+
+
+@ctas.route('/ctas/exceptions')
+@ctas_required
+@role_required('admin', 'treasurer')
+def exceptions():
+    db = get_db()
+    show = (request.args.get('status') or 'open').strip()
+    where = "WHERE e.status = 'open'" if show == 'open' else ''
+    rows = db.execute(f'''
+        SELECT e.*, s.cycle_id, m.first_name || ' ' || m.last_name AS member_name, m.member_number
+        FROM ctas_exceptions e
+        JOIN ctas_subscriptions s ON s.id = e.subscription_id
+        JOIN members m ON m.id = s.member_id
+        {where}
+        ORDER BY e.created_at DESC''').fetchall()
+    return render_template('ctas/exceptions.html', rows=rows, show=show)
+
+
+@ctas.route('/ctas/exceptions/<int:case_id>/resolve', methods=['POST'])
+@ctas_required
+@role_required('admin', 'treasurer')
+def resolve_exception(case_id):
+    db = get_db()
+    case = db.execute('SELECT * FROM ctas_exceptions WHERE id = ?', (case_id,)).fetchone()
+    if not case:
+        abort(404)
+    note = (request.form.get('resolution_note') or '').strip()
+    db.execute("UPDATE ctas_exceptions SET status = 'resolved', resolution_note = ?, resolved_at = ?, "
+               "resolved_by = ? WHERE id = ?", (note, datetime.now(), current_user.id, case_id))
+    audit(db, 'CTAS_EXCEPTION_RESOLVE', 'ctas', f"Resolved exception #{case_id}")
+    db.commit()
+    flash('Exception marked resolved.', 'success')
+    return redirect(url_for('ctas.exceptions'))

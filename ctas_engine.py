@@ -225,6 +225,25 @@ def assert_ready_for_ballot(db, cycle):
 
 # ── Ballot engine ─────────────────────────────────────────────────────────────
 
+def net_off_waterfall(outstanding, savings, shares, other=0.0):
+    """Recover an outstanding CTAS balance on member exit in priority order:
+    savings balance -> share capital -> other (dividends/terminal benefits, entered
+    by the officer) -> write-off. Returns the amount taken from each source."""
+    remaining = round(_f(outstanding), 2)
+    from_savings = round(min(remaining, _f(savings)), 2)
+    remaining = round(remaining - from_savings, 2)
+    from_shares = round(min(remaining, _f(shares)), 2)
+    remaining = round(remaining - from_shares, 2)
+    from_other = round(min(remaining, _f(other)), 2)
+    remaining = round(remaining - from_other, 2)
+    write_off = round(max(0.0, remaining), 2)
+    return {
+        'from_savings': from_savings, 'from_shares': from_shares,
+        'from_other': from_other, 'write_off': write_off,
+        'total': round(from_savings + from_shares + from_other + write_off, 2),
+    }
+
+
 def assign_payout_months(subscription_ids, cycle, seed):
     """Deterministically (by seed) assign each enrolled subscription a unique
     payout month, filling months earliest_payout_month..duration_months with up

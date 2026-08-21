@@ -120,6 +120,16 @@ class CtasEngineTests(unittest.TestCase):
         ok, method, _ = affordability(None, member, c, 999999, 6)
         self.assertTrue(ok); self.assertEqual(method, 'manual')
 
+    def test_net_off_waterfall(self):
+        from ctas_engine import net_off_waterfall
+        wf = net_off_waterfall(100000, 60000, 30000, 0)
+        self.assertEqual((wf['from_savings'], wf['from_shares'], wf['from_other'], wf['write_off']),
+                         (60000.0, 30000.0, 0.0, 10000.0))
+        wf2 = net_off_waterfall(100000, 60000, 30000, 15000)
+        self.assertEqual((wf2['from_other'], wf2['write_off']), (10000.0, 0.0))   # other capped to remainder
+        wf3 = net_off_waterfall(50000, 80000, 0, 0)
+        self.assertEqual((wf3['from_savings'], wf3['write_off']), (50000.0, 0.0))  # savings cover it
+
     def test_ballot_assigns_unique_months_and_is_seed_deterministic(self):
         from ctas_engine import assign_payout_months
         c = self._cycle(duration_months=6, earliest_payout_month=2, monthly_capacity=1)
@@ -247,6 +257,86 @@ class CtasAdminFlowTests(unittest.TestCase):
                 db.execute("DELETE FROM settings WHERE key='ctas_enabled'")
                 db.commit()
 
+
+    def _make_recovery_sub(self, mnum, savings=0, shares=0, target=100000, monthly=50000):
+        with self.app.app_context():
+            db = get_db()
+            db.execute("INSERT INTO members (member_number, first_name, last_name, status, total_savings, "
+                       "shares_value, monthly_savings, date_joined) VALUES (?, 'R','T','active',?,?,5000,'2024-01-01')",
+                       (mnum, savings, shares))
+            mid = db.execute("SELECT id FROM members WHERE member_number=?", (mnum,)).fetchone()['id']
+            db.execute("INSERT INTO ctas_cycles (name, status, duration_months, monthly_capacity) "
+                       "VALUES (?, 'active', 2, 1)", (f'Cyc{mnum}',))
+            cid = db.execute("SELECT id FROM ctas_cycles WHERE name=?", (f'Cyc{mnum}',)).fetchone()['id']
+            db.execute("INSERT INTO ctas_subscriptions (cycle_id, member_id, target_amount, tenure_months, "
+                       "monthly_deduction, status, total_recovered, outstanding, payout_month) "
+                       "VALUES (?,?,?,2,?,'active_recovery',0,?,2)", (cid, mid, target, monthly, target))
+            db.commit()
+            sid = db.execute("SELECT id FROM ctas_subscriptions WHERE cycle_id=?", (cid,)).fetchone()['id']
+        return cid, mid, sid
+
+    def _cleanup_sub(self, cid, mid, sid, base_sav=0, base_shr=0):
+        with self.app.app_context():
+            db = get_db()
+            for mod in ('ctas_recovery', 'ctas_exit'):
+                for r in db.execute("SELECT id FROM journal_entries WHERE source_module=?", (mod,)).fetchall():
+                    db.execute("DELETE FROM journal_lines WHERE entry_id=?", (r['id'],))
+                    db.execute("DELETE FROM journal_entries WHERE id=?", (r['id'],))
+            db.execute("DELETE FROM ctas_exceptions WHERE subscription_id=?", (sid,))
+            db.execute("DELETE FROM ctas_payroll_lines WHERE subscription_id=?", (sid,))
+            db.execute("DELETE FROM ctas_payroll_batches WHERE cycle_id=?", (cid,))
+            db.execute("DELETE FROM ctas_subscriptions WHERE cycle_id=?", (cid,))
+            db.execute("DELETE FROM ctas_cycles WHERE id=?", (cid,))
+            db.execute("DELETE FROM members WHERE id=?", (mid,))
+            db.execute("DELETE FROM settings WHERE key='ctas_enabled'")
+            db.commit()
+
+    def test_missed_deduction_raises_arrears_and_an_exception(self):
+        import io
+        cid, mid, sid = self._make_recovery_sub('CTAS/AR/1')
+        try:
+            body = f"subscription_id,actual_amount\n{sid},0\n".encode('utf-8')   # missed
+            self.client.post(f'/ctas/cycles/{cid}/payroll/import',
+                data={'month': '1', 'file': (io.BytesIO(body), 'm.csv')},
+                content_type='multipart/form-data', follow_redirects=True)
+            with self.app.app_context():
+                db = get_db()
+                sub = db.execute("SELECT arrears_amount FROM ctas_subscriptions WHERE id=?", (sid,)).fetchone()
+                self.assertAlmostEqual(float(sub['arrears_amount']), 50000.0, places=2)
+                ex = db.execute("SELECT COUNT(*) FROM ctas_exceptions WHERE subscription_id=? "
+                                "AND case_type='missed_deduction'", (sid,)).fetchone()[0]
+                self.assertEqual(ex, 1)
+        finally:
+            self._cleanup_sub(cid, mid, sid)
+
+    def test_exit_settlement_net_off_waterfall_posts_gl(self):
+        # outstanding 100k; savings 40k + shares 20k -> 40k write-off.
+        cid, mid, sid = self._make_recovery_sub('CTAS/EX/1', savings=40000, shares=20000)
+        try:
+            self.client.post(f'/ctas/subscriptions/{sid}/exit',
+                             data={'other_recovery': '0', 'reason': 'resignation'}, follow_redirects=True)
+            with self.app.app_context():
+                db = get_db()
+                sub = db.execute("SELECT status, outstanding FROM ctas_subscriptions WHERE id=?", (sid,)).fetchone()
+                self.assertEqual(sub['status'], 'completed')
+                self.assertAlmostEqual(float(sub['outstanding'] or 0), 0.0, places=2)
+                m = db.execute("SELECT total_savings, shares_value FROM members WHERE id=?", (mid,)).fetchone()
+                self.assertAlmostEqual(float(m['total_savings']), 0.0, places=2)   # 40k drawn
+                self.assertAlmostEqual(float(m['shares_value']), 0.0, places=2)     # 20k drawn
+
+                def gl(acct, col):
+                    return db.execute(f"SELECT COALESCE(SUM(jl.{col}),0) FROM journal_lines jl "
+                                      "JOIN journal_entries je ON je.id=jl.entry_id "
+                                      "WHERE je.source_module='ctas_exit' AND jl.account_code=?", (acct,)).fetchone()[0]
+                self.assertAlmostEqual(float(gl('2000', 'debit')), 40000.0, places=2)    # member deposits
+                self.assertAlmostEqual(float(gl('3200', 'debit')), 20000.0, places=2)    # share capital
+                self.assertAlmostEqual(float(gl('5150', 'debit')), 40000.0, places=2)    # write-off
+                self.assertAlmostEqual(float(gl('1150', 'credit')), 100000.0, places=2)  # advance cleared
+                ex = db.execute("SELECT COUNT(*) FROM ctas_exceptions WHERE subscription_id=? "
+                                "AND case_type='exit_recovery'", (sid,)).fetchone()[0]
+                self.assertEqual(ex, 1)
+        finally:
+            self._cleanup_sub(cid, mid, sid)
 
     def test_payroll_recovery_posts_gl_is_idempotent_and_completes(self):
         import io
