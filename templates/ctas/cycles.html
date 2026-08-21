@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}Target Advance (CTAS) - {{ coop_name }}{% endblock %}
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-3">
+        <div class="col-md-8">
+            <h2><i class="fas fa-recycle"></i> Target Advance Scheme</h2>
+            <p class="text-muted mb-0">Balloted rotational advances (ajo/esusu) recovered over time.</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <button class="btn btn-primary" data-bs-toggle="collapse" data-bs-target="#newCycle">
+                <i class="fas fa-plus"></i> New cycle
+            </button>
+        </div>
+    </div>
+
+    <div class="collapse mb-4" id="newCycle"><div class="card"><div class="card-body">
+        <form method="post" action="{{ url_for('ctas.new_cycle') }}" class="row g-3">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="col-md-4"><label class="form-label">Name *</label>
+                <input class="form-control" name="name" required placeholder="2026 Q3 Advance"></div>
+            <div class="col-md-2"><label class="form-label">Start</label>
+                <input class="form-control" type="date" name="start_date"></div>
+            <div class="col-md-2"><label class="form-label">End</label>
+                <input class="form-control" type="date" name="end_date"></div>
+            <div class="col-md-2"><label class="form-label">Ballot date</label>
+                <input class="form-control" type="date" name="ballot_date"></div>
+            <div class="col-md-2"><label class="form-label">Duration (months)</label>
+                <input class="form-control" type="number" min="2" max="12" name="duration_months" value="6"></div>
+
+            <div class="col-md-3"><label class="form-label">Payouts / month</label>
+                <input class="form-control" type="number" min="1" name="monthly_capacity" value="1"></div>
+            <div class="col-md-3"><label class="form-label">Earliest payout month</label>
+                <input class="form-control" type="number" min="2" max="12" name="earliest_payout_month" value="2"></div>
+            <div class="col-md-3"><label class="form-label">Max participants (0 = no cap)</label>
+                <input class="form-control" type="number" min="0" name="max_participants" value="0"></div>
+            <div class="col-md-3"><label class="form-label">Fixed monthly amount (₦)</label>
+                <input class="form-control" type="number" step="0.01" name="fixed_monthly_amount" value="0"></div>
+
+            <div class="col-12"><hr class="my-1"><strong>Affordability basis</strong>
+                <span class="text-muted small">— how a member's capacity is checked</span></div>
+            <div class="col-md-3"><label class="form-label">Method</label>
+                <select class="form-select" name="affordability_method" id="affMethod">
+                    <option value="savings" selected>Savings (default)</option>
+                    <option value="salary">Salary</option>
+                    <option value="manual">Manual (committee)</option>
+                </select></div>
+            <div class="col-md-3" id="savingsOpt"><label class="form-label">Max target = N × savings</label>
+                <input class="form-control" type="number" step="0.1" name="savings_multiple" value="3"></div>
+            <div class="col-md-3" id="salaryOpt" style="display:none"><label class="form-label">Deduction ≤ ratio × salary</label>
+                <input class="form-control" type="number" step="0.05" min="0" max="1" name="affordability_ratio" value="0.5"></div>
+
+            <div class="col-12"><hr class="my-1"><strong>Admin fee</strong></div>
+            <div class="col-md-3"><label class="form-label">Flat fee (₦)</label>
+                <input class="form-control" type="number" step="0.01" name="admin_fee_flat" value="0"></div>
+            <div class="col-md-3"><label class="form-label">% fee (e.g. 0.015)</label>
+                <input class="form-control" type="number" step="0.0001" name="admin_fee_percentage" value="0"></div>
+            <div class="col-md-3"><label class="form-label">% cap (₦)</label>
+                <input class="form-control" type="number" step="0.01" name="admin_fee_cap" value="0"></div>
+            <div class="col-md-3"><label class="form-label">% applies above (₦)</label>
+                <input class="form-control" type="number" step="0.01" name="admin_fee_threshold" value="0"></div>
+
+            <div class="col-12"><button class="btn btn-primary"><i class="fas fa-save"></i> Create cycle</button></div>
+        </form>
+    </div></div></div>
+
+    <div class="card"><div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead><tr><th>Cycle</th><th>Status</th><th class="text-end">Duration</th>
+                <th class="text-end">Payouts/mo</th><th class="text-end">Members</th>
+                <th class="text-end">Enrolled</th><th>Affordability</th></tr></thead>
+            <tbody>
+            {% for c in cycles %}
+            <tr>
+                <td><a href="{{ url_for('ctas.cycle_detail', cycle_id=c.id) }}"><strong>{{ c.name }}</strong></a></td>
+                <td><span class="badge bg-secondary">{{ c.status|replace('_',' ')|title }}</span></td>
+                <td class="text-end">{{ c.duration_months }}m</td>
+                <td class="text-end">{{ c.monthly_capacity }}</td>
+                <td class="text-end">{{ c.sub_count }}</td>
+                <td class="text-end">{{ c.enrolled_count }}</td>
+                <td>{{ c.affordability_method|title }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="7" class="text-center text-muted py-4">No cycles yet — create your first.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div></div>
+</div>
+<script>
+document.getElementById('affMethod').addEventListener('change', function(){
+    document.getElementById('savingsOpt').style.display = this.value==='savings' ? '' : 'none';
+    document.getElementById('salaryOpt').style.display = this.value==='salary' ? '' : 'none';
+});
+</script>
+{% endblock %}

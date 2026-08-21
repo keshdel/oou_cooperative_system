@@ -157,6 +157,12 @@
                         <i class="fas fa-chart-line"></i> Investments
                     </a>
                     {% endif %}
+                    {% if ctas_enabled and can('ctas.manage') %}
+                    <a href="{{ url_for('ctas.dashboard') }}"
+                       class="{% if request.blueprint == 'ctas' %}active{% endif %}">
+                        <i class="fas fa-recycle"></i> Target Advance
+                    </a>
+                    {% endif %}
                     {% if can('reports.view') %}
                     <a href="{{ url_for('reports.reports_list') }}"
                        class="{% if request.blueprint == 'reports' %}active{% endif %}">

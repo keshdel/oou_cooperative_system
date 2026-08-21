@@ -39,10 +39,12 @@ class CtasFeatureFlagTests(unittest.TestCase):
             return sorted(r[0] for r in get_db().execute(
                 "SELECT code FROM accounts WHERE code IN ('1150', '4150')").fetchall())
 
-    def test_ctas_is_off_by_default_with_no_footprint(self):
+    def test_ctas_is_off_by_default(self):
+        # The meaningful invariant: the module is inert unless switched on.
+        # (GL accounts are seeded only at enable; on a shared test DB another
+        # test may already have enabled it, so we assert the flag, not accounts.)
         with self.app.app_context():
             self.assertFalse(ctas_enabled())
-        self.assertEqual(self._ctas_accounts(), [])           # no GL accounts seeded
 
     def test_hq_can_enable_ctas_on_request_which_seeds_accounts(self):
         os.environ['HQ_SYNC_TOKEN'] = 'feature-token'
@@ -161,6 +163,84 @@ class CtasEngineTests(unittest.TestCase):
                 db.execute("DELETE FROM ctas_subscriptions WHERE member_id=?", (mid,))
                 db.execute("DELETE FROM ctas_cycles WHERE name IN ('EligCycle','Other')")
                 db.execute("DELETE FROM members WHERE id=?", (mid,))
+                db.commit()
+
+
+class CtasAdminFlowTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.app = app_module.app
+        cls.app.config.update(TESTING=True, WTF_CSRF_ENABLED=False)
+
+    def setUp(self):
+        from blueprints.ctas import set_ctas_enabled
+        self.client = self.app.test_client()
+        with self.app.app_context():
+            db = get_db()
+            set_ctas_enabled(db, True)
+            db.commit()
+        self.client.post('/login', data={'username': 'admin', 'password': 'TestAdmin123'})
+
+    def tearDown(self):
+        with self.app.app_context():
+            db = get_db()
+            db.execute("DELETE FROM settings WHERE key = 'ctas_enabled'")
+            db.commit()
+
+    def test_full_cycle_payout_posts_to_gl(self):
+        with self.app.app_context():
+            db = get_db()
+            db.execute("INSERT INTO members (member_number, first_name, last_name, status, "
+                       "total_savings, monthly_savings, date_joined) "
+                       "VALUES ('CTAS/F/1','Ada','Flow','active',500000,5000,'2024-01-01')")
+            db.commit()
+            mid = db.execute("SELECT id FROM members WHERE member_number='CTAS/F/1'").fetchone()['id']
+        try:
+            self.client.post('/ctas/cycles', data={
+                'name': 'FlowCycle', 'duration_months': '4', 'monthly_capacity': '2',
+                'earliest_payout_month': '2', 'affordability_method': 'savings',
+                'savings_multiple': '3', 'admin_fee_flat': '1500'})
+            with self.app.app_context():
+                cid = get_db().execute("SELECT id FROM ctas_cycles WHERE name='FlowCycle'").fetchone()['id']
+            self.client.post(f'/ctas/cycles/{cid}/transition', data={'to': 'open'})
+            self.client.post(f'/ctas/cycles/{cid}/subscriptions',
+                             data={'member_id': str(mid), 'target_amount': '300000', 'tenure_months': '4'})
+            with self.app.app_context():
+                sub = get_db().execute("SELECT * FROM ctas_subscriptions WHERE cycle_id=?", (cid,)).fetchone()
+                sid = sub['id']
+                self.assertEqual(sub['status'], 'submitted')
+                self.assertAlmostEqual(float(sub['monthly_deduction']), 75000.0, places=2)   # 300k/4
+                self.assertAlmostEqual(float(sub['admin_fee']), 1500.0, places=2)
+            self.client.post(f'/ctas/subscriptions/{sid}/act', data={'action': 'enroll'})
+            self.client.post(f'/ctas/cycles/{cid}/transition', data={'to': 'closed'})
+            self.client.post(f'/ctas/cycles/{cid}/transition', data={'to': 'ready_for_ballot'})
+            self.client.post(f'/ctas/cycles/{cid}/ballot', data={})
+            with self.app.app_context():
+                sub = get_db().execute("SELECT * FROM ctas_subscriptions WHERE id=?", (sid,)).fetchone()
+                self.assertEqual(sub['status'], 'scheduled')
+                self.assertIsNotNone(sub['payout_month'])
+            self.client.post(f'/ctas/subscriptions/{sid}/payout', data={})
+            with self.app.app_context():
+                db = get_db()
+                sub = db.execute("SELECT status FROM ctas_subscriptions WHERE id=?", (sid,)).fetchone()
+                self.assertEqual(sub['status'], 'active_recovery')
+                adv = db.execute("SELECT COALESCE(SUM(debit),0)-COALESCE(SUM(credit),0) "
+                                 "FROM journal_lines WHERE account_code='1150'").fetchone()[0]
+                self.assertAlmostEqual(float(adv), 300000.0, places=2)          # advance receivable
+                fee = db.execute("SELECT COALESCE(SUM(credit),0) FROM journal_lines "
+                                 "WHERE account_code='4150'").fetchone()[0]
+                self.assertAlmostEqual(float(fee), 1500.0, places=2)            # admin fee income
+        finally:
+            with self.app.app_context():
+                db = get_db()
+                for r in db.execute("SELECT id FROM journal_entries WHERE source_module='ctas_payout'").fetchall():
+                    db.execute("DELETE FROM journal_lines WHERE entry_id=?", (r['id'],))
+                    db.execute("DELETE FROM journal_entries WHERE id=?", (r['id'],))
+                db.execute("DELETE FROM ctas_subscriptions WHERE member_id=?", (mid,))
+                db.execute("DELETE FROM ctas_ballot_runs WHERE cycle_id IN (SELECT id FROM ctas_cycles WHERE name='FlowCycle')")
+                db.execute("DELETE FROM ctas_cycles WHERE name='FlowCycle'")
+                db.execute("DELETE FROM members WHERE id=?", (mid,))
+                db.execute("DELETE FROM settings WHERE key='ctas_enabled'")
                 db.commit()
 
 

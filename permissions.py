@@ -234,6 +234,18 @@ PERMISSIONS = [
                       'accounting.set_lock_date'),
     },
 
+    {
+        'key': 'ctas.manage',
+        'label': 'Manage the Target Advance Scheme (CTAS)',
+        'group': 'CTAS',
+        'description': 'Run CTAS cycles: enrol members, run the ballot and pay out advances. '
+                       'Only visible when the CTAS add-on is enabled.',
+        'default_roles': ('admin', 'treasurer'),
+        'endpoints': ('ctas.dashboard', 'ctas.new_cycle', 'ctas.cycle_detail',
+                      'ctas.cycle_transition', 'ctas.add_subscription', 'ctas.subscription_act',
+                      'ctas.run_ballot', 'ctas.payout'),
+    },
+
     # ── Money in and out ─────────────────────────────────────────────────────
     {
         'key': 'finance.expenses',
