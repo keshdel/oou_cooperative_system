@@ -243,7 +243,8 @@ PERMISSIONS = [
         'default_roles': ('admin', 'treasurer'),
         'endpoints': ('ctas.dashboard', 'ctas.new_cycle', 'ctas.cycle_detail',
                       'ctas.cycle_transition', 'ctas.add_subscription', 'ctas.subscription_act',
-                      'ctas.run_ballot', 'ctas.payout'),
+                      'ctas.run_ballot', 'ctas.payout',
+                      'ctas.payroll_export', 'ctas.payroll_import'),
     },
 
     # ── Money in and out ─────────────────────────────────────────────────────

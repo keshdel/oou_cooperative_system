@@ -244,5 +244,71 @@ class CtasAdminFlowTests(unittest.TestCase):
                 db.commit()
 
 
+    def test_payroll_recovery_posts_gl_is_idempotent_and_completes(self):
+        import io
+        with self.app.app_context():
+            db = get_db()
+            db.execute("INSERT INTO members (member_number, first_name, last_name, status, "
+                       "total_savings, monthly_savings, date_joined) "
+                       "VALUES ('CTAS/R/1','Rec','Test','active',0,5000,'2024-01-01')")
+            db.commit()
+            mid = db.execute("SELECT id FROM members WHERE member_number='CTAS/R/1'").fetchone()['id']
+            db.execute("INSERT INTO ctas_cycles (name, status, duration_months, monthly_capacity) "
+                       "VALUES ('RecCycle','active',2,1)")
+            cid = db.execute("SELECT id FROM ctas_cycles WHERE name='RecCycle'").fetchone()['id']
+            db.execute("INSERT INTO ctas_subscriptions (cycle_id, member_id, target_amount, tenure_months, "
+                       "monthly_deduction, status, total_recovered, outstanding, payout_month) "
+                       "VALUES (?,?,100000,2,50000,'active_recovery',0,100000,2)", (cid, mid))
+            db.commit()
+            sid = db.execute("SELECT id FROM ctas_subscriptions WHERE cycle_id=?", (cid,)).fetchone()['id']
+
+        def _import(month, amount):
+            body = f"subscription_id,actual_amount\n{sid},{amount}\n".encode('utf-8')
+            return self.client.post(f'/ctas/cycles/{cid}/payroll/import',
+                data={'month': str(month), 'file': (io.BytesIO(body), f'm{month}.csv')},
+                content_type='multipart/form-data', follow_redirects=True)
+
+        try:
+            # Export lists the subscription in recovery.
+            exp = self.client.get(f'/ctas/cycles/{cid}/payroll/export?month=1')
+            self.assertEqual(exp.status_code, 200)
+            self.assertIn(str(sid).encode(), exp.data)
+            # Month 1: post 50,000.
+            _import(1, 50000)
+            with self.app.app_context():
+                db = get_db()
+                sub = db.execute("SELECT * FROM ctas_subscriptions WHERE id=?", (sid,)).fetchone()
+                self.assertAlmostEqual(float(sub['total_recovered']), 50000.0, places=2)
+                self.assertEqual(sub['status'], 'active_recovery')
+                adv_cr = db.execute("SELECT COALESCE(SUM(credit),0) FROM journal_lines "
+                                    "WHERE account_code='1150'").fetchone()[0]
+                self.assertAlmostEqual(float(adv_cr), 50000.0, places=2)   # advance reduced
+            # Re-import month 1: idempotent (no double post).
+            _import(1, 50000)
+            with self.app.app_context():
+                sub = get_db().execute("SELECT total_recovered FROM ctas_subscriptions WHERE id=?", (sid,)).fetchone()
+                self.assertAlmostEqual(float(sub['total_recovered']), 50000.0, places=2)
+            # Month 2: final 50,000 -> completed.
+            _import(2, 50000)
+            with self.app.app_context():
+                sub = get_db().execute("SELECT * FROM ctas_subscriptions WHERE id=?", (sid,)).fetchone()
+                self.assertAlmostEqual(float(sub['total_recovered']), 100000.0, places=2)
+                self.assertAlmostEqual(float(sub['outstanding'] or 0), 0.0, places=2)
+                self.assertEqual(sub['status'], 'completed')
+        finally:
+            with self.app.app_context():
+                db = get_db()
+                for r in db.execute("SELECT id FROM journal_entries WHERE source_module='ctas_recovery'").fetchall():
+                    db.execute("DELETE FROM journal_lines WHERE entry_id=?", (r['id'],))
+                    db.execute("DELETE FROM journal_entries WHERE id=?", (r['id'],))
+                db.execute("DELETE FROM ctas_payroll_lines WHERE subscription_id=?", (sid,))
+                db.execute("DELETE FROM ctas_payroll_batches WHERE cycle_id=?", (cid,))
+                db.execute("DELETE FROM ctas_subscriptions WHERE cycle_id=?", (cid,))
+                db.execute("DELETE FROM ctas_cycles WHERE id=?", (cid,))
+                db.execute("DELETE FROM members WHERE id=?", (mid,))
+                db.execute("DELETE FROM settings WHERE key='ctas_enabled'")
+                db.commit()
+
+
 if __name__ == '__main__':
     unittest.main()

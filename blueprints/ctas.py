@@ -13,11 +13,14 @@ the operator from HQ (POST /api/hq/set-feature) or by a super admin here. Gate
 every CTAS view with @ctas_required.
 """
 
+import csv
 import secrets
 from datetime import datetime
+from io import StringIO, TextIOWrapper
 from functools import wraps
 
-from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
+from flask import (Blueprint, abort, flash, make_response, redirect, render_template,
+                   request, url_for)
 from flask_login import current_user, login_required
 
 from database import get_db, last_insert_id
@@ -368,3 +371,140 @@ def payout(sub_id):
         db.rollback()
         flash(f'Could not post the payout: {e}', 'danger')
     return redirect(url_for('ctas.cycle_detail', cycle_id=sub['cycle_id']))
+
+
+# ── Payroll recovery ──────────────────────────────────────────────────────────
+
+@ctas.route('/ctas/cycles/<int:cycle_id>/payroll/export')
+@ctas_required
+@role_required('admin', 'treasurer')
+def payroll_export(cycle_id):
+    """Download the monthly deduction schedule for members in recovery — hand to
+    payroll to deduct, then re-upload the confirmed amounts."""
+    db = get_db()
+    if not db.execute('SELECT 1 FROM ctas_cycles WHERE id = ?', (cycle_id,)).fetchone():
+        abort(404)
+    try:
+        month = max(1, int(request.args.get('month') or 1))
+    except ValueError:
+        month = 1
+    subs = db.execute('''
+        SELECT s.id, s.monthly_deduction, m.member_number, m.employee_id,
+               m.first_name || ' ' || m.last_name AS name
+        FROM ctas_subscriptions s JOIN members m ON m.id = s.member_id
+        WHERE s.cycle_id = ? AND s.status = 'active_recovery'
+        ORDER BY m.member_number''', (cycle_id,)).fetchall()
+    out = StringIO()
+    w = csv.writer(out)
+    w.writerow(['subscription_id', 'member_number', 'employee_id', 'name', 'month',
+                'expected_amount', 'actual_amount'])
+    for s in subs:
+        w.writerow([s['id'], s['member_number'] or '', s['employee_id'] or '', s['name'],
+                    month, f"{float(s['monthly_deduction'] or 0):.2f}", ''])
+    db.execute("INSERT INTO ctas_payroll_batches (cycle_id, month_number, kind, created_by) "
+               "VALUES (?, ?, 'export', ?)", (cycle_id, month, current_user.id))
+    db.commit()
+    resp = make_response(out.getvalue())
+    resp.headers['Content-Type'] = 'text/csv'
+    resp.headers['Content-Disposition'] = f'attachment; filename=ctas_recovery_{cycle_id}_month{month}.csv'
+    return resp
+
+
+@ctas.route('/ctas/cycles/<int:cycle_id>/payroll/import', methods=['POST'])
+@ctas_required
+@role_required('admin', 'treasurer')
+def payroll_import(cycle_id):
+    """Import confirmed deductions and post each as a GL recovery
+    (DR Cash / CR CTAS Advances). Idempotent per subscription+month."""
+    db = get_db()
+    if not db.execute('SELECT 1 FROM ctas_cycles WHERE id = ?', (cycle_id,)).fetchone():
+        abort(404)
+    try:
+        month = max(1, int(request.form.get('month') or 1))
+    except ValueError:
+        month = 1
+    file = request.files.get('file')
+    if not file or not file.filename:
+        flash('Choose a confirmation CSV to import.', 'danger')
+        return redirect(url_for('ctas.cycle_detail', cycle_id=cycle_id))
+
+    ctas_ensure_accounts(db)
+    cash = get_default_cash_account(db)
+    db.execute("INSERT INTO ctas_payroll_batches (cycle_id, month_number, kind, file_name, processed, created_by) "
+               "VALUES (?, ?, 'import', ?, 1, ?)", (cycle_id, month, file.filename, current_user.id))
+    batch_id = last_insert_id(db)
+
+    posted = missed = skipped = 0
+    try:
+        reader = csv.DictReader(TextIOWrapper(file, encoding='utf-8-sig'))
+        for row in reader:
+            sub = None
+            sid = (row.get('subscription_id') or '').strip()
+            if sid.isdigit():
+                sub = db.execute("SELECT * FROM ctas_subscriptions WHERE id = ? AND cycle_id = ?",
+                                 (int(sid), cycle_id)).fetchone()
+            if not sub:
+                mn = (row.get('member_number') or '').strip()
+                if mn:
+                    sub = db.execute(
+                        "SELECT s.* FROM ctas_subscriptions s JOIN members m ON m.id = s.member_id "
+                        "WHERE m.member_number = ? AND s.cycle_id = ? AND s.status = 'active_recovery'",
+                        (mn, cycle_id)).fetchone()
+            if not sub or sub['status'] != 'active_recovery':
+                skipped += 1
+                continue
+            # Already recovered this month? (idempotent re-import)
+            dup = db.execute(
+                "SELECT 1 FROM ctas_payroll_lines l JOIN ctas_payroll_batches b ON b.id = l.batch_id "
+                "WHERE l.subscription_id = ? AND b.month_number = ? AND b.kind = 'import' AND l.status = 'deducted'",
+                (sub['id'], month)).fetchone()
+            if dup:
+                skipped += 1
+                continue
+
+            expected = float(sub['monthly_deduction'] or 0)
+            try:
+                actual = float((row.get('actual_amount') or row.get('amount') or 0) or 0)
+            except ValueError:
+                actual = 0.0
+            if actual <= 0:
+                db.execute("INSERT INTO ctas_payroll_lines (batch_id, subscription_id, expected_amount, "
+                           "actual_amount, status) VALUES (?, ?, ?, 0, 'missed')",
+                           (batch_id, sub['id'], expected))
+                missed += 1
+                continue
+
+            outstanding = float(sub['outstanding'] if sub['outstanding'] is not None
+                                else float(sub['target_amount']) - float(sub['total_recovered'] or 0))
+            amt = round(min(actual, outstanding), 2) if outstanding > 0 else 0.0
+            if amt <= 0:
+                skipped += 1
+                continue
+
+            post_journal_safe(
+                db, f"CTAS recovery month {month} - subscription {sub['id']}",
+                [{'account': cash, 'debit': amt, 'memo': f'CTAS recovery m{month}'},
+                 {'account': CTAS_ADVANCES, 'credit': amt, 'memo': f"CTAS recovery sub {sub['id']}"}],
+                date=datetime.now(), reference=f"CTAS-RC-{sub['id']}-M{month}",
+                source_module='ctas_recovery', source_id=sub['id'], created_by=current_user.id)
+
+            recovered = round(float(sub['total_recovered'] or 0) + amt, 2)
+            new_out = round(float(sub['target_amount']) - recovered, 2)
+            status = 'completed' if new_out <= 0 else 'active_recovery'
+            db.execute("UPDATE ctas_subscriptions SET total_recovered = ?, outstanding = ?, status = ?, "
+                       "completed_at = ? WHERE id = ?",
+                       (recovered, max(0.0, new_out), status,
+                        datetime.now() if status == 'completed' else None, sub['id']))
+            db.execute("INSERT INTO ctas_payroll_lines (batch_id, subscription_id, expected_amount, "
+                       "actual_amount, status) VALUES (?, ?, ?, ?, 'deducted')",
+                       (batch_id, sub['id'], expected, amt))
+            posted += 1
+
+        audit(db, 'CTAS_RECOVERY_IMPORT', 'ctas',
+              f"Cycle {cycle_id} month {month}: posted {posted}, missed {missed}, skipped {skipped}")
+        db.commit()
+        flash(f'Recovery month {month}: posted {posted}, missed {missed}, skipped {skipped}.', 'success')
+    except Exception as e:
+        db.rollback()
+        flash(f'Could not process the recovery file: {e}', 'danger')
+    return redirect(url_for('ctas.cycle_detail', cycle_id=cycle_id))
