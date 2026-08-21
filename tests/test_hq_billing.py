@@ -297,6 +297,23 @@ class HqBillingTests(unittest.TestCase):
             self.assertEqual(row['inv_status'], 'paid')
             self.assertEqual(row['access_state'], 'active')   # auto-reactivated
 
+    def test_enable_and_disable_ctas_for_a_client_from_hq(self):
+        from unittest.mock import patch
+        self.login_admin()
+        cid = self._add_client('Featureco', 5, 5000)
+        with patch('blueprints.hq_billing._set_tenant_feature', return_value=(True, '')):
+            r = self.client.post(f'/hq/clients/{cid}/feature',
+                                 data={'feature': 'ctas', 'enable': '1'}, follow_redirects=False)
+        self.assertIn(r.status_code, (302, 303))
+        with self.app.app_context():
+            self.assertEqual(get_db().execute("SELECT ctas_enabled FROM hq_clients WHERE id=?",
+                                              (cid,)).fetchone()['ctas_enabled'], 1)
+        with patch('blueprints.hq_billing._set_tenant_feature', return_value=(True, '')):
+            self.client.post(f'/hq/clients/{cid}/feature', data={'feature': 'ctas', 'enable': '0'})
+        with self.app.app_context():
+            self.assertEqual(get_db().execute("SELECT ctas_enabled FROM hq_clients WHERE id=?",
+                                              (cid,)).fetchone()['ctas_enabled'], 0)
+
     def test_tenant_suspend_endpoint_and_enforcement(self):
         os.environ['HQ_SYNC_TOKEN'] = 'access-secret'
         self.login_admin()

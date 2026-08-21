@@ -791,6 +791,7 @@ def init_db():
         )
     '''))
     _add_col(db, 'hq_clients', 'access_state', "TEXT DEFAULT 'active'")
+    _add_col(db, 'hq_clients', 'ctas_enabled', 'INTEGER DEFAULT 0')
     _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_hq_clients_status ON hq_clients(status)')
 
     db.execute(_adapt('''

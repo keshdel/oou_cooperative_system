@@ -101,8 +101,8 @@ def _client_base_url(client):
     return f'https://{code}.cooperativems.com'
 
 
-def _set_tenant_access(client, suspend):
-    """Call a client's token-guarded set-status endpoint. Returns (ok, message)."""
+def _post_to_tenant(client, path, payload):
+    """POST JSON to a client's token-guarded HQ endpoint. Returns (ok, message)."""
     token = (os.environ.get('HQ_SYNC_TOKEN') or '').strip()
     if not token:
         return False, 'HQ_SYNC_TOKEN is not set in the HQ environment.'
@@ -110,15 +110,22 @@ def _set_tenant_access(client, suspend):
     if not base:
         return False, 'client has no code/subdomain to reach.'
     try:
-        body = json.dumps({'suspended': suspend}).encode('utf-8')
         req = urllib.request.Request(
-            f'{base}/api/hq/set-status', data=body, method='POST',
+            f'{base}{path}', data=json.dumps(payload).encode('utf-8'), method='POST',
             headers={'X-HQ-Token': token, 'Content-Type': 'application/json', 'Accept': 'application/json'})
         with urllib.request.urlopen(req, timeout=10) as resp:
             data = json.loads(resp.read())
         return bool(data.get('success')), ('' if data.get('success') else 'the tenant rejected the request.')
     except Exception as exc:  # pragma: no cover - network
         return False, str(exc)
+
+
+def _set_tenant_access(client, suspend):
+    return _post_to_tenant(client, '/api/hq/set-status', {'suspended': suspend})
+
+
+def _set_tenant_feature(client, feature, enabled):
+    return _post_to_tenant(client, '/api/hq/set-feature', {'feature': feature, 'enabled': enabled})
 
 
 def _maybe_auto_reactivate(db, client_id):
@@ -311,6 +318,34 @@ def set_client_access(client_id):
         flash(f"{client['name']} has been {'suspended' if suspend else 'reactivated'}.", 'success')
     else:
         current_app.logger.warning('HQ set-access failed for %s: %s', client['name'], message)
+        flash(f"Could not update {client['name']}: {message} "
+              f"Check its code and that it is deployed with the shared token.", 'danger')
+    return redirect(url_for('hq_billing.clients'))
+
+
+@hq_billing.route('/hq/clients/<int:client_id>/feature', methods=['POST'])
+@hq_admin_required
+def set_client_feature(client_id):
+    """Turn an optional add-on (currently CTAS) on/off for a client with one
+    click — calls the tenant and mirrors the state in hq_clients."""
+    db = get_db()
+    client = db.execute('SELECT * FROM hq_clients WHERE id = ?', (client_id,)).fetchone()
+    if not client:
+        abort(404)
+    feature = (request.form.get('feature') or '').strip()
+    enable = request.form.get('enable') == '1'
+    if feature != 'ctas':
+        flash('Unknown feature.', 'danger')
+        return redirect(url_for('hq_billing.clients'))
+    ok, message = _set_tenant_feature(client, feature, enable)
+    if ok:
+        db.execute('UPDATE hq_clients SET ctas_enabled = ?, updated_at = ? WHERE id = ?',
+                   (1 if enable else 0, datetime.now(), client_id))
+        audit(db, 'HQ_CLIENT_FEATURE', 'hq_billing',
+              f"{'Enabled' if enable else 'Disabled'} CTAS for {client['name']}")
+        db.commit()
+        flash(f"Target Advance (CTAS) {'enabled' if enable else 'disabled'} for {client['name']}.", 'success')
+    else:
         flash(f"Could not update {client['name']}: {message} "
               f"Check its code and that it is deployed with the shared token.", 'danger')
     return redirect(url_for('hq_billing.clients'))

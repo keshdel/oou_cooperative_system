@@ -71,7 +71,8 @@
                     <td class="text-end">₦{{ "{:,.2f}".format(c.rate_per_user or 0) }}</td>
                     <td>{{ c.billing_cycle|title }}</td>
                     <td><span class="badge bg-{{ 'success' if c.status == 'active' else 'secondary' }}">{{ c.status|title }}</span>
-                        {% if c.access_state == 'suspended' %}<span class="badge bg-danger">Suspended</span>{% endif %}</td>
+                        {% if c.access_state == 'suspended' %}<span class="badge bg-danger">Suspended</span>{% endif %}
+                        {% if c.ctas_enabled %}<span class="badge bg-info">CTAS</span>{% endif %}</td>
                     <td class="text-end">₦{{ "{:,.2f}".format(c.billed_total or 0) }}</td>
                     <td class="text-end text-success">₦{{ "{:,.2f}".format(c.paid_total or 0) }}</td>
                     <td class="text-end">
@@ -90,6 +91,15 @@
                             <button class="btn btn-sm btn-outline-danger" title="Lock the tenant out (e.g. unpaid invoice)">Suspend</button>
                         </form>
                         {% endif %}
+                        <form method="post" action="{{ url_for('hq_billing.set_client_feature', client_id=c.id) }}" class="d-inline"
+                              onsubmit="return confirm('{{ 'Turn OFF' if c.ctas_enabled else 'Turn ON' }} Target Advance (CTAS) for {{ c.name }}?');">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="feature" value="ctas">
+                            <input type="hidden" name="enable" value="{{ 0 if c.ctas_enabled else 1 }}">
+                            <button class="btn btn-sm {{ 'btn-outline-secondary' if c.ctas_enabled else 'btn-outline-info' }}"
+                                    title="{{ 'Disable' if c.ctas_enabled else 'Enable' }} Target Advance">
+                                {{ 'CTAS off' if c.ctas_enabled else 'CTAS on' }}</button>
+                        </form>
                         <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#edit{{ c.id }}">Edit</button>
                     </td>
                 </tr>
