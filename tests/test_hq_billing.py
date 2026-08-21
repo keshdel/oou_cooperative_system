@@ -136,6 +136,29 @@ class HqBillingTests(unittest.TestCase):
                                    (inv_id,)).fetchone()[0]
             self.assertEqual(n_service, 1)
 
+    def test_sent_invoice_can_still_be_edited(self):
+        self.login_admin()
+        cid = self._add_client('Disputed', 10, 5000)
+        self.client.post('/hq/invoices/new', data={
+            'client_id': cid, 'sub_mode': 'full', 'sub_qty': '10', 'sub_unit': '5000'})
+        with self.app.app_context():
+            db = get_db()
+            inv_id = db.execute('SELECT id FROM hq_invoices WHERE client_id = ? ORDER BY id DESC',
+                                (cid,)).fetchone()['id']
+            sub_id = db.execute("SELECT id FROM hq_invoice_items WHERE invoice_id = ? AND item_type = 'subscription'",
+                                (inv_id,)).fetchone()['id']
+            db.execute("UPDATE hq_invoices SET status = 'sent' WHERE id = ?", (inv_id,))
+            db.commit()
+        # Correct a disputed line down to 9 members after it was already sent.
+        r = self.client.post(f'/hq/invoices/{inv_id}/edit', data={
+            'item_id': [str(sub_id)], 'item_desc': ['Annual subscription'],
+            'item_qty': ['9'], 'item_unit': ['5000'], 'period_label': '2026'}, follow_redirects=False)
+        self.assertIn(r.status_code, (302, 303))
+        with self.app.app_context():
+            inv = get_db().execute('SELECT amount, status FROM hq_invoices WHERE id = ?', (inv_id,)).fetchone()
+            self.assertAlmostEqual(float(inv['amount']), 45000.0, places=2)   # 9×5,000
+            self.assertEqual(inv['status'], 'sent')   # stays sent so it can be resent
+
     def test_non_draft_invoice_cannot_be_edited(self):
         self.login_admin()
         cid = self._add_client('Locked', 5, 5000)
@@ -151,6 +174,25 @@ class HqBillingTests(unittest.TestCase):
             inv = get_db().execute('SELECT amount, status FROM hq_invoices WHERE id = ?', (inv_id,)).fetchone()
             self.assertEqual(inv['status'], 'paid')
             self.assertAlmostEqual(float(inv['amount']), 25000.0, places=2)   # unchanged
+
+    def test_invoice_email_is_operator_branded_with_notes(self):
+        from blueprints.hq_billing import _invoice_email_html
+        brand = {'name': 'Adekail Professional Services', 'logo': '',
+                 'pay_instructions': 'Kuda Bank 3000428469'}
+        inv = {'invoice_number': 'INV/2026/0009', 'client_name': 'SMT Coop',
+               'period_label': '2026/2027', 'notes': 'Annual platform subscription and data migration',
+               'amount': 525000, 'due_date': '2026-09-01'}
+        items = [{'description': 'Annual subscription — 70 members', 'amount': 350000},
+                 {'description': 'Migration: legacy import', 'amount': 75000}]
+        html = _invoice_email_html(brand, inv, items, 'https://hq.example/pay/x')
+        self.assertIn('Adekail Professional Services', html)          # operator brand, not "HQ"
+        self.assertIn('What this invoice is for', html)              # notes/purpose section
+        self.assertIn('Annual platform subscription and data migration', html)
+        self.assertIn('Kuda Bank 3000428469', html)                 # payment details
+        self.assertIn('Pay now', html)
+        self.assertIn('data-coopms-email', html)                    # bypasses the generic shell
+        self.assertNotIn('Digitize your cooperative', html)         # no CoopMS advert to a paying client
+        self.assertNotIn('Powered by', html)
 
     def test_duplicate_invoice_clones_into_a_new_draft(self):
         self.login_admin()

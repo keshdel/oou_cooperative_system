@@ -471,8 +471,8 @@ def edit_invoice(invoice_id):
     inv = db.execute('SELECT * FROM hq_invoices WHERE id = ?', (invoice_id,)).fetchone()
     if not inv:
         abort(404)
-    if inv['status'] != 'draft':
-        flash('Only draft invoices can be edited.', 'warning')
+    if inv['status'] not in ('draft', 'sent'):
+        flash('Only draft or sent invoices can be edited. Paid and void invoices are locked.', 'warning')
         return redirect(url_for('hq_billing.invoice_detail', invoice_id=invoice_id))
 
     def _sub_qty():
@@ -526,9 +526,13 @@ def edit_invoice(invoice_id):
                 (request.form.get('due_date') or '').strip() or None,
                 (request.form.get('notes') or '').strip(), invoice_id))
     total = _recalc_invoice_total(db, invoice_id)
-    audit(db, 'HQ_INVOICE_EDIT', 'hq_billing', f"Edited draft {inv['invoice_number']}: NGN {_money(total)}")
+    audit(db, 'HQ_INVOICE_EDIT', 'hq_billing',
+          f"Edited {inv['status']} invoice {inv['invoice_number']}: NGN {_money(total)}")
     db.commit()
-    flash(f'Invoice updated — new total ₦{_money(total)}.', 'success')
+    msg = f'Invoice updated — new total ₦{_money(total)}.'
+    if inv['status'] == 'sent':
+        msg += ' Resend it so the client gets the corrected invoice.'
+    flash(msg, 'success')
     return redirect(url_for('hq_billing.invoice_detail', invoice_id=invoice_id))
 
 
@@ -665,25 +669,7 @@ def send_invoice(invoice_id):
                       token=inv['pay_token'], _external=True)
     brand = _billing_brand(db)
     operator = brand['name']
-    rows_html = ''.join(
-        f"<tr><td style='padding:6px 10px;border-bottom:1px solid #eee'>{it['description']}</td>"
-        f"<td style='padding:6px 10px;border-bottom:1px solid #eee;text-align:right'>₦{_money(it['amount'])}</td></tr>"
-        for it in items)
-    html = f"""
-      <h2>Invoice {inv['invoice_number']}</h2>
-      <p>Dear {inv['client_name']},</p>
-      <p>Please find your invoice from {operator}{' for ' + inv['period_label'] if inv['period_label'] else ''}.</p>
-      <table style="border-collapse:collapse;width:100%;max-width:520px">
-        {rows_html}
-        <tr><td style="padding:8px 10px;font-weight:bold">Total due</td>
-            <td style="padding:8px 10px;text-align:right;font-weight:bold">₦{_money(inv['amount'])}</td></tr>
-      </table>
-      <p>{'Due by ' + str(inv['due_date']) + '.' if inv['due_date'] else ''}</p>
-      <p><a href="{pay_url}" style="display:inline-block;background:#082B66;color:#fff;
-        padding:12px 22px;border-radius:6px;text-decoration:none;font-weight:bold">Pay now</a></p>
-      <p style="color:#666;font-size:13px">Or pay by bank transfer and we will mark this invoice settled.</p>
-      {('<p style="color:#444;font-size:13px;white-space:pre-line">' + brand['pay_instructions'] + '</p>') if brand['pay_instructions'] else ''}
-    """
+    html = _invoice_email_html(brand, inv, items, pay_url)
     try:
         pdf = _build_invoice_pdf(brand, inv, items)
         attachments = [{'filename': f"invoice_{inv['invoice_number'].replace('/', '_')}.pdf",
@@ -774,6 +760,70 @@ def pay_callback():
 
 
 # ── PDF ───────────────────────────────────────────────────────────────────────
+
+def _invoice_email_html(brand, inv, items, pay_url) -> str:
+    """A self-contained, operator-branded invoice email. Carries the
+    `data-coopms-email` marker so the generic member-facing shell (with its
+    CoopMS advert) is NOT wrapped around it — a client bill should show the
+    operator's brand and the purpose of the charge, nothing else."""
+    name = brand.get('name') or 'Invoice'
+    year = datetime.now().year
+    period = inv['period_label'] or ''
+    rows = ''.join(
+        f'<tr>'
+        f'<td style="padding:9px 6px;border-bottom:1px solid #eee;color:#333;font-size:14px;">{it["description"]}</td>'
+        f'<td style="padding:9px 6px;border-bottom:1px solid #eee;text-align:right;color:#333;font-size:14px;white-space:nowrap;">&#8358;{_money(it["amount"])}</td>'
+        f'</tr>' for it in items)
+    notes_block = (
+        f'<div style="background:#f4f6fb;border-left:4px solid #082b66;padding:12px 14px;margin:0 0 18px;'
+        f'border-radius:4px;color:#333;font-size:14px;white-space:pre-line;">'
+        f'<strong style="color:#082b66;">What this invoice is for</strong><br>{inv["notes"]}</div>'
+        if inv['notes'] else '')
+    due_block = (f'<p style="color:#555;font-size:14px;margin:0 0 18px;">Please pay by '
+                 f'<strong>{inv["due_date"]}</strong>.</p>' if inv['due_date'] else '')
+    pay_block = (
+        f'<div style="margin-top:20px;color:#444;font-size:14px;white-space:pre-line;">'
+        f'<strong>Payment details</strong><br>{brand["pay_instructions"]}</div>'
+        if brand.get('pay_instructions')
+        else '<p style="color:#666;font-size:13px;margin-top:18px;">You can also pay by bank transfer — '
+             'we will mark this invoice settled once received.</p>')
+    return f"""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body data-coopms-email style="margin:0;padding:0;background:#f4f6f9;font-family:'Segoe UI',Arial,sans-serif;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f9;padding:24px 12px;">
+   <tr><td align="center">
+    <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:10px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.06);">
+      <tr><td style="background:#082b66;padding:26px 30px;">
+        <div style="color:#ffffff;font-size:22px;font-weight:bold;">{name}</div>
+        <div style="color:#f4b51c;font-size:12px;letter-spacing:3px;margin-top:4px;">INVOICE {inv['invoice_number']}</div>
+      </td></tr>
+      <tr><td style="padding:30px;color:#333333;font-size:15px;line-height:1.6;">
+        <p style="margin:0 0 14px;">Dear {inv['client_name']},</p>
+        <p style="margin:0 0 18px;">Here is your invoice from <strong>{name}</strong>{(' for ' + period) if period else ''}.</p>
+        {notes_block}
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:0 0 8px;">
+          <tr><th align="left" style="padding:8px 6px;border-bottom:2px solid #082b66;color:#082b66;font-size:12px;text-transform:uppercase;">Description</th>
+              <th align="right" style="padding:8px 6px;border-bottom:2px solid #082b66;color:#082b66;font-size:12px;text-transform:uppercase;">Amount</th></tr>
+          {rows}
+          <tr><td style="padding:12px 6px;font-weight:bold;font-size:15px;">Total due</td>
+              <td style="padding:12px 6px;text-align:right;font-weight:bold;font-size:17px;color:#082b66;">&#8358;{_money(inv['amount'])}</td></tr>
+        </table>
+        {due_block}
+        <table role="presentation" cellpadding="0" cellspacing="0" style="margin:6px 0 4px;"><tr>
+          <td style="background:#082b66;border-radius:6px;">
+            <a href="{pay_url}" style="display:inline-block;padding:13px 30px;color:#ffffff;text-decoration:none;font-weight:bold;font-size:15px;">Pay now</a>
+          </td></tr></table>
+        {pay_block}
+        <p style="color:#888888;font-size:13px;margin-top:22px;">A PDF copy is attached. Reply to this email if you have any questions.</p>
+      </td></tr>
+      <tr><td style="padding:18px 30px;background:#f8f9fa;text-align:center;color:#999999;font-size:12px;border-top:1px solid #eeeeee;">
+        {name}<br>&copy; {year} {name}
+      </td></tr>
+    </table>
+   </td></tr>
+  </table>
+</body></html>"""
+
 
 def _logo_flowable(logo_uri, mm):
     """Turn a data: URI logo into a sized reportlab Image, or None."""
