@@ -386,6 +386,9 @@ def init_db():
     _add_col(db, 'members', 'card_token', 'TEXT')
     _add_col(db, 'members', 'card_path',  'TEXT')
     _add_col(db, 'members', 'employee_id', 'TEXT')
+    # Optional annual salary — only used for salary-based CTAS affordability; 0
+    # when the cooperative is not salary/staff-based (the default is savings-based).
+    _add_col(db, 'members', 'annual_salary', 'REAL DEFAULT 0')
     _add_col(db, 'members', 'city', 'TEXT')
     _add_col(db, 'members', 'state', 'TEXT')
     _add_col(db, 'members', 'country', "TEXT DEFAULT 'Nigeria'")
@@ -853,6 +856,13 @@ def init_db():
         )
     '''))
     _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_ctas_cycles_status ON ctas_cycles(status)')
+    # Affordability basis for a cycle — cooperatives are not always salary-based:
+    #   'savings' (default): target <= savings_multiple x member savings balance
+    #   'salary' : monthly deduction <= affordability_ratio x monthly salary
+    #   'manual' : no automatic test; finance/committee assesses at approval
+    _add_col(db, 'ctas_cycles', 'affordability_method', "TEXT DEFAULT 'savings'")
+    _add_col(db, 'ctas_cycles', 'affordability_ratio', 'REAL DEFAULT 0.5')
+    _add_col(db, 'ctas_cycles', 'savings_multiple', 'REAL DEFAULT 3')
 
     db.execute(_adapt('''
         CREATE TABLE IF NOT EXISTS ctas_subscriptions (

@@ -71,5 +71,98 @@ class CtasFeatureFlagTests(unittest.TestCase):
         self.assertEqual(r.status_code, 400)
 
 
+class CtasEngineTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.app = app_module.app
+
+    def _cycle(self, **over):
+        base = {
+            'id': 1, 'status': 'closed', 'duration_months': 6, 'monthly_capacity': 1,
+            'earliest_payout_month': 2, 'admin_fee_flat': 1500, 'admin_fee_percentage': 0.015,
+            'admin_fee_cap': 3000, 'admin_fee_threshold': 1000000,
+            'affordability_method': 'savings', 'affordability_ratio': 0.5, 'savings_multiple': 3,
+        }
+        base.update(over)
+        return base
+
+    def test_monthly_deduction_and_admin_fee(self):
+        from ctas_engine import monthly_deduction, calculate_admin_fee
+        self.assertAlmostEqual(monthly_deduction(300000, 6), 50000.0, places=2)
+        c = self._cycle()
+        self.assertAlmostEqual(calculate_admin_fee(c, 500000), 1500.0)          # flat below threshold
+        self.assertAlmostEqual(calculate_admin_fee(c, 2000000), 3000.0)         # capped percentage
+
+    def test_affordability_savings_basis_default(self):
+        from ctas_engine import affordability
+        c = self._cycle(affordability_method='savings', savings_multiple=3)
+        member = {'total_savings': 100000, 'annual_salary': 0, 'status': 'active'}
+        ok, method, _ = affordability(None, member, c, 250000, 5)
+        self.assertTrue(ok); self.assertEqual(method, 'savings')                # 250k <= 3x100k
+        ok, _, _ = affordability(None, member, c, 400000, 5)
+        self.assertFalse(ok)                                                    # 400k > 300k
+
+    def test_affordability_salary_basis(self):
+        from ctas_engine import affordability
+        c = self._cycle(affordability_method='salary', affordability_ratio=0.5)
+        salaried = {'total_savings': 0, 'annual_salary': 1200000, 'status': 'active'}  # 100k/mo, cap 50k
+        self.assertTrue(affordability(None, salaried, c, 200000, 5)[0])          # 40k/mo <= 50k
+        self.assertFalse(affordability(None, salaried, c, 400000, 5)[0])         # 80k/mo > 50k
+        no_salary = {'total_savings': 500000, 'annual_salary': 0, 'status': 'active'}
+        self.assertFalse(affordability(None, no_salary, c, 100000, 5)[0])        # no salary on record
+
+    def test_affordability_manual_always_defers(self):
+        from ctas_engine import affordability
+        c = self._cycle(affordability_method='manual')
+        member = {'total_savings': 0, 'annual_salary': 0, 'status': 'active'}
+        ok, method, _ = affordability(None, member, c, 999999, 6)
+        self.assertTrue(ok); self.assertEqual(method, 'manual')
+
+    def test_ballot_assigns_unique_months_and_is_seed_deterministic(self):
+        from ctas_engine import assign_payout_months
+        c = self._cycle(duration_months=6, earliest_payout_month=2, monthly_capacity=1)
+        ids = [10, 11, 12, 13, 14]                          # 5 members, months 2..6 (5 slots)
+        a1 = assign_payout_months(ids, c, seed='abc')
+        a2 = assign_payout_months(ids, c, seed='abc')
+        self.assertEqual(a1, a2)                            # deterministic per seed
+        self.assertEqual(sorted(a1.values()), [2, 3, 4, 5, 6])   # each month once
+        self.assertEqual(set(a1.keys()), set(ids))
+        with self.assertRaises(ValueError):                # 6 members, only 5 slots
+            assign_payout_months(ids + [15], c, seed='abc')
+
+    def test_eligibility_blocks_second_active_subscription(self):
+        from database import get_db
+        from ctas_engine import check_eligibility
+        with self.app.app_context():
+            db = get_db()
+            db.execute("INSERT INTO members (member_number, first_name, last_name, status, "
+                       "total_savings, monthly_savings, date_joined) "
+                       "VALUES ('CTAS/EL/1','El','Test','active',300000,5000,'2024-01-01')")
+            mid = db.execute("SELECT id FROM members WHERE member_number='CTAS/EL/1'").fetchone()['id']
+            db.execute("INSERT INTO ctas_cycles (name, status, duration_months, monthly_capacity, "
+                       "earliest_payout_month, affordability_method, savings_multiple) "
+                       "VALUES ('EligCycle','open',6,3,2,'savings',3)")
+            cid = db.execute("SELECT id FROM ctas_cycles WHERE name='EligCycle'").fetchone()['id']
+            member = db.execute("SELECT * FROM members WHERE id=?", (mid,)).fetchone()
+            cycle = db.execute("SELECT * FROM ctas_cycles WHERE id=?", (cid,)).fetchone()
+            try:
+                r = check_eligibility(db, member, cycle, 200000, 5)     # 200k <= 3x300k
+                self.assertTrue(r['eligible'], r['reasons'])
+                # Give the member an active subscription in another cycle, then re-check.
+                db.execute("INSERT INTO ctas_cycles (name, status) VALUES ('Other','open')")
+                ocid = db.execute("SELECT id FROM ctas_cycles WHERE name='Other'").fetchone()['id']
+                db.execute("INSERT INTO ctas_subscriptions (cycle_id, member_id, target_amount, "
+                           "tenure_months, status) VALUES (?,?,100000,5,'enrolled')", (ocid, mid))
+                db.commit()
+                r2 = check_eligibility(db, member, cycle, 200000, 5)
+                self.assertFalse(r2['eligible'])
+                self.assertTrue(any('active CTAS subscription' in x for x in r2['reasons']))
+            finally:
+                db.execute("DELETE FROM ctas_subscriptions WHERE member_id=?", (mid,))
+                db.execute("DELETE FROM ctas_cycles WHERE name IN ('EligCycle','Other')")
+                db.execute("DELETE FROM members WHERE id=?", (mid,))
+                db.commit()
+
+
 if __name__ == '__main__':
     unittest.main()
