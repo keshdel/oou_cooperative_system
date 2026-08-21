@@ -152,6 +152,33 @@ class HqBillingTests(unittest.TestCase):
             self.assertEqual(inv['status'], 'paid')
             self.assertAlmostEqual(float(inv['amount']), 25000.0, places=2)   # unchanged
 
+    def test_duplicate_invoice_clones_into_a_new_draft(self):
+        self.login_admin()
+        cid = self._add_client('Cloney', 70, 5000)
+        self.client.post('/hq/invoices/new', data={
+            'client_id': cid, 'sub_mode': 'full', 'sub_qty': '70', 'sub_unit': '5000',
+            'service_type': 'support', 'service_desc': '1yr', 'service_amount': '100000',
+            'period_label': '2025/2026'})
+        with self.app.app_context():
+            db = get_db()
+            src = db.execute('SELECT * FROM hq_invoices WHERE client_id = ? ORDER BY id DESC', (cid,)).fetchone()
+            src_id, src_number, src_total = src['id'], src['invoice_number'], float(src['amount'])
+        r = self.client.post(f'/hq/invoices/{src_id}/duplicate', follow_redirects=False)
+        self.assertIn(r.status_code, (302, 303))
+        with self.app.app_context():
+            db = get_db()
+            copies = db.execute('SELECT * FROM hq_invoices WHERE client_id = ? ORDER BY id DESC', (cid,)).fetchall()
+            self.assertEqual(len(copies), 2)
+            copy = copies[0]
+            self.assertNotEqual(copy['invoice_number'], src_number)   # fresh number
+            self.assertNotEqual(copy['pay_token'], src['pay_token'] if 'pay_token' in src.keys() else None)
+            self.assertEqual(copy['status'], 'draft')
+            self.assertAlmostEqual(float(copy['amount']), src_total, places=2)   # 70×5,000 + 100,000
+            src_items = db.execute('SELECT COUNT(*) FROM hq_invoice_items WHERE invoice_id = ?', (src_id,)).fetchone()[0]
+            copy_items = db.execute('SELECT COUNT(*) FROM hq_invoice_items WHERE invoice_id = ?', (copy['id'],)).fetchone()[0]
+            self.assertEqual(src_items, copy_items)
+            self.assertEqual(db.execute('SELECT billed_user_count FROM hq_clients WHERE id = ?', (cid,)).fetchone()[0], 70)
+
     def test_delete_invoice_releases_billed_users(self):
         self.login_admin()
         cid = self._add_client('Deletable', 12, 5000)

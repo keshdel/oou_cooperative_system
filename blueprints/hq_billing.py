@@ -532,6 +532,50 @@ def edit_invoice(invoice_id):
     return redirect(url_for('hq_billing.invoice_detail', invoice_id=invoice_id))
 
 
+@hq_billing.route('/hq/invoices/<int:invoice_id>/duplicate', methods=['POST'])
+@hq_admin_required
+def duplicate_invoice(invoice_id):
+    """Clone an invoice's line items into a new DRAFT — e.g. reuse last period's
+    invoice for the next one. The copy gets a fresh number, pay token and no due
+    date; edit the period and details before sending. Subscription/top-up members
+    are applied to billed_user_count the same way creating the invoice fresh would."""
+    db = get_db()
+    src, items = _invoice_with_items(db, invoice_id)
+    if not src:
+        abort(404)
+    number = _next_invoice_number(db)
+    db.execute('''INSERT INTO hq_invoices
+                    (invoice_number, client_id, period_label, due_date, amount, status,
+                     pay_token, notes, created_by)
+                  VALUES (?, ?, ?, NULL, 0, 'draft', ?, ?, ?)''',
+               (number, src['client_id'], src['period_label'],
+                secrets.token_urlsafe(16), src['notes'], current_user.id))
+    new_id = last_insert_id(db)
+    for it in items:
+        db.execute('''INSERT INTO hq_invoice_items
+                        (invoice_id, item_type, description, quantity, unit_price, amount)
+                      VALUES (?, ?, ?, ?, ?, ?)''',
+                   (new_id, it['item_type'], it['description'],
+                    it['quantity'], it['unit_price'], it['amount']))
+    # Keep billed_user_count consistent with a fresh creation (full sets, top-up adds).
+    full_qty = sum(float(it['quantity'] or 0) for it in items if it['item_type'] == 'subscription')
+    topup_qty = sum(float(it['quantity'] or 0) for it in items if it['item_type'] == 'topup')
+    if full_qty > 0:
+        db.execute('UPDATE hq_clients SET billed_user_count = ?, updated_at = ? WHERE id = ?',
+                   (int(full_qty + topup_qty), datetime.now(), src['client_id']))
+    elif topup_qty > 0:
+        cur = db.execute('SELECT billed_user_count FROM hq_clients WHERE id = ?',
+                         (src['client_id'],)).fetchone()[0] or 0
+        db.execute('UPDATE hq_clients SET billed_user_count = ?, updated_at = ? WHERE id = ?',
+                   (int(cur + topup_qty), datetime.now(), src['client_id']))
+    total = _recalc_invoice_total(db, new_id)
+    audit(db, 'HQ_INVOICE_DUPLICATE', 'hq_billing',
+          f"Duplicated {src['invoice_number']} -> {number} (NGN {_money(total)})")
+    db.commit()
+    flash(f'Created draft {number} from {src["invoice_number"]}. Set the new period and due date, then send.', 'success')
+    return redirect(url_for('hq_billing.invoice_detail', invoice_id=new_id))
+
+
 @hq_billing.route('/hq/invoices/<int:invoice_id>/mark-paid', methods=['POST'])
 @hq_admin_required
 def mark_paid(invoice_id):

@@ -10,6 +10,10 @@
             <span class="text-muted ms-2">{{ inv.client_name }}</span>
         </div>
         <div class="col-md-5 text-end">
+            <form method="post" action="{{ url_for('hq_billing.duplicate_invoice', invoice_id=inv.id) }}" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-outline-primary" title="Create a draft copy for a new period"><i class="fas fa-copy"></i> Duplicate</button>
+            </form>
             <a href="{{ url_for('hq_billing.invoice_pdf', invoice_id=inv.id) }}" class="btn btn-outline-secondary" target="_blank"><i class="fas fa-file-pdf"></i> PDF</a>
             <a href="{{ url_for('hq_billing.invoices') }}" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> Back</a>
         </div>
