@@ -134,6 +134,15 @@
                 </form>
             </div></div>
             {% endif %}
+
+            <div class="card border-danger"><div class="card-body">
+                <form method="post" action="{{ url_for('hq_billing.delete_invoice', invoice_id=inv.id) }}"
+                      onsubmit="return confirm('Permanently delete invoice {{ inv.invoice_number }}? This cannot be undone.{% if inv.status == 'paid' %} It is marked PAID — the payment record will be lost.{% endif %}');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="btn btn-danger btn-sm w-100"><i class="fas fa-trash"></i> Delete invoice</button>
+                </form>
+                <div class="small text-muted mt-2">Removes the invoice entirely. Voiding keeps a record; deleting does not.</div>
+            </div></div>
         </div>
     </div>
 </div>

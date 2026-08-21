@@ -152,6 +152,41 @@ class HqBillingTests(unittest.TestCase):
             self.assertEqual(inv['status'], 'paid')
             self.assertAlmostEqual(float(inv['amount']), 25000.0, places=2)   # unchanged
 
+    def test_delete_invoice_releases_billed_users(self):
+        self.login_admin()
+        cid = self._add_client('Deletable', 12, 5000)
+        self.client.post('/hq/invoices/new', data={
+            'client_id': cid, 'sub_mode': 'full', 'sub_qty': '12', 'sub_unit': '5000'})
+        with self.app.app_context():
+            db = get_db()
+            inv_id = db.execute('SELECT id FROM hq_invoices WHERE client_id = ? ORDER BY id DESC',
+                                (cid,)).fetchone()['id']
+            self.assertEqual(db.execute('SELECT billed_user_count FROM hq_clients WHERE id = ?', (cid,)).fetchone()[0], 12)
+        r = self.client.post(f'/hq/invoices/{inv_id}/delete', follow_redirects=False)
+        self.assertIn(r.status_code, (302, 303))
+        with self.app.app_context():
+            db = get_db()
+            self.assertIsNone(db.execute('SELECT id FROM hq_invoices WHERE id = ?', (inv_id,)).fetchone())
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM hq_invoice_items WHERE invoice_id = ?', (inv_id,)).fetchone()[0], 0)
+            self.assertEqual(db.execute('SELECT billed_user_count FROM hq_clients WHERE id = ?', (cid,)).fetchone()[0], 0)
+
+    def test_deleting_a_voided_invoice_does_not_double_release(self):
+        self.login_admin()
+        cid = self._add_client('Voidy', 12, 5000)
+        self.client.post('/hq/invoices/new', data={
+            'client_id': cid, 'sub_mode': 'full', 'sub_qty': '12', 'sub_unit': '5000'})
+        with self.app.app_context():
+            inv_id = get_db().execute('SELECT id FROM hq_invoices WHERE client_id = ? ORDER BY id DESC',
+                                      (cid,)).fetchone()['id']
+        self.client.post(f'/hq/invoices/{inv_id}/void')
+        with self.app.app_context():
+            self.assertEqual(get_db().execute('SELECT billed_user_count FROM hq_clients WHERE id = ?', (cid,)).fetchone()[0], 0)
+        self.client.post(f'/hq/invoices/{inv_id}/delete')
+        with self.app.app_context():
+            db = get_db()
+            self.assertIsNone(db.execute('SELECT id FROM hq_invoices WHERE id = ?', (inv_id,)).fetchone())
+            self.assertEqual(db.execute('SELECT billed_user_count FROM hq_clients WHERE id = ?', (cid,)).fetchone()[0], 0)
+
     def test_member_count_endpoint_is_token_guarded(self):
         os.environ['HQ_SYNC_TOKEN'] = 'sync-secret'
         try:

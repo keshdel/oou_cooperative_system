@@ -33,7 +33,7 @@ from flask import (Blueprint, abort, current_app, flash, make_response,
 from flask_login import current_user, login_required
 
 from database import get_db, last_insert_id
-from email_service import send_email_detailed
+from email_service import send_email
 from blueprints.marketing import marketing_hq_enabled
 from payments import get_gateway, generate_reference
 from utils import audit
@@ -133,6 +133,20 @@ def _recalc_invoice_total(db, invoice_id):
                        (invoice_id,)).fetchone()[0] or 0
     db.execute('UPDATE hq_invoices SET amount = ? WHERE id = ?', (round(float(total), 2), invoice_id))
     return round(float(total), 2)
+
+
+def _release_billed_users(db, invoice):
+    """Give back this invoice's subscription/top-up members to the client's
+    billed_user_count, so a later top-up recomputes the right delta. Used when an
+    invoice is voided or deleted."""
+    q = db.execute("SELECT COALESCE(SUM(quantity), 0) FROM hq_invoice_items "
+                   "WHERE invoice_id = ? AND item_type IN ('subscription','topup')",
+                   (invoice['id'],)).fetchone()[0] or 0
+    if q:
+        cur = db.execute('SELECT billed_user_count FROM hq_clients WHERE id = ?',
+                         (invoice['client_id'],)).fetchone()[0] or 0
+        db.execute('UPDATE hq_clients SET billed_user_count = ?, updated_at = ? WHERE id = ?',
+                   (max(0, int(cur - q)), datetime.now(), invoice['client_id']))
 
 
 # ── Clients ───────────────────────────────────────────────────────────────────
@@ -548,11 +562,33 @@ def void_invoice(invoice_id):
     if inv['status'] == 'paid':
         flash('A paid invoice cannot be voided.', 'danger')
         return redirect(url_for('hq_billing.invoice_detail', invoice_id=invoice_id))
+    _release_billed_users(db, inv)
     db.execute("UPDATE hq_invoices SET status = 'void' WHERE id = ?", (invoice_id,))
     audit(db, 'HQ_INVOICE_VOID', 'hq_billing', f"Voided invoice {inv['invoice_number']}")
     db.commit()
     flash('Invoice voided.', 'info')
     return redirect(url_for('hq_billing.invoice_detail', invoice_id=invoice_id))
+
+
+@hq_billing.route('/hq/invoices/<int:invoice_id>/delete', methods=['POST'])
+@hq_admin_required
+def delete_invoice(invoice_id):
+    """Permanently delete an invoice and its line items. Releases its
+    subscription/top-up members back to the client (unless already voided, which
+    released them). Irreversible — for correcting mistakes, not record-keeping."""
+    db = get_db()
+    inv = db.execute('SELECT * FROM hq_invoices WHERE id = ?', (invoice_id,)).fetchone()
+    if not inv:
+        abort(404)
+    if inv['status'] != 'void':
+        _release_billed_users(db, inv)
+    db.execute('DELETE FROM hq_invoice_items WHERE invoice_id = ?', (invoice_id,))
+    db.execute('DELETE FROM hq_invoices WHERE id = ?', (invoice_id,))
+    audit(db, 'HQ_INVOICE_DELETE', 'hq_billing',
+          f"Deleted invoice {inv['invoice_number']} (was {inv['status']}, NGN {_money(inv['amount'])})")
+    db.commit()
+    flash(f'Invoice {inv["invoice_number"]} deleted.', 'info')
+    return redirect(url_for('hq_billing.invoices'))
 
 
 @hq_billing.route('/hq/invoices/<int:invoice_id>.pdf')
@@ -604,18 +640,24 @@ def send_invoice(invoice_id):
       <p style="color:#666;font-size:13px">Or pay by bank transfer and we will mark this invoice settled.</p>
       {('<p style="color:#444;font-size:13px;white-space:pre-line">' + brand['pay_instructions'] + '</p>') if brand['pay_instructions'] else ''}
     """
-    result = send_email_detailed(inv['billing_email'], f"Invoice {inv['invoice_number']} from {operator}", html)
-    if result.get('success'):
+    try:
+        pdf = _build_invoice_pdf(brand, inv, items)
+        attachments = [{'filename': f"invoice_{inv['invoice_number'].replace('/', '_')}.pdf",
+                        'content': pdf, 'mimetype': 'application/pdf'}]
+    except Exception:  # pragma: no cover - PDF is best-effort; still send the email
+        attachments = None
+    sent_ok = send_email(inv['billing_email'], f"Invoice {inv['invoice_number']} from {operator}",
+                         html, attachments=attachments)
+    if sent_ok:
         new_status = 'sent' if inv['status'] == 'draft' else inv['status']
         db.execute('UPDATE hq_invoices SET status = ?, sent_at = ? WHERE id = ?',
                    (new_status, datetime.now(), invoice_id))
         audit(db, 'HQ_INVOICE_SENT', 'hq_billing',
               f"Invoice {inv['invoice_number']} emailed to {inv['billing_email']}")
         db.commit()
-        flash(f'Invoice emailed to {inv["billing_email"]}.', 'success')
+        flash(f'Invoice emailed to {inv["billing_email"]} with the PDF attached.', 'success')
     else:
-        flash(f'Could not send email: {result.get("error", "unknown error")}. '
-              f'Check Settings → Email.', 'danger')
+        flash('Could not send the email — check Settings → Email is configured and enabled.', 'danger')
     return redirect(url_for('hq_billing.invoice_detail', invoice_id=invoice_id))
 
 
