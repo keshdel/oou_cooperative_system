@@ -52,6 +52,12 @@
                        class="{% if request.endpoint == 'portal.my_loans' %}active{% endif %}">
                         <i class="fas fa-hand-holding-usd"></i> My Loans
                     </a>
+                    {% if ctas_enabled %}
+                    <a href="{{ url_for('ctas.my_ctas') }}"
+                       class="{% if request.endpoint == 'ctas.my_ctas' %}active{% endif %}">
+                        <i class="fas fa-recycle"></i> Target Advance
+                    </a>
+                    {% endif %}
                     <a href="{{ url_for('portal.transactions') }}"
                        class="{% if request.endpoint == 'portal.transactions' %}active{% endif %}">
                         <i class="fas fa-exchange-alt"></i> Transactions

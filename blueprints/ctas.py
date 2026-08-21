@@ -24,11 +24,18 @@ from flask import (Blueprint, abort, flash, make_response, redirect, render_temp
 from flask_login import current_user, login_required
 
 from database import get_db, last_insert_id
-from utils import audit, role_required
+from utils import audit, role_required, member_for_user, notify_member
 from ledger import post_journal_safe, get_default_cash_account
 import ctas_engine as ce
 
 ctas = Blueprint('ctas', __name__)
+
+
+def _notify_member(db, member_id, title, message, action_url='/my-ctas'):
+    """Best-effort in-app + push notification to a member by id."""
+    row = db.execute('SELECT email FROM members WHERE id = ?', (member_id,)).fetchone()
+    if row and row['email']:
+        notify_member(db, row['email'], title, message, 'info', action_url)
 
 CTAS_ADVANCES = '1150'            # asset — advances paid out, recovered via payroll
 CTAS_ADMIN_FEE_INCOME = '4150'   # income — admin fee charged on subscription
@@ -283,6 +290,8 @@ def subscription_act(sub_id):
     if action == 'enroll' and sub['status'] in (ce.SUB_SUBMITTED,):
         db.execute("UPDATE ctas_subscriptions SET status = 'enrolled', enrolled_at = ?, "
                    "approved_by = ?, approved_at = ? WHERE id = ?", (now, current_user.id, now, sub_id))
+        _notify_member(db, sub['member_id'], 'Target Advance — enrolled',
+                       'You are enrolled in the target advance cycle. The ballot will assign your payout month.')
         flash('Member enrolled.', 'success')
     elif action == 'unenroll' and sub['status'] == ce.SUB_ENROLLED:
         db.execute("UPDATE ctas_subscriptions SET status = 'submitted', enrolled_at = NULL WHERE id = ?", (sub_id,))
@@ -321,6 +330,9 @@ def run_ballot(cycle_id):
         for sub_id, month in assignments.items():
             db.execute("UPDATE ctas_subscriptions SET status = 'scheduled', payout_month = ?, "
                        "ballot_assigned_at = ? WHERE id = ?", (month, datetime.now(), sub_id))
+            row = db.execute('SELECT member_id FROM ctas_subscriptions WHERE id = ?', (sub_id,)).fetchone()
+            _notify_member(db, row['member_id'], 'Target Advance — ballot result',
+                           f'The ballot is complete. Your advance is scheduled for month {month} of the cycle.')
         summary = f"{len(ids)} member(s) assigned payout months (seed {seed})."
         db.execute("INSERT INTO ctas_ballot_runs (cycle_id, seed, summary, executed_by) VALUES (?, ?, ?, ?)",
                    (cycle_id, seed, summary, current_user.id))
@@ -363,6 +375,9 @@ def payout(sub_id):
                           source_module='ctas_payout', source_id=sub_id, created_by=current_user.id)
         db.execute("UPDATE ctas_subscriptions SET status = 'active_recovery', paid_out_at = ?, "
                    "payout_date = ? WHERE id = ?", (datetime.now(), datetime.now().date(), sub_id))
+        _notify_member(db, sub['member_id'], 'Target Advance — paid out',
+                       f"Your advance of ₦{target - fee:,.2f} has been disbursed. Recovery of "
+                       f"₦{float(sub['monthly_deduction'] or 0):,.2f}/month has started.")
         audit(db, 'CTAS_PAYOUT', 'ctas',
               f"Paid out ₦{target:,.2f} to {member['first_name']} {member['last_name']} (sub #{sub_id})")
         db.commit()
@@ -508,3 +523,66 @@ def payroll_import(cycle_id):
         db.rollback()
         flash(f'Could not process the recovery file: {e}', 'danger')
     return redirect(url_for('ctas.cycle_detail', cycle_id=cycle_id))
+
+
+# ── Member portal ─────────────────────────────────────────────────────────────
+
+@ctas.route('/my-ctas')
+@ctas_required
+@login_required
+def my_ctas():
+    db = get_db()
+    member = member_for_user(db, current_user.id)
+    if not member:
+        flash('Your account is not linked to a member record yet.', 'warning')
+        return redirect(url_for('portal.member_portal'))
+    subs = db.execute('''
+        SELECT s.*, c.name AS cycle_name, c.duration_months, c.affordability_method
+        FROM ctas_subscriptions s JOIN ctas_cycles c ON c.id = s.cycle_id
+        WHERE s.member_id = ? ORDER BY s.applied_at DESC''', (member['id'],)).fetchall()
+    open_cycles = db.execute('''
+        SELECT * FROM ctas_cycles WHERE status = 'open'
+          AND id NOT IN (SELECT cycle_id FROM ctas_subscriptions WHERE member_id = ?)
+        ORDER BY name''', (member['id'],)).fetchall()
+    has_active = ce.member_has_active_subscription(db, member['id'])
+    return render_template('member/my-ctas.html', member=member, subs=subs,
+                           open_cycles=open_cycles, has_active=has_active)
+
+
+@ctas.route('/my-ctas/apply', methods=['POST'])
+@ctas_required
+@login_required
+def my_ctas_apply():
+    db = get_db()
+    member = member_for_user(db, current_user.id)
+    if not member:
+        abort(403)
+    cycle = db.execute("SELECT * FROM ctas_cycles WHERE id = ? AND status = 'open'",
+                       (request.form.get('cycle_id'),)).fetchone()
+    if not cycle:
+        flash('That cycle is not open for applications.', 'warning')
+        return redirect(url_for('ctas.my_ctas'))
+    try:
+        target = float(request.form.get('target_amount') or 0)
+        tenure = int(request.form.get('tenure_months') or 0)
+    except ValueError:
+        flash('Enter a valid amount and tenure.', 'danger')
+        return redirect(url_for('ctas.my_ctas'))
+
+    result = ce.check_eligibility(db, member, cycle, target, tenure)
+    hard = [r for r in result['reasons'] if 'exceeds' not in r and 'salary' not in r.lower()]
+    if hard:
+        flash('Cannot apply: ' + ' '.join(hard), 'danger')
+        return redirect(url_for('ctas.my_ctas'))
+
+    db.execute('''INSERT INTO ctas_subscriptions
+            (cycle_id, member_id, target_amount, tenure_months, monthly_deduction, admin_fee,
+             status, outstanding, created_by)
+            VALUES (?, ?, ?, ?, ?, ?, 'submitted', ?, ?)''',
+        (cycle['id'], member['id'], target, tenure, result['monthly_deduction'],
+         result['admin_fee'], target, current_user.id))
+    audit(db, 'CTAS_APPLY', 'ctas', f"Member {member['id']} applied to cycle {cycle['name']} (target {target})")
+    db.commit()
+    note = '' if result['eligible'] else ' Affordability will be reviewed by the committee.'
+    flash('Your target-advance application has been submitted for review.' + note, 'success')
+    return redirect(url_for('ctas.my_ctas'))

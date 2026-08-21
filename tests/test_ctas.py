@@ -310,5 +310,65 @@ class CtasAdminFlowTests(unittest.TestCase):
                 db.commit()
 
 
+class CtasMemberPortalTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.app = app_module.app
+        cls.app.config.update(TESTING=True, WTF_CSRF_ENABLED=False)
+
+    def setUp(self):
+        from werkzeug.security import generate_password_hash
+        from blueprints.ctas import set_ctas_enabled
+        self.member = self.app.test_client()
+        self.admin = self.app.test_client()
+        with self.app.app_context():
+            db = get_db()
+            set_ctas_enabled(db, True)
+            db.execute("INSERT INTO members (member_number, first_name, last_name, email, status, "
+                       "total_savings, monthly_savings, date_joined) "
+                       "VALUES ('CTAS/M/1','Mem','Ber','ctasmem@x.com','active',500000,5000,'2024-01-01')")
+            db.execute("INSERT INTO users (username, password_hash, role, email, is_active, must_change_password) "
+                       "VALUES ('ctasmem', ?, 'member', 'ctasmem@x.com', 1, 0)",
+                       (generate_password_hash('TestMember123'),))
+            db.execute("INSERT INTO ctas_cycles (name, status, duration_months, monthly_capacity, "
+                       "affordability_method, savings_multiple) VALUES ('MemCycle','open',6,2,'savings',3)")
+            db.commit()
+            self.cid = db.execute("SELECT id FROM ctas_cycles WHERE name='MemCycle'").fetchone()['id']
+            self.uid = db.execute("SELECT id FROM users WHERE username='ctasmem'").fetchone()['id']
+        self.member.post('/login', data={'username': 'ctasmem', 'password': 'TestMember123'})
+        self.admin.post('/login', data={'username': 'admin', 'password': 'TestAdmin123'})
+
+    def tearDown(self):
+        with self.app.app_context():
+            db = get_db()
+            db.execute("DELETE FROM notifications WHERE user_id = ?", (self.uid,))
+            db.execute("DELETE FROM ctas_subscriptions WHERE cycle_id = ?", (self.cid,))
+            db.execute("DELETE FROM ctas_cycles WHERE id = ?", (self.cid,))
+            db.execute("DELETE FROM users WHERE username = 'ctasmem'")
+            db.execute("DELETE FROM members WHERE member_number = 'CTAS/M/1'")
+            db.execute("DELETE FROM settings WHERE key = 'ctas_enabled'")
+            db.commit()
+
+    def test_member_applies_and_is_notified_on_enrol(self):
+        self.assertEqual(self.member.get('/my-ctas').status_code, 200)
+        r = self.member.post('/my-ctas/apply',
+                             data={'cycle_id': str(self.cid), 'target_amount': '200000', 'tenure_months': '4'},
+                             follow_redirects=False)
+        self.assertIn(r.status_code, (302, 303))
+        with self.app.app_context():
+            sub = get_db().execute("SELECT * FROM ctas_subscriptions WHERE cycle_id = ?", (self.cid,)).fetchone()
+            self.assertIsNotNone(sub)
+            self.assertEqual(sub['status'], 'submitted')
+            self.assertAlmostEqual(float(sub['monthly_deduction']), 50000.0, places=2)   # 200k/4
+            sid = sub['id']
+        # Admin enrols -> member notified.
+        self.admin.post(f'/ctas/subscriptions/{sid}/act', data={'action': 'enroll'})
+        with self.app.app_context():
+            n = get_db().execute(
+                "SELECT COUNT(*) FROM notifications WHERE user_id = ? AND title LIKE '%enrolled%'",
+                (self.uid,)).fetchone()[0]
+            self.assertGreaterEqual(n, 1)
+
+
 if __name__ == '__main__':
     unittest.main()
