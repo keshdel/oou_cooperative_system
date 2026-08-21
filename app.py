@@ -122,6 +122,7 @@ from blueprints.security     import security_bp
 from blueprints.feedback     import feedback_bp
 from blueprints.marketing    import marketing
 from blueprints.hq_billing   import hq_billing
+from blueprints.ctas         import ctas as ctas_bp
 from mobile_api             import mobile_api
 
 app.register_blueprint(auth)
@@ -144,6 +145,7 @@ app.register_blueprint(security_bp)
 app.register_blueprint(feedback_bp)
 app.register_blueprint(marketing)
 app.register_blueprint(hq_billing)
+app.register_blueprint(ctas_bp)
 app.register_blueprint(mobile_api)
 
 csrf.exempt(mobile_api)
@@ -198,6 +200,15 @@ def _can_permission(permission):
     try:
         from permissions import user_can
         return user_can(permission)
+    except Exception:
+        return False
+
+
+def _ctas_enabled_flag():
+    """Template helper: is the optional CTAS module active for this cooperative?"""
+    try:
+        from blueprints.ctas import ctas_enabled
+        return ctas_enabled()
     except Exception:
         return False
 
@@ -263,6 +274,7 @@ def utility_processor():
         'feedback_features':        feedback_features,
         'feedback_improve_options': feedback_improve_options,
         'marketing_hq_enabled':     os.environ.get('MARKETING_HQ', '0') == '1',
+        'ctas_enabled':             _ctas_enabled_flag(),
         # Menus and buttons follow the officer's assigned permissions, not their
         # role — see permissions.py and Settings → Task Assignment.
         'can':                      _can_permission,

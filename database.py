@@ -828,6 +828,105 @@ def init_db():
     '''))
     _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_hq_invoice_items_invoice ON hq_invoice_items(invoice_id)')
 
+    # ── CTAS: Cooperative Target Advance Scheme (ajo/esusu with balloted payout
+    # order + payroll recovery). Reuses members + the double-entry GL. ──
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS ctas_cycles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            status TEXT DEFAULT 'draft',
+            start_date DATE,
+            end_date DATE,
+            duration_months INTEGER DEFAULT 6,
+            fixed_monthly_amount REAL DEFAULT 0,
+            monthly_capacity INTEGER DEFAULT 1,
+            earliest_payout_month INTEGER DEFAULT 2,
+            max_participants INTEGER DEFAULT 0,
+            admin_fee_flat REAL DEFAULT 0,
+            admin_fee_percentage REAL DEFAULT 0,
+            admin_fee_cap REAL DEFAULT 0,
+            admin_fee_threshold REAL DEFAULT 0,
+            ballot_date DATE,
+            created_by INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    '''))
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_ctas_cycles_status ON ctas_cycles(status)')
+
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS ctas_subscriptions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cycle_id INTEGER NOT NULL,
+            member_id INTEGER NOT NULL,
+            target_amount REAL NOT NULL,
+            tenure_months INTEGER NOT NULL,
+            monthly_deduction REAL DEFAULT 0,
+            admin_fee REAL DEFAULT 0,
+            requested_payout_month INTEGER,
+            status TEXT DEFAULT 'submitted',
+            payout_month INTEGER,
+            payout_date DATE,
+            total_recovered REAL DEFAULT 0,
+            outstanding REAL DEFAULT 0,
+            applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            approved_at TIMESTAMP,
+            approved_by INTEGER,
+            enrolled_at TIMESTAMP,
+            ballot_assigned_at TIMESTAMP,
+            paid_out_at TIMESTAMP,
+            completed_at TIMESTAMP,
+            rejected_reason TEXT,
+            created_by INTEGER,
+            FOREIGN KEY (cycle_id) REFERENCES ctas_cycles (id),
+            FOREIGN KEY (member_id) REFERENCES members (id)
+        )
+    '''))
+    _exec_ignore(db, 'CREATE UNIQUE INDEX IF NOT EXISTS uq_ctas_sub_member_cycle ON ctas_subscriptions(member_id, cycle_id)')
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_ctas_sub_cycle_status ON ctas_subscriptions(cycle_id, status)')
+
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS ctas_ballot_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cycle_id INTEGER NOT NULL,
+            seed TEXT,
+            summary TEXT,
+            executed_by INTEGER,
+            run_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (cycle_id) REFERENCES ctas_cycles (id)
+        )
+    '''))
+
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS ctas_payroll_batches (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cycle_id INTEGER NOT NULL,
+            month_number INTEGER NOT NULL,
+            kind TEXT DEFAULT 'export',
+            file_name TEXT,
+            processed INTEGER DEFAULT 0,
+            created_by INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (cycle_id) REFERENCES ctas_cycles (id)
+        )
+    '''))
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_ctas_payroll_cycle ON ctas_payroll_batches(cycle_id, month_number)')
+
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS ctas_payroll_lines (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            batch_id INTEGER NOT NULL,
+            subscription_id INTEGER NOT NULL,
+            expected_amount REAL DEFAULT 0,
+            actual_amount REAL DEFAULT 0,
+            status TEXT DEFAULT 'deducted',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (batch_id) REFERENCES ctas_payroll_batches (id),
+            FOREIGN KEY (subscription_id) REFERENCES ctas_subscriptions (id)
+        )
+    '''))
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_ctas_payroll_lines_sub ON ctas_payroll_lines(subscription_id)')
+
     # Member communication campaigns and delivery attempts.
     db.execute(_adapt('''
         CREATE TABLE IF NOT EXISTS communication_campaigns (

@@ -16,6 +16,7 @@ from datetime import datetime
 # Canonical account codes (mirror the seeded chart of accounts)
 CASH            = '1000'
 LOANS_RECEIVABLE = '1100'
+CTAS_ADVANCES   = '1150'   # CTAS target-advance receivable (paid out, recovered via payroll)
 INVESTMENTS     = '1200'
 MEMBER_DEPOSITS = '2000'
 INSURANCE_PAYABLE = '2110'   # loan insurance withheld on behalf of the insurer (pass-through)
@@ -24,6 +25,7 @@ STATUTORY_RESERVE = '3100'
 SHARE_CAPITAL   = '3200'
 LOAN_INTEREST_INCOME = '4000'
 FEE_INCOME      = '4100'
+CTAS_ADMIN_FEE_INCOME = '4150'
 INVESTMENT_INCOME = '4200'
 OPERATING_EXPENSES = '5000'
 HONORARIUM      = '5100'

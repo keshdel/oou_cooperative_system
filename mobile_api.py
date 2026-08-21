@@ -1120,6 +1120,26 @@ def hq_set_status():
     return jsonify({'success': True, 'suspended': suspended})
 
 
+@mobile_api.route('/api/hq/set-feature', methods=['POST'])
+def hq_set_feature():
+    """Let HQ turn an optional add-on on/off for this cooperative (on request).
+    Guarded by the shared HQ_SYNC_TOKEN. Currently supports feature 'ctas'."""
+    token = (os.environ.get('HQ_SYNC_TOKEN') or '').strip()
+    provided = (request.headers.get('X-HQ-Token') or '').strip()
+    if not token or not hmac.compare_digest(provided, token):
+        return jsonify({'success': False, 'error': 'Unauthorised'}), 403
+    data = request.get_json(silent=True) or {}
+    feature = (data.get('feature') or '').strip()
+    enabled = bool(data.get('enabled'))
+    if feature == 'ctas':
+        from blueprints.ctas import set_ctas_enabled
+        db = get_db()
+        set_ctas_enabled(db, enabled)
+        db.commit()
+        return jsonify({'success': True, 'feature': 'ctas', 'enabled': enabled})
+    return jsonify({'success': False, 'error': 'Unknown feature'}), 400
+
+
 @mobile_api.route('/api/mobile/v1/tenants/resolve', methods=['GET'])
 def mobile_resolve_tenant():
     """Resolve a short cooperative code to a tenant API base URL.
