@@ -66,6 +66,9 @@ def render_compose(clients):
             f"      - ./clients/{n}.env",
             "    environment:",
             f"      DATABASE_URL: postgresql://postgres:${{POSTGRES_PASSWORD}}@postgres:5432/coop_{n}",
+            # Shared token so HQ can read member counts and set access on every
+            # tenant. Comes from deploy/vps/.env, so all clients get it centrally.
+            "      HQ_SYNC_TOKEN: ${HQ_SYNC_TOKEN:-}",
             "    volumes:",
             # Persist uploaded files (member photos, payout evidence) across
             # rebuilds. One volume per client so societies stay isolated.

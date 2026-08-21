@@ -23,10 +23,16 @@ if ! [[ "$NAME" =~ ^[a-z0-9][a-z0-9-]{1,30}$ ]]; then
   exit 1
 fi
 
-# Root env holds the shared Postgres password.
+# Root env holds shared secrets (Postgres password + the HQ sync token).
 if [[ ! -f .env ]]; then
   echo "Creating deploy/vps/.env with a new Postgres password..."
   echo "POSTGRES_PASSWORD=$(python3 -c 'import secrets;print(secrets.token_urlsafe(24))')" > .env
+fi
+# Shared token that lets HQ read member counts and set access on every tenant.
+# One value for all clients; injected into each app container via generate.py.
+if ! grep -q '^HQ_SYNC_TOKEN=' .env 2>/dev/null; then
+  echo "Adding a shared HQ_SYNC_TOKEN to deploy/vps/.env..."
+  echo "HQ_SYNC_TOKEN=$(python3 -c 'import secrets;print(secrets.token_hex(32))')" >> .env
 fi
 # shellcheck disable=SC1091
 set -a; source .env; set +a

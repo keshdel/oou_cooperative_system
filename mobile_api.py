@@ -1101,6 +1101,25 @@ def hq_member_count():
     return jsonify({'success': True, 'active_members': int(n)})
 
 
+@mobile_api.route('/api/hq/set-status', methods=['POST'])
+def hq_set_status():
+    """Let HQ suspend or reactivate this cooperative's access. Guarded by the
+    shared HQ_SYNC_TOKEN. Sets settings.tenant_suspended, which the app's
+    before-request gate enforces."""
+    token = (os.environ.get('HQ_SYNC_TOKEN') or '').strip()
+    provided = (request.headers.get('X-HQ-Token') or '').strip()
+    if not token or not hmac.compare_digest(provided, token):
+        return jsonify({'success': False, 'error': 'Unauthorised'}), 403
+    data = request.get_json(silent=True) or {}
+    suspended = bool(data.get('suspended'))
+    db = get_db()
+    db.execute("DELETE FROM settings WHERE key = 'tenant_suspended'")
+    db.execute("INSERT INTO settings (key, value) VALUES ('tenant_suspended', ?)",
+               ('1' if suspended else '0',))
+    db.commit()
+    return jsonify({'success': True, 'suspended': suspended})
+
+
 @mobile_api.route('/api/mobile/v1/tenants/resolve', methods=['GET'])
 def mobile_resolve_tenant():
     """Resolve a short cooperative code to a tenant API base URL.

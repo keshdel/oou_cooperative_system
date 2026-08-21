@@ -274,6 +274,34 @@ class HqBillingTests(unittest.TestCase):
         finally:
             os.environ.pop('HQ_SYNC_TOKEN', None)
 
+    def test_tenant_suspend_endpoint_and_enforcement(self):
+        os.environ['HQ_SYNC_TOKEN'] = 'access-secret'
+        self.login_admin()
+        try:
+            # Endpoint is token-guarded.
+            self.assertEqual(self.client.post('/api/hq/set-status', json={'suspended': True}).status_code, 403)
+            # Suspend this instance.
+            r = self.client.post('/api/hq/set-status', json={'suspended': True},
+                                 headers={'X-HQ-Token': 'access-secret'})
+            self.assertEqual(r.status_code, 200)
+            self.assertTrue(r.get_json()['suspended'])
+            # Now the app is locked (even for the admin) — except login/logout.
+            blocked = self.client.get('/dashboard')
+            self.assertEqual(blocked.status_code, 403)
+            self.assertIn(b'suspended', blocked.data)
+            self.assertEqual(self.client.get('/login').status_code, 200)   # still reachable
+            # Reactivate.
+            r = self.client.post('/api/hq/set-status', json={'suspended': False},
+                                 headers={'X-HQ-Token': 'access-secret'})
+            self.assertEqual(r.status_code, 200)
+            self.assertNotEqual(self.client.get('/dashboard').status_code, 403)
+        finally:
+            with self.app.app_context():
+                db = get_db()
+                db.execute("DELETE FROM settings WHERE key = 'tenant_suspended'")
+                db.commit()
+            os.environ.pop('HQ_SYNC_TOKEN', None)
+
     def test_billing_settings_saved_and_pdf_renders(self):
         self.login_admin()
         self.client.post('/hq/billing-settings', data={

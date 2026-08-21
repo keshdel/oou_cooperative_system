@@ -70,10 +70,26 @@
                         {% if c.user_count > c.billed_user_count %}<span class="badge bg-warning text-dark">+{{ c.user_count - c.billed_user_count }} unbilled</span>{% endif %}</td>
                     <td class="text-end">₦{{ "{:,.2f}".format(c.rate_per_user or 0) }}</td>
                     <td>{{ c.billing_cycle|title }}</td>
-                    <td><span class="badge bg-{{ 'success' if c.status == 'active' else 'secondary' }}">{{ c.status|title }}</span></td>
+                    <td><span class="badge bg-{{ 'success' if c.status == 'active' else 'secondary' }}">{{ c.status|title }}</span>
+                        {% if c.access_state == 'suspended' %}<span class="badge bg-danger">Suspended</span>{% endif %}</td>
                     <td class="text-end">₦{{ "{:,.2f}".format(c.billed_total or 0) }}</td>
                     <td class="text-end text-success">₦{{ "{:,.2f}".format(c.paid_total or 0) }}</td>
                     <td class="text-end">
+                        {% if c.access_state == 'suspended' %}
+                        <form method="post" action="{{ url_for('hq_billing.set_client_access', client_id=c.id) }}" class="d-inline"
+                              onsubmit="return confirm('Reactivate {{ c.name }} — restore access to their system?');">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="suspend" value="0">
+                            <button class="btn btn-sm btn-outline-success" title="Restore access">Reactivate</button>
+                        </form>
+                        {% else %}
+                        <form method="post" action="{{ url_for('hq_billing.set_client_access', client_id=c.id) }}" class="d-inline"
+                              onsubmit="return confirm('Suspend {{ c.name }}? Their staff and members are locked out until you reactivate. Their data is NOT affected.');">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="suspend" value="1">
+                            <button class="btn btn-sm btn-outline-danger" title="Lock the tenant out (e.g. unpaid invoice)">Suspend</button>
+                        </form>
+                        {% endif %}
                         <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#edit{{ c.id }}">Edit</button>
                     </td>
                 </tr>

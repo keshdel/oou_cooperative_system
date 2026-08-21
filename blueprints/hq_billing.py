@@ -255,6 +255,47 @@ def billing_settings():
     return redirect(url_for('hq_billing.invoices'))
 
 
+@hq_billing.route('/hq/clients/<int:client_id>/set-access', methods=['POST'])
+@hq_admin_required
+def set_client_access(client_id):
+    """Suspend or reactivate a client's whole system remotely (e.g. for a missed
+    payment). Calls the tenant's token-guarded /api/hq/set-status and mirrors the
+    result in access_state. Suspension locks the tenant — data is untouched."""
+    db = get_db()
+    client = db.execute('SELECT * FROM hq_clients WHERE id = ?', (client_id,)).fetchone()
+    if not client:
+        abort(404)
+    suspend = request.form.get('suspend') == '1'
+    token = (os.environ.get('HQ_SYNC_TOKEN') or '').strip()
+    if not token:
+        flash('Set HQ_SYNC_TOKEN in the HQ environment (and each tenant) first.', 'warning')
+        return redirect(url_for('hq_billing.clients'))
+    base = _client_base_url(client)
+    if not base:
+        flash(f'{client["name"]} has no code/subdomain to reach — add one first.', 'danger')
+        return redirect(url_for('hq_billing.clients'))
+    try:
+        body = json.dumps({'suspended': suspend}).encode('utf-8')
+        req = urllib.request.Request(
+            f'{base}/api/hq/set-status', data=body, method='POST',
+            headers={'X-HQ-Token': token, 'Content-Type': 'application/json', 'Accept': 'application/json'})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read())
+        if data.get('success'):
+            db.execute('UPDATE hq_clients SET access_state = ?, updated_at = ? WHERE id = ?',
+                       ('suspended' if suspend else 'active', datetime.now(), client_id))
+            audit(db, 'HQ_CLIENT_ACCESS', 'hq_billing',
+                  f"{'Suspended' if suspend else 'Reactivated'} {client['name']}")
+            db.commit()
+            flash(f"{client['name']} has been {'suspended' if suspend else 'reactivated'}.", 'success')
+        else:
+            flash(f"{client['name']} rejected the request — check the shared token matches.", 'danger')
+    except Exception as exc:  # pragma: no cover - network
+        current_app.logger.warning('HQ set-access failed for %s: %s', client['name'], exc)
+        flash(f"Could not reach {client['name']}. Check its code and that it is deployed with the token.", 'danger')
+    return redirect(url_for('hq_billing.clients'))
+
+
 @hq_billing.route('/hq/clients/sync-members', methods=['POST'])
 @hq_admin_required
 def sync_members():

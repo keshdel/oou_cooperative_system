@@ -340,8 +340,30 @@ _2FA_SETUP_EXEMPT = {
 }
 
 
+# When the provider suspends a tenant from HQ, only these stay reachable so the
+# notice shows, users can sign out, and HQ can reach the token-guarded control
+# endpoints (crucially, to reactivate).
+_SUSPEND_EXEMPT = {'auth.login', 'auth.logout', 'auth.verify_2fa', 'static',
+                   'mobile_api.hq_set_status', 'mobile_api.hq_member_count'}
+
+
+def _is_tenant_suspended():
+    """True if HQ has suspended this tenant (settings.tenant_suspended = '1')."""
+    try:
+        from database import get_db
+        row = get_db().execute(
+            "SELECT value FROM settings WHERE key = 'tenant_suspended'").fetchone()
+        return bool(row and str(row['value']) == '1')
+    except Exception:
+        return False
+
+
 @app.before_request
 def check_maintenance():
+    # Provider suspension locks the whole tenant — admins included — until it is
+    # reactivated from HQ. Checked before the admin bypass on purpose.
+    if request.endpoint not in _SUSPEND_EXEMPT and _is_tenant_suspended():
+        return render_template('errors/tenant_suspended.html'), 403
     if current_user.is_authenticated and current_user.role == 'admin':
         return
     maintenance = False

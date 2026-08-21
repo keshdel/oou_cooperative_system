@@ -784,6 +784,7 @@ def init_db():
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     '''))
+    _add_col(db, 'hq_clients', 'access_state', "TEXT DEFAULT 'active'")
     _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_hq_clients_status ON hq_clients(status)')
 
     db.execute(_adapt('''
