@@ -105,6 +105,8 @@
             {% for s in subs %}
             <tr>
                 <td>{{ s.member_name }}<div class="small text-muted">{{ s.member_number }} · savings ₦{{ "{:,.0f}".format(s.total_savings or 0) }}</div>
+                    {% if s.terms_accepted %}<div class="small text-success"><i class="fas fa-check"></i> Terms accepted{% if s.signature_name %} — {{ s.signature_name }}{% endif %}</div>
+                    {% else %}<div class="small text-warning"><i class="fas fa-exclamation-triangle"></i> Terms not yet accepted</div>{% endif %}
                     {% if s.id in elig and not elig[s.id].eligible %}
                     <div class="small text-danger">{{ elig[s.id].reasons|join(' ') }}</div>{% endif %}
                     {% if s.rejected_reason %}<div class="small text-muted">Rejected: {{ s.rejected_reason }}</div>{% endif %}
@@ -116,21 +118,28 @@
                 <td><span class="badge bg-{{ {'enrolled':'primary','scheduled':'info','active_recovery':'success','completed':'success','rejected':'dark','submitted':'secondary'}.get(s.status,'secondary') }}">{{ s.status|replace('_',' ')|title }}</span></td>
                 <td class="text-end">{{ s.payout_month or '—' }}</td>
                 <td class="text-end">₦{{ "{:,.2f}".format(s.total_recovered or 0) }}{% if s.status in ['active_recovery','completed'] %}<div class="small text-muted">of ₦{{ "{:,.0f}".format(s.target_amount or 0) }}</div>{% endif %}</td>
-                <td>
-                    {% if s.status == 'submitted' %}
+                <td class="text-nowrap">
+                    {% if s.status in ['submitted','eligible','finance_reviewed','approved'] %}
+                        {% set nxt = ce.next_stage(s.status) %}
                         <form method="post" action="{{ url_for('ctas.subscription_act', sub_id=s.id) }}" class="d-inline">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <input type="hidden" name="action" value="enroll">
-                            <button class="btn btn-sm btn-outline-primary">Enrol</button></form>
+                            <input type="hidden" name="action" value="advance">
+                            <button class="btn btn-sm btn-outline-primary">{{ ce.STAGE_ACTION_LABEL.get(nxt, 'Advance') }}</button></form>
+                        {% if s.status in ce.PREV_STAGE %}
+                        <form method="post" action="{{ url_for('ctas.subscription_act', sub_id=s.id) }}" class="d-inline">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="action" value="back">
+                            <button class="btn btn-sm btn-outline-secondary" title="Step back">&laquo;</button></form>
+                        {% endif %}
                         <form method="post" action="{{ url_for('ctas.subscription_act', sub_id=s.id) }}" class="d-inline"
-                              onsubmit="return confirm('Reject this subscription?');">
+                              onsubmit="return confirm('Decline this application?');">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <input type="hidden" name="action" value="reject">
                             <button class="btn btn-sm btn-outline-danger">Reject</button></form>
                     {% elif s.status == 'enrolled' %}
                         <form method="post" action="{{ url_for('ctas.subscription_act', sub_id=s.id) }}" class="d-inline">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <input type="hidden" name="action" value="unenroll">
+                            <input type="hidden" name="action" value="back">
                             <button class="btn btn-sm btn-outline-secondary">Un-enrol</button></form>
                     {% elif s.status == 'scheduled' %}
                         <form method="post" action="{{ url_for('ctas.payout', sub_id=s.id) }}" class="d-inline"

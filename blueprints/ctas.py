@@ -263,12 +263,15 @@ def add_subscription(cycle_id):
         flash('Cannot add: ' + ' '.join(hard), 'danger')
         return redirect(url_for('ctas.cycle_detail', cycle_id=cycle_id))
 
+    terms = 1 if request.form.get('terms') else 0
+    signature = (request.form.get('signature_name') or '').strip()
     db.execute('''INSERT INTO ctas_subscriptions
             (cycle_id, member_id, target_amount, tenure_months, monthly_deduction, admin_fee,
-             status, outstanding, created_by)
-            VALUES (?, ?, ?, ?, ?, ?, 'submitted', ?, ?)''',
+             status, outstanding, terms_accepted, signature_name, signed_at, created_by)
+            VALUES (?, ?, ?, ?, ?, ?, 'submitted', ?, ?, ?, ?, ?)''',
         (cycle_id, member['id'], target, tenure, result['monthly_deduction'],
-         result['admin_fee'], target, current_user.id))
+         result['admin_fee'], target, terms, signature or None,
+         datetime.now() if terms else None, current_user.id))
     audit(db, 'CTAS_SUBSCRIPTION_ADD', 'ctas',
           f"{member['first_name']} {member['last_name']} joined cycle {cycle['name']} (target {target})")
     db.commit()
@@ -287,26 +290,62 @@ def subscription_act(sub_id):
         abort(404)
     action = (request.form.get('action') or '').strip()
     now = datetime.now()
-    if action == 'enroll' and sub['status'] in (ce.SUB_SUBMITTED,):
-        db.execute("UPDATE ctas_subscriptions SET status = 'enrolled', enrolled_at = ?, "
-                   "approved_by = ?, approved_at = ? WHERE id = ?", (now, current_user.id, now, sub_id))
-        _notify_member(db, sub['member_id'], 'Target Advance — enrolled',
-                       'You are enrolled in the target advance cycle. The ballot will assign your payout month.')
-        flash('Member enrolled.', 'success')
-    elif action == 'unenroll' and sub['status'] == ce.SUB_ENROLLED:
-        db.execute("UPDATE ctas_subscriptions SET status = 'submitted', enrolled_at = NULL WHERE id = ?", (sub_id,))
-        flash('Member returned to submitted.', 'info')
-    elif action == 'reject' and sub['status'] in (ce.SUB_SUBMITTED, ce.SUB_ENROLLED):
+    detail = url_for('ctas.cycle_detail', cycle_id=sub['cycle_id'])
+
+    if action == 'reject' and sub['status'] in ce.APPROVAL_ORDER:
         reason = (request.form.get('reason') or '').strip()
         db.execute("UPDATE ctas_subscriptions SET status = 'rejected', rejected_reason = ? WHERE id = ?",
                    (reason, sub_id))
-        flash('Subscription rejected.', 'info')
+        _notify_member(db, sub['member_id'], 'Target Advance — application declined',
+                       'Your target-advance application was not approved.'
+                       + (f' Reason: {reason}' if reason else ''))
+        flash('Application declined.', 'info')
+
+    elif action == 'back' and sub['status'] in ce.PREV_STAGE:
+        db.execute("UPDATE ctas_subscriptions SET status = ? WHERE id = ?",
+                   (ce.PREV_STAGE[sub['status']], sub_id))
+        flash('Moved back one step.', 'info')
+
+    elif action == 'advance':
+        nxt = ce.next_stage(sub['status'])
+        if not nxt:
+            flash('This application is already fully approved and enrolled.', 'warning')
+            return redirect(detail)
+        # Re-run eligibility at the eligibility gate and again at enrolment.
+        if nxt in (ce.SUB_ELIGIBLE, ce.SUB_ENROLLED):
+            cycle = db.execute('SELECT * FROM ctas_cycles WHERE id = ?', (sub['cycle_id'],)).fetchone()
+            member = db.execute('SELECT * FROM members WHERE id = ?', (sub['member_id'],)).fetchone()
+            res = ce.check_eligibility(db, member, cycle, sub['target_amount'], sub['tenure_months'],
+                                       exclude_cycle_id=sub['cycle_id'])
+            hard = [r for r in res['reasons'] if 'exceeds' not in r and 'salary' not in r.lower()]
+            if hard:
+                flash('Cannot advance: ' + ' '.join(hard), 'danger')
+                return redirect(detail)
+        if nxt == ce.SUB_ELIGIBLE:
+            db.execute("UPDATE ctas_subscriptions SET status = ?, eligibility_at = ?, eligibility_by = ? "
+                       "WHERE id = ?", (nxt, now, current_user.id, sub_id))
+        elif nxt == ce.SUB_FINANCE_REVIEWED:
+            db.execute("UPDATE ctas_subscriptions SET status = ?, finance_reviewed_at = ?, "
+                       "finance_reviewed_by = ? WHERE id = ?", (nxt, now, current_user.id, sub_id))
+        elif nxt == ce.SUB_APPROVED:
+            db.execute("UPDATE ctas_subscriptions SET status = ?, approved_at = ?, approved_by = ? "
+                       "WHERE id = ?", (nxt, now, current_user.id, sub_id))
+            _notify_member(db, sub['member_id'], 'Target Advance — approved',
+                           'Your application is approved. You will be enrolled for the ballot.')
+        elif nxt == ce.SUB_ENROLLED:
+            db.execute("UPDATE ctas_subscriptions SET status = ?, enrolled_at = ? WHERE id = ?",
+                       (nxt, now, sub_id))
+            _notify_member(db, sub['member_id'], 'Target Advance — enrolled',
+                           'You are enrolled. The ballot will assign your payout month.')
+        flash(f'Advanced to {nxt.replace("_", " ")}.', 'success')
+
     else:
-        flash('That action is not allowed for this subscription right now.', 'warning')
-        return redirect(url_for('ctas.cycle_detail', cycle_id=sub['cycle_id']))
+        flash('That action is not allowed for this application right now.', 'warning')
+        return redirect(detail)
+
     audit(db, 'CTAS_SUBSCRIPTION_ACT', 'ctas', f"Subscription #{sub_id}: {action}")
     db.commit()
-    return redirect(url_for('ctas.cycle_detail', cycle_id=sub['cycle_id']))
+    return redirect(detail)
 
 
 # ── Admin: ballot + payout ────────────────────────────────────────────────────
@@ -569,6 +608,14 @@ def my_ctas_apply():
         flash('Enter a valid amount and tenure.', 'danger')
         return redirect(url_for('ctas.my_ctas'))
 
+    if not request.form.get('terms'):
+        flash('You must accept the scheme terms to apply.', 'danger')
+        return redirect(url_for('ctas.my_ctas'))
+    signature = (request.form.get('signature_name') or '').strip()
+    if not signature:
+        flash('Please type your full name as your signature.', 'danger')
+        return redirect(url_for('ctas.my_ctas'))
+
     result = ce.check_eligibility(db, member, cycle, target, tenure)
     hard = [r for r in result['reasons'] if 'exceeds' not in r and 'salary' not in r.lower()]
     if hard:
@@ -577,10 +624,10 @@ def my_ctas_apply():
 
     db.execute('''INSERT INTO ctas_subscriptions
             (cycle_id, member_id, target_amount, tenure_months, monthly_deduction, admin_fee,
-             status, outstanding, created_by)
-            VALUES (?, ?, ?, ?, ?, ?, 'submitted', ?, ?)''',
+             status, outstanding, terms_accepted, signature_name, signed_at, created_by)
+            VALUES (?, ?, ?, ?, ?, ?, 'submitted', ?, 1, ?, ?, ?)''',
         (cycle['id'], member['id'], target, tenure, result['monthly_deduction'],
-         result['admin_fee'], target, current_user.id))
+         result['admin_fee'], target, signature, datetime.now(), current_user.id))
     audit(db, 'CTAS_APPLY', 'ctas', f"Member {member['id']} applied to cycle {cycle['name']} (target {target})")
     db.commit()
     note = '' if result['eligible'] else ' Affordability will be reviewed by the committee.'

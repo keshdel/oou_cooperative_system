@@ -895,6 +895,15 @@ def init_db():
     '''))
     _exec_ignore(db, 'CREATE UNIQUE INDEX IF NOT EXISTS uq_ctas_sub_member_cycle ON ctas_subscriptions(member_id, cycle_id)')
     _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_ctas_sub_cycle_status ON ctas_subscriptions(cycle_id, status)')
+    # Terms acceptance at application + the multi-step approval chain
+    # (submitted -> eligible -> finance_reviewed -> approved -> enrolled).
+    _add_col(db, 'ctas_subscriptions', 'terms_accepted', 'INTEGER DEFAULT 0')
+    _add_col(db, 'ctas_subscriptions', 'signature_name', 'TEXT')
+    _add_col(db, 'ctas_subscriptions', 'signed_at', 'TIMESTAMP')
+    _add_col(db, 'ctas_subscriptions', 'eligibility_at', 'TIMESTAMP')
+    _add_col(db, 'ctas_subscriptions', 'eligibility_by', 'INTEGER')
+    _add_col(db, 'ctas_subscriptions', 'finance_reviewed_at', 'TIMESTAMP')
+    _add_col(db, 'ctas_subscriptions', 'finance_reviewed_by', 'INTEGER')
 
     db.execute(_adapt('''
         CREATE TABLE IF NOT EXISTS ctas_ballot_runs (

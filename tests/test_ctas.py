@@ -211,7 +211,11 @@ class CtasAdminFlowTests(unittest.TestCase):
                 self.assertEqual(sub['status'], 'submitted')
                 self.assertAlmostEqual(float(sub['monthly_deduction']), 75000.0, places=2)   # 300k/4
                 self.assertAlmostEqual(float(sub['admin_fee']), 1500.0, places=2)
-            self.client.post(f'/ctas/subscriptions/{sid}/act', data={'action': 'enroll'})
+            for _ in range(4):   # submitted -> eligible -> finance_reviewed -> approved -> enrolled
+                self.client.post(f'/ctas/subscriptions/{sid}/act', data={'action': 'advance'})
+            with self.app.app_context():
+                self.assertEqual(get_db().execute("SELECT status FROM ctas_subscriptions WHERE id=?",
+                                                  (sid,)).fetchone()['status'], 'enrolled')
             self.client.post(f'/ctas/cycles/{cid}/transition', data={'to': 'closed'})
             self.client.post(f'/ctas/cycles/{cid}/transition', data={'to': 'ready_for_ballot'})
             self.client.post(f'/ctas/cycles/{cid}/ballot', data={})
@@ -351,22 +355,35 @@ class CtasMemberPortalTests(unittest.TestCase):
 
     def test_member_applies_and_is_notified_on_enrol(self):
         self.assertEqual(self.member.get('/my-ctas').status_code, 200)
-        r = self.member.post('/my-ctas/apply',
-                             data={'cycle_id': str(self.cid), 'target_amount': '200000', 'tenure_months': '4'},
-                             follow_redirects=False)
+        # Terms + signature are required.
+        blocked = self.member.post('/my-ctas/apply', data={
+            'cycle_id': str(self.cid), 'target_amount': '200000', 'tenure_months': '4'},
+            follow_redirects=False)
+        self.assertIn(blocked.status_code, (302, 303))
+        with self.app.app_context():
+            self.assertIsNone(get_db().execute("SELECT id FROM ctas_subscriptions WHERE cycle_id=?",
+                                               (self.cid,)).fetchone())     # not created without terms
+        # Apply properly.
+        r = self.member.post('/my-ctas/apply', data={
+            'cycle_id': str(self.cid), 'target_amount': '200000', 'tenure_months': '4',
+            'terms': '1', 'signature_name': 'Mem Ber'}, follow_redirects=False)
         self.assertIn(r.status_code, (302, 303))
         with self.app.app_context():
             sub = get_db().execute("SELECT * FROM ctas_subscriptions WHERE cycle_id = ?", (self.cid,)).fetchone()
             self.assertIsNotNone(sub)
             self.assertEqual(sub['status'], 'submitted')
+            self.assertEqual(sub['terms_accepted'], 1)
+            self.assertEqual(sub['signature_name'], 'Mem Ber')
             self.assertAlmostEqual(float(sub['monthly_deduction']), 50000.0, places=2)   # 200k/4
             sid = sub['id']
-        # Admin enrols -> member notified.
-        self.admin.post(f'/ctas/subscriptions/{sid}/act', data={'action': 'enroll'})
+        # Admin advances through the chain -> member notified at enrolment.
+        for _ in range(4):
+            self.admin.post(f'/ctas/subscriptions/{sid}/act', data={'action': 'advance'})
         with self.app.app_context():
-            n = get_db().execute(
-                "SELECT COUNT(*) FROM notifications WHERE user_id = ? AND title LIKE '%enrolled%'",
-                (self.uid,)).fetchone()[0]
+            db = get_db()
+            self.assertEqual(db.execute("SELECT status FROM ctas_subscriptions WHERE id=?", (sid,)).fetchone()['status'], 'enrolled')
+            n = db.execute("SELECT COUNT(*) FROM notifications WHERE user_id = ? AND title LIKE '%enrolled%'",
+                           (self.uid,)).fetchone()[0]
             self.assertGreaterEqual(n, 1)
 
 

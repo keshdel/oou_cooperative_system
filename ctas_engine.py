@@ -29,6 +29,28 @@ ACTIVE_SUB_STATES = (
     SUB_ENROLLED, SUB_SCHEDULED, SUB_PAID_OUT, SUB_ACTIVE_RECOVERY,
 )
 
+# The approval chain (each step is a governance gate before the ballot).
+APPROVAL_ORDER = [SUB_SUBMITTED, SUB_ELIGIBLE, SUB_FINANCE_REVIEWED, SUB_APPROVED, SUB_ENROLLED]
+NEXT_STAGE = {APPROVAL_ORDER[i]: APPROVAL_ORDER[i + 1] for i in range(len(APPROVAL_ORDER) - 1)}
+PREV_STAGE = {v: k for k, v in NEXT_STAGE.items()}
+STAGE_ACTION_LABEL = {
+    SUB_ELIGIBLE: 'Confirm eligibility',
+    SUB_FINANCE_REVIEWED: 'Finance review',
+    SUB_APPROVED: 'Committee approval',
+    SUB_ENROLLED: 'Enrol',
+}
+# Which timestamp/actor columns each advance stamps.
+STAGE_STAMP = {
+    SUB_ELIGIBLE: ('eligibility_at', 'eligibility_by'),
+    SUB_FINANCE_REVIEWED: ('finance_reviewed_at', 'finance_reviewed_by'),
+    SUB_APPROVED: ('committee_approved_at', None),   # approved_at/by columns
+    SUB_ENROLLED: ('enrolled_at', None),
+}
+
+
+def next_stage(status):
+    return NEXT_STAGE.get(status)
+
 # Cycle lifecycle (mirrors ctas_cycles.status).
 CYCLE_DRAFT = 'draft'
 CYCLE_OPEN = 'open'
@@ -142,8 +164,10 @@ def affordability(db, member, cycle, target_amount, tenure_months):
         f'Target ₦{_f(target_amount):,.2f} exceeds {multiple:g}× your savings balance (max ₦{max_target:,.2f}).')
 
 
-def check_eligibility(db, member, cycle, target_amount, tenure_months):
-    """Full eligibility decision. Returns a dict the caller can act on/display."""
+def check_eligibility(db, member, cycle, target_amount, tenure_months, exclude_cycle_id=None):
+    """Full eligibility decision. Returns a dict the caller can act on/display.
+    `exclude_cycle_id` skips the member's subscription in that cycle when checking
+    the one-active-scheme rule (used when re-checking an existing application)."""
     reasons = []
     deduction = monthly_deduction(target_amount, tenure_months)
     fee = calculate_admin_fee(cycle, target_amount)
@@ -157,7 +181,7 @@ def check_eligibility(db, member, cycle, target_amount, tenure_months):
     if 'status' in member.keys() and member['status'] != 'active':
         reasons.append('Member is not active.')
 
-    if member_has_active_subscription(db, member['id'], exclude_cycle_id=None):
+    if member_has_active_subscription(db, member['id'], exclude_cycle_id=exclude_cycle_id):
         reasons.append('Member already has an active CTAS subscription.')
 
     cap = total_capacity(cycle)
