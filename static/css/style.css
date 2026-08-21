@@ -343,13 +343,15 @@ td {
     border-bottom: 1px solid var(--gray-200);
     color: var(--gray-700);
 }
-/* Bootstrap `.table-light` headers: the global bare `th` rule above leaves
-   near-white text on the light header background (Bootstrap 5.1.3 paints the
-   cell bg but the th text colour still comes from `th`), making titles
-   invisible. Give every table-light header a readable dark-on-light bar. */
+/* Bootstrap `.table` headers: the global bare `th` rule above leaves near-white
+   text, while Bootstrap 5.1.3 paints the header cell background transparent — so
+   every `.table` header (plain <thead> OR class="table-light") rendered as
+   invisible near-white-on-white text. Give ALL Bootstrap table headers a
+   readable dark-on-light bar in one place. */
+.table > thead > tr > th,
+.table thead th,
 thead.table-light th,
-.table-light th,
-.table-light > th {
+.table-light th {
     background-color: #e9eef5;
     color: #1f2937;
 }
