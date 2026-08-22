@@ -985,6 +985,31 @@ def init_db():
     '''))
     _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_ctas_payroll_lines_sub ON ctas_payroll_lines(subscription_id)')
     _add_col(db, 'ctas_subscriptions', 'arrears_amount', 'REAL DEFAULT 0')
+    # Days after a due date before a contribution is treated as late.
+    _add_col(db, 'ctas_cycles', 'grace_days', 'INTEGER DEFAULT 7')
+    _add_col(db, 'ctas_plans', 'grace_days', 'INTEGER DEFAULT 7')
+
+    # One row per member per contribution period: what is owed, when, and whether
+    # it has been paid. Drives arrears, reminders and (later) automatic debits.
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS ctas_schedule (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            subscription_id INTEGER NOT NULL,
+            cycle_id INTEGER NOT NULL,
+            period_number INTEGER NOT NULL,
+            due_date DATE,
+            expected_amount REAL DEFAULT 0,
+            paid_amount REAL DEFAULT 0,
+            status TEXT DEFAULT 'pending',
+            paid_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (subscription_id) REFERENCES ctas_subscriptions (id),
+            FOREIGN KEY (cycle_id) REFERENCES ctas_cycles (id)
+        )
+    '''))
+    _exec_ignore(db, 'CREATE UNIQUE INDEX IF NOT EXISTS uq_ctas_schedule_sub_period '
+                     'ON ctas_schedule(subscription_id, period_number)')
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_ctas_schedule_due ON ctas_schedule(due_date, status)')
 
     db.execute(_adapt('''
         CREATE TABLE IF NOT EXISTS ctas_exceptions (

@@ -43,6 +43,47 @@ def _notify_member(db, member_id, title, message, action_url='/my-ctas'):
         notify_member(db, row['email'], title, message, 'info', action_url)
 
 
+def _ensure_schedule(db, sub, cycle):
+    """Create this subscription's contribution schedule (one row per period) if it
+    does not exist yet. Idempotent."""
+    existing = db.execute('SELECT COUNT(*) FROM ctas_schedule WHERE subscription_id = ?',
+                          (sub['id'],)).fetchone()[0]
+    if existing:
+        return 0
+    rows = ce.build_schedule(cycle)
+    for period, due, amount in rows:
+        db.execute('''INSERT INTO ctas_schedule
+                        (subscription_id, cycle_id, period_number, due_date, expected_amount, status)
+                      VALUES (?, ?, ?, ?, ?, 'pending')''',
+                   (sub['id'], cycle['id'], period,
+                    due.isoformat() if due else None, amount))
+    return len(rows)
+
+
+def _refresh_schedule_statuses(db, cycle_id):
+    """Recompute due/grace/late for a cycle's unpaid schedule rows."""
+    cycle = db.execute('SELECT grace_days FROM ctas_cycles WHERE id = ?', (cycle_id,)).fetchone()
+    grace = int((cycle['grace_days'] if cycle and cycle['grace_days'] is not None else 7) or 0)
+    rows = db.execute("SELECT * FROM ctas_schedule WHERE cycle_id = ? AND status != 'paid'",
+                      (cycle_id,)).fetchall()
+    for r in rows:
+        status = ce.schedule_status(r['due_date'], r['expected_amount'], r['paid_amount'], grace)
+        if status != r['status']:
+            db.execute('UPDATE ctas_schedule SET status = ? WHERE id = ?', (status, r['id']))
+
+
+def _apply_to_schedule(db, subscription_id, period, amount, grace_days=7):
+    """Record a contribution against its schedule row."""
+    row = db.execute('SELECT * FROM ctas_schedule WHERE subscription_id = ? AND period_number = ?',
+                     (subscription_id, period)).fetchone()
+    if not row:
+        return
+    paid = round(float(row['paid_amount'] or 0) + float(amount or 0), 2)
+    status = ce.schedule_status(row['due_date'], row['expected_amount'], paid, grace_days)
+    db.execute('UPDATE ctas_schedule SET paid_amount = ?, status = ?, paid_at = ? WHERE id = ?',
+               (paid, status, datetime.now() if status == ce.SCH_PAID else row['paid_at'], row['id']))
+
+
 def _raise_exception(db, subscription_id, case_type, month, amount, description):
     """Log a CTAS exception case (missed deduction, exit recovery, override)."""
     db.execute("INSERT INTO ctas_exceptions (subscription_id, case_type, status, month_number, "
@@ -189,8 +230,9 @@ def new_cycle():
              frequency, periods, contribution_amount, plan_id,
              monthly_capacity, earliest_payout_month, max_participants,
              admin_fee_flat, admin_fee_percentage, admin_fee_cap, admin_fee_threshold,
-             ballot_date, affordability_method, affordability_ratio, savings_multiple, created_by)
-            VALUES (?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+             ballot_date, affordability_method, affordability_ratio, savings_multiple,
+             grace_days, created_by)
+            VALUES (?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
         (name, (request.form.get('start_date') or '').strip() or None,
          (request.form.get('end_date') or '').strip() or None,
          periods, contribution,   # duration_months = periods (back-compat), fixed_monthly_amount = contribution
@@ -201,7 +243,8 @@ def new_cycle():
          _pn('admin_fee_cap', 0), _pn('admin_fee_threshold', 0),
          (request.form.get('ballot_date') or '').strip() or None,
          (plan['affordability_method'] if plan else (request.form.get('affordability_method') or 'savings')).strip(),
-         _pn('affordability_ratio', 0.5), _pn('savings_multiple', 3), current_user.id))
+         _pn('affordability_ratio', 0.5), _pn('savings_multiple', 3),
+         int(_pn('grace_days', 7)), current_user.id))
     cycle_id = last_insert_id(db)   # capture before the audit insert changes last-rowid
     audit(db, 'CTAS_CYCLE_CREATE', 'ctas', f"Created cycle {name}")
     db.commit()
@@ -245,14 +288,15 @@ def new_plan():
             (name, description, contribution_amount, frequency, periods, target_amount,
              monthly_capacity, earliest_payout_month, admin_fee_flat, admin_fee_percentage,
              admin_fee_cap, admin_fee_threshold, affordability_method, affordability_ratio,
-             savings_multiple, created_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+             savings_multiple, grace_days, created_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
         (name, (request.form.get('description') or '').strip(), contribution, frequency, periods, target,
          int(_num('monthly_capacity', 1)), int(_num('earliest_payout_month', 1)),
          _num('admin_fee_flat', 0), _num('admin_fee_percentage', 0),
          _num('admin_fee_cap', 0), _num('admin_fee_threshold', 0),
          (request.form.get('affordability_method') or 'savings').strip(),
-         _num('affordability_ratio', 0.5), _num('savings_multiple', 3), current_user.id))
+         _num('affordability_ratio', 0.5), _num('savings_multiple', 3),
+         int(_num('grace_days', 7)), current_user.id))
     audit(db, 'CTAS_PLAN_CREATE', 'ctas',
           f"Created plan {name} ({contribution:g} x {periods} {frequency}) target {target:g}")
     db.commit()
@@ -286,13 +330,25 @@ def cycle_detail(cycle_id):
         FROM members WHERE status = 'active'
           AND id NOT IN (SELECT member_id FROM ctas_subscriptions WHERE cycle_id = ?)
         ORDER BY first_name''', (cycle_id,)).fetchall()
+    _refresh_schedule_statuses(db, cycle_id)
+    db.commit()
+    due_soon = db.execute('''
+        SELECT sc.*, m.first_name || ' ' || m.last_name AS member_name, m.member_number
+        FROM ctas_schedule sc
+        JOIN ctas_subscriptions s ON s.id = sc.subscription_id
+        JOIN members m ON m.id = s.member_id
+        WHERE sc.cycle_id = ? AND sc.status IN ('due', 'grace', 'late', 'partial')
+        ORDER BY sc.due_date, m.member_number''', (cycle_id,)).fetchall()
     summary = {
         'capacity': ce.total_capacity(cycle),
         'participants': ce.participant_count(db, cycle_id),
         'enrolled': sum(1 for s in subs if s['status'] == ce.SUB_ENROLLED),
+        'outstanding_count': len(due_soon),
+        'outstanding_amount': sum(float(r['expected_amount'] or 0) - float(r['paid_amount'] or 0)
+                                  for r in due_soon),
     }
     return render_template('ctas/cycle_detail.html', cycle=cycle, subs=subs, elig=elig,
-                           members=members, summary=summary, ce=ce)
+                           members=members, summary=summary, due_soon=due_soon, ce=ce)
 
 
 def _advert_for_cycle(db, cycle):
@@ -549,6 +605,10 @@ def subscription_act(sub_id):
         elif nxt == ce.SUB_ENROLLED:
             db.execute("UPDATE ctas_subscriptions SET status = ?, enrolled_at = ? WHERE id = ?",
                        (nxt, now, sub_id))
+            # Enrolment commits the member to contribute every period — lay out
+            # their due dates now so arrears and reminders have something to work from.
+            cyc = db.execute('SELECT * FROM ctas_cycles WHERE id = ?', (sub['cycle_id'],)).fetchone()
+            _ensure_schedule(db, sub, cyc)
             _notify_member(db, sub['member_id'], 'Target Advance — enrolled',
                            'You are enrolled. The ballot will assign your payout month.')
         flash(f'Advanced to {nxt.replace("_", " ")}.', 'success')
@@ -809,6 +869,8 @@ def payroll_import(cycle_id):
                 _notify_member(db, sub['member_id'], 'Target Advance — partial contribution',
                                f'Only ₦{actual:,.2f} of your ₦{expected:,.2f} period {month} contribution '
                                f'was received.')
+            _apply_to_schedule(db, sub['id'], month, actual,
+                               int(cycle['grace_days'] if cycle['grace_days'] is not None else 7))
             posted += 1
 
         audit(db, 'CTAS_CONTRIBUTION_IMPORT', 'ctas',
@@ -841,8 +903,21 @@ def my_ctas():
           AND id NOT IN (SELECT cycle_id FROM ctas_subscriptions WHERE member_id = ?)
         ORDER BY name''', (member['id'],)).fetchall()
     has_active = ce.member_has_active_subscription(db, member['id'])
+    # This member's upcoming/outstanding contributions across their subscriptions.
+    schedule = []
+    if subs:
+        sub_ids = [s['id'] for s in subs]
+        placeholders = ','.join('?' for _ in sub_ids)
+        for cid in {s['cycle_id'] for s in subs}:
+            _refresh_schedule_statuses(db, cid)
+        db.commit()
+        schedule = db.execute(
+            f"SELECT sc.*, c.name AS cycle_name FROM ctas_schedule sc "
+            f"JOIN ctas_cycles c ON c.id = sc.cycle_id "
+            f"WHERE sc.subscription_id IN ({placeholders}) "
+            f"ORDER BY sc.due_date, sc.period_number", sub_ids).fetchall()
     return render_template('member/my-ctas.html', member=member, subs=subs,
-                           open_cycles=open_cycles, has_active=has_active)
+                           open_cycles=open_cycles, has_active=has_active, schedule=schedule)
 
 
 @ctas.route('/my-ctas/apply', methods=['POST'])

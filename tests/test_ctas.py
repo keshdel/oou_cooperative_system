@@ -139,6 +139,39 @@ class CtasEngineTests(unittest.TestCase):
         wf3 = net_off_waterfall(50000, 80000, 0, 0)
         self.assertEqual((wf3['from_savings'], wf3['write_off']), (50000.0, 0.0))  # savings cover it
 
+    def test_period_due_dates_by_frequency(self):
+        from ctas_engine import period_due_date
+        self.assertEqual(str(period_due_date('2026-01-15', 'monthly', 1)), '2026-01-15')
+        self.assertEqual(str(period_due_date('2026-01-15', 'monthly', 3)), '2026-03-15')
+        self.assertEqual(str(period_due_date('2026-01-15', 'weekly', 3)), '2026-01-29')
+        self.assertEqual(str(period_due_date('2026-01-15', 'fortnightly', 3)), '2026-02-12')
+        # month-end is clamped, not rolled over
+        self.assertEqual(str(period_due_date('2026-01-31', 'monthly', 2)), '2026-02-28')
+
+    def test_schedule_status_ladder(self):
+        from datetime import date
+        from ctas_engine import schedule_status
+        due = '2026-06-10'
+        # before the due date
+        self.assertEqual(schedule_status(due, 5000, 0, 7, date(2026, 6, 1)), 'pending')
+        # on the due date, then within grace, then past grace
+        self.assertEqual(schedule_status(due, 5000, 0, 7, date(2026, 6, 10)), 'due')
+        self.assertEqual(schedule_status(due, 5000, 0, 7, date(2026, 6, 15)), 'grace')
+        self.assertEqual(schedule_status(due, 5000, 0, 7, date(2026, 6, 20)), 'late')
+        # paid in full / part
+        self.assertEqual(schedule_status(due, 5000, 5000, 7, date(2026, 6, 20)), 'paid')
+        self.assertEqual(schedule_status(due, 5000, 2000, 7, date(2026, 6, 20)), 'partial')
+
+    def test_build_schedule_covers_every_period(self):
+        from ctas_engine import build_schedule
+        rows = build_schedule({'periods': 4, 'duration_months': 4, 'frequency': 'monthly',
+                               'start_date': '2026-03-01', 'contribution_amount': 50000})
+        self.assertEqual(len(rows), 4)
+        self.assertEqual([r[0] for r in rows], [1, 2, 3, 4])
+        self.assertEqual(str(rows[0][1]), '2026-03-01')
+        self.assertEqual(str(rows[3][1]), '2026-06-01')
+        self.assertTrue(all(r[2] == 50000 for r in rows))
+
     def test_position_one_is_allowed_so_every_period_has_a_slot(self):
         from ctas_engine import total_capacity, assign_payout_months
         # 12 periods, 1 payout/period, starting at position 1 -> 12 slots for 12 members.
@@ -239,6 +272,71 @@ class CtasAdminFlowTests(unittest.TestCase):
                 db = get_db()
                 db.execute("DELETE FROM ctas_cycles WHERE name='P600 Cyc'")
                 db.execute("DELETE FROM ctas_plans WHERE name='P600'")
+                db.execute("DELETE FROM settings WHERE key='ctas_enabled'")
+                db.commit()
+
+    def test_enrolment_builds_schedule_and_contribution_marks_it_paid(self):
+        import io
+        with self.app.app_context():
+            db = get_db()
+            db.execute("INSERT INTO members (member_number, first_name, last_name, status, total_savings, "
+                       "monthly_savings, date_joined) VALUES ('CTAS/SC/1','Sch','T','active',900000,5000,'2024-01-01')")
+            db.commit()
+            mid = db.execute("SELECT id FROM members WHERE member_number='CTAS/SC/1'").fetchone()['id']
+        self.client.post('/ctas/cycles', data={
+            'name': 'SchedCyc', 'contribution_amount': '50000', 'frequency': 'monthly',
+            'periods': '4', 'start_date': '2026-03-01', 'grace_days': '7',
+            'affordability_method': 'manual'})
+        with self.app.app_context():
+            cid = get_db().execute("SELECT id FROM ctas_cycles WHERE name='SchedCyc'").fetchone()['id']
+        self.client.post(f'/ctas/cycles/{cid}/transition', data={'to': 'open'})
+        self.client.post(f'/ctas/cycles/{cid}/subscriptions',
+                         data={'member_id': str(mid), 'target_amount': '200000', 'tenure_months': '4'})
+        with self.app.app_context():
+            sid = get_db().execute("SELECT id FROM ctas_subscriptions WHERE cycle_id=?", (cid,)).fetchone()['id']
+        try:
+            # No schedule until the member is actually enrolled.
+            with self.app.app_context():
+                self.assertEqual(get_db().execute(
+                    "SELECT COUNT(*) FROM ctas_schedule WHERE subscription_id=?", (sid,)).fetchone()[0], 0)
+            for _ in range(4):                      # submitted -> ... -> enrolled
+                self.client.post(f'/ctas/subscriptions/{sid}/act', data={'action': 'advance'})
+            with self.app.app_context():
+                rows = get_db().execute(
+                    "SELECT * FROM ctas_schedule WHERE subscription_id=? ORDER BY period_number",
+                    (sid,)).fetchall()
+                self.assertEqual(len(rows), 4)                       # one row per period
+                self.assertEqual(str(rows[0]['due_date'])[:10], '2026-03-01')
+                self.assertEqual(str(rows[3]['due_date'])[:10], '2026-06-01')
+                self.assertAlmostEqual(float(rows[0]['expected_amount']), 50000.0, places=2)
+
+            # Ballot then contribute period 1 -> that schedule row is paid.
+            self.client.post(f'/ctas/cycles/{cid}/transition', data={'to': 'closed'})
+            self.client.post(f'/ctas/cycles/{cid}/transition', data={'to': 'ready_for_ballot'})
+            self.client.post(f'/ctas/cycles/{cid}/ballot', data={})
+            body = f"subscription_id,actual_amount\n{sid},50000\n".encode('utf-8')
+            self.client.post(f'/ctas/cycles/{cid}/payroll/import',
+                data={'month': '1', 'file': (io.BytesIO(body), 'p1.csv')},
+                content_type='multipart/form-data', follow_redirects=True)
+            with self.app.app_context():
+                r1 = get_db().execute(
+                    "SELECT * FROM ctas_schedule WHERE subscription_id=? AND period_number=1",
+                    (sid,)).fetchone()
+                self.assertAlmostEqual(float(r1['paid_amount']), 50000.0, places=2)
+                self.assertEqual(r1['status'], 'paid')
+        finally:
+            with self.app.app_context():
+                db = get_db()
+                for r2 in db.execute("SELECT id FROM journal_entries WHERE source_module='ctas_contribution'").fetchall():
+                    db.execute("DELETE FROM journal_lines WHERE entry_id=?", (r2['id'],))
+                    db.execute("DELETE FROM journal_entries WHERE id=?", (r2['id'],))
+                db.execute("DELETE FROM ctas_schedule WHERE cycle_id=?", (cid,))
+                db.execute("DELETE FROM ctas_payroll_lines WHERE subscription_id=?", (sid,))
+                db.execute("DELETE FROM ctas_payroll_batches WHERE cycle_id=?", (cid,))
+                db.execute("DELETE FROM ctas_ballot_runs WHERE cycle_id=?", (cid,))
+                db.execute("DELETE FROM ctas_subscriptions WHERE cycle_id=?", (cid,))
+                db.execute("DELETE FROM ctas_cycles WHERE id=?", (cid,))
+                db.execute("DELETE FROM members WHERE id=?", (mid,))
                 db.execute("DELETE FROM settings WHERE key='ctas_enabled'")
                 db.commit()
 

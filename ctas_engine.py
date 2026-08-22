@@ -7,8 +7,9 @@ Money is handled by the GL in the blueprint; this module only decides
 eligibility, cycle transitions, and the balloted payout order.
 """
 
+import calendar
 import random
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 # Subscription lifecycle (mirrors ctas_subscriptions.status).
 SUB_SUBMITTED = 'submitted'
@@ -108,6 +109,80 @@ def period_word(cycle_or_freq):
 
 def compute_target(contribution_amount, periods):
     return round(_f(contribution_amount) * int(periods or 0), 2)
+
+
+# ── Contribution schedule (due dates + status ladder) ────────────────────────
+
+# Schedule row states: not yet due -> due -> within grace -> late; or paid/partial.
+SCH_PENDING, SCH_DUE, SCH_GRACE, SCH_LATE = 'pending', 'due', 'grace', 'late'
+SCH_PAID, SCH_PARTIAL = 'paid', 'partial'
+
+
+def to_date(value):
+    """Coerce a DB value (often a string here) to a date, or None."""
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    text = str(value).strip()[:10]
+    for fmt in ('%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y'):
+        try:
+            return datetime.strptime(text, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def add_periods(start, frequency, n):
+    """The date n periods after `start` for this frequency (month-end safe)."""
+    if n <= 0:
+        return start
+    if frequency == 'weekly':
+        return start + timedelta(days=7 * n)
+    if frequency == 'fortnightly':
+        return start + timedelta(days=14 * n)
+    month_index = start.month - 1 + n            # monthly
+    year = start.year + month_index // 12
+    month = month_index % 12 + 1
+    day = min(start.day, calendar.monthrange(year, month)[1])
+    return date(year, month, day)
+
+
+def period_due_date(start_date, frequency, period_number):
+    """Period 1 is due on the cycle start date; each later period one step on."""
+    start = to_date(start_date)
+    if not start:
+        return None
+    return add_periods(start, frequency or 'monthly', max(0, int(period_number or 1) - 1))
+
+
+def schedule_status(due_date, expected, paid, grace_days=7, today=None):
+    """Where a scheduled contribution stands right now."""
+    expected = _f(expected)
+    paid = _f(paid)
+    if paid >= expected and expected > 0:
+        return SCH_PAID
+    due = to_date(due_date)
+    today = today or date.today()
+    if due is None or today < due:
+        return SCH_PARTIAL if paid > 0 else SCH_PENDING
+    if today <= due + timedelta(days=int(grace_days or 0)):
+        return SCH_PARTIAL if paid > 0 else (SCH_DUE if today == due else SCH_GRACE)
+    return SCH_PARTIAL if paid > 0 else SCH_LATE
+
+
+def build_schedule(cycle, periods=None):
+    """The (period_number, due_date, expected_amount) rows for one subscription."""
+    n = int(periods or cycle_periods(cycle) or 0)
+    freq = _row_get(cycle, 'frequency', 'monthly') or 'monthly'
+    start = _row_get(cycle, 'start_date') or _row_get(cycle, 'created_at')
+    amount = _f(_row_get(cycle, 'contribution_amount', 0))
+    rows = []
+    for p in range(1, n + 1):
+        rows.append((p, period_due_date(start, freq, p), amount))
+    return rows
 
 
 # ── Financials ────────────────────────────────────────────────────────────────
