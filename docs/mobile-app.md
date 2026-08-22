@@ -24,6 +24,8 @@ Implemented in the mobile app shell:
 - Pending loan withdrawal
 - Notifications
 - Device push-token registration foundation
+- Target Advance (CTAS) — view subscriptions/status and apply, shown only when the
+  optional CTAS module is enabled for the cooperative
 
 ## Run Locally
 

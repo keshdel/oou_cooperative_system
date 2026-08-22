@@ -19,9 +19,11 @@ import {
 
 import {
   ApiError,
+  applyCtas,
   applyForLoan,
   changePassword,
   clearToken,
+  getCtas,
   getDashboard,
   getLoanDetail,
   getLoanOptions,
@@ -39,9 +41,9 @@ import {
   withdrawLoan
 } from './src/api';
 import { clearTenant, getApiBase, getCoopName, loadTenant, setTenant } from './src/config';
-import type { DashboardPayload, GuarantorOption, Loan, LoanOptionsPayload, MobileNotification, SavingRow } from './src/types';
+import type { CtasPayload, DashboardPayload, GuarantorOption, Loan, LoanOptionsPayload, MobileNotification, SavingRow } from './src/types';
 
-type Tab = 'home' | 'profile' | 'savings' | 'loans' | 'notifications';
+type Tab = 'home' | 'profile' | 'savings' | 'loans' | 'ctas' | 'notifications';
 
 type FatalScreenProps = {
   title?: string;
@@ -954,12 +956,104 @@ function NotificationsScreen({ token, initial }: { token: string; initial: Mobil
   );
 }
 
-function TabBar({ active, setActive, unread }: { active: Tab; setActive: (tab: Tab) => void; unread: number }) {
+function CtasScreen({ token }: { token: string }) {
+  const [data, setData] = useState<CtasPayload | null>(null);
+  const [cycleId, setCycleId] = useState<number | null>(null);
+  const [target, setTarget] = useState('');
+  const [tenure, setTenure] = useState('');
+  const [signature, setSignature] = useState('');
+  const [terms, setTerms] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const load = () => getCtas(token).then(setData).catch(() => undefined);
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [token]);
+
+  if (!data) {
+    return <ScrollView contentContainerStyle={styles.screen}><Text style={styles.emptyText}>Loading...</Text></ScrollView>;
+  }
+  if (!data.enabled) {
+    return (
+      <ScrollView contentContainerStyle={styles.screen}>
+        <View style={styles.card}><Text style={styles.cardTitle}>Target Advance</Text>
+          <Text style={styles.emptyText}>This feature is not enabled for your cooperative.</Text></View>
+      </ScrollView>
+    );
+  }
+
+  const submit = async () => {
+    if (!cycleId) { Alert.alert('Select a cycle first'); return; }
+    if (!terms) { Alert.alert('Please accept the scheme terms'); return; }
+    if (!signature.trim()) { Alert.alert('Type your full name as your signature'); return; }
+    setBusy(true);
+    try {
+      await applyCtas(token, {
+        cycle_id: cycleId, target_amount: Number(target || 0), tenure_months: Number(tenure || 0),
+        terms_accepted: terms, signature_name: signature.trim(),
+      });
+      Alert.alert('Submitted', 'Your target-advance application has been submitted for review.');
+      setTarget(''); setTenure(''); setSignature(''); setTerms(false); setCycleId(null);
+      load();
+    } catch (e) {
+      Alert.alert('Could not apply', e instanceof Error ? e.message : 'Please try again.');
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <ScrollView contentContainerStyle={styles.screen}>
+      {data.open_cycles.length > 0 && !data.has_active ? (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Apply for a Target Advance</Text>
+          <Text style={styles.rowSub}>Savings balance: {money(data.savings_balance)}</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginVertical: 10 }}>
+            {data.open_cycles.map((c) => (
+              <OptionChip key={c.id} label={c.name} selected={cycleId === c.id} onPress={() => setCycleId(c.id)} />
+            ))}
+          </View>
+          <View style={styles.fieldBlock}><Text style={styles.fieldLabel}>Target amount</Text>
+            <TextInput value={target} onChangeText={setTarget} keyboardType="numeric" style={styles.inputLight} placeholder="200000" /></View>
+          <View style={styles.fieldBlock}><Text style={styles.fieldLabel}>Tenure (months)</Text>
+            <TextInput value={tenure} onChangeText={setTenure} keyboardType="numeric" style={styles.inputLight} placeholder="6" /></View>
+          <View style={styles.fieldBlock}><Text style={styles.fieldLabel}>Signature (your full name)</Text>
+            <TextInput value={signature} onChangeText={setSignature} style={styles.inputLight} /></View>
+          <Pressable style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 8 }} onPress={() => setTerms((v) => !v)}>
+            <View style={[styles.guarantorCheck, terms && styles.guarantorCheckSelected]}>
+              {terms ? <Ionicons name="checkmark" size={16} color="#fff" /> : null}</View>
+            <Text style={[styles.quickHelper, { flex: 1 }]}>I accept the scheme terms and authorise recovery by monthly deductions.</Text>
+          </Pressable>
+          <Pressable style={[styles.primaryButton, busy && styles.disabled]} onPress={submit} disabled={busy}>
+            <Text style={styles.primaryButtonText}>{busy ? 'Submitting...' : 'Submit application'}</Text></Pressable>
+        </View>
+      ) : data.has_active ? (
+        <View style={styles.card}><Text style={styles.emptyText}>You have an active target advance. You can apply again once it is completed.</Text></View>
+      ) : (
+        <View style={styles.card}><Text style={styles.emptyText}>No cycles are open for applications right now.</Text></View>
+      )}
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>My Target Advances</Text>
+        {data.subscriptions.map((s) => (
+          <View key={s.id} style={styles.listRow}>
+            <Text style={styles.rowTitle}>{s.cycle_name} - {money(s.target_amount)}</Text>
+            <Text style={styles.rowSub}>Status: {s.status.replace(/_/g, ' ')}{s.payout_month ? ` - payout month ${s.payout_month}` : ''}</Text>
+            {s.status === 'active_recovery' || s.status === 'completed' ? (
+              <Text style={styles.rowSub}>Recovered {money(s.total_recovered)} of {money(s.target_amount)} ({s.progress}%)</Text>
+            ) : null}
+            {s.arrears_amount > 0 ? <Text style={[styles.rowSub, { color: '#c0392b' }]}>Arrears: {money(s.arrears_amount)}</Text> : null}
+          </View>
+        ))}
+        {data.subscriptions.length === 0 ? <Text style={styles.emptyText}>No applications yet.</Text> : null}
+      </View>
+    </ScrollView>
+  );
+}
+
+function TabBar({ active, setActive, unread, showCtas }: { active: Tab; setActive: (tab: Tab) => void; unread: number; showCtas: boolean }) {
   const tabs: Array<{ key: Tab; icon: keyof typeof Ionicons.glyphMap; label: string }> = [
     { key: 'home', icon: 'home', label: 'Home' },
     { key: 'profile', icon: 'person', label: 'Profile' },
     { key: 'savings', icon: 'wallet', label: 'Savings' },
     { key: 'loans', icon: 'cash', label: 'Loans' },
+    ...(showCtas ? [{ key: 'ctas' as Tab, icon: 'sync' as keyof typeof Ionicons.glyphMap, label: 'Advance' }] : []),
     { key: 'notifications', icon: 'notifications', label: 'Alerts' }
   ];
   return (
@@ -979,6 +1073,7 @@ function AppContent() {
   const [token, setToken] = useState<string | null>(null);
   const [dashboard, setDashboard] = useState<DashboardPayload | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('home');
+  const [ctasEnabled, setCtasEnabled] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadingMessage, setLoadingMessage] = useState('Checking your cooperative and secure session...');
   const [hasTenant, setHasTenant] = useState(false);
@@ -992,6 +1087,12 @@ function AppContent() {
     const data = await getDashboard(currentToken);
     setDashboard(data);
   }
+
+  // Whether the optional Target Advance (CTAS) module is on for this cooperative.
+  useEffect(() => {
+    if (!token) { setCtasEnabled(false); return; }
+    getCtas(token).then((r) => setCtasEnabled(!!r.enabled)).catch(() => setCtasEnabled(false));
+  }, [token]);
 
   useEffect(() => {
     let alive = true;
@@ -1090,6 +1191,7 @@ function AppContent() {
     if (activeTab === 'profile') return 'Profile';
     if (activeTab === 'savings') return 'Savings';
     if (activeTab === 'loans') return 'Loans';
+    if (activeTab === 'ctas') return 'Target Advance';
     return 'Notifications';
   }, [activeTab]);
 
@@ -1143,8 +1245,9 @@ function AppContent() {
       {activeTab === 'profile' ? <ProfileScreen token={token} data={dashboard} reload={() => reload()} /> : null}
       {activeTab === 'savings' ? <SavingsScreen token={token} /> : null}
       {activeTab === 'loans' ? <LoansScreen token={token} dashboard={dashboard} reload={() => reload()} /> : null}
+      {activeTab === 'ctas' ? <CtasScreen token={token} /> : null}
       {activeTab === 'notifications' ? <NotificationsScreen token={token} initial={dashboard.notifications} /> : null}
-      <TabBar active={activeTab} setActive={setActiveTab} unread={dashboard.summary.unread_notifications} />
+      <TabBar active={activeTab} setActive={setActiveTab} unread={dashboard.summary.unread_notifications} showCtas={ctasEnabled} />
     </SafeAreaView>
   );
 }

@@ -1,6 +1,6 @@
 import * as SecureStore from 'expo-secure-store';
 import { HQ_API_BASE, codeToBaseUrl, getApiBase } from './config';
-import type { DashboardPayload, Loan, LoanOptionsPayload, MobileNotification, SavingRow } from './types';
+import type { CtasPayload, DashboardPayload, Loan, LoanOptionsPayload, MobileNotification, SavingRow } from './types';
 
 const TOKEN_KEY = 'coopms.mobile.token';
 
@@ -182,6 +182,18 @@ export async function getSavings(token: string) {
 
 export async function getLoans(token: string) {
   return request<{ success: boolean; loans: Loan[] }>('/api/mobile/v1/loans', { token });
+}
+
+export async function getCtas(token: string) {
+  return request<CtasPayload>('/api/mobile/v1/ctas', { token });
+}
+
+export async function applyCtas(token: string, input: {
+  cycle_id: number; target_amount: number; tenure_months: number;
+  terms_accepted: boolean; signature_name: string;
+}) {
+  return request<{ success: boolean; monthly_deduction: number; admin_fee: number; eligible: boolean }>(
+    '/api/mobile/v1/ctas/apply', { method: 'POST', token, body: input });
 }
 
 export async function getLoanOptions(token: string) {

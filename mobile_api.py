@@ -704,6 +704,93 @@ def mobile_loans():
     return jsonify({'success': True, 'loans': _get_loans(g.db, g.member['id'])})
 
 
+# ── CTAS (Target Advance) — optional module, member-facing ──────────────────────
+
+def _ctas_sub_json(s):
+    target = float(s['target_amount'] or 0)
+    recovered = float(s['total_recovered'] or 0)
+    return {
+        'id': s['id'],
+        'cycle_name': s['cycle_name'],
+        'target_amount': target,
+        'tenure_months': s['tenure_months'],
+        'monthly_deduction': float(s['monthly_deduction'] or 0),
+        'status': s['status'],
+        'payout_month': s['payout_month'],
+        'total_recovered': recovered,
+        'outstanding': round(target - recovered, 2),
+        'arrears_amount': float(s['arrears_amount'] or 0) if 'arrears_amount' in s.keys() else 0.0,
+        'progress': round((recovered / target * 100) if target else 0),
+    }
+
+
+@mobile_api.route('/api/mobile/v1/ctas')
+@member_required
+def mobile_ctas():
+    """Member's CTAS view: enabled flag, their subscriptions, and open cycles."""
+    from blueprints.ctas import ctas_enabled
+    import ctas_engine as ce
+    db, member = g.db, g.member
+    if not ctas_enabled(db):
+        return jsonify({'success': True, 'enabled': False, 'subscriptions': [], 'open_cycles': []})
+    subs = db.execute('''SELECT s.*, c.name AS cycle_name FROM ctas_subscriptions s
+                         JOIN ctas_cycles c ON c.id = s.cycle_id
+                         WHERE s.member_id = ? ORDER BY s.applied_at DESC''', (member['id'],)).fetchall()
+    open_cycles = db.execute('''SELECT id, name, duration_months, affordability_method, savings_multiple
+                                FROM ctas_cycles WHERE status = 'open'
+                                  AND id NOT IN (SELECT cycle_id FROM ctas_subscriptions WHERE member_id = ?)
+                                ORDER BY name''', (member['id'],)).fetchall()
+    return jsonify({
+        'success': True,
+        'enabled': True,
+        'savings_balance': float(member['total_savings'] or 0) if 'total_savings' in member.keys() else 0.0,
+        'has_active': ce.member_has_active_subscription(db, member['id']),
+        'subscriptions': [_ctas_sub_json(s) for s in subs],
+        'open_cycles': [{'id': c['id'], 'name': c['name'], 'duration_months': c['duration_months'],
+                         'affordability_method': c['affordability_method'],
+                         'savings_multiple': float(c['savings_multiple'] or 0)} for c in open_cycles],
+    })
+
+
+@mobile_api.route('/api/mobile/v1/ctas/apply', methods=['POST'])
+@member_required
+def mobile_ctas_apply():
+    from blueprints.ctas import ctas_enabled
+    import ctas_engine as ce
+    db, member = g.db, g.member
+    if not ctas_enabled(db):
+        return jsonify({'success': False, 'error': 'Target Advance is not enabled.'}), 404
+    data = request.get_json(silent=True) or {}
+    cycle = db.execute("SELECT * FROM ctas_cycles WHERE id = ? AND status = 'open'",
+                       (data.get('cycle_id'),)).fetchone()
+    if not cycle:
+        return jsonify({'success': False, 'error': 'That cycle is not open for applications.'}), 400
+    try:
+        target = float(data.get('target_amount') or 0)
+        tenure = int(data.get('tenure_months') or 0)
+    except (ValueError, TypeError):
+        return jsonify({'success': False, 'error': 'Enter a valid amount and tenure.'}), 400
+    if not data.get('terms_accepted'):
+        return jsonify({'success': False, 'error': 'You must accept the scheme terms.'}), 400
+    signature = (data.get('signature_name') or '').strip()
+    if not signature:
+        return jsonify({'success': False, 'error': 'Type your full name as your signature.'}), 400
+    res = ce.check_eligibility(db, member, cycle, target, tenure)
+    hard = [r for r in res['reasons'] if 'exceeds' not in r and 'salary' not in r.lower()]
+    if hard:
+        return jsonify({'success': False, 'error': 'Cannot apply: ' + ' '.join(hard)}), 400
+    db.execute('''INSERT INTO ctas_subscriptions
+            (cycle_id, member_id, target_amount, tenure_months, monthly_deduction, admin_fee,
+             status, outstanding, terms_accepted, signature_name, signed_at, created_by)
+            VALUES (?, ?, ?, ?, ?, ?, 'submitted', ?, 1, ?, ?, ?)''',
+        (cycle['id'], member['id'], target, tenure, res['monthly_deduction'],
+         res['admin_fee'], target, signature, datetime.now(), g.user_id))
+    audit(db, 'CTAS_APPLY', 'ctas', f"Mobile: member {member['id']} applied to cycle {cycle['name']}")
+    db.commit()
+    return jsonify({'success': True, 'monthly_deduction': res['monthly_deduction'],
+                    'admin_fee': res['admin_fee'], 'eligible': res['eligible']})
+
+
 @mobile_api.route('/api/mobile/v1/loans/options')
 @member_required
 def mobile_loan_options():

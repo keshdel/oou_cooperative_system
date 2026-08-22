@@ -477,5 +477,35 @@ class CtasMemberPortalTests(unittest.TestCase):
             self.assertGreaterEqual(n, 1)
 
 
+    def test_mobile_ctas_view_and_apply(self):
+        r = self.member.post('/api/mobile/login',
+                             json={'username': 'ctasmem', 'password': 'TestMember123'})
+        self.assertEqual(r.status_code, 200)
+        token = r.get_json()['token']
+        h = {'Authorization': f'Bearer {token}'}
+
+        v = self.member.get('/api/mobile/v1/ctas', headers=h)
+        self.assertEqual(v.status_code, 200)
+        body = v.get_json()
+        self.assertTrue(body['enabled'])
+        self.assertTrue(any(c['id'] == self.cid for c in body['open_cycles']))
+
+        a = self.member.post('/api/mobile/v1/ctas/apply', headers=h, json={
+            'cycle_id': self.cid, 'target_amount': 200000, 'tenure_months': 4,
+            'terms_accepted': True, 'signature_name': 'Mem Ber'})
+        self.assertEqual(a.status_code, 200)
+        self.assertTrue(a.get_json()['success'])
+        with self.app.app_context():
+            sub = get_db().execute("SELECT * FROM ctas_subscriptions WHERE cycle_id = ?", (self.cid,)).fetchone()
+            self.assertIsNotNone(sub)
+            self.assertEqual(sub['terms_accepted'], 1)
+            self.assertAlmostEqual(float(sub['monthly_deduction']), 50000.0, places=2)
+
+        # Applying without terms is rejected.
+        a2 = self.member.post('/api/mobile/v1/ctas/apply', headers=h, json={
+            'cycle_id': self.cid, 'target_amount': 100000, 'tenure_months': 4, 'signature_name': 'X'})
+        self.assertEqual(a2.status_code, 400)
+
+
 if __name__ == '__main__':
     unittest.main()

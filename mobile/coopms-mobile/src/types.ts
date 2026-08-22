@@ -129,3 +129,34 @@ export type DashboardPayload = {
   recent_transactions: Array<Record<string, unknown>>;
   notifications: MobileNotification[];
 };
+
+export type CtasSubscription = {
+  id: number;
+  cycle_name: string;
+  target_amount: number;
+  tenure_months: number;
+  monthly_deduction: number;
+  status: string;
+  payout_month: number | null;
+  total_recovered: number;
+  outstanding: number;
+  arrears_amount: number;
+  progress: number;
+};
+
+export type CtasCycle = {
+  id: number;
+  name: string;
+  duration_months: number;
+  affordability_method: string;
+  savings_multiple: number;
+};
+
+export type CtasPayload = {
+  success: boolean;
+  enabled: boolean;
+  savings_balance?: number;
+  has_active?: boolean;
+  subscriptions: CtasSubscription[];
+  open_cycles: CtasCycle[];
+};
