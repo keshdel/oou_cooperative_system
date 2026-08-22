@@ -128,6 +128,24 @@ class PaystackGateway:
         """Verify a transaction by reference. Returns Paystack response dict."""
         return self._get(f'/transaction/verify/{reference}')
 
+    def charge_authorization(self, email: str, amount_naira: float, reference: str,
+                             authorization_code: str, metadata: dict | None = None) -> dict:
+        """Charge a card the member already authorised (card-on-file).
+
+        `authorization_code` comes from a previous successful transaction whose
+        authorization was marked reusable. No card details are handled or stored
+        here — only the provider's token.
+        """
+        payload = {
+            'email':              email,
+            'amount':             int(amount_naira * 100),   # kobo
+            'reference':          reference,
+            'authorization_code': authorization_code,
+        }
+        if metadata:
+            payload['metadata'] = metadata
+        return self._post('/transaction/charge_authorization', payload)
+
     def validate_webhook(self, payload_bytes: bytes, signature_header: str) -> bool:
         """
         Verify Paystack webhook signature.

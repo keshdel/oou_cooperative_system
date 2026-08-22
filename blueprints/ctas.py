@@ -16,18 +16,22 @@ every CTAS view with @ctas_required.
 """
 
 import csv
+import hmac
+import os
 import secrets
-from datetime import datetime
+from datetime import date, datetime
 from io import StringIO, TextIOWrapper
 from functools import wraps
 
-from flask import (Blueprint, abort, current_app, flash, make_response, redirect,
-                   render_template, request, url_for)
+from flask import (Blueprint, abort, current_app, flash, jsonify, make_response,
+                   redirect, render_template, request, url_for)
 from flask_login import current_user, login_required
 
 from database import get_db, last_insert_id
 from utils import audit, role_required, member_for_user, notify_member
 from ledger import post_journal_safe, get_default_cash_account, MEMBER_DEPOSITS, SHARE_CAPITAL
+from payments import get_gateway, generate_reference
+import permissions as perms
 import ctas_engine as ce
 
 ctas = Blueprint('ctas', __name__)
@@ -51,12 +55,16 @@ def _ensure_schedule(db, sub, cycle):
     if existing:
         return 0
     rows = ce.build_schedule(cycle)
+    # Cycles created before the pool model (or left blank) carry no contribution
+    # amount — fall back to the member's own per-period figure so the schedule is
+    # still meaningful.
+    fallback = round(float(sub['monthly_deduction'] or 0), 2)
     for period, due, amount in rows:
         db.execute('''INSERT INTO ctas_schedule
                         (subscription_id, cycle_id, period_number, due_date, expected_amount, status)
                       VALUES (?, ?, ?, ?, ?, 'pending')''',
                    (sub['id'], cycle['id'], period,
-                    due.isoformat() if due else None, amount))
+                    due.isoformat() if due else None, amount or fallback))
     return len(rows)
 
 
@@ -82,6 +90,49 @@ def _apply_to_schedule(db, subscription_id, period, amount, grace_days=7):
     status = ce.schedule_status(row['due_date'], row['expected_amount'], paid, grace_days)
     db.execute('UPDATE ctas_schedule SET paid_amount = ?, status = ?, paid_at = ? WHERE id = ?',
                (paid, status, datetime.now() if status == ce.SCH_PAID else row['paid_at'], row['id']))
+
+
+def _post_contribution(db, sub, cycle, period, amount, created_by=None, ref_suffix=''):
+    """Record one contribution: post it to the GL (pool before payout, advance
+    repayment after), update the subscription, and tick off its schedule row.
+    Returns the amount actually posted. The single path used by both the CSV
+    import and automatic debits."""
+    ctas_ensure_accounts(db)
+    cash = get_default_cash_account(db)
+    amount = round(float(amount or 0), 2)
+    contributed = round(float(sub['contributed_total'] or 0) + amount, 2)
+
+    if sub['status'] == ce.SUB_ACTIVE_RECOVERY:
+        # Already paid out — this repays the cooperative's advance.
+        post_amt = round(min(amount, float(sub['advance_balance'] or 0)), 2)
+        credit_acct = CTAS_ADVANCES
+        new_adv = round(max(0.0, float(sub['advance_balance'] or 0) - post_amt), 2)
+        recovered = round(float(sub['total_recovered'] or 0) + post_amt, 2)
+        status = 'completed' if new_adv <= 0 else 'active_recovery'
+    else:
+        # Not yet paid out — funds the rotating pool.
+        post_amt = amount
+        credit_acct = CTAS_POOL
+        new_adv = float(sub['advance_balance'] or 0)
+        recovered = float(sub['total_recovered'] or 0)
+        status = sub['status']
+
+    if post_amt > 0:
+        post_journal_safe(
+            db, f"CTAS contribution period {period} - subscription {sub['id']}",
+            [{'account': cash, 'debit': post_amt, 'memo': f'CTAS contribution p{period}'},
+             {'account': credit_acct, 'credit': post_amt, 'memo': f"CTAS contribution sub {sub['id']}"}],
+            date=datetime.now(), reference=f"CTAS-CN-{sub['id']}-M{period}{ref_suffix}",
+            source_module='ctas_contribution', source_id=sub['id'], created_by=created_by)
+
+    db.execute("UPDATE ctas_subscriptions SET contributed_total = ?, advance_balance = ?, "
+               "total_recovered = ?, outstanding = ?, status = ?, completed_at = ? WHERE id = ?",
+               (contributed, new_adv, recovered,
+                max(0.0, round(float(sub['target_amount']) - contributed, 2)), status,
+                datetime.now() if status == 'completed' else None, sub['id']))
+    _apply_to_schedule(db, sub['id'], period, amount,
+                       int(cycle['grace_days'] if cycle['grace_days'] is not None else 7))
+    return post_amt
 
 
 def _raise_exception(db, subscription_id, case_type, month, amount, description):
@@ -829,37 +880,10 @@ def payroll_import(cycle_id):
             shortfall = round(max(0.0, expected - actual), 2)
             over = round(max(0.0, actual - expected), 2)
             new_arrears = round(max(0.0, float(sub['arrears_amount'] or 0) + shortfall - over), 2)
-            contributed = round(float(sub['contributed_total'] or 0) + actual, 2)
 
-            if sub['status'] == 'active_recovery':
-                # Repays the co-op's advance (cap the GL posting to the balance owed).
-                post_amt = round(min(actual, float(sub['advance_balance'] or 0)), 2)
-                credit_acct = CTAS_ADVANCES
-                new_adv = round(max(0.0, float(sub['advance_balance'] or 0) - post_amt), 2)
-                recovered = round(float(sub['total_recovered'] or 0) + post_amt, 2)
-                status = 'completed' if new_adv <= 0 else 'active_recovery'
-            else:
-                # Not yet paid out — funds the pool.
-                post_amt = actual
-                credit_acct = CTAS_POOL
-                new_adv = float(sub['advance_balance'] or 0)
-                recovered = float(sub['total_recovered'] or 0)
-                status = 'scheduled'
-
-            if post_amt > 0:
-                post_journal_safe(
-                    db, f"CTAS contribution period {month} - subscription {sub['id']}",
-                    [{'account': cash, 'debit': post_amt, 'memo': f'CTAS contribution p{month}'},
-                     {'account': credit_acct, 'credit': post_amt, 'memo': f"CTAS contribution sub {sub['id']}"}],
-                    date=datetime.now(), reference=f"CTAS-CN-{sub['id']}-M{month}",
-                    source_module='ctas_contribution', source_id=sub['id'], created_by=current_user.id)
-
-            db.execute("UPDATE ctas_subscriptions SET contributed_total = ?, advance_balance = ?, "
-                       "total_recovered = ?, outstanding = ?, arrears_amount = ?, status = ?, "
-                       "completed_at = ? WHERE id = ?",
-                       (contributed, new_adv, recovered,
-                        max(0.0, round(float(sub['target_amount']) - contributed, 2)), new_arrears, status,
-                        datetime.now() if status == 'completed' else None, sub['id']))
+            _post_contribution(db, sub, cycle, month, actual, created_by=current_user.id)
+            db.execute("UPDATE ctas_subscriptions SET arrears_amount = ? WHERE id = ?",
+                       (new_arrears, sub['id']))
             db.execute("INSERT INTO ctas_payroll_lines (batch_id, subscription_id, expected_amount, "
                        "actual_amount, status) VALUES (?, ?, ?, ?, ?)",
                        (batch_id, sub['id'], expected, actual, 'partial' if shortfall > 0 else 'deducted'))
@@ -869,8 +893,6 @@ def payroll_import(cycle_id):
                 _notify_member(db, sub['member_id'], 'Target Advance — partial contribution',
                                f'Only ₦{actual:,.2f} of your ₦{expected:,.2f} period {month} contribution '
                                f'was received.')
-            _apply_to_schedule(db, sub['id'], month, actual,
-                               int(cycle['grace_days'] if cycle['grace_days'] is not None else 7))
             posted += 1
 
         audit(db, 'CTAS_CONTRIBUTION_IMPORT', 'ctas',
@@ -916,8 +938,14 @@ def my_ctas():
             f"JOIN ctas_cycles c ON c.id = sc.cycle_id "
             f"WHERE sc.subscription_id IN ({placeholders}) "
             f"ORDER BY sc.due_date, sc.period_number", sub_ids).fetchall()
+    mandates = {}
+    for s in subs:
+        m = _active_mandate(db, s['id'])
+        if m:
+            mandates[s['id']] = m
     return render_template('member/my-ctas.html', member=member, subs=subs,
-                           open_cycles=open_cycles, has_active=has_active, schedule=schedule)
+                           open_cycles=open_cycles, has_active=has_active, schedule=schedule,
+                           mandates=mandates)
 
 
 @ctas.route('/my-ctas/apply', methods=['POST'])
@@ -965,6 +993,258 @@ def my_ctas_apply():
     note = '' if result['eligible'] else ' Affordability will be reviewed by the committee.'
     flash('Your target-advance application has been submitted for review.' + note, 'success')
     return redirect(url_for('ctas.my_ctas'))
+
+
+# ── Automatic contributions (card-on-file mandate) ────────────────────────────
+
+def _next_unpaid_period(db, subscription_id):
+    """The member's earliest unpaid schedule row, or None."""
+    return db.execute(
+        "SELECT * FROM ctas_schedule WHERE subscription_id = ? AND status != 'paid' "
+        "ORDER BY period_number LIMIT 1", (subscription_id,)).fetchone()
+
+
+def _active_mandate(db, subscription_id):
+    return db.execute("SELECT * FROM ctas_mandates WHERE subscription_id = ? AND status = 'active' "
+                      "ORDER BY id DESC LIMIT 1", (subscription_id,)).fetchone()
+
+
+def _consent_text(cycle, amount):
+    word = ce.period_word(cycle)
+    return (f"I authorise {cycle['name']} contributions of ₦{amount:,.2f} to be charged to this card "
+            f"every {word} on the due date until my subscription completes or I cancel. "
+            f"I may cancel at any time from my member portal.")
+
+
+@ctas.route('/my-ctas/autopay/<int:sub_id>', methods=['GET', 'POST'])
+@ctas_required
+@login_required
+def autopay_setup(sub_id):
+    """Set up automatic contributions. The member authorises by paying their next
+    due contribution with a card; the gateway returns a reusable token which is
+    stored as the mandate. No card details ever reach this system."""
+    db = get_db()
+    member = member_for_user(db, current_user.id)
+    sub = db.execute('SELECT * FROM ctas_subscriptions WHERE id = ?', (sub_id,)).fetchone()
+    if not sub or not member or sub['member_id'] != member['id']:
+        abort(403)
+    cycle = db.execute('SELECT * FROM ctas_cycles WHERE id = ?', (sub['cycle_id'],)).fetchone()
+    due = _next_unpaid_period(db, sub_id)
+    amount = round(float(due['expected_amount'] or 0) - float(due['paid_amount'] or 0), 2) if due else 0.0
+    mandate = _active_mandate(db, sub_id)
+
+    if request.method == 'GET':
+        return render_template('member/ctas-autopay.html', sub=sub, cycle=cycle, due=due,
+                               amount=amount, mandate=mandate,
+                               consent=_consent_text(cycle, amount) if due else '')
+
+    if mandate:
+        flash('Automatic payment is already set up for this subscription.', 'info')
+        return redirect(url_for('ctas.my_ctas'))
+    if not due or amount <= 0:
+        flash('You have no outstanding contribution to authorise with right now.', 'warning')
+        return redirect(url_for('ctas.my_ctas'))
+    if not request.form.get('consent'):
+        flash('Please tick the authorisation box to continue.', 'danger')
+        return redirect(url_for('ctas.autopay_setup', sub_id=sub_id))
+    signature = (request.form.get('signature_name') or '').strip()
+    if not signature:
+        flash('Type your full name to authorise.', 'danger')
+        return redirect(url_for('ctas.autopay_setup', sub_id=sub_id))
+
+    settings = {r['key']: r['value'] for r in db.execute('SELECT key, value FROM settings').fetchall()}
+    if (settings.get('active_gateway') or 'paystack') != 'paystack' or not settings.get('paystack_secret_key'):
+        flash('Online payment is not configured for this cooperative yet. Please contact the office.', 'warning')
+        return redirect(url_for('ctas.my_ctas'))
+
+    email = (member['email'] or current_user.email or '').strip()
+    if not email:
+        flash('Add an email address to your profile before setting up automatic payment.', 'danger')
+        return redirect(url_for('ctas.my_ctas'))
+
+    reference = generate_reference('CTASMD')
+    db.execute('''INSERT INTO ctas_mandates
+            (member_id, subscription_id, provider, mandate_type, email, amount_cap, status,
+             consent_text, consent_signature, consent_ip, consented_at, authorization_code)
+            VALUES (?, ?, 'paystack', 'card', ?, ?, 'pending', ?, ?, ?, ?, ?)''',
+        (member['id'], sub_id, email, amount, _consent_text(cycle, amount), signature,
+         (request.headers.get('X-Forwarded-For', '') or request.remote_addr or '')[:80],
+         datetime.now(), reference))   # reference parked here until the token arrives
+    audit(db, 'CTAS_MANDATE_START', 'ctas', f"Autopay authorisation started for subscription #{sub_id}")
+    db.commit()
+
+    try:
+        gw = get_gateway('paystack')
+        resp = gw.initialize(email, amount, reference,
+                             url_for('ctas.autopay_callback', _external=True),
+                             metadata={'ctas_subscription': sub_id, 'ctas_period': due['period_number'],
+                                       'purpose': 'ctas_mandate'})
+        if resp.get('status'):
+            return redirect(resp['data']['authorization_url'])
+    except Exception as exc:   # pragma: no cover - network
+        current_app.logger.error('CTAS mandate init failed: %s', exc)
+    flash('Could not reach the payment gateway. Please try again shortly.', 'danger')
+    return redirect(url_for('ctas.my_ctas'))
+
+
+@ctas.route('/my-ctas/autopay/callback')
+@ctas_required
+@login_required
+def autopay_callback():
+    """Gateway return: verify the payment, store the reusable token as the
+    mandate, and post the contribution that authorised it."""
+    db = get_db()
+    reference = (request.args.get('reference') or '').strip()
+    mandate = db.execute("SELECT * FROM ctas_mandates WHERE authorization_code = ? AND status = 'pending'",
+                         (reference,)).fetchone()
+    if not reference or not mandate:
+        flash('Payment reference not recognised.', 'danger')
+        return redirect(url_for('ctas.my_ctas'))
+    try:
+        resp = get_gateway('paystack').verify(reference)
+    except Exception as exc:   # pragma: no cover - network
+        current_app.logger.error('CTAS mandate verify failed: %s', exc)
+        flash('We could not confirm the payment yet. If you were charged, contact the office.', 'warning')
+        return redirect(url_for('ctas.my_ctas'))
+
+    data = resp.get('data') or {}
+    if not resp.get('status') or data.get('status') != 'success':
+        db.execute("UPDATE ctas_mandates SET status = 'failed', last_error = ? WHERE id = ?",
+                   ('Authorisation payment was not completed.', mandate['id']))
+        db.commit()
+        flash('Payment was not completed, so automatic payment was not set up.', 'warning')
+        return redirect(url_for('ctas.my_ctas'))
+
+    auth = data.get('authorization') or {}
+    token = auth.get('authorization_code') or ''
+    reusable = bool(auth.get('reusable'))
+    paid = round(float(data.get('amount', 0)) / 100.0, 2)
+
+    sub = db.execute('SELECT * FROM ctas_subscriptions WHERE id = ?', (mandate['subscription_id'],)).fetchone()
+    cycle = db.execute('SELECT * FROM ctas_cycles WHERE id = ?', (sub['cycle_id'],)).fetchone()
+    period = int((data.get('metadata') or {}).get('ctas_period') or 0) or None
+    if not period:
+        nxt = _next_unpaid_period(db, sub['id'])
+        period = nxt['period_number'] if nxt else 1
+
+    # Post the contribution that authorised the mandate (idempotent by reference).
+    already = db.execute("SELECT 1 FROM journal_entries WHERE reference = ?",
+                         (f"CTAS-CN-{sub['id']}-M{period}-{reference}",)).fetchone()
+    if not already and paid > 0:
+        _post_contribution(db, sub, cycle, period, paid, created_by=current_user.id,
+                           ref_suffix=f'-{reference}')
+
+    if token and reusable:
+        db.execute("UPDATE ctas_mandates SET status = 'active', authorization_code = ?, "
+                   "masked_label = ?, bank_name = ?, card_type = ?, exp_month = ?, exp_year = ?, "
+                   "last_charged_at = ? WHERE id = ?",
+                   (token, f"**** {auth.get('last4', '')}".strip(), auth.get('bank') or '',
+                    auth.get('card_type') or '', auth.get('exp_month') or '',
+                    auth.get('exp_year') or '', datetime.now(), mandate['id']))
+        audit(db, 'CTAS_MANDATE_ACTIVE', 'ctas',
+              f"Autopay authorised for subscription #{sub['id']} ({auth.get('card_type','card')} ****{auth.get('last4','')})")
+        _notify_member(db, sub['member_id'], 'Target Advance — automatic payment active',
+                       'Your contribution was received and automatic payment is now set up. '
+                       'You can cancel any time from your member portal.')
+        flash('Payment received and automatic contributions are now set up.', 'success')
+    else:
+        db.execute("UPDATE ctas_mandates SET status = 'failed', "
+                   "last_error = 'Card cannot be reused for automatic charges.' WHERE id = ?",
+                   (mandate['id'],))
+        flash('Your payment was received, but this card cannot be saved for automatic charges. '
+              'You can still pay each period manually.', 'warning')
+    db.commit()
+    return redirect(url_for('ctas.my_ctas'))
+
+
+@ctas.route('/my-ctas/autopay/<int:mandate_id>/cancel', methods=['POST'])
+@ctas_required
+@login_required
+def autopay_cancel(mandate_id):
+    """Members can withdraw their authorisation at any time (required by the
+    consent they gave)."""
+    db = get_db()
+    member = member_for_user(db, current_user.id)
+    mandate = db.execute('SELECT * FROM ctas_mandates WHERE id = ?', (mandate_id,)).fetchone()
+    if not mandate or not member or mandate['member_id'] != member['id']:
+        abort(403)
+    db.execute("UPDATE ctas_mandates SET status = 'cancelled', cancelled_at = ? WHERE id = ?",
+               (datetime.now(), mandate_id))
+    audit(db, 'CTAS_MANDATE_CANCEL', 'ctas', f"Autopay cancelled for mandate #{mandate_id}")
+    db.commit()
+    flash('Automatic payment cancelled. You will need to pay each contribution yourself.', 'info')
+    return redirect(url_for('ctas.my_ctas'))
+
+
+@ctas.route('/tasks/ctas/charge-due', methods=['GET', 'POST'])
+def ctas_charge_due():
+    """Charge every due contribution that has an active mandate.
+
+    Two ways in, like the loan sweep: a scheduler calling with
+    ``X-Task-Token``/``?token=`` matching TASK_RUNNER_TOKEN, or a logged-in
+    officer holding the CTAS duty.
+    """
+    db = get_db()
+    if not ctas_enabled(db):
+        abort(404)
+    token = (os.environ.get('TASK_RUNNER_TOKEN', '') or '').strip()
+    provided = (request.headers.get('X-Task-Token', '') or request.args.get('token', '')).strip()
+    by_token = bool(token) and hmac.compare_digest(provided, token)
+    by_user = current_user.is_authenticated and perms.user_can('ctas.manage')
+    if not (by_token or by_user):
+        return jsonify({'success': False, 'error': 'Unauthorised'}), 403
+
+    today = date.today().isoformat()
+    rows = db.execute('''
+        SELECT sc.*, mn.id AS mandate_id, mn.authorization_code, mn.email, mn.fail_count,
+               s.member_id
+        FROM ctas_schedule sc
+        JOIN ctas_subscriptions s ON s.id = sc.subscription_id
+        JOIN ctas_mandates mn ON mn.subscription_id = s.id AND mn.status = 'active'
+        WHERE sc.status IN ('due', 'grace', 'late', 'partial') AND sc.due_date <= ?
+          AND s.status IN ('scheduled', 'active_recovery')
+        ORDER BY sc.due_date''', (today,)).fetchall()
+
+    charged = failed = 0
+    for r in rows:
+        amount = round(float(r['expected_amount'] or 0) - float(r['paid_amount'] or 0), 2)
+        if amount <= 0:
+            continue
+        sub = db.execute('SELECT * FROM ctas_subscriptions WHERE id = ?', (r['subscription_id'],)).fetchone()
+        cycle = db.execute('SELECT * FROM ctas_cycles WHERE id = ?', (sub['cycle_id'],)).fetchone()
+        reference = generate_reference('CTASAP')
+        try:
+            resp = get_gateway('paystack').charge_authorization(
+                r['email'], amount, reference, r['authorization_code'],
+                metadata={'ctas_subscription': sub['id'], 'ctas_period': r['period_number']})
+            ok = bool(resp.get('status')) and ((resp.get('data') or {}).get('status') == 'success')
+        except Exception as exc:   # pragma: no cover - network
+            current_app.logger.warning('CTAS auto-charge error: %s', exc)
+            ok, resp = False, {'message': str(exc)}
+        if ok:
+            _post_contribution(db, sub, cycle, r['period_number'], amount,
+                               ref_suffix=f'-{reference}')
+            db.execute("UPDATE ctas_mandates SET last_charged_at = ?, fail_count = 0, last_error = NULL "
+                       "WHERE id = ?", (datetime.now(), r['mandate_id']))
+            _notify_member(db, r['member_id'], 'Target Advance — contribution paid',
+                           f"₦{amount:,.2f} for period {r['period_number']} was charged to your saved card.")
+            charged += 1
+        else:
+            fails = int(r['fail_count'] or 0) + 1
+            db.execute("UPDATE ctas_mandates SET fail_count = ?, last_error = ? WHERE id = ?",
+                       (fails, str(resp.get('message') or 'Charge failed')[:200], r['mandate_id']))
+            _raise_exception(db, sub['id'], 'missed_deduction', r['period_number'], amount,
+                             f"Automatic charge failed (attempt {fails}): {resp.get('message') or 'declined'}")
+            _notify_member(db, r['member_id'], 'Target Advance — payment failed',
+                           f"We could not charge ₦{amount:,.2f} for period {r['period_number']}. "
+                           f"Please check your card or pay at the office.")
+            failed += 1
+    audit(db, 'CTAS_AUTO_CHARGE', 'ctas', f"Auto-charge run: {charged} charged, {failed} failed")
+    db.commit()
+    if by_user and not by_token:
+        flash(f'Automatic charges: {charged} succeeded, {failed} failed.', 'info')
+        return redirect(url_for('ctas.dashboard'))
+    return jsonify({'success': True, 'charged': charged, 'failed': failed})
 
 
 # ── Exceptions: member exit (net-off waterfall) + arrears dashboard ────────────

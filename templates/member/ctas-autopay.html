@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Automatic payment - {{ coop_name }}{% endblock %}
+{% block content %}
+<div class="container-fluid">
+    <div class="row justify-content-center"><div class="col-lg-7">
+
+    <div class="mb-3">
+        <h2><i class="fas fa-credit-card"></i> Automatic contributions</h2>
+        <p class="text-muted mb-0">Save your card once, and each {{ (cycle.frequency or 'monthly')|replace('ly','') }}
+            contribution for <strong>{{ cycle.name }}</strong> is paid automatically on its due date.</p>
+    </div>
+
+    {% if mandate %}
+    <div class="card mb-3"><div class="card-body">
+        <div class="d-flex justify-content-between align-items-start">
+            <div>
+                <h6 class="mb-1"><span class="badge bg-success">Active</span></h6>
+                <div>{{ mandate.card_type|title }} {{ mandate.masked_label }}
+                    {% if mandate.bank_name %}<span class="text-muted">· {{ mandate.bank_name }}</span>{% endif %}</div>
+                {% if mandate.exp_month %}<div class="small text-muted">Expires {{ mandate.exp_month }}/{{ mandate.exp_year }}</div>{% endif %}
+                {% if mandate.last_charged_at %}<div class="small text-muted">Last charged {{ mandate.last_charged_at|string|truncate(16, True, '') }}</div>{% endif %}
+            </div>
+            <form method="post" action="{{ url_for('ctas.autopay_cancel', mandate_id=mandate.id) }}"
+                  onsubmit="return confirm('Cancel automatic payment? You will need to pay each contribution yourself.');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-outline-danger btn-sm">Cancel automatic payment</button>
+            </form>
+        </div>
+    </div></div>
+    <p class="text-muted small">You can cancel at any time. Cancelling does not end your subscription —
+        you would simply pay each contribution yourself.</p>
+
+    {% elif not due %}
+    <div class="alert alert-info">You have no outstanding contribution right now, so there is nothing to
+        authorise with. Come back when your next contribution is due.</div>
+
+    {% else %}
+    <div class="card mb-3"><div class="card-body">
+        <h6 class="card-title">What happens next</h6>
+        <ol class="text-muted small mb-0">
+            <li>You pay your <strong>period {{ due.period_number }}</strong> contribution of
+                <strong>₦{{ "{:,.2f}".format(amount) }}</strong> now, by card.</li>
+            <li>Your card is saved securely by our payment provider — this system never sees your card number.</li>
+            <li>Each later contribution is charged automatically on its due date.</li>
+            <li>You can cancel any time from this page.</li>
+        </ol>
+    </div></div>
+
+    <form method="post" action="{{ url_for('ctas.autopay_setup', sub_id=sub.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="card border-primary"><div class="card-body">
+            <div class="d-flex justify-content-between mb-3">
+                <span class="text-muted">Amount to pay now</span>
+                <strong class="fs-5">₦{{ "{:,.2f}".format(amount) }}</strong>
+            </div>
+            <div class="mb-3"><label class="form-label">Type your full name to authorise *</label>
+                <input class="form-control" name="signature_name" required
+                       placeholder="{{ member_full_name if member_full_name else 'Your full name' }}"></div>
+            <div class="form-check mb-3">
+                <input class="form-check-input" type="checkbox" name="consent" id="consent" value="1" required>
+                <label class="form-check-label small" for="consent">{{ consent }}</label>
+            </div>
+            <button class="btn btn-primary w-100">
+                <i class="fas fa-lock"></i> Pay ₦{{ "{:,.2f}".format(amount) }} &amp; set up automatic payment</button>
+            <div class="form-text text-center mt-2">Secured by our payment provider.</div>
+        </div></div>
+    </form>
+    {% endif %}
+
+    <div class="mt-3">
+        <a href="{{ url_for('ctas.my_ctas') }}" class="btn btn-secondary btn-sm">
+            <i class="fas fa-arrow-left"></i> Back to my target advance</a>
+    </div>
+
+    </div></div>
+</div>
+{% endblock %}

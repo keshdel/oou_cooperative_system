@@ -153,6 +153,8 @@ csrf.exempt(app.view_functions['payments.paystack_webhook'])
 csrf.exempt(app.view_functions['payments.flutterwave_webhook'])
 # Scheduler-driven loan request sweep (authenticated with TASK_RUNNER_TOKEN).
 csrf.exempt(app.view_functions['loans.loan_pipeline_sweep'])
+# Scheduler-driven CTAS automatic contribution charges (same token guard).
+csrf.exempt(app.view_functions['ctas.ctas_charge_due'])
 
 # ── Context processor ─────────────────────────────────────────────────────────
 

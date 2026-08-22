@@ -695,8 +695,10 @@ class CtasMemberPortalTests(unittest.TestCase):
             db.execute("INSERT INTO users (username, password_hash, role, email, is_active, must_change_password) "
                        "VALUES ('ctasmem', ?, 'member', 'ctasmem@x.com', 1, 0)",
                        (generate_password_hash('TestMember123'),))
-            db.execute("INSERT INTO ctas_cycles (name, status, duration_months, monthly_capacity, "
-                       "affordability_method, savings_multiple) VALUES ('MemCycle','open',6,2,'savings',3)")
+            db.execute("INSERT INTO ctas_cycles (name, status, frequency, periods, duration_months, "
+                       "contribution_amount, monthly_capacity, earliest_payout_month, "
+                       "affordability_method, savings_multiple, start_date, grace_days) "
+                       "VALUES ('MemCycle','open','monthly',4,4,50000,2,1,'savings',3,'2026-01-01',7)")
             db.commit()
             self.cid = db.execute("SELECT id FROM ctas_cycles WHERE name='MemCycle'").fetchone()['id']
             self.uid = db.execute("SELECT id FROM users WHERE username='ctasmem'").fetchone()['id']
@@ -707,6 +709,13 @@ class CtasMemberPortalTests(unittest.TestCase):
         with self.app.app_context():
             db = get_db()
             db.execute("DELETE FROM notifications WHERE user_id = ?", (self.uid,))
+            for r in db.execute("SELECT id FROM ctas_subscriptions WHERE cycle_id = ?", (self.cid,)).fetchall():
+                db.execute("DELETE FROM ctas_mandates WHERE subscription_id = ?", (r['id'],))
+                db.execute("DELETE FROM ctas_schedule WHERE subscription_id = ?", (r['id'],))
+                for j in db.execute("SELECT id FROM journal_entries WHERE source_module = 'ctas_contribution' "
+                                    "AND source_id = ?", (r['id'],)).fetchall():
+                    db.execute("DELETE FROM journal_lines WHERE entry_id = ?", (j['id'],))
+                    db.execute("DELETE FROM journal_entries WHERE id = ?", (j['id'],))
             db.execute("DELETE FROM ctas_subscriptions WHERE cycle_id = ?", (self.cid,))
             db.execute("DELETE FROM ctas_cycles WHERE id = ?", (self.cid,))
             db.execute("DELETE FROM users WHERE username = 'ctasmem'")
@@ -747,6 +756,108 @@ class CtasMemberPortalTests(unittest.TestCase):
                            (self.uid,)).fetchone()[0]
             self.assertGreaterEqual(n, 1)
 
+
+    def _enrol_and_schedule(self):
+        """Member applies, is enrolled (schedule built) and balloted -> scheduled."""
+        self.member.post('/my-ctas/apply', data={
+            'cycle_id': str(self.cid), 'target_amount': '200000', 'tenure_months': '4',
+            'terms': '1', 'signature_name': 'Mem Ber'})
+        with self.app.app_context():
+            sid = get_db().execute("SELECT id FROM ctas_subscriptions WHERE cycle_id=?",
+                                   (self.cid,)).fetchone()['id']
+        for _ in range(4):
+            self.admin.post(f'/ctas/subscriptions/{sid}/act', data={'action': 'advance'})
+        return sid
+
+    def test_autopay_setup_stores_mandate_and_posts_the_authorising_contribution(self):
+        from unittest.mock import patch
+        sid = self._enrol_and_schedule()
+        with self.app.app_context():
+            db = get_db()
+            # Paystack keys must look configured for the flow to start.
+            for k, v in (('active_gateway', 'paystack'), ('paystack_secret_key', 'sk_test_x')):
+                db.execute("DELETE FROM settings WHERE key = ?", (k,))
+                db.execute("INSERT INTO settings (key, value) VALUES (?, ?)", (k, v))
+            db.commit()
+        # Consent + signature are required.
+        self.member.post(f'/my-ctas/autopay/{sid}', data={'signature_name': 'Mem Ber'})
+        with self.app.app_context():
+            self.assertIsNone(get_db().execute(
+                "SELECT id FROM ctas_mandates WHERE subscription_id=? AND status='active'",
+                (sid,)).fetchone())
+
+        class _GW:
+            def initialize(self, *a, **k):
+                return {'status': True, 'data': {'authorization_url': 'https://pay.test/x'}}
+            def verify(self, ref):
+                return {'status': True, 'data': {
+                    'status': 'success', 'amount': 5000000,      # 50,000.00 in kobo
+                    'metadata': {'ctas_period': 1},
+                    'authorization': {'authorization_code': 'AUTH_tok123', 'reusable': True,
+                                      'last4': '4321', 'card_type': 'visa', 'bank': 'Test Bank',
+                                      'exp_month': '12', 'exp_year': '2030'}}}
+        with patch('blueprints.ctas.get_gateway', return_value=_GW()):
+            r = self.member.post(f'/my-ctas/autopay/{sid}',
+                                 data={'signature_name': 'Mem Ber', 'consent': '1'},
+                                 follow_redirects=False)
+            self.assertIn(r.status_code, (302, 303))
+            with self.app.app_context():
+                pend = get_db().execute(
+                    "SELECT * FROM ctas_mandates WHERE subscription_id=? AND status='pending'",
+                    (sid,)).fetchone()
+                self.assertIsNotNone(pend)
+                self.assertIsNotNone(pend['consented_at'])            # consent recorded
+                self.assertEqual(pend['consent_signature'], 'Mem Ber')
+                ref = pend['authorization_code']                       # reference parked here
+            self.member.get(f'/my-ctas/autopay/callback?reference={ref}', follow_redirects=True)
+
+        with self.app.app_context():
+            db = get_db()
+            man = db.execute("SELECT * FROM ctas_mandates WHERE subscription_id=?", (sid,)).fetchone()
+            self.assertEqual(man['status'], 'active')
+            self.assertEqual(man['authorization_code'], 'AUTH_tok123')  # provider token only
+            self.assertIn('4321', man['masked_label'])                  # masked display
+            # The authorising payment posted as a real contribution.
+            sub = db.execute("SELECT * FROM ctas_subscriptions WHERE id=?", (sid,)).fetchone()
+            self.assertAlmostEqual(float(sub['contributed_total']), 50000.0, places=2)
+            row1 = db.execute("SELECT * FROM ctas_schedule WHERE subscription_id=? AND period_number=1",
+                              (sid,)).fetchone()
+            self.assertEqual(row1['status'], 'paid')
+
+    def test_autopay_cancel_stops_future_charges(self):
+        with self.app.app_context():
+            db = get_db()
+            db.execute("INSERT INTO ctas_subscriptions (cycle_id, member_id, target_amount, tenure_months, "
+                       "monthly_deduction, status, contributed_total, advance_balance) "
+                       "VALUES (?, (SELECT id FROM members WHERE member_number='CTAS/M/1'), "
+                       "200000, 4, 50000, 'scheduled', 0, 0)", (self.cid,))
+            db.commit()
+            sid = db.execute("SELECT id FROM ctas_subscriptions WHERE cycle_id=?", (self.cid,)).fetchone()['id']
+            db.execute("INSERT INTO ctas_mandates (member_id, subscription_id, status, authorization_code, "
+                       "masked_label) VALUES ((SELECT id FROM members WHERE member_number='CTAS/M/1'), "
+                       "?, 'active', 'AUTH_x', '**** 1111')", (sid,))
+            db.commit()
+            mid = db.execute("SELECT id FROM ctas_mandates WHERE subscription_id=?", (sid,)).fetchone()['id']
+        r = self.member.post(f'/my-ctas/autopay/{mid}/cancel', follow_redirects=False)
+        self.assertIn(r.status_code, (302, 303))
+        with self.app.app_context():
+            man = get_db().execute("SELECT status, cancelled_at FROM ctas_mandates WHERE id=?", (mid,)).fetchone()
+            self.assertEqual(man['status'], 'cancelled')
+            self.assertIsNotNone(man['cancelled_at'])
+
+    def test_charge_due_endpoint_is_token_guarded(self):
+        import os as _os
+        _os.environ.pop('TASK_RUNNER_TOKEN', None)
+        anon = self.app.test_client()
+        self.assertEqual(anon.post('/tasks/ctas/charge-due').status_code, 403)
+        _os.environ['TASK_RUNNER_TOKEN'] = 'charge-secret'
+        try:
+            self.assertEqual(anon.post('/tasks/ctas/charge-due').status_code, 403)   # no token
+            ok = anon.post('/tasks/ctas/charge-due', headers={'X-Task-Token': 'charge-secret'})
+            self.assertEqual(ok.status_code, 200)
+            self.assertTrue(ok.get_json()['success'])
+        finally:
+            _os.environ.pop('TASK_RUNNER_TOKEN', None)
 
     def test_mobile_ctas_view_and_apply(self):
         r = self.member.post('/api/mobile/login',

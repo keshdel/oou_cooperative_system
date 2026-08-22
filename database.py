@@ -1011,6 +1011,41 @@ def init_db():
                      'ON ctas_schedule(subscription_id, period_number)')
     _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_ctas_schedule_due ON ctas_schedule(due_date, status)')
 
+    # Recurring-payment mandates. Stores ONLY the payment provider's reusable
+    # token plus masked display details — never card numbers (PCI). The consent
+    # fields are the member's authorisation record.
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS ctas_mandates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            member_id INTEGER NOT NULL,
+            subscription_id INTEGER,
+            provider TEXT DEFAULT 'paystack',
+            mandate_type TEXT DEFAULT 'card',
+            authorization_code TEXT,
+            masked_label TEXT,
+            bank_name TEXT,
+            card_type TEXT,
+            exp_month TEXT,
+            exp_year TEXT,
+            email TEXT,
+            amount_cap REAL DEFAULT 0,
+            status TEXT DEFAULT 'pending',
+            consent_text TEXT,
+            consent_signature TEXT,
+            consent_ip TEXT,
+            consented_at TIMESTAMP,
+            cancelled_at TIMESTAMP,
+            last_charged_at TIMESTAMP,
+            fail_count INTEGER DEFAULT 0,
+            last_error TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (member_id) REFERENCES members (id),
+            FOREIGN KEY (subscription_id) REFERENCES ctas_subscriptions (id)
+        )
+    '''))
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_ctas_mandates_member ON ctas_mandates(member_id, status)')
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_ctas_mandates_sub ON ctas_mandates(subscription_id, status)')
+
     db.execute(_adapt('''
         CREATE TABLE IF NOT EXISTS ctas_exceptions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
