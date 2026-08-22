@@ -938,6 +938,10 @@ def init_db():
     _add_col(db, 'ctas_subscriptions', 'eligibility_by', 'INTEGER')
     _add_col(db, 'ctas_subscriptions', 'finance_reviewed_at', 'TIMESTAMP')
     _add_col(db, 'ctas_subscriptions', 'finance_reviewed_by', 'INTEGER')
+    # Rotating-pool model: total contributions across the whole cycle, and the
+    # co-op's outstanding advance to a member after their payout.
+    _add_col(db, 'ctas_subscriptions', 'contributed_total', 'REAL DEFAULT 0')
+    _add_col(db, 'ctas_subscriptions', 'advance_balance', 'REAL DEFAULT 0')
 
     db.execute(_adapt('''
         CREATE TABLE IF NOT EXISTS ctas_ballot_runs (

@@ -31,6 +31,7 @@ import ctas_engine as ce
 ctas = Blueprint('ctas', __name__)
 
 CTAS_WRITEOFF = '5150'   # expense — outstanding CTAS advance written off on member exit
+CTAS_POOL = '2050'       # liability — members' contributions held in the rotating pool
 
 
 def _notify_member(db, member_id, title, message, action_url='/my-ctas'):
@@ -65,6 +66,7 @@ def ctas_ensure_accounts(db) -> None:
     coop that never uses CTAS keeps a clean chart of accounts."""
     for code, name, atype, normal in (
         (CTAS_ADVANCES, 'CTAS Advances Receivable', 'asset', 'debit'),
+        (CTAS_POOL, 'CTAS Contribution Pool', 'liability', 'credit'),
         (CTAS_ADMIN_FEE_INCOME, 'CTAS Admin Fee Income', 'income', 'credit'),
         (CTAS_WRITEOFF, 'CTAS Write-offs', 'expense', 'debit'),
     ):
@@ -484,11 +486,19 @@ def payout(sub_id):
     ctas_ensure_accounts(db)
     target = float(sub['target_amount'])
     fee = float(sub['admin_fee'] or 0)
+    contributed = float(sub['contributed_total'] or 0)
+    # Their own pooled contributions cover part of the payout; the co-op advances
+    # the rest (recovered from their remaining contributions).
+    pool_portion = round(min(contributed, target), 2)
+    advance_portion = round(target - pool_portion, 2)
     cash = get_default_cash_account(db)
-    lines = [
-        {'account': CTAS_ADVANCES, 'debit': target, 'memo': f"CTAS advance to {member['first_name']} {member['last_name']}"},
-        {'account': cash, 'credit': round(target - fee, 2), 'memo': 'CTAS advance disbursed'},
-    ]
+    lines = []
+    if pool_portion > 0:
+        lines.append({'account': CTAS_POOL, 'debit': pool_portion, 'memo': "CTAS payout from member's pool"})
+    if advance_portion > 0:
+        lines.append({'account': CTAS_ADVANCES, 'debit': advance_portion,
+                      'memo': f"CTAS advance to {member['first_name']} {member['last_name']}"})
+    lines.append({'account': cash, 'credit': round(target - fee, 2), 'memo': 'CTAS payout disbursed'})
     if fee:
         lines.append({'account': CTAS_ADMIN_FEE_INCOME, 'credit': fee, 'memo': 'CTAS admin fee'})
     try:
@@ -496,10 +506,11 @@ def payout(sub_id):
                           date=datetime.now(), reference=f"CTAS-PO-{sub_id}",
                           source_module='ctas_payout', source_id=sub_id, created_by=current_user.id)
         db.execute("UPDATE ctas_subscriptions SET status = 'active_recovery', paid_out_at = ?, "
-                   "payout_date = ? WHERE id = ?", (datetime.now(), datetime.now().date(), sub_id))
+                   "payout_date = ?, advance_balance = ? WHERE id = ?",
+                   (datetime.now(), datetime.now().date(), advance_portion, sub_id))
         _notify_member(db, sub['member_id'], 'Target Advance — paid out',
-                       f"Your advance of ₦{target - fee:,.2f} has been disbursed. Recovery of "
-                       f"₦{float(sub['monthly_deduction'] or 0):,.2f}/month has started.")
+                       f"Your target of ₦{target - fee:,.2f} has been disbursed. Keep contributing "
+                       f"₦{float(sub['monthly_deduction'] or 0):,.2f} each period until the cycle completes.")
         audit(db, 'CTAS_PAYOUT', 'ctas',
               f"Paid out ₦{target:,.2f} to {member['first_name']} {member['last_name']} (sub #{sub_id})")
         db.commit()
@@ -516,34 +527,38 @@ def payout(sub_id):
 @ctas_required
 @role_required('admin', 'treasurer')
 def payroll_export(cycle_id):
-    """Download the monthly deduction schedule for members in recovery — hand to
-    payroll to deduct, then re-upload the confirmed amounts."""
+    """Download the contribution schedule for a period. In the rotating pool
+    EVERY active member contributes the fixed amount each period — whether or not
+    they have already had their payout."""
     db = get_db()
-    if not db.execute('SELECT 1 FROM ctas_cycles WHERE id = ?', (cycle_id,)).fetchone():
+    cycle = db.execute('SELECT * FROM ctas_cycles WHERE id = ?', (cycle_id,)).fetchone()
+    if not cycle:
         abort(404)
     try:
         month = max(1, int(request.args.get('month') or 1))
     except ValueError:
         month = 1
+    contribution = float(cycle['contribution_amount'] or 0)
     subs = db.execute('''
-        SELECT s.id, s.monthly_deduction, m.member_number, m.employee_id,
+        SELECT s.id, s.monthly_deduction, s.status, m.member_number, m.employee_id,
                m.first_name || ' ' || m.last_name AS name
         FROM ctas_subscriptions s JOIN members m ON m.id = s.member_id
-        WHERE s.cycle_id = ? AND s.status = 'active_recovery'
+        WHERE s.cycle_id = ? AND s.status IN ('scheduled', 'active_recovery')
         ORDER BY m.member_number''', (cycle_id,)).fetchall()
     out = StringIO()
     w = csv.writer(out)
-    w.writerow(['subscription_id', 'member_number', 'employee_id', 'name', 'month',
+    w.writerow(['subscription_id', 'member_number', 'employee_id', 'name', 'status', 'period',
                 'expected_amount', 'actual_amount'])
     for s in subs:
+        exp = contribution or float(s['monthly_deduction'] or 0)
         w.writerow([s['id'], s['member_number'] or '', s['employee_id'] or '', s['name'],
-                    month, f"{float(s['monthly_deduction'] or 0):.2f}", ''])
+                    s['status'], month, f"{exp:.2f}", ''])
     db.execute("INSERT INTO ctas_payroll_batches (cycle_id, month_number, kind, created_by) "
                "VALUES (?, ?, 'export', ?)", (cycle_id, month, current_user.id))
     db.commit()
     resp = make_response(out.getvalue())
     resp.headers['Content-Type'] = 'text/csv'
-    resp.headers['Content-Disposition'] = f'attachment; filename=ctas_recovery_{cycle_id}_month{month}.csv'
+    resp.headers['Content-Disposition'] = f'attachment; filename=ctas_contributions_{cycle_id}_period{month}.csv'
     return resp
 
 
@@ -551,10 +566,13 @@ def payroll_export(cycle_id):
 @ctas_required
 @role_required('admin', 'treasurer')
 def payroll_import(cycle_id):
-    """Import confirmed deductions and post each as a GL recovery
-    (DR Cash / CR CTAS Advances). Idempotent per subscription+month."""
+    """Import confirmed contributions for a period. In the rotating pool, a
+    not-yet-paid member's contribution funds the pool (CR CTAS Pool); a paid-out
+    member's contribution repays the co-op's advance (CR CTAS Advances).
+    Idempotent per subscription+period."""
     db = get_db()
-    if not db.execute('SELECT 1 FROM ctas_cycles WHERE id = ?', (cycle_id,)).fetchone():
+    cycle = db.execute('SELECT * FROM ctas_cycles WHERE id = ?', (cycle_id,)).fetchone()
+    if not cycle:
         abort(404)
     try:
         month = max(1, int(request.form.get('month') or 1))
@@ -562,11 +580,12 @@ def payroll_import(cycle_id):
         month = 1
     file = request.files.get('file')
     if not file or not file.filename:
-        flash('Choose a confirmation CSV to import.', 'danger')
+        flash('Choose a contributions CSV to import.', 'danger')
         return redirect(url_for('ctas.cycle_detail', cycle_id=cycle_id))
 
     ctas_ensure_accounts(db)
     cash = get_default_cash_account(db)
+    contribution = float(cycle['contribution_amount'] or 0)
     db.execute("INSERT INTO ctas_payroll_batches (cycle_id, month_number, kind, file_name, processed, created_by) "
                "VALUES (?, ?, 'import', ?, 1, ?)", (cycle_id, month, file.filename, current_user.id))
     batch_id = last_insert_id(db)
@@ -585,21 +604,21 @@ def payroll_import(cycle_id):
                 if mn:
                     sub = db.execute(
                         "SELECT s.* FROM ctas_subscriptions s JOIN members m ON m.id = s.member_id "
-                        "WHERE m.member_number = ? AND s.cycle_id = ? AND s.status = 'active_recovery'",
+                        "WHERE m.member_number = ? AND s.cycle_id = ? AND s.status IN ('scheduled','active_recovery')",
                         (mn, cycle_id)).fetchone()
-            if not sub or sub['status'] != 'active_recovery':
+            if not sub or sub['status'] not in ('scheduled', 'active_recovery'):
                 skipped += 1
                 continue
-            # Already recovered this month? (idempotent re-import)
+            # Idempotent per subscription+period.
             dup = db.execute(
                 "SELECT 1 FROM ctas_payroll_lines l JOIN ctas_payroll_batches b ON b.id = l.batch_id "
-                "WHERE l.subscription_id = ? AND b.month_number = ? AND b.kind = 'import' AND l.status = 'deducted'",
-                (sub['id'], month)).fetchone()
+                "WHERE l.subscription_id = ? AND b.month_number = ? AND b.kind = 'import' "
+                "AND l.status IN ('deducted','partial')", (sub['id'], month)).fetchone()
             if dup:
                 skipped += 1
                 continue
 
-            expected = float(sub['monthly_deduction'] or 0)
+            expected = contribution or float(sub['monthly_deduction'] or 0)
             try:
                 actual = float((row.get('actual_amount') or row.get('amount') or 0) or 0)
             except ValueError:
@@ -611,58 +630,65 @@ def payroll_import(cycle_id):
                 db.execute("UPDATE ctas_subscriptions SET arrears_amount = COALESCE(arrears_amount, 0) + ? "
                            "WHERE id = ?", (expected, sub['id']))
                 _raise_exception(db, sub['id'], 'missed_deduction', month, expected,
-                                 f'Missed deduction (month {month}): ₦{expected:,.2f} not received.')
-                _notify_member(db, sub['member_id'], 'Target Advance — missed deduction',
-                               f'Your month {month} deduction of ₦{expected:,.2f} was not received. '
-                               f'Please arrange payment to avoid arrears.')
+                                 f'Missed contribution (period {month}): ₦{expected:,.2f} not received.')
+                _notify_member(db, sub['member_id'], 'Target Advance — missed contribution',
+                               f'Your period {month} contribution of ₦{expected:,.2f} was not received. '
+                               f'Please pay to avoid arrears.')
                 missed += 1
                 continue
 
-            outstanding = float(sub['outstanding'] if sub['outstanding'] is not None
-                                else float(sub['target_amount']) - float(sub['total_recovered'] or 0))
-            amt = round(min(actual, outstanding), 2) if outstanding > 0 else 0.0
-            if amt <= 0:
-                skipped += 1
-                continue
-            # Arrears: a short deduction adds to arrears; an over-deduction pays arrears down.
             shortfall = round(max(0.0, expected - actual), 2)
             over = round(max(0.0, actual - expected), 2)
             new_arrears = round(max(0.0, float(sub['arrears_amount'] or 0) + shortfall - over), 2)
+            contributed = round(float(sub['contributed_total'] or 0) + actual, 2)
 
-            post_journal_safe(
-                db, f"CTAS recovery month {month} - subscription {sub['id']}",
-                [{'account': cash, 'debit': amt, 'memo': f'CTAS recovery m{month}'},
-                 {'account': CTAS_ADVANCES, 'credit': amt, 'memo': f"CTAS recovery sub {sub['id']}"}],
-                date=datetime.now(), reference=f"CTAS-RC-{sub['id']}-M{month}",
-                source_module='ctas_recovery', source_id=sub['id'], created_by=current_user.id)
+            if sub['status'] == 'active_recovery':
+                # Repays the co-op's advance (cap the GL posting to the balance owed).
+                post_amt = round(min(actual, float(sub['advance_balance'] or 0)), 2)
+                credit_acct = CTAS_ADVANCES
+                new_adv = round(max(0.0, float(sub['advance_balance'] or 0) - post_amt), 2)
+                recovered = round(float(sub['total_recovered'] or 0) + post_amt, 2)
+                status = 'completed' if new_adv <= 0 else 'active_recovery'
+            else:
+                # Not yet paid out — funds the pool.
+                post_amt = actual
+                credit_acct = CTAS_POOL
+                new_adv = float(sub['advance_balance'] or 0)
+                recovered = float(sub['total_recovered'] or 0)
+                status = 'scheduled'
 
-            recovered = round(float(sub['total_recovered'] or 0) + amt, 2)
-            new_out = round(float(sub['target_amount']) - recovered, 2)
-            status = 'completed' if new_out <= 0 else 'active_recovery'
-            db.execute("UPDATE ctas_subscriptions SET total_recovered = ?, outstanding = ?, "
-                       "arrears_amount = ?, status = ?, completed_at = ? WHERE id = ?",
-                       (recovered, max(0.0, new_out), new_arrears, status,
+            if post_amt > 0:
+                post_journal_safe(
+                    db, f"CTAS contribution period {month} - subscription {sub['id']}",
+                    [{'account': cash, 'debit': post_amt, 'memo': f'CTAS contribution p{month}'},
+                     {'account': credit_acct, 'credit': post_amt, 'memo': f"CTAS contribution sub {sub['id']}"}],
+                    date=datetime.now(), reference=f"CTAS-CN-{sub['id']}-M{month}",
+                    source_module='ctas_contribution', source_id=sub['id'], created_by=current_user.id)
+
+            db.execute("UPDATE ctas_subscriptions SET contributed_total = ?, advance_balance = ?, "
+                       "total_recovered = ?, outstanding = ?, arrears_amount = ?, status = ?, "
+                       "completed_at = ? WHERE id = ?",
+                       (contributed, new_adv, recovered,
+                        max(0.0, round(float(sub['target_amount']) - contributed, 2)), new_arrears, status,
                         datetime.now() if status == 'completed' else None, sub['id']))
             db.execute("INSERT INTO ctas_payroll_lines (batch_id, subscription_id, expected_amount, "
-                       "actual_amount, status) VALUES (?, ?, ?, ?, 'partial')" if shortfall > 0 else
-                       "INSERT INTO ctas_payroll_lines (batch_id, subscription_id, expected_amount, "
-                       "actual_amount, status) VALUES (?, ?, ?, ?, 'deducted')",
-                       (batch_id, sub['id'], expected, amt))
+                       "actual_amount, status) VALUES (?, ?, ?, ?, ?)",
+                       (batch_id, sub['id'], expected, actual, 'partial' if shortfall > 0 else 'deducted'))
             if shortfall > 0:
                 _raise_exception(db, sub['id'], 'missed_deduction', month, shortfall,
-                                 f'Partial deduction (month {month}): short by ₦{shortfall:,.2f}.')
-                _notify_member(db, sub['member_id'], 'Target Advance — partial deduction',
-                               f'Only ₦{actual:,.2f} of your ₦{expected:,.2f} month {month} deduction '
+                                 f'Partial contribution (period {month}): short by ₦{shortfall:,.2f}.')
+                _notify_member(db, sub['member_id'], 'Target Advance — partial contribution',
+                               f'Only ₦{actual:,.2f} of your ₦{expected:,.2f} period {month} contribution '
                                f'was received.')
             posted += 1
 
-        audit(db, 'CTAS_RECOVERY_IMPORT', 'ctas',
-              f"Cycle {cycle_id} month {month}: posted {posted}, missed {missed}, skipped {skipped}")
+        audit(db, 'CTAS_CONTRIBUTION_IMPORT', 'ctas',
+              f"Cycle {cycle_id} period {month}: posted {posted}, missed {missed}, skipped {skipped}")
         db.commit()
-        flash(f'Recovery month {month}: posted {posted}, missed {missed}, skipped {skipped}.', 'success')
+        flash(f'Contributions period {month}: posted {posted}, missed {missed}, skipped {skipped}.', 'success')
     except Exception as e:
         db.rollback()
-        flash(f'Could not process the recovery file: {e}', 'danger')
+        flash(f'Could not process the contributions file: {e}', 'danger')
     return redirect(url_for('ctas.cycle_detail', cycle_id=cycle_id))
 
 
@@ -755,7 +781,8 @@ def exit_settle(sub_id):
     if sub['status'] != ce.SUB_ACTIVE_RECOVERY:
         flash('Only a subscription in recovery can be settled on exit.', 'warning')
         return redirect(url_for('ctas.cycle_detail', cycle_id=sub['cycle_id']))
-    outstanding = round(float(sub['target_amount']) - float(sub['total_recovered'] or 0), 2)
+    # Outstanding = the co-op's advance still owed by this paid-out member.
+    outstanding = round(float(sub['advance_balance'] or 0), 2)
     savings = float(sub['total_savings'] or 0)
     shares = float(sub['shares_value'] or 0)
 
@@ -793,7 +820,7 @@ def exit_settle(sub_id):
                    "shares_value = COALESCE(shares_value, 0) - ? WHERE id = ?",
                    (wf['from_savings'], wf['from_shares'], sub['member_id']))
         db.execute("UPDATE ctas_subscriptions SET total_recovered = target_amount, outstanding = 0, "
-                   "arrears_amount = 0, status = 'completed', completed_at = ? WHERE id = ?",
+                   "advance_balance = 0, arrears_amount = 0, status = 'completed', completed_at = ? WHERE id = ?",
                    (datetime.now(), sub_id))
         db.execute("INSERT INTO ctas_exceptions (subscription_id, case_type, status, amount, description, "
                    "resolution_note, resolved_at, resolved_by) "

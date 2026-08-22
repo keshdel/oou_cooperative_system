@@ -305,8 +305,8 @@ class CtasAdminFlowTests(unittest.TestCase):
                        "VALUES (?, 'active', 2, 1)", (f'Cyc{mnum}',))
             cid = db.execute("SELECT id FROM ctas_cycles WHERE name=?", (f'Cyc{mnum}',)).fetchone()['id']
             db.execute("INSERT INTO ctas_subscriptions (cycle_id, member_id, target_amount, tenure_months, "
-                       "monthly_deduction, status, total_recovered, outstanding, payout_month) "
-                       "VALUES (?,?,?,2,?,'active_recovery',0,?,2)", (cid, mid, target, monthly, target))
+                       "monthly_deduction, status, total_recovered, outstanding, advance_balance, payout_month) "
+                       "VALUES (?,?,?,2,?,'active_recovery',0,?,?,2)", (cid, mid, target, monthly, target, target))
             db.commit()
             sid = db.execute("SELECT id FROM ctas_subscriptions WHERE cycle_id=?", (cid,)).fetchone()['id']
         return cid, mid, sid
@@ -314,7 +314,7 @@ class CtasAdminFlowTests(unittest.TestCase):
     def _cleanup_sub(self, cid, mid, sid, base_sav=0, base_shr=0):
         with self.app.app_context():
             db = get_db()
-            for mod in ('ctas_recovery', 'ctas_exit'):
+            for mod in ('ctas_recovery', 'ctas_contribution', 'ctas_exit', 'ctas_payout'):
                 for r in db.execute("SELECT id FROM journal_entries WHERE source_module=?", (mod,)).fetchall():
                     db.execute("DELETE FROM journal_lines WHERE entry_id=?", (r['id'],))
                     db.execute("DELETE FROM journal_entries WHERE id=?", (r['id'],))
@@ -326,6 +326,62 @@ class CtasAdminFlowTests(unittest.TestCase):
             db.execute("DELETE FROM members WHERE id=?", (mid,))
             db.execute("DELETE FROM settings WHERE key='ctas_enabled'")
             db.commit()
+
+    def test_pool_contribution_then_payout_split_then_advance_repay(self):
+        import io
+        with self.app.app_context():
+            db = get_db()
+            db.execute("INSERT INTO members (member_number, first_name, last_name, status, total_savings, "
+                       "monthly_savings, date_joined) VALUES ('CTAS/PL/1','Pool','T','active',0,5000,'2024-01-01')")
+            mid = db.execute("SELECT id FROM members WHERE member_number='CTAS/PL/1'").fetchone()['id']
+            db.execute("INSERT INTO ctas_cycles (name, status, frequency, periods, duration_months, "
+                       "contribution_amount, monthly_capacity, earliest_payout_month) "
+                       "VALUES ('PoolCyc','balloted','monthly',4,4,50000,1,1)")
+            cid = db.execute("SELECT id FROM ctas_cycles WHERE name='PoolCyc'").fetchone()['id']
+            db.execute("INSERT INTO ctas_subscriptions (cycle_id, member_id, target_amount, tenure_months, "
+                       "monthly_deduction, admin_fee, status, contributed_total, advance_balance, payout_month) "
+                       "VALUES (?,?,200000,4,50000,0,'scheduled',0,0,2)", (cid, mid))
+            db.commit()
+            sid = db.execute("SELECT id FROM ctas_subscriptions WHERE cycle_id=?", (cid,)).fetchone()['id']
+
+        def _import(period, amount):
+            body = f"subscription_id,actual_amount\n{sid},{amount}\n".encode('utf-8')
+            return self.client.post(f'/ctas/cycles/{cid}/payroll/import',
+                data={'month': str(period), 'file': (io.BytesIO(body), f'p{period}.csv')},
+                content_type='multipart/form-data', follow_redirects=True)
+
+        def gl(mod, acct, col):
+            with self.app.app_context():
+                return float(get_db().execute(
+                    f"SELECT COALESCE(SUM(jl.{col}),0) FROM journal_lines jl JOIN journal_entries je "
+                    "ON je.id=jl.entry_id WHERE je.source_module=? AND jl.account_code=?", (mod, acct)).fetchone()[0])
+        try:
+            # Period 1: scheduled member funds the POOL.
+            _import(1, 50000)
+            with self.app.app_context():
+                sub = get_db().execute("SELECT * FROM ctas_subscriptions WHERE id=?", (sid,)).fetchone()
+                self.assertEqual(sub['status'], 'scheduled')
+                self.assertAlmostEqual(float(sub['contributed_total']), 50000.0, places=2)
+            self.assertAlmostEqual(gl('ctas_contribution', '2050', 'credit'), 50000.0, places=2)  # pool
+
+            # Payout: 50k from pool, 150k advanced.
+            self.client.post(f'/ctas/subscriptions/{sid}/payout', data={})
+            with self.app.app_context():
+                sub = get_db().execute("SELECT * FROM ctas_subscriptions WHERE id=?", (sid,)).fetchone()
+                self.assertEqual(sub['status'], 'active_recovery')
+                self.assertAlmostEqual(float(sub['advance_balance']), 150000.0, places=2)
+            self.assertAlmostEqual(gl('ctas_payout', '2050', 'debit'), 50000.0, places=2)   # pool released
+            self.assertAlmostEqual(gl('ctas_payout', '1150', 'debit'), 150000.0, places=2)  # advance
+
+            # Period 2: paid-out member repays the ADVANCE.
+            _import(2, 50000)
+            with self.app.app_context():
+                sub = get_db().execute("SELECT * FROM ctas_subscriptions WHERE id=?", (sid,)).fetchone()
+                self.assertAlmostEqual(float(sub['advance_balance']), 100000.0, places=2)
+                self.assertAlmostEqual(float(sub['contributed_total']), 100000.0, places=2)
+            self.assertAlmostEqual(gl('ctas_contribution', '1150', 'credit'), 50000.0, places=2)  # advance repaid
+        finally:
+            self._cleanup_sub(cid, mid, sid)
 
     def test_missed_deduction_raises_arrears_and_an_exception(self):
         import io
@@ -387,8 +443,8 @@ class CtasAdminFlowTests(unittest.TestCase):
                        "VALUES ('RecCycle','active',2,1)")
             cid = db.execute("SELECT id FROM ctas_cycles WHERE name='RecCycle'").fetchone()['id']
             db.execute("INSERT INTO ctas_subscriptions (cycle_id, member_id, target_amount, tenure_months, "
-                       "monthly_deduction, status, total_recovered, outstanding, payout_month) "
-                       "VALUES (?,?,100000,2,50000,'active_recovery',0,100000,2)", (cid, mid))
+                       "monthly_deduction, status, total_recovered, outstanding, advance_balance, payout_month) "
+                       "VALUES (?,?,100000,2,50000,'active_recovery',0,100000,100000,2)", (cid, mid))
             db.commit()
             sid = db.execute("SELECT id FROM ctas_subscriptions WHERE cycle_id=?", (cid,)).fetchone()['id']
 
@@ -428,7 +484,7 @@ class CtasAdminFlowTests(unittest.TestCase):
         finally:
             with self.app.app_context():
                 db = get_db()
-                for r in db.execute("SELECT id FROM journal_entries WHERE source_module='ctas_recovery'").fetchall():
+                for r in db.execute("SELECT id FROM journal_entries WHERE source_module IN ('ctas_recovery','ctas_contribution')").fetchall():
                     db.execute("DELETE FROM journal_lines WHERE entry_id=?", (r['id'],))
                     db.execute("DELETE FROM journal_entries WHERE id=?", (r['id'],))
                 db.execute("DELETE FROM ctas_payroll_lines WHERE subscription_id=?", (sid,))
