@@ -233,6 +233,58 @@ class CtasAdminFlowTests(unittest.TestCase):
                 db.execute("DELETE FROM settings WHERE key='ctas_enabled'")
                 db.commit()
 
+    def test_delete_cycle_removes_it_but_is_blocked_once_money_posted(self):
+        # A fresh cycle with an application deletes cleanly.
+        with self.app.app_context():
+            db = get_db()
+            db.execute("INSERT INTO members (member_number, first_name, last_name, status, total_savings, "
+                       "monthly_savings, date_joined) VALUES ('CTAS/DL/1','Del','T','active',500000,5000,'2024-01-01')")
+            db.commit()
+            mid = db.execute("SELECT id FROM members WHERE member_number='CTAS/DL/1'").fetchone()['id']
+        self.client.post('/ctas/cycles', data={'name': 'DelCyc', 'contribution_amount': '50000',
+                                               'frequency': 'monthly', 'periods': '4'})
+        with self.app.app_context():
+            cid = get_db().execute("SELECT id FROM ctas_cycles WHERE name='DelCyc'").fetchone()['id']
+        self.client.post(f'/ctas/cycles/{cid}/transition', data={'to': 'open'})
+        self.client.post(f'/ctas/cycles/{cid}/subscriptions',
+                         data={'member_id': str(mid), 'target_amount': '200000', 'tenure_months': '4'})
+        try:
+            r = self.client.post(f'/ctas/cycles/{cid}/delete', follow_redirects=False)
+            self.assertIn(r.status_code, (302, 303))
+            with self.app.app_context():
+                db = get_db()
+                self.assertIsNone(db.execute("SELECT id FROM ctas_cycles WHERE id=?", (cid,)).fetchone())
+                self.assertEqual(db.execute("SELECT COUNT(*) FROM ctas_subscriptions WHERE cycle_id=?",
+                                            (cid,)).fetchone()[0], 0)
+
+            # A cycle with a posted payout is protected.
+            with self.app.app_context():
+                db = get_db()
+                db.execute("INSERT INTO ctas_cycles (name, status, frequency, periods, duration_months, "
+                           "contribution_amount, monthly_capacity) VALUES ('PaidCyc','balloted','monthly',4,4,50000,1)")
+                cid2 = db.execute("SELECT id FROM ctas_cycles WHERE name='PaidCyc'").fetchone()['id']
+                db.execute("INSERT INTO ctas_subscriptions (cycle_id, member_id, target_amount, tenure_months, "
+                           "monthly_deduction, status, contributed_total, advance_balance, payout_month) "
+                           "VALUES (?,?,200000,4,50000,'scheduled',0,0,2)", (cid2, mid))
+                db.commit()
+                sid2 = db.execute("SELECT id FROM ctas_subscriptions WHERE cycle_id=?", (cid2,)).fetchone()['id']
+            self.client.post(f'/ctas/subscriptions/{sid2}/payout', data={})
+            self.client.post(f'/ctas/cycles/{cid2}/delete', follow_redirects=True)
+            with self.app.app_context():
+                self.assertIsNotNone(get_db().execute("SELECT id FROM ctas_cycles WHERE id=?",
+                                                      (cid2,)).fetchone())   # refused
+        finally:
+            with self.app.app_context():
+                db = get_db()
+                for r2 in db.execute("SELECT id FROM journal_entries WHERE source_module='ctas_payout'").fetchall():
+                    db.execute("DELETE FROM journal_lines WHERE entry_id=?", (r2['id'],))
+                    db.execute("DELETE FROM journal_entries WHERE id=?", (r2['id'],))
+                db.execute("DELETE FROM ctas_subscriptions WHERE member_id=?", (mid,))
+                db.execute("DELETE FROM ctas_cycles WHERE name IN ('DelCyc','PaidCyc')")
+                db.execute("DELETE FROM members WHERE id=?", (mid,))
+                db.execute("DELETE FROM settings WHERE key='ctas_enabled'")
+                db.commit()
+
     def test_full_cycle_payout_posts_to_gl(self):
         with self.app.app_context():
             db = get_db()

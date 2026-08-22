@@ -12,6 +12,11 @@
                 {{ cycle.affordability_method|title }} affordability</span>
         </div>
         <div class="col-md-4 text-end">
+            <form method="post" action="{{ url_for('ctas.delete_cycle', cycle_id=cycle.id) }}" class="d-inline"
+                  onsubmit="return confirm('Permanently delete cycle {{ cycle.name }} and its {{ subs|length }} member application(s)? This cannot be undone. (Blocked if money has been posted.)');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-outline-danger"><i class="fas fa-trash"></i> Delete cycle</button>
+            </form>
             <a href="{{ url_for('ctas.dashboard') }}" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> Cycles</a>
         </div>
     </div>

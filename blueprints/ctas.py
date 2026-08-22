@@ -293,6 +293,42 @@ def cycle_detail(cycle_id):
                            members=members, summary=summary, ce=ce)
 
 
+@ctas.route('/ctas/cycles/<int:cycle_id>/delete', methods=['POST'])
+@ctas_required
+@role_required('admin', 'treasurer')
+def delete_cycle(cycle_id):
+    """Delete a cycle and its subscriptions — for clearing test/abandoned cycles.
+    Refused once money has moved (any payout or contribution posted to the GL),
+    because those journals must stay for audit; void/settle those instead."""
+    db = get_db()
+    cycle = db.execute('SELECT * FROM ctas_cycles WHERE id = ?', (cycle_id,)).fetchone()
+    if not cycle:
+        abort(404)
+    sub_ids = [r['id'] for r in db.execute(
+        'SELECT id FROM ctas_subscriptions WHERE cycle_id = ?', (cycle_id,)).fetchall()]
+    if sub_ids:
+        placeholders = ','.join('?' for _ in sub_ids)
+        posted = db.execute(
+            f"SELECT COUNT(*) FROM journal_entries WHERE source_module IN "
+            f"('ctas_payout','ctas_contribution','ctas_recovery','ctas_exit') "
+            f"AND source_id IN ({placeholders})", sub_ids).fetchone()[0]
+        if posted:
+            flash('This cycle has money posted to the ledger and cannot be deleted. '
+                  'Settle or complete its members instead.', 'danger')
+            return redirect(url_for('ctas.cycle_detail', cycle_id=cycle_id))
+        db.execute(f"DELETE FROM ctas_exceptions WHERE subscription_id IN ({placeholders})", sub_ids)
+        db.execute(f"DELETE FROM ctas_payroll_lines WHERE subscription_id IN ({placeholders})", sub_ids)
+    db.execute('DELETE FROM ctas_payroll_batches WHERE cycle_id = ?', (cycle_id,))
+    db.execute('DELETE FROM ctas_ballot_runs WHERE cycle_id = ?', (cycle_id,))
+    db.execute('DELETE FROM ctas_subscriptions WHERE cycle_id = ?', (cycle_id,))
+    db.execute('DELETE FROM ctas_cycles WHERE id = ?', (cycle_id,))
+    audit(db, 'CTAS_CYCLE_DELETE', 'ctas',
+          f"Deleted cycle {cycle['name']} ({len(sub_ids)} subscription(s))")
+    db.commit()
+    flash(f'Cycle "{cycle["name"]}" deleted.', 'info')
+    return redirect(url_for('ctas.dashboard'))
+
+
 @ctas.route('/ctas/cycles/<int:cycle_id>/transition', methods=['POST'])
 @ctas_required
 @role_required('admin', 'treasurer')
