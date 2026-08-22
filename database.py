@@ -864,6 +864,40 @@ def init_db():
     _add_col(db, 'ctas_cycles', 'affordability_method', "TEXT DEFAULT 'savings'")
     _add_col(db, 'ctas_cycles', 'affordability_ratio', 'REAL DEFAULT 0.5')
     _add_col(db, 'ctas_cycles', 'savings_multiple', 'REAL DEFAULT 3')
+    # Generic contribution period (a period is not always a month): frequency +
+    # number of periods + the fixed contribution per period. `periods` supersedes
+    # `duration_months` (which stays for older rows / monthly cycles).
+    _add_col(db, 'ctas_cycles', 'plan_id', 'INTEGER')
+    _add_col(db, 'ctas_cycles', 'frequency', "TEXT DEFAULT 'monthly'")
+    _add_col(db, 'ctas_cycles', 'periods', 'INTEGER')
+    _add_col(db, 'ctas_cycles', 'contribution_amount', 'REAL DEFAULT 0')
+
+    # Reusable CTAS product definitions. A Plan is created once and executed as
+    # many Cycles. Target = contribution_amount x periods.
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS ctas_plans (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            description TEXT,
+            contribution_amount REAL NOT NULL DEFAULT 0,
+            frequency TEXT DEFAULT 'monthly',
+            periods INTEGER NOT NULL DEFAULT 12,
+            target_amount REAL NOT NULL DEFAULT 0,
+            monthly_capacity INTEGER DEFAULT 1,
+            earliest_payout_month INTEGER DEFAULT 2,
+            admin_fee_flat REAL DEFAULT 0,
+            admin_fee_percentage REAL DEFAULT 0,
+            admin_fee_cap REAL DEFAULT 0,
+            admin_fee_threshold REAL DEFAULT 0,
+            affordability_method TEXT DEFAULT 'savings',
+            affordability_ratio REAL DEFAULT 0.5,
+            savings_multiple REAL DEFAULT 3,
+            status TEXT DEFAULT 'active',
+            created_by INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    '''))
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_ctas_plans_status ON ctas_plans(status)')
 
     db.execute(_adapt('''
         CREATE TABLE IF NOT EXISTS ctas_subscriptions (

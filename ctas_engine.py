@@ -78,6 +78,38 @@ def _f(v):
         return 0.0
 
 
+# Contribution frequencies — a "period" is not always a calendar month.
+FREQUENCIES = {'weekly': 52, 'fortnightly': 26, 'monthly': 12}
+PERIOD_WORD = {'weekly': 'week', 'fortnightly': 'fortnight', 'monthly': 'month'}
+
+
+def _row_get(row, key, default=None):
+    """Read a key from a sqlite Row or dict, tolerating missing columns."""
+    try:
+        return row[key] if key in row.keys() else default
+    except Exception:
+        try:
+            return row[key]
+        except Exception:
+            return default
+
+
+def cycle_periods(cycle):
+    """Number of contribution periods for a cycle: `periods` if set, else the
+    legacy monthly `duration_months`."""
+    p = int(_row_get(cycle, 'periods', 0) or 0)
+    return p if p > 0 else int(_row_get(cycle, 'duration_months', 0) or 0)
+
+
+def period_word(cycle_or_freq):
+    freq = cycle_or_freq if isinstance(cycle_or_freq, str) else (_row_get(cycle_or_freq, 'frequency', 'monthly') or 'monthly')
+    return PERIOD_WORD.get(freq, 'period')
+
+
+def compute_target(contribution_amount, periods):
+    return round(_f(contribution_amount) * int(periods or 0), 2)
+
+
 # ── Financials ────────────────────────────────────────────────────────────────
 
 def monthly_deduction(target_amount, tenure_months):
@@ -103,11 +135,11 @@ def calculate_admin_fee(cycle, target_amount):
 # ── Capacity ──────────────────────────────────────────────────────────────────
 
 def total_capacity(cycle):
-    duration = int(cycle['duration_months'] or 0)
-    earliest = int(cycle['earliest_payout_month'] or 1)
-    cap = int(cycle['monthly_capacity'] or 0)
-    payout_months = max(0, duration - earliest + 1)
-    return payout_months * cap
+    duration = cycle_periods(cycle)
+    earliest = int(_row_get(cycle, 'earliest_payout_month', 1) or 1)
+    cap = int(_row_get(cycle, 'monthly_capacity', 0) or 0)
+    payout_periods = max(0, duration - earliest + 1)
+    return payout_periods * cap
 
 
 def participant_count(db, cycle_id):
@@ -248,9 +280,9 @@ def assign_payout_months(subscription_ids, cycle, seed):
     """Deterministically (by seed) assign each enrolled subscription a unique
     payout month, filling months earliest_payout_month..duration_months with up
     to monthly_capacity slots each. Returns {subscription_id: month}."""
-    earliest = int(cycle['earliest_payout_month'] or 1)
-    duration = int(cycle['duration_months'] or 0)
-    cap = int(cycle['monthly_capacity'] or 1)
+    earliest = int(_row_get(cycle, 'earliest_payout_month', 1) or 1)
+    duration = cycle_periods(cycle)
+    cap = int(_row_get(cycle, 'monthly_capacity', 1) or 1)
 
     slots = []
     for mth in range(earliest, duration + 1):

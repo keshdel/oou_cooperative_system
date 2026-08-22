@@ -141,7 +141,8 @@ def dashboard():
                (SELECT COUNT(*) FROM ctas_subscriptions s WHERE s.cycle_id = c.id AND s.status = 'enrolled') AS enrolled_count
         FROM ctas_cycles c ORDER BY c.created_at DESC, c.id DESC
     ''').fetchall()
-    return render_template('ctas/cycles.html', cycles=cycles)
+    active_plans = db.execute("SELECT * FROM ctas_plans WHERE status = 'active' ORDER BY name").fetchall()
+    return render_template('ctas/cycles.html', cycles=cycles, plans=active_plans, ce=ce)
 
 
 @ctas.route('/ctas/cycles', methods=['POST'])
@@ -154,33 +155,105 @@ def new_cycle():
         flash('Cycle name is required.', 'danger')
         return redirect(url_for('ctas.dashboard'))
 
+    # A cycle may be created from a reusable Plan (which supplies the product
+    # terms), with the form overriding only the schedule/dates.
+    plan = None
+    plan_id = request.form.get('plan_id')
+    if plan_id:
+        plan = db.execute('SELECT * FROM ctas_plans WHERE id = ?', (plan_id,)).fetchone()
+
     def _num(key, default):
         try:
             return float(request.form.get(key) or default)
         except ValueError:
             return float(default)
 
+    def _pn(key, default):
+        if plan is not None and key in plan.keys() and plan[key] is not None:
+            try:
+                return float(plan[key])
+            except (TypeError, ValueError):
+                return float(default)
+        return _num(key, default)
+
+    frequency = (request.form.get('frequency') or (plan['frequency'] if plan else 'monthly') or 'monthly').strip()
+    periods = int(_pn('periods', 12))
+    contribution = _pn('contribution_amount', 0)
+
     db.execute('''INSERT INTO ctas_cycles
             (name, status, start_date, end_date, duration_months, fixed_monthly_amount,
+             frequency, periods, contribution_amount, plan_id,
              monthly_capacity, earliest_payout_month, max_participants,
              admin_fee_flat, admin_fee_percentage, admin_fee_cap, admin_fee_threshold,
              ballot_date, affordability_method, affordability_ratio, savings_multiple, created_by)
-            VALUES (?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+            VALUES (?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
         (name, (request.form.get('start_date') or '').strip() or None,
          (request.form.get('end_date') or '').strip() or None,
-         int(_num('duration_months', 6)), _num('fixed_monthly_amount', 0),
-         int(_num('monthly_capacity', 1)), int(_num('earliest_payout_month', 2)),
+         periods, contribution,   # duration_months = periods (back-compat), fixed_monthly_amount = contribution
+         frequency, periods, contribution, (plan['id'] if plan else None),
+         int(_pn('monthly_capacity', 1)), int(_pn('earliest_payout_month', 2)),
          int(_num('max_participants', 0)),
-         _num('admin_fee_flat', 0), _num('admin_fee_percentage', 0),
-         _num('admin_fee_cap', 0), _num('admin_fee_threshold', 0),
+         _pn('admin_fee_flat', 0), _pn('admin_fee_percentage', 0),
+         _pn('admin_fee_cap', 0), _pn('admin_fee_threshold', 0),
          (request.form.get('ballot_date') or '').strip() or None,
-         (request.form.get('affordability_method') or 'savings').strip(),
-         _num('affordability_ratio', 0.5), _num('savings_multiple', 3), current_user.id))
+         (plan['affordability_method'] if plan else (request.form.get('affordability_method') or 'savings')).strip(),
+         _pn('affordability_ratio', 0.5), _pn('savings_multiple', 3), current_user.id))
     cycle_id = last_insert_id(db)   # capture before the audit insert changes last-rowid
     audit(db, 'CTAS_CYCLE_CREATE', 'ctas', f"Created cycle {name}")
     db.commit()
     flash(f'Cycle "{name}" created (draft). Open it to start enrolment.', 'success')
     return redirect(url_for('ctas.cycle_detail', cycle_id=cycle_id))
+
+
+# ── Admin: plans (reusable product definitions) ───────────────────────────────
+
+@ctas.route('/ctas/plans')
+@ctas_required
+@role_required('admin', 'treasurer')
+def plans():
+    db = get_db()
+    rows = db.execute('''SELECT p.*, (SELECT COUNT(*) FROM ctas_cycles c WHERE c.plan_id = p.id) AS cycle_count
+                         FROM ctas_plans p ORDER BY p.status = 'active' DESC, p.name''').fetchall()
+    return render_template('ctas/plans.html', plans=rows)
+
+
+@ctas.route('/ctas/plans', methods=['POST'])
+@ctas_required
+@role_required('admin', 'treasurer')
+def new_plan():
+    db = get_db()
+    name = (request.form.get('name') or '').strip()
+    if not name:
+        flash('Plan name is required.', 'danger')
+        return redirect(url_for('ctas.plans'))
+
+    def _num(key, default):
+        try:
+            return float(request.form.get(key) or default)
+        except ValueError:
+            return float(default)
+
+    frequency = (request.form.get('frequency') or 'monthly').strip()
+    periods = int(_num('periods', 12))
+    contribution = _num('contribution_amount', 0)
+    target = ce.compute_target(contribution, periods)
+    db.execute('''INSERT INTO ctas_plans
+            (name, description, contribution_amount, frequency, periods, target_amount,
+             monthly_capacity, earliest_payout_month, admin_fee_flat, admin_fee_percentage,
+             admin_fee_cap, admin_fee_threshold, affordability_method, affordability_ratio,
+             savings_multiple, created_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+        (name, (request.form.get('description') or '').strip(), contribution, frequency, periods, target,
+         int(_num('monthly_capacity', 1)), int(_num('earliest_payout_month', 2)),
+         _num('admin_fee_flat', 0), _num('admin_fee_percentage', 0),
+         _num('admin_fee_cap', 0), _num('admin_fee_threshold', 0),
+         (request.form.get('affordability_method') or 'savings').strip(),
+         _num('affordability_ratio', 0.5), _num('savings_multiple', 3), current_user.id))
+    audit(db, 'CTAS_PLAN_CREATE', 'ctas',
+          f"Created plan {name} ({contribution:g} x {periods} {frequency}) target {target:g}")
+    db.commit()
+    flash(f'Plan "{name}" created — target ₦{target:,.2f}.', 'success')
+    return redirect(url_for('ctas.plans'))
 
 
 @ctas.route('/ctas/cycles/<int:cycle_id>')

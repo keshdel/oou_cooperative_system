@@ -88,6 +88,15 @@ class CtasEngineTests(unittest.TestCase):
         base.update(over)
         return base
 
+    def test_plan_target_and_generic_periods(self):
+        from ctas_engine import compute_target, cycle_periods, total_capacity
+        self.assertEqual(compute_target(50000, 12), 600000.0)
+        self.assertEqual(compute_target(10000, 20), 200000.0)          # weekly plan
+        self.assertEqual(cycle_periods({'periods': 20, 'duration_months': 6}), 20)   # periods wins
+        self.assertEqual(cycle_periods({'periods': None, 'duration_months': 6}), 6)  # falls back
+        # 20 periods, earliest position 2, 1/period -> 19 slots
+        self.assertEqual(total_capacity({'periods': 20, 'earliest_payout_month': 2, 'monthly_capacity': 1}), 19)
+
     def test_monthly_deduction_and_admin_fee(self):
         from ctas_engine import monthly_deduction, calculate_admin_fee
         self.assertAlmostEqual(monthly_deduction(300000, 6), 50000.0, places=2)
@@ -196,6 +205,33 @@ class CtasAdminFlowTests(unittest.TestCase):
             db = get_db()
             db.execute("DELETE FROM settings WHERE key = 'ctas_enabled'")
             db.commit()
+
+    def test_plan_creation_and_cycle_from_plan(self):
+        self.client.post('/ctas/plans', data={
+            'name': 'P600', 'contribution_amount': '50000', 'frequency': 'monthly',
+            'periods': '12', 'monthly_capacity': '2', 'earliest_payout_month': '2',
+            'affordability_method': 'savings'})
+        try:
+            with self.app.app_context():
+                plan = get_db().execute("SELECT * FROM ctas_plans WHERE name='P600'").fetchone()
+                self.assertIsNotNone(plan)
+                self.assertAlmostEqual(float(plan['target_amount']), 600000.0, places=2)   # 50k x 12
+                pid = plan['id']
+            self.client.post('/ctas/cycles', data={'name': 'P600 Cyc', 'plan_id': str(pid)})
+            with self.app.app_context():
+                cyc = get_db().execute("SELECT * FROM ctas_cycles WHERE name='P600 Cyc'").fetchone()
+                self.assertEqual(cyc['frequency'], 'monthly')
+                self.assertEqual(cyc['periods'], 12)
+                self.assertAlmostEqual(float(cyc['contribution_amount']), 50000.0, places=2)
+                self.assertEqual(cyc['monthly_capacity'], 2)   # inherited from the plan
+                self.assertEqual(cyc['plan_id'], pid)
+        finally:
+            with self.app.app_context():
+                db = get_db()
+                db.execute("DELETE FROM ctas_cycles WHERE name='P600 Cyc'")
+                db.execute("DELETE FROM ctas_plans WHERE name='P600'")
+                db.execute("DELETE FROM settings WHERE key='ctas_enabled'")
+                db.commit()
 
     def test_full_cycle_payout_posts_to_gl(self):
         with self.app.app_context():

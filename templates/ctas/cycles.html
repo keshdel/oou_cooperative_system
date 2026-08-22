@@ -8,6 +8,7 @@
             <p class="text-muted mb-0">Balloted rotational advances (ajo/esusu) recovered over time.</p>
         </div>
         <div class="col-md-4 text-end">
+            <a href="{{ url_for('ctas.plans') }}" class="btn btn-outline-secondary"><i class="fas fa-layer-group"></i> Plans</a>
             <a href="{{ url_for('ctas.exceptions') }}" class="btn btn-outline-warning">
                 <i class="fas fa-triangle-exclamation"></i> Exceptions</a>
             <button class="btn btn-primary" data-bs-toggle="collapse" data-bs-target="#newCycle">
@@ -19,25 +20,42 @@
     <div class="collapse mb-4" id="newCycle"><div class="card"><div class="card-body">
         <form method="post" action="{{ url_for('ctas.new_cycle') }}" class="row g-3">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <div class="col-md-4"><label class="form-label">Name *</label>
-                <input class="form-control" name="name" required placeholder="2026 Q3 Advance"></div>
-            <div class="col-md-2"><label class="form-label">Start</label>
+            {% if plans %}
+            <div class="col-md-6"><label class="form-label">Base on a plan (optional)</label>
+                <select class="form-select" name="plan_id" id="planPick">
+                    <option value="">— enter terms manually —</option>
+                    {% for p in plans %}
+                    <option value="{{ p.id }}" data-c="{{ p.contribution_amount }}" data-f="{{ p.frequency }}" data-p="{{ p.periods }}">
+                        {{ p.name }} (₦{{ "{:,.0f}".format(p.contribution_amount or 0) }} {{ p.frequency }} × {{ p.periods }} = ₦{{ "{:,.0f}".format(p.target_amount or 0) }})</option>
+                    {% endfor %}
+                </select></div>
+            {% endif %}
+            <div class="col-md-6"><label class="form-label">Name *</label>
+                <input class="form-control" name="name" required placeholder="CTAS 600 — 2027 Cycle A"></div>
+            <div class="col-md-3"><label class="form-label">Start</label>
                 <input class="form-control" type="date" name="start_date"></div>
-            <div class="col-md-2"><label class="form-label">End</label>
+            <div class="col-md-3"><label class="form-label">End</label>
                 <input class="form-control" type="date" name="end_date"></div>
-            <div class="col-md-2"><label class="form-label">Ballot date</label>
+            <div class="col-md-3"><label class="form-label">Ballot date</label>
                 <input class="form-control" type="date" name="ballot_date"></div>
-            <div class="col-md-2"><label class="form-label">Duration (months)</label>
-                <input class="form-control" type="number" min="2" max="12" name="duration_months" value="6"></div>
-
-            <div class="col-md-3"><label class="form-label">Payouts / month</label>
-                <input class="form-control" type="number" min="1" name="monthly_capacity" value="1"></div>
-            <div class="col-md-3"><label class="form-label">Earliest payout month</label>
-                <input class="form-control" type="number" min="2" max="12" name="earliest_payout_month" value="2"></div>
             <div class="col-md-3"><label class="form-label">Max participants (0 = no cap)</label>
                 <input class="form-control" type="number" min="0" name="max_participants" value="0"></div>
-            <div class="col-md-3"><label class="form-label">Fixed monthly amount (₦)</label>
-                <input class="form-control" type="number" step="0.01" name="fixed_monthly_amount" value="0"></div>
+
+            <div class="col-md-3"><label class="form-label">Contribution / period (₦)</label>
+                <input class="form-control" type="number" step="0.01" name="contribution_amount" id="cc" value="50000"></div>
+            <div class="col-md-3"><label class="form-label">Frequency</label>
+                <select class="form-select" name="frequency" id="cf">
+                    <option value="weekly">Weekly</option><option value="fortnightly">Fortnightly</option>
+                    <option value="monthly" selected>Monthly</option>
+                </select></div>
+            <div class="col-md-2"><label class="form-label">Periods</label>
+                <input class="form-control" type="number" min="2" name="periods" id="cp" value="12"></div>
+            <div class="col-md-2"><label class="form-label">Target (auto)</label>
+                <input class="form-control" id="ctarget" value="600000" readonly></div>
+            <div class="col-md-2"><label class="form-label">Payouts / period</label>
+                <input class="form-control" type="number" min="1" name="monthly_capacity" value="1"></div>
+            <div class="col-md-3"><label class="form-label">Earliest payout position</label>
+                <input class="form-control" type="number" min="2" name="earliest_payout_month" value="2"></div>
 
             <div class="col-12"><hr class="my-1"><strong>Affordability basis</strong>
                 <span class="text-muted small">— how a member's capacity is checked</span></div>
@@ -68,15 +86,16 @@
 
     <div class="card"><div class="table-responsive">
         <table class="table table-hover align-middle mb-0">
-            <thead><tr><th>Cycle</th><th>Status</th><th class="text-end">Duration</th>
-                <th class="text-end">Payouts/mo</th><th class="text-end">Members</th>
+            <thead><tr><th>Cycle</th><th>Status</th><th>Frequency</th><th class="text-end">Periods</th>
+                <th class="text-end">Payouts</th><th class="text-end">Members</th>
                 <th class="text-end">Enrolled</th><th>Affordability</th></tr></thead>
             <tbody>
             {% for c in cycles %}
             <tr>
                 <td><a href="{{ url_for('ctas.cycle_detail', cycle_id=c.id) }}"><strong>{{ c.name }}</strong></a></td>
                 <td><span class="badge bg-secondary">{{ c.status|replace('_',' ')|title }}</span></td>
-                <td class="text-end">{{ c.duration_months }}m</td>
+                <td>{{ (c.frequency or 'monthly')|title }}</td>
+                <td class="text-end">{{ c.periods or c.duration_months }}</td>
                 <td class="text-end">{{ c.monthly_capacity }}</td>
                 <td class="text-end">{{ c.sub_count }}</td>
                 <td class="text-end">{{ c.enrolled_count }}</td>
@@ -94,5 +113,16 @@ document.getElementById('affMethod').addEventListener('change', function(){
     document.getElementById('savingsOpt').style.display = this.value==='savings' ? '' : 'none';
     document.getElementById('salaryOpt').style.display = this.value==='salary' ? '' : 'none';
 });
+(function(){
+    var cc=document.getElementById('cc'), cf=document.getElementById('cf'), cp=document.getElementById('cp'), ct=document.getElementById('ctarget');
+    function calc(){ var v=(parseFloat(cc.value)||0)*(parseInt(cp.value)||0); ct.value=v.toLocaleString(undefined,{maximumFractionDigits:2}); }
+    [cc,cp].forEach(function(el){ el && el.addEventListener('input', calc); });
+    var pick=document.getElementById('planPick');
+    if (pick) pick.addEventListener('change', function(){
+        var o=this.options[this.selectedIndex];
+        if (o && o.value) { cc.value=o.dataset.c; cf.value=o.dataset.f; cp.value=o.dataset.p; calc(); }
+    });
+    calc();
+})();
 </script>
 {% endblock %}

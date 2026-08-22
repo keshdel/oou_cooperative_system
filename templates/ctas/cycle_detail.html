@@ -6,8 +6,10 @@
         <div class="col-md-8">
             <h2 class="mb-1"><i class="fas fa-recycle"></i> {{ cycle.name }}</h2>
             <span class="badge bg-secondary">{{ cycle.status|replace('_',' ')|title }}</span>
-            <span class="text-muted ms-2">{{ cycle.duration_months }} months ·
-                {{ cycle.monthly_capacity }}/month · {{ cycle.affordability_method|title }} affordability</span>
+            <span class="text-muted ms-2">{{ cycle.periods or cycle.duration_months }} {{ (cycle.frequency or 'monthly') }} periods ·
+                {{ cycle.monthly_capacity }}/period ·
+                {% if cycle.contribution_amount %}₦{{ "{:,.0f}".format(cycle.contribution_amount) }}/period · {% endif %}
+                {{ cycle.affordability_method|title }} affordability</span>
         </div>
         <div class="col-md-4 text-end">
             <a href="{{ url_for('ctas.dashboard') }}" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> Cycles</a>

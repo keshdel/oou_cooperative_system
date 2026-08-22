@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}CTAS Plans - {{ coop_name }}{% endblock %}
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-3">
+        <div class="col-md-8">
+            <h2><i class="fas fa-layer-group"></i> Target Advance Plans</h2>
+            <p class="text-muted mb-0">Reusable product definitions. Target = contribution × periods. Run a plan as a cycle.</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="{{ url_for('ctas.dashboard') }}" class="btn btn-outline-secondary"><i class="fas fa-arrow-left"></i> Cycles</a>
+            <button class="btn btn-primary" data-bs-toggle="collapse" data-bs-target="#newPlan"><i class="fas fa-plus"></i> New plan</button>
+        </div>
+    </div>
+
+    <div class="collapse mb-4" id="newPlan"><div class="card"><div class="card-body">
+        <form method="post" action="{{ url_for('ctas.new_plan') }}" class="row g-3">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="col-md-4"><label class="form-label">Name *</label>
+                <input class="form-control" name="name" required placeholder="CTAS 600"></div>
+            <div class="col-md-8"><label class="form-label">Description</label>
+                <input class="form-control" name="description" placeholder="₦50,000 monthly for 12 months to receive ₦600,000"></div>
+
+            <div class="col-md-3"><label class="form-label">Contribution / period (₦)</label>
+                <input class="form-control" type="number" step="0.01" name="contribution_amount" id="pc" value="50000"></div>
+            <div class="col-md-3"><label class="form-label">Frequency</label>
+                <select class="form-select" name="frequency">
+                    <option value="weekly">Weekly</option>
+                    <option value="fortnightly">Fortnightly</option>
+                    <option value="monthly" selected>Monthly</option>
+                </select></div>
+            <div class="col-md-3"><label class="form-label">Number of periods</label>
+                <input class="form-control" type="number" min="2" name="periods" id="pp" value="12"></div>
+            <div class="col-md-3"><label class="form-label">Target (auto)</label>
+                <input class="form-control" id="ptarget" value="600000.00" readonly></div>
+
+            <div class="col-md-3"><label class="form-label">Payouts / period</label>
+                <input class="form-control" type="number" min="1" name="monthly_capacity" value="1"></div>
+            <div class="col-md-3"><label class="form-label">Earliest payout position</label>
+                <input class="form-control" type="number" min="2" name="earliest_payout_month" value="2"></div>
+            <div class="col-md-3"><label class="form-label">Affordability</label>
+                <select class="form-select" name="affordability_method">
+                    <option value="savings" selected>Savings</option><option value="salary">Salary</option><option value="manual">Manual</option>
+                </select></div>
+            <div class="col-md-3"><label class="form-label">Admin fee (flat ₦)</label>
+                <input class="form-control" type="number" step="0.01" name="admin_fee_flat" value="0"></div>
+
+            <div class="col-12"><button class="btn btn-primary"><i class="fas fa-save"></i> Create plan</button></div>
+        </form>
+    </div></div></div>
+
+    <div class="card"><div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+            <thead><tr><th>Plan</th><th>Contribution</th><th>Frequency</th><th class="text-end">Periods</th>
+                <th class="text-end">Target</th><th class="text-end">Cycles</th><th>Status</th></tr></thead>
+            <tbody>
+            {% for p in plans %}
+            <tr>
+                <td><strong>{{ p.name }}</strong>{% if p.description %}<div class="small text-muted">{{ p.description }}</div>{% endif %}</td>
+                <td>₦{{ "{:,.2f}".format(p.contribution_amount or 0) }}</td>
+                <td>{{ p.frequency|title }}</td>
+                <td class="text-end">{{ p.periods }}</td>
+                <td class="text-end">₦{{ "{:,.2f}".format(p.target_amount or 0) }}</td>
+                <td class="text-end">{{ p.cycle_count }}</td>
+                <td><span class="badge bg-{{ 'success' if p.status=='active' else 'secondary' }}">{{ p.status|title }}</span></td>
+            </tr>
+            {% else %}
+            <tr><td colspan="7" class="text-center text-muted py-4">No plans yet — create your first product definition.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div></div>
+</div>
+<script>
+(function(){
+    var c=document.getElementById('pc'), p=document.getElementById('pp'), t=document.getElementById('ptarget');
+    function calc(){ var v=(parseFloat(c.value)||0)*(parseInt(p.value)||0); t.value=v.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); }
+    c.addEventListener('input',calc); p.addEventListener('input',calc); calc();
+})();
+</script>
+{% endblock %}
