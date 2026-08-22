@@ -1,11 +1,13 @@
 """
 CTAS — Cooperative Target Advance Scheme.
 
-A balloted target-advance (ajo/esusu) module: members subscribe to a cycle, a
-seeded ballot assigns each a payout month, they receive a lump-sum advance, and
-it is recovered via monthly payroll deductions. Money posts to the real
-double-entry GL (CTAS Advances Receivable + CTAS Admin Fee Income) and reuses
-CoopMS members.
+A balloted rotating-contribution (ajo/esusu) module. Members subscribe to a
+cycle and contribute a fixed amount every period; a seeded ballot assigns each a
+payout position; on that position they collect the full target. Their own pooled
+contributions fund part of the payout and the cooperative advances the gap,
+which their remaining contributions repay. Money posts to the real double-entry
+GL (CTAS Contribution Pool, CTAS Advances Receivable, CTAS Admin Fee Income,
+CTAS Write-offs) and reuses CoopMS members.
 
 **Optional feature.** Off by default and leaves no footprint (no menu, no
 routes, no GL accounts) until a cooperative is activated — on request — either by
@@ -19,8 +21,8 @@ from datetime import datetime
 from io import StringIO, TextIOWrapper
 from functools import wraps
 
-from flask import (Blueprint, abort, flash, make_response, redirect, render_template,
-                   request, url_for)
+from flask import (Blueprint, abort, current_app, flash, make_response, redirect,
+                   render_template, request, url_for)
 from flask_login import current_user, login_required
 
 from database import get_db, last_insert_id
@@ -193,7 +195,7 @@ def new_cycle():
          (request.form.get('end_date') or '').strip() or None,
          periods, contribution,   # duration_months = periods (back-compat), fixed_monthly_amount = contribution
          frequency, periods, contribution, (plan['id'] if plan else None),
-         int(_pn('monthly_capacity', 1)), int(_pn('earliest_payout_month', 2)),
+         int(_pn('monthly_capacity', 1)), int(_pn('earliest_payout_month', 1)),
          int(_num('max_participants', 0)),
          _pn('admin_fee_flat', 0), _pn('admin_fee_percentage', 0),
          _pn('admin_fee_cap', 0), _pn('admin_fee_threshold', 0),
@@ -246,7 +248,7 @@ def new_plan():
              savings_multiple, created_by)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
         (name, (request.form.get('description') or '').strip(), contribution, frequency, periods, target,
-         int(_num('monthly_capacity', 1)), int(_num('earliest_payout_month', 2)),
+         int(_num('monthly_capacity', 1)), int(_num('earliest_payout_month', 1)),
          _num('admin_fee_flat', 0), _num('admin_fee_percentage', 0),
          _num('admin_fee_cap', 0), _num('admin_fee_threshold', 0),
          (request.form.get('affordability_method') or 'savings').strip(),
@@ -291,6 +293,97 @@ def cycle_detail(cycle_id):
     }
     return render_template('ctas/cycle_detail.html', cycle=cycle, subs=subs, elig=elig,
                            members=members, summary=summary, ce=ce)
+
+
+def _advert_for_cycle(db, cycle):
+    """Build a persuasive, numbers-accurate advert for an open cycle. Uses the
+    communications engine's {placeholders}, which are filled per member."""
+    contribution = float(cycle['contribution_amount'] or 0)
+    periods = ce.cycle_periods(cycle)
+    target = ce.compute_target(contribution, periods)
+    word = ce.period_word(cycle)
+    every = {'weekly': 'every week', 'fortnightly': 'every two weeks',
+             'monthly': 'every month'}.get(cycle['frequency'] or 'monthly', f'every {word}')
+    coop = (db.execute("SELECT value FROM settings WHERE key = 'coop_name'").fetchone() or {}).get('value', 'your cooperative')
+    fee_bits = []
+    if float(cycle['admin_fee_flat'] or 0):
+        fee_bits.append(f"₦{float(cycle['admin_fee_flat']):,.0f} administrative fee")
+    fee_line = (' A one-off ' + ' / '.join(fee_bits) + ' applies.') if fee_bits else ''
+    ballot = f"\nBallot date: {cycle['ballot_date']}" if cycle['ballot_date'] else ''
+    closes = f"\nEnrolment closes: {cycle['end_date']}" if cycle['end_date'] else ''
+
+    subject = f"Get ₦{target:,.0f} — join {cycle['name']} (Target Advance)"
+    body = (
+        'Dear {first_name},\n\n'
+        f"Saving up for something big takes time — {coop} can help you get there sooner.\n\n"
+        f"*{cycle['name']}* is now open. Contribute *₦{contribution:,.0f} {every}* for "
+        f"*{periods} {word}s*, and receive your full *₦{target:,.0f}* in a single lump sum on "
+        f"your allocated {word} — which could be long before you have finished contributing.\n\n"
+        "Why members like it:\n"
+        f"• You get the full ₦{target:,.0f} at once — for school fees, rent, business stock, "
+        "equipment or a family project.\n"
+        "• No interest. You contribute the same amount you receive.\n"
+        f"• You do not need to find other contributors — {coop} runs and backs the scheme.\n"
+        "• Your payout position is decided by a transparent, recorded ballot — everyone has a fair chance.\n"
+        "• Contributions are automatic and every transaction is on your member record.\n\n"
+        f"How it works: contribute ₦{contribution:,.0f} {every} → the ballot assigns your payout "
+        f"{word} → you collect ₦{target:,.0f} → you keep contributing until the cycle ends."
+        f"{fee_line}{ballot}{closes}\n\n"
+        'Places are limited and allocated by ballot, so apply before enrolment closes.\n\n'
+        'Apply in your member portal: {portal_link}\n\n'
+        'Member number: {member_number}\n'
+        'Your savings balance: {savings_balance}\n\n'
+        'Warm regards,\n'
+        f'{coop}'
+    )
+    return subject, body
+
+
+@ctas.route('/ctas/cycles/<int:cycle_id>/promote', methods=['GET', 'POST'])
+@ctas_required
+@role_required('admin', 'treasurer')
+def promote_cycle(cycle_id):
+    """Advertise an open cycle to members. GET previews the generated advert;
+    POST creates a communications campaign (email now, WhatsApp when enabled)."""
+    db = get_db()
+    cycle = db.execute('SELECT * FROM ctas_cycles WHERE id = ?', (cycle_id,)).fetchone()
+    if not cycle:
+        abort(404)
+    subject, body = _advert_for_cycle(db, cycle)
+    if request.method == 'GET':
+        return render_template('ctas/promote.html', cycle=cycle, subject=subject, body=body)
+
+    subject = (request.form.get('subject') or subject).strip()
+    body = (request.form.get('body') or body).strip()
+    channel = (request.form.get('channel') or 'email').strip()
+    audience = (request.form.get('audience') or 'active').strip()
+    if channel != 'email':
+        flash('Only email sending is enabled for now. WhatsApp will send once its '
+              'consent/template setup is completed in Communications.', 'warning')
+        return redirect(url_for('ctas.promote_cycle', cycle_id=cycle_id))
+
+    from blueprints.communications import _members_for_audience, _process_campaign
+    members = _members_for_audience(db, audience, None)
+    db.execute('''INSERT INTO communication_campaigns
+            (title, audience, channel, subject, body, status, recipient_count, created_by, created_at)
+            VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?)''',
+        (f"CTAS advert — {cycle['name']}", audience, channel, subject, body,
+         len(members), current_user.id, datetime.now()))
+    campaign_id = last_insert_id(db)
+    for m in members:
+        db.execute('''INSERT INTO communication_recipients
+                (campaign_id, member_id, channel, destination, status)
+                VALUES (?, ?, ?, ?, 'pending')''',
+            (campaign_id, m['id'], channel, (m['email'] if 'email' in m.keys() else '') or ''))
+    audit(db, 'CTAS_PROMOTE', 'ctas',
+          f"Advertised cycle {cycle['name']} to {len(members)} member(s) by {channel}")
+    db.commit()
+    try:
+        _process_campaign(campaign_id)
+    except Exception as exc:   # pragma: no cover - delivery is best-effort
+        current_app.logger.warning('CTAS advert send failed: %s', exc)
+    flash(f'Advert queued to {len(members)} member(s). Track delivery under Communications.', 'success')
+    return redirect(url_for('communications.campaign_detail', campaign_id=campaign_id))
 
 
 @ctas.route('/ctas/cycles/<int:cycle_id>/delete', methods=['POST'])

@@ -12,6 +12,8 @@
                 {{ cycle.affordability_method|title }} affordability</span>
         </div>
         <div class="col-md-4 text-end">
+            <a href="{{ url_for('ctas.promote_cycle', cycle_id=cycle.id) }}" class="btn btn-outline-primary"
+               title="Invite members to subscribe"><i class="fas fa-bullhorn"></i> Advertise</a>
             <form method="post" action="{{ url_for('ctas.delete_cycle', cycle_id=cycle.id) }}" class="d-inline"
                   onsubmit="return confirm('Permanently delete cycle {{ cycle.name }} and its {{ subs|length }} member application(s)? This cannot be undone. (Blocked if money has been posted.)');">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

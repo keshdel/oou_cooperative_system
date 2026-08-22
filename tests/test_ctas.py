@@ -139,6 +139,15 @@ class CtasEngineTests(unittest.TestCase):
         wf3 = net_off_waterfall(50000, 80000, 0, 0)
         self.assertEqual((wf3['from_savings'], wf3['write_off']), (50000.0, 0.0))  # savings cover it
 
+    def test_position_one_is_allowed_so_every_period_has_a_slot(self):
+        from ctas_engine import total_capacity, assign_payout_months
+        # 12 periods, 1 payout/period, starting at position 1 -> 12 slots for 12 members.
+        cyc = {'periods': 12, 'earliest_payout_month': 1, 'monthly_capacity': 1, 'duration_months': 12}
+        self.assertEqual(total_capacity(cyc), 12)
+        ids = list(range(1, 13))
+        assigned = assign_payout_months(ids, cyc, seed='s')
+        self.assertEqual(sorted(assigned.values()), list(range(1, 13)))   # positions 1..12 all used
+
     def test_ballot_assigns_unique_months_and_is_seed_deterministic(self):
         from ctas_engine import assign_payout_months
         c = self._cycle(duration_months=6, earliest_payout_month=2, monthly_capacity=1)
@@ -230,6 +239,26 @@ class CtasAdminFlowTests(unittest.TestCase):
                 db = get_db()
                 db.execute("DELETE FROM ctas_cycles WHERE name='P600 Cyc'")
                 db.execute("DELETE FROM ctas_plans WHERE name='P600'")
+                db.execute("DELETE FROM settings WHERE key='ctas_enabled'")
+                db.commit()
+
+    def test_promote_generates_an_advert_with_real_figures(self):
+        self.client.post('/ctas/cycles', data={'name': 'AdCyc', 'contribution_amount': '50000',
+                                               'frequency': 'monthly', 'periods': '12'})
+        try:
+            with self.app.app_context():
+                cid = get_db().execute("SELECT id FROM ctas_cycles WHERE name='AdCyc'").fetchone()['id']
+            r = self.client.get(f'/ctas/cycles/{cid}/promote')
+            self.assertEqual(r.status_code, 200)
+            page = r.data.decode('utf-8', 'replace')
+            self.assertIn('600,000', page)          # 50k x 12 target
+            self.assertIn('50,000', page)           # contribution
+            self.assertIn('{first_name}', page)     # per-member placeholder
+            self.assertIn('{portal_link}', page)
+        finally:
+            with self.app.app_context():
+                db = get_db()
+                db.execute("DELETE FROM ctas_cycles WHERE name='AdCyc'")
                 db.execute("DELETE FROM settings WHERE key='ctas_enabled'")
                 db.commit()
 

@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}Advertise {{ cycle.name }} - {{ coop_name }}{% endblock %}
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-3">
+        <div class="col-md-8">
+            <h2><i class="fas fa-bullhorn"></i> Advertise this cycle</h2>
+            <p class="text-muted mb-0">Invite members to subscribe to <strong>{{ cycle.name }}</strong>.
+                The advert below is generated from this cycle's real figures — edit it if you wish.</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="{{ url_for('ctas.cycle_detail', cycle_id=cycle.id) }}" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> Back to cycle</a>
+        </div>
+    </div>
+
+    {% if cycle.status != 'open' %}
+    <div class="alert alert-warning"><i class="fas fa-triangle-exclamation"></i>
+        This cycle is <strong>{{ cycle.status|replace('_',' ') }}</strong>. Members can only apply while it is
+        <strong>open</strong> — open enrolment before advertising, or they will have nothing to join.</div>
+    {% endif %}
+
+    <form method="post" action="{{ url_for('ctas.promote_cycle', cycle_id=cycle.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="row g-3">
+            <div class="col-lg-8">
+                <div class="card"><div class="card-header bg-light"><h6 class="mb-0">Message</h6></div>
+                <div class="card-body">
+                    <div class="mb-3"><label class="form-label">Subject</label>
+                        <input class="form-control" name="subject" value="{{ subject }}"></div>
+                    <div class="mb-2"><label class="form-label">Body</label>
+                        <textarea class="form-control font-monospace" name="body" rows="22">{{ body }}</textarea></div>
+                    <div class="form-text">
+                        Placeholders are filled per member: <code>{first_name}</code>, <code>{member_number}</code>,
+                        <code>{savings_balance}</code>, <code>{portal_link}</code>.
+                    </div>
+                </div></div>
+            </div>
+            <div class="col-lg-4">
+                <div class="card mb-3"><div class="card-body">
+                    <div class="mb-3"><label class="form-label">Send to</label>
+                        <select class="form-select" name="audience">
+                            <option value="active" selected>All active members</option>
+                            <option value="incomplete_profile">Members with incomplete profile</option>
+                            <option value="no_savings_this_month">Members with no savings this month</option>
+                        </select></div>
+                    <div class="mb-3"><label class="form-label">Channel</label>
+                        <select class="form-select" name="channel">
+                            <option value="email" selected>Email</option>
+                            <option value="whatsapp">WhatsApp (setup pending)</option>
+                        </select>
+                        <div class="form-text">WhatsApp sends once its consent/template setup is completed
+                            under Communications.</div></div>
+                    <button class="btn btn-primary w-100"><i class="fas fa-paper-plane"></i> Send advert</button>
+                    <div class="form-text mt-2">Delivery is tracked as a campaign under Communications.</div>
+                </div></div>
+                <div class="card"><div class="card-body">
+                    <h6 class="card-title">This cycle</h6>
+                    <div class="small">
+                        <div class="d-flex justify-content-between"><span class="text-muted">Contribution</span>
+                            <span>₦{{ "{:,.0f}".format(cycle.contribution_amount or 0) }} / {{ (cycle.frequency or 'monthly')|replace('ly','') }}</span></div>
+                        <div class="d-flex justify-content-between"><span class="text-muted">Periods</span>
+                            <span>{{ cycle.periods or cycle.duration_months }}</span></div>
+                        <div class="d-flex justify-content-between"><span class="text-muted">Target payout</span>
+                            <span class="fw-bold">₦{{ "{:,.0f}".format((cycle.contribution_amount or 0) * (cycle.periods or cycle.duration_months or 0)) }}</span></div>
+                        {% if cycle.ballot_date %}<div class="d-flex justify-content-between"><span class="text-muted">Ballot</span>
+                            <span>{{ cycle.ballot_date }}</span></div>{% endif %}
+                    </div>
+                </div></div>
+            </div>
+        </div>
+    </form>
+</div>
+{% endblock %}
