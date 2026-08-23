@@ -1043,6 +1043,10 @@ def init_db():
             FOREIGN KEY (subscription_id) REFERENCES ctas_subscriptions (id)
         )
     '''))
+    # The gateway reference used during setup is kept separate from the stored
+    # token, so the token column can hold an ENCRYPTED value (see crypto.py).
+    _add_col(db, 'ctas_mandates', 'setup_reference', 'TEXT')
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_ctas_mandates_ref ON ctas_mandates(setup_reference)')
     _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_ctas_mandates_member ON ctas_mandates(member_id, status)')
     _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_ctas_mandates_sub ON ctas_mandates(subscription_id, status)')
 

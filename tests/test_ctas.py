@@ -808,14 +808,16 @@ class CtasMemberPortalTests(unittest.TestCase):
                 self.assertIsNotNone(pend)
                 self.assertIsNotNone(pend['consented_at'])            # consent recorded
                 self.assertEqual(pend['consent_signature'], 'Mem Ber')
-                ref = pend['authorization_code']                       # reference parked here
+                self.assertIsNone(pend['authorization_code'])          # no token until authorised
+                ref = pend['setup_reference']
             self.member.get(f'/my-ctas/autopay/callback?reference={ref}', follow_redirects=True)
 
         with self.app.app_context():
             db = get_db()
             man = db.execute("SELECT * FROM ctas_mandates WHERE subscription_id=?", (sid,)).fetchone()
+            from blueprints.ctas import _read_token
             self.assertEqual(man['status'], 'active')
-            self.assertEqual(man['authorization_code'], 'AUTH_tok123')  # provider token only
+            self.assertEqual(_read_token(man['authorization_code']), 'AUTH_tok123')  # token, decryptable
             self.assertIn('4321', man['masked_label'])                  # masked display
             # The authorising payment posted as a real contribution.
             sub = db.execute("SELECT * FROM ctas_subscriptions WHERE id=?", (sid,)).fetchone()
@@ -823,6 +825,35 @@ class CtasMemberPortalTests(unittest.TestCase):
             row1 = db.execute("SELECT * FROM ctas_schedule WHERE subscription_id=? AND period_number=1",
                               (sid,)).fetchone()
             self.assertEqual(row1['status'], 'paid')
+
+    def test_stored_payment_token_is_encrypted_at_rest(self):
+        from blueprints.ctas import _store_token, _read_token
+        from crypto import encryption_enabled
+        stored = _store_token('AUTH_secret123')
+        if encryption_enabled():
+            self.assertNotEqual(stored, 'AUTH_secret123')      # not readable in the database
+            self.assertNotIn('AUTH_secret123', stored)
+        self.assertEqual(_read_token(stored), 'AUTH_secret123')  # still usable for charging
+
+    def test_another_member_cannot_complete_someone_elses_authorisation(self):
+        with self.app.app_context():
+            db = get_db()
+            db.execute("INSERT INTO ctas_subscriptions (cycle_id, member_id, target_amount, tenure_months, "
+                       "monthly_deduction, status) VALUES (?, (SELECT id FROM members WHERE "
+                       "member_number='CTAS/M/1'), 200000, 4, 50000, 'scheduled')", (self.cid,))
+            db.commit()
+            sid = db.execute("SELECT id FROM ctas_subscriptions WHERE cycle_id=?", (self.cid,)).fetchone()['id']
+            db.execute("INSERT INTO ctas_mandates (member_id, subscription_id, status, setup_reference) "
+                       "VALUES ((SELECT id FROM members WHERE member_number='CTAS/M/1'), ?, "
+                       "'pending', 'REF-PRIVATE')", (sid,))
+            db.commit()
+        # The admin is signed in but is not this member — the callback must refuse.
+        r = self.admin.get('/my-ctas/autopay/callback?reference=REF-PRIVATE')
+        self.assertIn(r.status_code, (302, 403))
+        if r.status_code == 403:
+            with self.app.app_context():
+                man = get_db().execute("SELECT status FROM ctas_mandates WHERE setup_reference='REF-PRIVATE'").fetchone()
+                self.assertEqual(man['status'], 'pending')     # not activated by the wrong user
 
     def test_autopay_cancel_stops_future_charges(self):
         with self.app.app_context():

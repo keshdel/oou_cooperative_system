@@ -1009,6 +1009,24 @@ def _active_mandate(db, subscription_id):
                       "ORDER BY id DESC LIMIT 1", (subscription_id,)).fetchone()
 
 
+def _store_token(token):
+    """Encrypt the payment token at rest, like other sensitive member data."""
+    try:
+        from crypto import encrypt_field, encryption_enabled
+        return encrypt_field(token) if (token and encryption_enabled()) else token
+    except Exception:
+        return token
+
+
+def _read_token(stored):
+    """Decrypt a stored payment token for use with the gateway."""
+    try:
+        from crypto import decrypt_field
+        return decrypt_field(stored) if stored else ''
+    except Exception:
+        return stored or ''
+
+
 def _consent_text(cycle, amount):
     word = ce.period_word(cycle)
     return (f"I authorise {cycle['name']} contributions of ₦{amount:,.2f} to be charged to this card "
@@ -1065,11 +1083,11 @@ def autopay_setup(sub_id):
     reference = generate_reference('CTASMD')
     db.execute('''INSERT INTO ctas_mandates
             (member_id, subscription_id, provider, mandate_type, email, amount_cap, status,
-             consent_text, consent_signature, consent_ip, consented_at, authorization_code)
+             consent_text, consent_signature, consent_ip, consented_at, setup_reference)
             VALUES (?, ?, 'paystack', 'card', ?, ?, 'pending', ?, ?, ?, ?, ?)''',
         (member['id'], sub_id, email, amount, _consent_text(cycle, amount), signature,
          (request.headers.get('X-Forwarded-For', '') or request.remote_addr or '')[:80],
-         datetime.now(), reference))   # reference parked here until the token arrives
+         datetime.now(), reference))
     audit(db, 'CTAS_MANDATE_START', 'ctas', f"Autopay authorisation started for subscription #{sub_id}")
     db.commit()
 
@@ -1094,12 +1112,16 @@ def autopay_callback():
     """Gateway return: verify the payment, store the reusable token as the
     mandate, and post the contribution that authorised it."""
     db = get_db()
+    member = member_for_user(db, current_user.id)
     reference = (request.args.get('reference') or '').strip()
-    mandate = db.execute("SELECT * FROM ctas_mandates WHERE authorization_code = ? AND status = 'pending'",
+    mandate = db.execute("SELECT * FROM ctas_mandates WHERE setup_reference = ? AND status = 'pending'",
                          (reference,)).fetchone()
     if not reference or not mandate:
         flash('Payment reference not recognised.', 'danger')
         return redirect(url_for('ctas.my_ctas'))
+    # Only the member who started this authorisation may complete it.
+    if not member or mandate['member_id'] != member['id']:
+        abort(403)
     try:
         resp = get_gateway('paystack').verify(reference)
     except Exception as exc:   # pragma: no cover - network
@@ -1138,7 +1160,7 @@ def autopay_callback():
         db.execute("UPDATE ctas_mandates SET status = 'active', authorization_code = ?, "
                    "masked_label = ?, bank_name = ?, card_type = ?, exp_month = ?, exp_year = ?, "
                    "last_charged_at = ? WHERE id = ?",
-                   (token, f"**** {auth.get('last4', '')}".strip(), auth.get('bank') or '',
+                   (_store_token(token), f"**** {auth.get('last4', '')}".strip(), auth.get('bank') or '',
                     auth.get('card_type') or '', auth.get('exp_month') or '',
                     auth.get('exp_year') or '', datetime.now(), mandate['id']))
         audit(db, 'CTAS_MANDATE_ACTIVE', 'ctas',
@@ -1215,7 +1237,7 @@ def ctas_charge_due():
         reference = generate_reference('CTASAP')
         try:
             resp = get_gateway('paystack').charge_authorization(
-                r['email'], amount, reference, r['authorization_code'],
+                r['email'], amount, reference, _read_token(r['authorization_code']),
                 metadata={'ctas_subscription': sub['id'], 'ctas_period': r['period_number']})
             ok = bool(resp.get('status')) and ((resp.get('data') or {}).get('status') == 'success')
         except Exception as exc:   # pragma: no cover - network
