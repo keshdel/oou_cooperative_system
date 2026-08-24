@@ -1,386 +1,485 @@
 {% extends "base.html" %}
 {% block title %}{{ cycle.name }} (CTAS) - {{ coop_name }}{% endblock %}
+{% macro money(v) %}&#8358;{{ "{:,.2f}".format(v or 0) }}{% endmacro %}
+{% macro money0(v) %}&#8358;{{ "{:,.0f}".format(v or 0) }}{% endmacro %}
 {% block content %}
+<style>
+  .ctas-tabs .nav-link{color:#3D4A61;border:0;border-bottom:2px solid transparent;font-weight:500}
+  .ctas-tabs .nav-link.active{color:#082B66;font-weight:600;border-bottom-color:#F4B51C;background:transparent}
+  .ctas-tabs .nav-link:hover{border-bottom-color:#DCE1EB}
+  .attn{border-left:4px solid #B45309}
+  .num{font-variant-numeric:tabular-nums}
+  .perm-table thead th{background-color:#e9eef5;color:#1f2937}
+  .row-actions{white-space:nowrap}
+</style>
 <div class="container-fluid">
-    <div class="row mb-3">
-        <div class="col-md-8">
-            <h2 class="mb-1"><i class="fas fa-recycle"></i> {{ cycle.name }}</h2>
-            <span class="badge bg-secondary">{{ cycle.status|replace('_',' ')|title }}</span>
-            <span class="text-muted ms-2">{{ cycle.periods or cycle.duration_months }} {{ (cycle.frequency or 'monthly') }} periods ·
-                {{ cycle.monthly_capacity }}/period ·
-                {% if cycle.contribution_amount %}₦{{ "{:,.0f}".format(cycle.contribution_amount) }}/period · {% endif %}
-                {{ cycle.affordability_method|title }} affordability</span>
-        </div>
-        <div class="col-md-4 text-end">
-            <a href="{{ url_for('ctas.promote_cycle', cycle_id=cycle.id) }}" class="btn btn-outline-primary"
-               title="Invite members to subscribe"><i class="fas fa-bullhorn"></i> Advertise</a>
-            <form method="post" action="{{ url_for('ctas.delete_cycle', cycle_id=cycle.id) }}" class="d-inline"
-                  onsubmit="return confirm('Permanently delete cycle {{ cycle.name }} and its {{ subs|length }} member application(s)? This cannot be undone. (Blocked if money has been posted.)');">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button class="btn btn-outline-danger"><i class="fas fa-trash"></i> Delete cycle</button>
-            </form>
-            <a href="{{ url_for('ctas.dashboard') }}" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> Cycles</a>
-        </div>
+
+  <!-- ── Header: identity + lifecycle (the cycle's own next step) ── -->
+  <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-2">
+    <div>
+      <h2 class="mb-1"><i class="fas fa-recycle"></i> {{ cycle.name }}</h2>
+      <div class="small text-muted">
+        <span class="badge bg-secondary">{{ cycle.status|replace('_',' ')|title }}</span>
+        {{ cycle.periods or cycle.duration_months }} {{ (cycle.frequency or 'monthly')|replace('ly','') }} periods
+        · {{ cycle.monthly_capacity }}/period · {{ money0(cycle.contribution_amount) }}/period
+        · Capacity {{ summary.participants }}/{{ summary.capacity }}
+      </div>
     </div>
-
-    <!-- Lifecycle actions -->
-    <div class="card mb-3"><div class="card-body d-flex flex-wrap gap-2 align-items-center">
-        <span class="text-muted me-2">Lifecycle:</span>
-        {% macro tbtn(to, label, cls='btn-outline-primary', confirm='') %}
-        <form method="post" action="{{ url_for('ctas.cycle_transition', cycle_id=cycle.id) }}" class="d-inline"
-              {% if confirm %}onsubmit="return confirm('{{ confirm }}');"{% endif %}>
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <input type="hidden" name="to" value="{{ to }}">
-            <button class="btn btn-sm {{ cls }}">{{ label }}</button>
+    <div class="d-flex flex-wrap gap-2 align-items-center">
+      {% macro tbtn(to, label, cls='btn-outline-secondary', confirm='') %}
+      <form method="post" action="{{ url_for('ctas.cycle_transition', cycle_id=cycle.id) }}" class="d-inline"
+            {% if confirm %}onsubmit="return confirm('{{ confirm }}');"{% endif %}>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="to" value="{{ to }}">
+        <button class="btn btn-sm {{ cls }}">{{ label }}</button>
+      </form>
+      {% endmacro %}
+      {% if cycle.status == 'draft' %}{{ tbtn('open','Open enrolment','btn-primary') }}
+      {% elif cycle.status == 'open' %}{{ tbtn('closed','Close enrolment','btn-primary') }}
+      {% elif cycle.status == 'closed' %}
+        <form method="post" action="{{ url_for('ctas.cycle_transition', cycle_id=cycle.id) }}" class="d-inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="to" value="ready_for_ballot">
+          <button class="btn btn-sm btn-primary">Ready for ballot</button>
+          {% if liq.shortfall > 0 %}
+          <label class="small ms-1 text-danger">
+            <input type="checkbox" name="override_liquidity" value="1"> accept {{ money0(liq.shortfall) }} gap</label>
+          {% endif %}
         </form>
-        {% endmacro %}
-        {% if cycle.status == 'draft' %}{{ tbtn('open','Open enrolment','btn-primary') }}
-        {% elif cycle.status == 'open' %}{{ tbtn('closed','Close enrolment','btn-outline-warning') }}
-        {% elif cycle.status == 'closed' %}
-            <form method="post" action="{{ url_for('ctas.cycle_transition', cycle_id=cycle.id) }}" class="d-inline">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <input type="hidden" name="to" value="ready_for_ballot">
-                <button class="btn btn-sm btn-primary">Ready for ballot</button>
-                {% if liq.shortfall > 0 %}
-                <label class="small ms-2 text-danger">
-                    <input type="checkbox" name="override_liquidity" value="1">
-                    proceed anyway (₦{{ "{:,.0f}".format(liq.shortfall) }} short)</label>
-                {% endif %}
-            </form>
-            {{ tbtn('open','Re-open') }}
-        {% elif cycle.status == 'ready_for_ballot' %}
-            <form method="post" action="{{ url_for('ctas.run_ballot', cycle_id=cycle.id) }}" class="d-inline"
-                  onsubmit="return confirm('Run the ballot? Each enrolled member is assigned a random payout month. This cannot be undone.');">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button class="btn btn-sm btn-danger"><i class="fas fa-dice"></i> Run ballot</button>
-            </form>
-        {% elif cycle.status in ['balloted','active'] %}{{ tbtn('completed','Mark completed','btn-outline-success','Mark this cycle completed?') }}
-        {% else %}<span class="text-muted">No actions.</span>{% endif %}
-        <span class="ms-auto text-muted small">
-            Capacity {{ summary.participants }}/{{ summary.capacity }} · Enrolled {{ summary.enrolled }}
-        </span>
-    </div></div>
+        {{ tbtn('open','Re-open') }}
+      {% elif cycle.status == 'ready_for_ballot' %}
+        <form method="post" action="{{ url_for('ctas.run_ballot', cycle_id=cycle.id) }}" class="d-inline"
+              onsubmit="return confirm('Run the ballot? Each enrolled member is assigned a payout position. This cannot be undone.');">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="btn btn-sm btn-danger"><i class="fas fa-dice"></i> Run ballot</button>
+        </form>
+      {% elif cycle.status in ['balloted','active'] %}{{ tbtn('completed','Mark completed','btn-outline-success','Mark this cycle completed?') }}
+      {% endif %}
+      <a href="{{ url_for('ctas.promote_cycle', cycle_id=cycle.id) }}" class="btn btn-sm btn-outline-primary">
+        <i class="fas fa-bullhorn"></i> Advertise</a>
+      <a href="{{ url_for('ctas.dashboard') }}" class="btn btn-sm btn-secondary">Cycles</a>
+    </div>
+  </div>
 
-    <!-- Add member (open only) -->
-    {% if cycle.status == 'open' %}
-    <div class="card mb-3"><div class="card-body">
+  <!-- ── What needs attention (before anything else) ── -->
+  {% if attention.any %}
+  <div class="card attn mb-3"><div class="card-body py-2 d-flex flex-wrap gap-3 align-items-center">
+    <strong class="me-1">Needs attention:</strong>
+    {% if attention.awaiting %}<a href="#" class="text-decoration-none" data-goto="members">
+      <span class="badge bg-primary">{{ attention.awaiting }}</span> awaiting approval</a>{% endif %}
+    {% if attention.no_terms %}<a href="#" class="text-decoration-none" data-goto="members">
+      <span class="badge bg-danger">{{ attention.no_terms }}</span> without accepted terms</a>{% endif %}
+    {% if attention.priority_requests %}<a href="#" class="text-decoration-none" data-goto="members">
+      <span class="badge bg-warning text-dark">{{ attention.priority_requests }}</span> priority requests</a>{% endif %}
+    {% if attention.late %}<a href="#" class="text-decoration-none" data-goto="contributions">
+      <span class="badge bg-danger">{{ attention.late }}</span> late contributions</a>{% endif %}
+    {% if attention.ready_to_pay %}<a href="#" class="text-decoration-none" data-goto="payouts">
+      <span class="badge bg-success">{{ attention.ready_to_pay }}</span> ready to pay out</a>{% endif %}
+    {% if attention.shortfall > 0 %}<a href="#" class="text-decoration-none" data-goto="setup">
+      <span class="badge bg-danger">{{ money0(attention.shortfall) }}</span> funding shortfall</a>{% endif %}
+  </div></div>
+  {% endif %}
+
+  <!-- ── Tabs ── -->
+  <ul class="nav nav-tabs ctas-tabs mb-3" role="tablist">
+    <li class="nav-item"><button class="nav-link {{ 'active' if active_tab=='members' }}" data-bs-toggle="tab"
+        data-bs-target="#tab-members" type="button" data-tab="members">Members
+        <span class="badge bg-light text-dark">{{ subs|length }}</span></button></li>
+    <li class="nav-item"><button class="nav-link {{ 'active' if active_tab=='contributions' }}" data-bs-toggle="tab"
+        data-bs-target="#tab-contrib" type="button" data-tab="contributions">Contributions
+        {% if attention.late %}<span class="badge bg-danger">{{ attention.late }}</span>{% endif %}</button></li>
+    <li class="nav-item"><button class="nav-link {{ 'active' if active_tab=='payouts' }}" data-bs-toggle="tab"
+        data-bs-target="#tab-payouts" type="button" data-tab="payouts">Payouts
+        {% if attention.ready_to_pay %}<span class="badge bg-success">{{ attention.ready_to_pay }}</span>{% endif %}</button></li>
+    <li class="nav-item"><button class="nav-link {{ 'active' if active_tab=='setup' }}" data-bs-toggle="tab"
+        data-bs-target="#tab-setup" type="button" data-tab="setup">Setup</button></li>
+  </ul>
+
+  <div class="tab-content">
+
+    <!-- ═══ MEMBERS ═══ -->
+    <div class="tab-pane fade {{ 'show active' if active_tab=='members' }}" id="tab-members">
+
+      {% if cycle.status == 'open' %}
+      <div class="card mb-3"><div class="card-body py-3">
         <form method="post" action="{{ url_for('ctas.add_subscription', cycle_id=cycle.id) }}" class="row g-2 align-items-end">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <div class="col-md-5"><label class="form-label small">Member</label>
-                <select class="form-select" name="member_id" required>
-                    <option value="">Choose…</option>
-                    {% for m in members %}
-                    <option value="{{ m.id }}">{{ m.name }} ({{ m.member_number }}) · savings ₦{{ "{:,.0f}".format(m.total_savings or 0) }}</option>
-                    {% endfor %}
-                </select></div>
-            <div class="col-md-3"><label class="form-label small">Target amount (₦)</label>
-                <input class="form-control" type="number" step="0.01" name="target_amount" required></div>
-            <div class="col-md-2"><label class="form-label small">Tenure (months)</label>
-                <input class="form-control" type="number" min="2" max="12" name="tenure_months" value="{{ cycle.duration_months }}" required></div>
-            <div class="col-md-2"><button class="btn btn-primary w-100"><i class="fas fa-user-plus"></i> Add</button></div>
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="col-md-4"><label class="form-label small mb-1">Add member</label>
+            <select class="form-select form-select-sm" name="member_id" required>
+              <option value="">Choose…</option>
+              {% for m in members %}
+              <option value="{{ m.id }}">{{ m.name }} ({{ m.member_number }}) · savings {{ money0(m.total_savings) }}</option>
+              {% endfor %}
+            </select></div>
+          <div class="col-md-3"><label class="form-label small mb-1">Target (&#8358;)</label>
+            <input class="form-control form-control-sm" type="number" step="0.01" name="target_amount" required></div>
+          <div class="col-md-2"><label class="form-label small mb-1">Tenure</label>
+            <input class="form-control form-control-sm" type="number" min="2" max="12" name="tenure_months"
+                   value="{{ cycle.periods or cycle.duration_months }}" required></div>
+          <div class="col-md-3"><button class="btn btn-sm btn-primary w-100"><i class="fas fa-user-plus"></i> Add member</button></div>
         </form>
-    </div></div>
-    {% endif %}
+      </div></div>
+      {% endif %}
 
-    <!-- Payroll recovery -->
-    {% if cycle.status in ['balloted','active'] and (subs|selectattr('status','equalto','active_recovery')|list or subs|selectattr('status','equalto','scheduled')|list) %}
-    <div class="card mb-3"><div class="card-header bg-light"><h6 class="mb-0"><i class="fas fa-file-invoice"></i> Contributions</h6></div>
-    <div class="card-body">
-        <p class="small text-muted mb-2">Every member contributes each period — before and after their payout.
-            Contributions before payout fund the pool; after payout they repay the advance.</p>
-        <div class="row g-3 align-items-end">
-            <div class="col-md-2"><label class="form-label small">Period #</label>
-                <input class="form-control" type="number" min="1" max="52" id="recMonth" value="1"></div>
-            <div class="col-md-4">
-                <a class="btn btn-outline-primary" id="expBtn" href="#"><i class="fas fa-download"></i> Export schedule</a>
-                <div class="form-text">Contribution list for this period.</div>
-            </div>
-            <div class="col-md-6">
-                <form method="post" action="{{ url_for('ctas.payroll_import', cycle_id=cycle.id) }}"
-                      enctype="multipart/form-data" class="row g-2 align-items-end">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                    <input type="hidden" name="month" id="impMonth" value="1">
-                    <div class="col-8"><label class="form-label small">Import confirmed contributions (CSV)</label>
-                        <input class="form-control" type="file" name="file" accept=".csv" required></div>
-                    <div class="col-4"><button class="btn btn-success w-100"><i class="fas fa-upload"></i> Post contributions</button></div>
-                </form>
-            </div>
-        </div>
-    </div></div>
-    <script>
-    (function(){
-        var mo=document.getElementById('recMonth'), exp=document.getElementById('expBtn'), im=document.getElementById('impMonth');
-        function sync(){ var m=mo.value||1; exp.href="{{ url_for('ctas.payroll_export', cycle_id=cycle.id) }}?month="+m; im.value=m; }
-        mo.addEventListener('input', sync); sync();
-    })();
-    </script>
-    {% endif %}
+      <form method="post" action="{{ url_for('ctas.bulk_advance', cycle_id=cycle.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="card">
+          {% if bulk_ready %}
+          <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2 bg-light">
+            <span class="small"><input type="checkbox" id="selAll" class="form-check-input me-1">
+              <label for="selAll">Select all at <strong>{{ ce.STAGE_ACTION_LABEL.get(ce.next_stage(next_gate), 'next step') }}</strong></label></span>
+            <button class="btn btn-sm btn-primary">
+              {{ ce.STAGE_ACTION_LABEL.get(ce.next_stage(next_gate), 'Advance') }} for selected</button>
+          </div>
+          {% endif %}
+          <div class="table-responsive">
+            <table class="table perm-table table-hover align-middle mb-0">
+              <thead><tr>
+                {% if bulk_ready %}<th style="width:32px"></th>{% endif %}
+                <th>Member</th><th class="text-end">Target</th><th class="text-end">Monthly</th>
+                <th>Stage</th><th class="text-end">Payout</th><th class="text-end">Recovered</th>
+                <th class="text-end">Action</th></tr></thead>
+              <tbody>
+              {% for s in subs %}
+              <tr>
+                {% if bulk_ready %}
+                <td>{% if s.id in bulk_ready %}
+                  <input class="form-check-input sel" type="checkbox" name="sub_ids" value="{{ s.id }}">{% endif %}</td>
+                {% endif %}
+                <td>
+                  <strong>{{ s.member_name }}</strong>
+                  <div class="small text-muted">{{ s.member_number }} · savings {{ money0(s.total_savings) }}</div>
+                  {% if s.terms_accepted %}
+                    <span class="badge bg-success-subtle text-success border border-success-subtle">Terms ✓</span>
+                  {% elif s.status in ['submitted','eligible','finance_reviewed','approved'] %}
+                    <span class="badge bg-danger">No terms</span>
+                    <a class="small ms-1" href="#" data-bs-toggle="collapse" data-bs-target="#terms{{ s.id }}">record</a>
+                  {% endif %}
+                  {% if s.priority_status == 'requested' %}
+                    <span class="badge bg-warning text-dark">Priority pos {{ s.requested_payout_month }}
+                      ({{ money0(s.priority_fee) }})</span>
+                  {% elif s.priority_status == 'granted' %}
+                    <span class="badge bg-info text-dark">Priority pos {{ s.requested_payout_month }}</span>
+                  {% elif s.priority_status == 'not_allocated' %}
+                    <span class="small text-muted">priority oversubscribed — no fee</span>
+                  {% endif %}
+                  {% if s.arrears_amount and s.arrears_amount > 0 %}
+                    <span class="badge bg-danger">Arrears {{ money0(s.arrears_amount) }}</span>{% endif %}
+                  {% if s.id in elig and not elig[s.id].eligible %}
+                    <div class="small text-danger">{{ elig[s.id].reasons|join(' ') }}</div>{% endif %}
+                  {% if s.rejected_reason %}<div class="small text-muted">Rejected: {{ s.rejected_reason }}</div>{% endif %}
 
-    <!-- Liquidity assessment + cooperative guarantee -->
-    <div class="card mb-3 border-{{ {'green':'success','amber':'warning','red':'danger'}[liq.status] }}">
-        <div class="card-header d-flex justify-content-between align-items-center
-                    bg-{{ {'green':'success','amber':'warning','red':'danger'}[liq.status] }}
-                    {{ 'text-dark' if liq.status == 'amber' else 'text-white' }}">
-            <span><i class="fas fa-scale-balanced"></i> Liquidity —
-                {{ {'green':'sufficient','amber':'approaching limit','red':'projected shortfall'}[liq.status] }}</span>
-            <button class="btn btn-sm btn-light" data-bs-toggle="collapse" data-bs-target="#liqCfg">Settings</button>
-        </div>
-        <div class="card-body">
-            <div class="row g-3 mb-2">
-                <div class="col-md-3"><div class="small text-muted">Contributions / period</div>
-                    <div class="fw-bold">₦{{ "{:,.0f}".format(liq.inflow_per_period) }}</div>
-                    <div class="small text-muted">{{ liq.members }} member(s) × ₦{{ "{:,.0f}".format(liq.contribution) }}</div></div>
-                <div class="col-md-3"><div class="small text-muted">Each payout</div>
-                    <div class="fw-bold">₦{{ "{:,.0f}".format(liq.target) }}</div></div>
-                <div class="col-md-3"><div class="small text-muted">Reserve + approved support</div>
-                    <div class="fw-bold">₦{{ "{:,.0f}".format(liq.reserve + liq.support) }}</div></div>
-                <div class="col-md-3"><div class="small text-muted">Lowest projected balance</div>
-                    <div class="fw-bold {{ 'text-danger' if liq.lowest_balance < 0 }}">₦{{ "{:,.0f}".format(liq.lowest_balance) }}</div></div>
-            </div>
-
-            {% if liq.funding_gap_per_payout_period > 0 %}
-            <div class="alert alert-{{ 'danger' if liq.shortfall > 0 else 'warning' }} py-2 small mb-2">
-                <strong>Cooperative guarantee:</strong> contributions of
-                ₦{{ "{:,.0f}".format(liq.inflow_per_period) }} per period do not cover a
-                ₦{{ "{:,.0f}".format(liq.target) }} payout — the cooperative bridges
-                <strong>₦{{ "{:,.0f}".format(liq.funding_gap_per_payout_period) }}</strong> each payout period.
-                {% if liq.shortfall > 0 %}
-                Over the cycle this needs <strong>₦{{ "{:,.0f}".format(liq.shortfall) }}</strong> more than the
-                reserve and approved support. Increase support, reduce payouts per period, or enrol more members.
-                {% else %}This is covered by the reserve and approved support.{% endif %}
-            </div>
-            {% endif %}
-
-            <div class="table-responsive">
-                <table class="table table-sm align-middle mb-0">
-                    <thead><tr><th>Period</th><th class="text-end">Payouts</th><th class="text-end">In</th>
-                        <th class="text-end">Out</th><th class="text-end">Projected balance</th><th></th></tr></thead>
-                    <tbody>
-                    {% for r in liq_rows %}
-                    <tr>
-                        <td>{{ r.period }}</td>
-                        <td class="text-end">{{ r.payees }}</td>
-                        <td class="text-end text-success">₦{{ "{:,.0f}".format(r.inflow) }}</td>
-                        <td class="text-end">{{ '₦' + "{:,.0f}".format(r.outflow) if r.outflow else '—' }}</td>
-                        <td class="text-end fw-semibold {{ 'text-danger' if r.balance < 0 }}">₦{{ "{:,.0f}".format(r.balance) }}</td>
-                        <td><span class="badge bg-{{ {'green':'success','amber':'warning text-dark','red':'danger'}[r.status] }}">
-                            {{ r.status|title }}</span></td>
-                    </tr>
-                    {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            <div class="form-text mt-1">
-                {% if cycle.status in ['draft','open','closed'] %}Projection assumes the cycle runs at full
-                capacity from the earliest payout position.{% else %}Based on the actual ballot result.{% endif %}
-            </div>
-        </div>
-        <div class="collapse" id="liqCfg"><div class="card-body border-top">
-            <form method="post" action="{{ url_for('ctas.set_liquidity', cycle_id=cycle.id) }}" class="row g-2 align-items-end">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <div class="col-md-3"><label class="form-label small">CTAS cash reserve (₦)</label>
-                    <input class="form-control form-control-sm" type="number" step="0.01" min="0"
-                           name="liquidity_reserve" value="{{ cycle.liquidity_reserve or 0 }}"></div>
-                <div class="col-md-3"><label class="form-label small">Approved cooperative support (₦)</label>
-                    <input class="form-control form-control-sm" type="number" step="0.01" min="0"
-                           name="liquidity_support" value="{{ cycle.liquidity_support or 0 }}"></div>
-                <div class="col-md-3"><label class="form-label small">Warn below (₦, blank = one payout)</label>
-                    <input class="form-control form-control-sm" type="number" step="0.01" min="0"
-                           name="liquidity_buffer" value="{{ cycle.liquidity_buffer or '' }}"></div>
-                <div class="col-md-3"><button class="btn btn-primary btn-sm w-100">Save liquidity settings</button></div>
-            </form>
-        </div></div>
-    </div>
-
-    <!-- Priority payout pricing -->
-    {% if cycle.status in ['draft','open','closed','ready_for_ballot'] %}
-    <div class="card mb-3">
-        <div class="card-header bg-light d-flex justify-content-between align-items-center">
-            <h6 class="mb-0"><i class="fas fa-bolt"></i> Priority payout</h6>
-            <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#prioCfg">
-                {{ 'Edit pricing' if priority_tiers else 'Set up' }}</button>
-        </div>
-        <div class="card-body py-2">
-            {% if cycle.priority_enabled and priority_tiers %}
-            <span class="text-muted small me-2">Members may pay for an earlier position:</span>
-            {% for pos, fee in priority_tiers|dictsort %}
-            <span class="badge bg-primary me-1">Position {{ pos }} · ₦{{ "{:,.0f}".format(fee) }}</span>
-            {% endfor %}
-            {% else %}
-            <span class="text-muted small">Not offered on this cycle. Members are all placed by the normal ballot.</span>
-            {% endif %}
-        </div>
-        <div class="collapse" id="prioCfg"><div class="card-body border-top">
-            <form method="post" action="{{ url_for('ctas.set_priority_fees', cycle_id=cycle.id) }}">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <div class="form-check mb-3">
-                    <input class="form-check-input" type="checkbox" name="priority_enabled" id="prioOn"
-                           value="1" {{ 'checked' if cycle.priority_enabled }}>
-                    <label class="form-check-label" for="prioOn">Offer priority positions on this cycle</label>
-                </div>
-                <p class="small text-muted">Price the early positions. Earlier positions normally cost more,
-                    because they are worth more to the member and cost the cooperative more liquidity.
-                    Leave a fee blank to stop offering that position.</p>
-                <div class="row g-2">
-                {% for p in range(1, (cycle.periods or cycle.duration_months or 6) + 1) %}
-                    {% if p <= 6 %}
-                    <div class="col-md-2">
-                        <label class="form-label small">Position {{ p }} fee (₦)</label>
-                        <input type="hidden" name="position" value="{{ p }}">
-                        <input class="form-control form-control-sm" type="number" step="0.01" min="0"
-                               name="fee" value="{{ priority_tiers.get(p, '') }}">
+                  <div class="collapse mt-1" id="terms{{ s.id }}">
+                    <div class="border rounded p-2 bg-light">
+                      <div class="small text-muted mb-1">Use only when you hold the member's signed
+                        acceptance. Your attestation is recorded.</div>
+                      <div class="input-group input-group-sm">
+                        <input class="form-control" form="terms-f{{ s.id }}" name="signature_name"
+                               placeholder="Name the member signed with" required>
+                        <div class="input-group-text">
+                          <input class="form-check-input mt-0 me-1" form="terms-f{{ s.id }}" type="checkbox"
+                                 name="attest" value="1" required><span class="small">signed form held</span>
+                        </div>
+                        <button class="btn btn-outline-primary" form="terms-f{{ s.id }}">Record</button>
+                      </div>
                     </div>
-                    {% endif %}
-                {% endfor %}
-                </div>
-                <button class="btn btn-primary btn-sm mt-3">Save priority pricing</button>
-            </form>
-        </div></div>
-    </div>
-    {% endif %}
+                  </div>
+                </td>
+                <td class="text-end num">{{ money(s.target_amount) }}</td>
+                <td class="text-end num">{{ money(s.monthly_deduction) }}</td>
+                <td><span class="badge bg-{{ {'enrolled':'primary','scheduled':'info','active_recovery':'success','completed':'success','rejected':'dark','submitted':'secondary'}.get(s.status,'secondary') }}">{{ s.status|replace('_',' ')|title }}</span></td>
+                <td class="text-end num">{{ s.payout_month or '—' }}</td>
+                <td class="text-end num">{{ money0(s.total_recovered) }}</td>
+                <td class="text-end row-actions">
+                  {% if s.status in ['submitted','eligible','finance_reviewed','approved'] %}
+                    {% set nxt = ce.next_stage(s.status) %}
+                    <button class="btn btn-sm btn-primary" form="adv-f{{ s.id }}">
+                      {{ ce.STAGE_ACTION_LABEL.get(nxt, 'Advance') }}</button>
+                    <div class="btn-group">
+                      <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown"
+                              aria-label="More actions for {{ s.member_name }}">⋯</button>
+                      <ul class="dropdown-menu dropdown-menu-end">
+                        {% if s.priority_status == 'requested' %}
+                        <li><button class="dropdown-item" form="prio-grant{{ s.id }}">Grant priority position {{ s.requested_payout_month }}</button></li>
+                        <li><button class="dropdown-item" form="prio-decline{{ s.id }}">Decline priority</button></li>
+                        <li><hr class="dropdown-divider"></li>
+                        {% endif %}
+                        {% if s.status in ce.PREV_STAGE %}
+                        <li><button class="dropdown-item" form="back-f{{ s.id }}">Step back a stage</button></li>{% endif %}
+                        <li><button class="dropdown-item text-danger" form="rej-f{{ s.id }}"
+                                onclick="return confirm('Decline this application?');">Reject application</button></li>
+                      </ul>
+                    </div>
+                  {% elif s.status == 'enrolled' %}
+                    <button class="btn btn-sm btn-outline-secondary" form="back-f{{ s.id }}">Un-enrol</button>
+                  {% elif s.status == 'scheduled' %}
+                    <span class="small text-muted">see Payouts</span>
+                  {% elif s.status == 'active_recovery' %}
+                    <a href="{{ url_for('ctas.exit_settle', sub_id=s.id) }}" class="btn btn-sm btn-outline-danger">Exit / settle</a>
+                  {% else %}<span class="text-muted small">—</span>{% endif %}
+                </td>
+              </tr>
+              {% else %}
+              <tr><td colspan="8" class="text-center text-muted py-4">No members yet.</td></tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </form>
 
-    <!-- Outstanding contributions (due-date schedule) -->
-    {% if due_soon %}
-    <div class="card mb-3">
+      {# Per-row forms live outside the bulk form so they never nest. #}
+      {% for s in subs %}
+        <form method="post" id="adv-f{{ s.id }}" action="{{ url_for('ctas.subscription_act', sub_id=s.id) }}" class="d-none">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="advance"></form>
+        <form method="post" id="back-f{{ s.id }}" action="{{ url_for('ctas.subscription_act', sub_id=s.id) }}" class="d-none">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="back"></form>
+        <form method="post" id="rej-f{{ s.id }}" action="{{ url_for('ctas.subscription_act', sub_id=s.id) }}" class="d-none">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="reject"></form>
+        <form method="post" id="terms-f{{ s.id }}" action="{{ url_for('ctas.record_terms', sub_id=s.id) }}" class="d-none">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"></form>
+        {% if s.priority_status == 'requested' %}
+        <form method="post" id="prio-grant{{ s.id }}" action="{{ url_for('ctas.decide_priority', sub_id=s.id) }}" class="d-none">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="grant"></form>
+        <form method="post" id="prio-decline{{ s.id }}" action="{{ url_for('ctas.decide_priority', sub_id=s.id) }}" class="d-none">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="action" value="decline"></form>
+        {% endif %}
+      {% endfor %}
+    </div>
+
+    <!-- ═══ CONTRIBUTIONS ═══ -->
+    <div class="tab-pane fade {{ 'show active' if active_tab=='contributions' }}" id="tab-contrib">
+      <div class="card mb-3"><div class="card-body">
+        <div class="row g-3 align-items-end">
+          <div class="col-md-2"><label class="form-label small mb-1">Period</label>
+            <input class="form-control form-control-sm" type="number" min="1" max="12" id="recMonth" value="1"></div>
+          <div class="col-md-4">
+            <a class="btn btn-sm btn-outline-primary" id="expBtn" href="#"><i class="fas fa-download"></i> Export schedule</a>
+            <div class="form-text">Amounts due from every member this period.</div>
+          </div>
+          <div class="col-md-6">
+            <form method="post" action="{{ url_for('ctas.payroll_import', cycle_id=cycle.id) }}"
+                  enctype="multipart/form-data" class="row g-2 align-items-end">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="month" id="impMonth" value="1">
+              <div class="col-8"><label class="form-label small mb-1">Import confirmed contributions</label>
+                <input class="form-control form-control-sm" type="file" name="file" accept=".csv" required></div>
+              <div class="col-4"><button class="btn btn-sm btn-primary w-100">Post contributions</button></div>
+            </form>
+          </div>
+        </div>
+      </div></div>
+
+      <div class="card">
         <div class="card-header bg-light d-flex justify-content-between align-items-center">
-            <h6 class="mb-0"><i class="fas fa-calendar-day"></i> Outstanding contributions</h6>
-            <span class="text-muted small">{{ summary.outstanding_count }} row(s) ·
-                ₦{{ "{:,.2f}".format(summary.outstanding_amount) }} owed</span>
+          <h6 class="mb-0">Outstanding contributions</h6>
+          <span class="small text-muted num">{{ summary.outstanding_count }} row(s) ·
+            {{ money(summary.outstanding_amount) }} owed</span>
         </div>
         <div class="table-responsive">
-            <table class="table table-sm align-middle mb-0">
-                <thead><tr><th>Member</th><th class="text-end">Period</th><th>Due</th>
-                    <th class="text-end">Expected</th><th class="text-end">Paid</th><th>Status</th></tr></thead>
-                <tbody>
-                {% for r in due_soon[:40] %}
-                <tr>
-                    <td>{{ r.member_name }}<div class="small text-muted">{{ r.member_number }}</div></td>
-                    <td class="text-end">{{ r.period_number }}</td>
-                    <td>{{ r.due_date or '—' }}</td>
-                    <td class="text-end">₦{{ "{:,.2f}".format(r.expected_amount or 0) }}</td>
-                    <td class="text-end">₦{{ "{:,.2f}".format(r.paid_amount or 0) }}</td>
-                    <td><span class="badge bg-{{ {'due':'info','grace':'warning text-dark','late':'danger','partial':'warning text-dark'}.get(r.status,'secondary') }}">{{ r.status|title }}</span></td>
-                </tr>
-                {% endfor %}
-                </tbody>
-            </table>
-        </div>
-        {% if due_soon|length > 40 %}<div class="card-footer small text-muted">Showing 40 of {{ due_soon|length }}.</div>{% endif %}
-    </div>
-    {% endif %}
-
-    <!-- Subscriptions -->
-    <div class="card"><div class="card-header"><h5 class="mb-0">Members ({{ subs|length }})</h5></div>
-    <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0">
-            <thead><tr><th>Member</th><th class="text-end">Target</th><th class="text-end">Tenure</th>
-                <th class="text-end">Monthly</th><th class="text-end">Admin fee</th><th>Status</th>
-                <th class="text-end">Payout pos.</th><th class="text-end">Contributed</th>
-                <th class="text-end">Advance owed</th><th>Action</th></tr></thead>
+          <table class="table perm-table table-sm align-middle mb-0">
+            <thead><tr><th>Member</th><th class="text-end">Period</th><th>Due</th>
+              <th class="text-end">Expected</th><th class="text-end">Paid</th><th>Status</th></tr></thead>
             <tbody>
-            {% for s in subs %}
+            {% for r in due_soon[:60] %}
             <tr>
-                <td>{{ s.member_name }}<div class="small text-muted">{{ s.member_number }} · savings ₦{{ "{:,.0f}".format(s.total_savings or 0) }}</div>
-                    {% if s.terms_accepted %}<div class="small text-success"><i class="fas fa-check"></i> Terms accepted{% if s.signature_name %} — {{ s.signature_name }}{% endif %}</div>
-                    {% else %}
-                    <div class="small text-danger"><i class="fas fa-exclamation-triangle"></i>
-                        Terms not accepted — cannot be enrolled
-                        <a href="#" data-bs-toggle="collapse" data-bs-target="#terms{{ s.id }}">record acceptance</a>
-                    </div>
-                    <div class="collapse mt-1" id="terms{{ s.id }}">
-                        <form method="post" action="{{ url_for('ctas.record_terms', sub_id=s.id) }}"
-                              class="border rounded p-2 bg-light">
-                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <div class="small text-muted mb-1">Use this only when you hold the member's
-                                signed acceptance of the scheme terms. Your attestation is recorded.</div>
-                            <div class="input-group input-group-sm">
-                                <input class="form-control" name="signature_name"
-                                       placeholder="Name the member signed with" required>
-                                <div class="input-group-text">
-                                    <input class="form-check-input mt-0 me-1" type="checkbox"
-                                           name="attest" value="1" required>
-                                    <span class="small">I hold their signed form</span>
-                                </div>
-                                <button class="btn btn-outline-primary">Record</button>
-                            </div>
-                        </form>
-                    </div>
-                    {% endif %}
-                    {% if s.id in elig and not elig[s.id].eligible %}
-                    <div class="small text-danger">{{ elig[s.id].reasons|join(' ') }}</div>{% endif %}
-                    {% if s.rejected_reason %}<div class="small text-muted">Rejected: {{ s.rejected_reason }}</div>{% endif %}
-                    {% if s.priority_status == 'requested' %}
-                    <div class="small mt-1">
-                        <span class="badge bg-warning text-dark">Priority requested: position {{ s.requested_payout_month }}
-                            (₦{{ "{:,.0f}".format(s.priority_fee or 0) }})</span>
-                        <form method="post" action="{{ url_for('ctas.decide_priority', sub_id=s.id) }}" class="d-inline">
-                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <input type="hidden" name="action" value="grant">
-                            <button class="btn btn-sm btn-outline-success py-0">Grant</button></form>
-                        <form method="post" action="{{ url_for('ctas.decide_priority', sub_id=s.id) }}" class="d-inline">
-                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <input type="hidden" name="action" value="decline">
-                            <button class="btn btn-sm btn-outline-secondary py-0">Decline</button></form>
-                    </div>
-                    {% elif s.priority_status == 'granted' %}
-                    <div class="small text-success mt-1"><i class="fas fa-bolt"></i>
-                        Priority granted: position {{ s.requested_payout_month }}
-                        (₦{{ "{:,.0f}".format(s.priority_fee or 0) }})</div>
-                    {% elif s.priority_status == 'not_allocated' %}
-                    <div class="small text-muted mt-1">Priority oversubscribed — balloted normally, no fee</div>
-                    {% elif s.priority_status == 'declined' %}
-                    <div class="small text-muted mt-1">Priority declined</div>
-                    {% endif %}
-                </td>
-                <td class="text-end">₦{{ "{:,.2f}".format(s.target_amount or 0) }}</td>
-                <td class="text-end">{{ s.tenure_months }}m</td>
-                <td class="text-end">₦{{ "{:,.2f}".format(s.monthly_deduction or 0) }}</td>
-                <td class="text-end">₦{{ "{:,.2f}".format(s.admin_fee or 0) }}</td>
-                <td><span class="badge bg-{{ {'enrolled':'primary','scheduled':'info','active_recovery':'success','completed':'success','rejected':'dark','submitted':'secondary'}.get(s.status,'secondary') }}">{{ s.status|replace('_',' ')|title }}</span>
-                    {% if s.arrears_amount and s.arrears_amount > 0 %}<span class="badge bg-danger" title="In arrears">Arrears ₦{{ "{:,.0f}".format(s.arrears_amount) }}</span>{% endif %}</td>
-                <td class="text-end">{{ s.payout_month or '—' }}</td>
-                <td class="text-end">₦{{ "{:,.2f}".format(s.contributed_total or 0) }}
-                    <div class="small text-muted">of ₦{{ "{:,.0f}".format(s.target_amount or 0) }}</div></td>
-                <td class="text-end">{% if s.status in ['active_recovery','completed'] %}₦{{ "{:,.2f}".format(s.advance_balance or 0) }}{% else %}<span class="text-muted">—</span>{% endif %}</td>
-                <td class="text-nowrap">
-                    {% if s.status in ['submitted','eligible','finance_reviewed','approved'] %}
-                        {% set nxt = ce.next_stage(s.status) %}
-                        <form method="post" action="{{ url_for('ctas.subscription_act', sub_id=s.id) }}" class="d-inline">
-                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <input type="hidden" name="action" value="advance">
-                            <button class="btn btn-sm btn-outline-primary">{{ ce.STAGE_ACTION_LABEL.get(nxt, 'Advance') }}</button></form>
-                        {% if s.status in ce.PREV_STAGE %}
-                        <form method="post" action="{{ url_for('ctas.subscription_act', sub_id=s.id) }}" class="d-inline">
-                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <input type="hidden" name="action" value="back">
-                            <button class="btn btn-sm btn-outline-secondary" title="Step back">&laquo;</button></form>
-                        {% endif %}
-                        <form method="post" action="{{ url_for('ctas.subscription_act', sub_id=s.id) }}" class="d-inline"
-                              onsubmit="return confirm('Decline this application?');">
-                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <input type="hidden" name="action" value="reject">
-                            <button class="btn btn-sm btn-outline-danger">Reject</button></form>
-                    {% elif s.status == 'enrolled' %}
-                        <form method="post" action="{{ url_for('ctas.subscription_act', sub_id=s.id) }}" class="d-inline">
-                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <input type="hidden" name="action" value="back">
-                            <button class="btn btn-sm btn-outline-secondary">Un-enrol</button></form>
-                    {% elif s.status == 'scheduled' %}
-                        <form method="post" action="{{ url_for('ctas.payout', sub_id=s.id) }}" class="d-inline"
-                              onsubmit="return confirm('Pay out ₦{{ "{:,.2f}".format(s.target_amount or 0) }} to {{ s.member_name }}? This posts to the ledger.');">
-                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                            <button class="btn btn-sm btn-success"><i class="fas fa-money-bill-wave"></i> Pay out</button></form>
-                    {% elif s.status == 'active_recovery' %}
-                        <a href="{{ url_for('ctas.exit_settle', sub_id=s.id) }}" class="btn btn-sm btn-outline-danger"
-                           title="Settle the outstanding balance on member exit">Exit / settle</a>
-                    {% else %}<span class="text-muted small">—</span>{% endif %}
-                </td>
+              <td>{{ r.member_name }}<div class="small text-muted">{{ r.member_number }}</div></td>
+              <td class="text-end num">{{ r.period_number }}</td>
+              <td class="num">{{ r.due_date or '—' }}</td>
+              <td class="text-end num">{{ money(r.expected_amount) }}</td>
+              <td class="text-end num">{{ money(r.paid_amount) }}</td>
+              <td><span class="badge bg-{{ {'due':'info','grace':'warning text-dark','late':'danger','partial':'warning text-dark'}.get(r.status,'secondary') }}">{{ r.status|title }}</span></td>
             </tr>
             {% else %}
-            <tr><td colspan="9" class="text-center text-muted py-4">No members yet.</td></tr>
+            <tr><td colspan="6" class="text-center text-muted py-4">Nothing outstanding.</td></tr>
             {% endfor %}
             </tbody>
-        </table>
-    </div></div>
+          </table>
+        </div>
+        {% if due_soon|length > 60 %}<div class="card-footer small text-muted">Showing 60 of {{ due_soon|length }}.</div>{% endif %}
+      </div>
+    </div>
+
+    <!-- ═══ PAYOUTS ═══ -->
+    <div class="tab-pane fade {{ 'show active' if active_tab=='payouts' }}" id="tab-payouts">
+      <div class="card mb-3">
+        <div class="card-header bg-light"><h6 class="mb-0">Scheduled payouts</h6></div>
+        <div class="table-responsive">
+          <table class="table perm-table align-middle mb-0">
+            <thead><tr><th class="text-end">Position</th><th>Member</th><th class="text-end">Target</th>
+              <th class="text-end">Fees</th><th>Status</th><th class="text-end">Action</th></tr></thead>
+            <tbody>
+            {% for s in subs if s.payout_month %}
+            <tr>
+              <td class="text-end num"><strong>{{ s.payout_month }}</strong></td>
+              <td>{{ s.member_name }}<div class="small text-muted">{{ s.member_number }}</div></td>
+              <td class="text-end num">{{ money(s.target_amount) }}</td>
+              <td class="text-end num">{{ money0((s.admin_fee or 0) + (s.priority_fee or 0 if s.is_priority else 0)) }}</td>
+              <td><span class="badge bg-{{ {'scheduled':'info','active_recovery':'success','completed':'success'}.get(s.status,'secondary') }}">{{ s.status|replace('_',' ')|title }}</span></td>
+              <td class="text-end">
+                {% if s.status == 'scheduled' %}
+                <form method="post" action="{{ url_for('ctas.payout', sub_id=s.id) }}" class="d-inline"
+                      onsubmit="return confirm('Pay out {{ money(s.target_amount) }} to {{ s.member_name }}? This posts to the ledger.');">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button class="btn btn-sm btn-primary"><i class="fas fa-money-bill-wave"></i> Pay out</button>
+                </form>
+                {% elif s.status == 'active_recovery' %}
+                <span class="small text-muted num">owes {{ money0(s.advance_balance) }}</span>
+                {% else %}<span class="text-muted small">—</span>{% endif %}
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="6" class="text-center text-muted py-4">No positions assigned yet — run the ballot.</td></tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+          <h6 class="mb-0">Cash projection</h6>
+          <span class="badge bg-{{ {'green':'success','amber':'warning text-dark','red':'danger'}[liq.status] }}">
+            {{ {'green':'Sufficient','amber':'Watch','red':'Shortfall'}[liq.status] }}</span>
+        </div>
+        <div class="table-responsive">
+          <table class="table perm-table table-sm align-middle mb-0">
+            <thead><tr><th>Period</th><th class="text-end">Payouts</th><th class="text-end">In</th>
+              <th class="text-end">Out</th><th class="text-end">Balance</th><th></th></tr></thead>
+            <tbody>
+            {% for r in liq_rows %}
+            <tr>
+              <td class="num">{{ r.period }}</td><td class="text-end num">{{ r.payees }}</td>
+              <td class="text-end num text-success">{{ money0(r.inflow) }}</td>
+              <td class="text-end num">{{ money0(r.outflow) if r.outflow else '—' }}</td>
+              <td class="text-end num fw-semibold {{ 'text-danger' if r.balance < 0 }}">{{ money0(r.balance) }}</td>
+              <td><span class="badge bg-{{ {'green':'success','amber':'warning text-dark','red':'danger'}[r.status] }}">{{ r.status|title }}</span></td>
+            </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ SETUP ═══ -->
+    <div class="tab-pane fade {{ 'show active' if active_tab=='setup' }}" id="tab-setup">
+      <div class="row g-3">
+        <div class="col-lg-6">
+          <div class="card h-100">
+            <div class="card-header bg-light"><h6 class="mb-0">Liquidity &amp; cooperative guarantee</h6></div>
+            <div class="card-body">
+              {% if liq.funding_gap_per_payout_period > 0 %}
+              <div class="alert alert-{{ 'danger' if liq.shortfall > 0 else 'warning' }} py-2 small">
+                Contributions of {{ money0(liq.inflow_per_period) }} per period do not cover a
+                {{ money0(liq.target) }} payout — the cooperative bridges
+                <strong>{{ money0(liq.funding_gap_per_payout_period) }}</strong> each payout period.
+                {% if liq.shortfall > 0 %}Over the cycle that needs
+                <strong>{{ money0(liq.shortfall) }}</strong> beyond reserve and approved support.
+                {% else %}Covered by reserve and approved support.{% endif %}
+              </div>
+              {% endif %}
+              <form method="post" action="{{ url_for('ctas.set_liquidity', cycle_id=cycle.id) }}" class="row g-2">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="col-md-6"><label class="form-label small mb-1">CTAS cash reserve (&#8358;)</label>
+                  <input class="form-control form-control-sm" type="number" step="0.01" min="0"
+                         name="liquidity_reserve" value="{{ cycle.liquidity_reserve or 0 }}"></div>
+                <div class="col-md-6"><label class="form-label small mb-1">Approved support (&#8358;)</label>
+                  <input class="form-control form-control-sm" type="number" step="0.01" min="0"
+                         name="liquidity_support" value="{{ cycle.liquidity_support or 0 }}"></div>
+                <div class="col-md-6"><label class="form-label small mb-1">Warn below (blank = one payout)</label>
+                  <input class="form-control form-control-sm" type="number" step="0.01" min="0"
+                         name="liquidity_buffer" value="{{ cycle.liquidity_buffer or '' }}"></div>
+                <div class="col-md-6 d-flex align-items-end">
+                  <button class="btn btn-sm btn-primary w-100">Save liquidity</button></div>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-lg-6">
+          <div class="card h-100">
+            <div class="card-header bg-light"><h6 class="mb-0">Priority payout pricing</h6></div>
+            <div class="card-body">
+              <form method="post" action="{{ url_for('ctas.set_priority_fees', cycle_id=cycle.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="form-check mb-2">
+                  <input class="form-check-input" type="checkbox" name="priority_enabled" id="prioOn"
+                         value="1" {{ 'checked' if cycle.priority_enabled }}>
+                  <label class="form-check-label" for="prioOn">Offer priority positions on this cycle</label>
+                </div>
+                <p class="small text-muted">Earlier positions normally cost more. Leave a fee blank to
+                  stop offering that position. The fee is only charged if the position is allocated.</p>
+                <div class="row g-2">
+                {% for p in range(1, (cycle.periods or cycle.duration_months or 6) + 1) %}
+                  {% if p <= 6 %}
+                  <div class="col-4 col-md-4">
+                    <label class="form-label small mb-1">Position {{ p }} (&#8358;)</label>
+                    <input type="hidden" name="position" value="{{ p }}">
+                    <input class="form-control form-control-sm" type="number" step="0.01" min="0"
+                           name="fee" value="{{ priority_tiers.get(p, '') }}">
+                  </div>
+                  {% endif %}
+                {% endfor %}
+                </div>
+                <button class="btn btn-sm btn-primary mt-3">Save priority pricing</button>
+              </form>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12">
+          <div class="card border-danger">
+            <div class="card-body d-flex flex-wrap justify-content-between align-items-center gap-2">
+              <div>
+                <strong class="text-danger">Delete this cycle</strong>
+                <div class="small text-muted">Removes the cycle and its applications. Refused once any
+                  payout or contribution has posted to the ledger.</div>
+              </div>
+              <form method="post" action="{{ url_for('ctas.delete_cycle', cycle_id=cycle.id) }}"
+                    onsubmit="return confirm('Permanently delete {{ cycle.name }} and its {{ subs|length }} application(s)? This cannot be undone.');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-outline-danger"><i class="fas fa-trash"></i> Delete cycle</button>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
 </div>
+
+<script>
+(function(){
+  // Keep the chosen tab in the URL so a redirect after saving returns to it.
+  document.querySelectorAll('[data-tab]').forEach(function(btn){
+    btn.addEventListener('shown.bs.tab', function(){
+      var u = new URL(window.location); u.searchParams.set('tab', btn.dataset.tab);
+      history.replaceState({}, '', u);
+    });
+  });
+  // Attention chips jump to the tab that fixes them.
+  document.querySelectorAll('[data-goto]').forEach(function(a){
+    a.addEventListener('click', function(e){
+      e.preventDefault();
+      var t = document.querySelector('[data-tab="' + a.dataset.goto + '"]');
+      if (t) new bootstrap.Tab(t).show();
+    });
+  });
+  // Select-all for bulk advance.
+  var all = document.getElementById('selAll');
+  if (all) all.addEventListener('change', function(){
+    document.querySelectorAll('.sel').forEach(function(c){ c.checked = all.checked; });
+  });
+  // Contributions period drives both the export link and the import.
+  var mo = document.getElementById('recMonth'), exp = document.getElementById('expBtn'),
+      im = document.getElementById('impMonth');
+  if (mo && exp && im) {
+    var base = "{{ url_for('ctas.payroll_export', cycle_id=cycle.id) }}";
+    var sync = function(){ var m = mo.value || 1; exp.href = base + "?month=" + m; im.value = m; };
+    mo.addEventListener('input', sync); sync();
+  }
+})();
+</script>
 {% endblock %}

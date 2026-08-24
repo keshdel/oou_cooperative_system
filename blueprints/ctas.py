@@ -567,10 +567,35 @@ def cycle_detail(cycle_id):
                                   for r in due_soon),
     }
     liq_rows, liq = _liquidity(db, cycle)
+
+    # What needs attention on this cycle right now — shown before anything else
+    # so an officer does not have to read the whole page to find the blockers.
+    pending_stages = [s for s in subs if s['status'] in ce.APPROVAL_ORDER[:-1]]
+    attention = {
+        'awaiting': len(pending_stages),
+        'no_terms': sum(1 for s in subs if s['status'] in ce.APPROVAL_ORDER and not s['terms_accepted']),
+        'priority_requests': sum(1 for s in subs if s['priority_status'] == 'requested'),
+        'late': sum(1 for r in due_soon if r['status'] == 'late'),
+        'ready_to_pay': sum(1 for s in subs if s['status'] == ce.SUB_SCHEDULED),
+        'shortfall': liq['shortfall'],
+    }
+    attention['any'] = any([attention['awaiting'], attention['no_terms'],
+                            attention['priority_requests'], attention['late'],
+                            attention['ready_to_pay'], attention['shortfall'] > 0])
+    # Members sitting at the same gate can be advanced together.
+    next_gate = pending_stages[0]['status'] if pending_stages else None
+    bulk_ready = [s['id'] for s in pending_stages
+                  if s['status'] == next_gate and s['terms_accepted']] if next_gate else []
+
+    tab = (request.args.get('tab') or 'members').strip()
+    if tab not in ('members', 'contributions', 'payouts', 'setup'):
+        tab = 'members'
     return render_template('ctas/cycle_detail.html', cycle=cycle, subs=subs, elig=elig,
                            members=members, summary=summary, due_soon=due_soon, ce=ce,
                            priority_tiers=_priority_tiers(db, cycle_id=cycle_id),
-                           liq_rows=liq_rows, liq=liq, ctas_terms=CTAS_TERMS)
+                           liq_rows=liq_rows, liq=liq, ctas_terms=CTAS_TERMS,
+                           active_tab=tab, attention=attention, bulk_ready=bulk_ready,
+                           next_gate=next_gate)
 
 
 def _advert_for_cycle(db, cycle):
@@ -906,7 +931,7 @@ def set_liquidity(cycle_id):
           f"Cycle #{cycle_id}: reserve {_num('liquidity_reserve')}, support {_num('liquidity_support')}")
     db.commit()
     flash('Liquidity settings saved.', 'success')
-    return redirect(url_for('ctas.cycle_detail', cycle_id=cycle_id))
+    return redirect(url_for('ctas.cycle_detail', cycle_id=cycle_id, tab='setup'))
 
 
 @ctas.route('/ctas/cycles/<int:cycle_id>/priority-fees', methods=['POST'])
@@ -938,7 +963,7 @@ def set_priority_fees(cycle_id):
           f"Cycle {cycle['name']}: priority {'on' if enabled else 'off'}, {saved} priced position(s)")
     db.commit()
     flash(f"Priority payout {'enabled' if enabled else 'disabled'} — {saved} position(s) priced.", 'success')
-    return redirect(url_for('ctas.cycle_detail', cycle_id=cycle_id))
+    return redirect(url_for('ctas.cycle_detail', cycle_id=cycle_id, tab='setup'))
 
 
 @ctas.route('/my-ctas/<int:sub_id>/priority', methods=['POST'])
@@ -984,6 +1009,79 @@ def request_priority(sub_id):
     flash(f'Priority request submitted for position {position} (fee ₦{fee:,.2f}). '
           f'The cooperative will review it before the ballot.', 'success')
     return redirect(url_for('ctas.my_ctas'))
+
+
+@ctas.route('/ctas/cycles/<int:cycle_id>/bulk-advance', methods=['POST'])
+@ctas_required
+@role_required('admin', 'treasurer')
+def bulk_advance(cycle_id):
+    """Advance several members through the same gate in one go. Each is still
+    checked individually — the duty, the terms and eligibility all apply — so
+    this saves clicks without weakening any control."""
+    db = get_db()
+    cycle = db.execute('SELECT * FROM ctas_cycles WHERE id = ?', (cycle_id,)).fetchone()
+    if not cycle:
+        abort(404)
+    ids = [i for i in request.form.getlist('sub_ids') if str(i).isdigit()]
+    if not ids:
+        flash('Select at least one member to advance.', 'warning')
+        return redirect(url_for('ctas.cycle_detail', cycle_id=cycle_id, tab='members'))
+
+    advanced, blocked = 0, []
+    now = datetime.now()
+    for sub_id in ids:
+        sub = db.execute('SELECT * FROM ctas_subscriptions WHERE id = ? AND cycle_id = ?',
+                         (sub_id, cycle_id)).fetchone()
+        if not sub:
+            continue
+        nxt = ce.next_stage(sub['status'])
+        member = db.execute('SELECT * FROM members WHERE id = ?', (sub['member_id'],)).fetchone()
+        name = f"{member['first_name']} {member['last_name']}" if member else f"#{sub_id}"
+        if not nxt:
+            blocked.append(f'{name}: already enrolled')
+            continue
+        if not perms.user_can(ce.STAGE_PERMISSION.get(nxt, 'ctas.manage')):
+            blocked.append(f"{name}: you cannot {ce.STAGE_DUTY_LABEL.get(nxt, 'act')}")
+            continue
+        if nxt == ce.SUB_ENROLLED and not sub['terms_accepted']:
+            blocked.append(f'{name}: has not accepted the terms')
+            continue
+        if nxt in (ce.SUB_ELIGIBLE, ce.SUB_ENROLLED):
+            res = ce.check_eligibility(db, member, cycle, sub['target_amount'], sub['tenure_months'],
+                                       exclude_cycle_id=cycle_id, exclude_subscription_id=sub['id'])
+            hard = [r for r in res['reasons'] if 'exceeds' not in r and 'salary' not in r.lower()]
+            if hard:
+                blocked.append(f"{name}: {' '.join(hard)}")
+                continue
+        if nxt == ce.SUB_ELIGIBLE:
+            db.execute("UPDATE ctas_subscriptions SET status = ?, eligibility_at = ?, "
+                       "eligibility_by = ? WHERE id = ?", (nxt, now, current_user.id, sub_id))
+        elif nxt == ce.SUB_FINANCE_REVIEWED:
+            db.execute("UPDATE ctas_subscriptions SET status = ?, finance_reviewed_at = ?, "
+                       "finance_reviewed_by = ? WHERE id = ?", (nxt, now, current_user.id, sub_id))
+        elif nxt == ce.SUB_APPROVED:
+            db.execute("UPDATE ctas_subscriptions SET status = ?, approved_at = ?, approved_by = ? "
+                       "WHERE id = ?", (nxt, now, current_user.id, sub_id))
+            _notify_member(db, sub['member_id'], 'Target Advance — approved',
+                           'Your application is approved. You will be enrolled for the ballot.')
+        elif nxt == ce.SUB_ENROLLED:
+            db.execute("UPDATE ctas_subscriptions SET status = ?, enrolled_at = ? WHERE id = ?",
+                       (nxt, now, sub_id))
+            _ensure_schedule(db, sub, cycle)
+            _notify_member(db, sub['member_id'], 'Target Advance — enrolled',
+                           'You are enrolled. The ballot will assign your payout month.')
+        advanced += 1
+
+    audit(db, 'CTAS_BULK_ADVANCE', 'ctas',
+          f"Cycle {cycle['name']}: advanced {advanced}, skipped {len(blocked)}")
+    db.commit()
+    if advanced:
+        flash(f'Advanced {advanced} member(s).', 'success')
+    for msg in blocked[:5]:
+        flash(f'Skipped — {msg}', 'warning')
+    if len(blocked) > 5:
+        flash(f'{len(blocked) - 5} more were skipped.', 'warning')
+    return redirect(url_for('ctas.cycle_detail', cycle_id=cycle_id, tab='members'))
 
 
 @ctas.route('/ctas/subscriptions/<int:sub_id>/terms', methods=['POST'])
@@ -1160,7 +1258,7 @@ def payout(sub_id):
     except Exception as e:
         db.rollback()
         flash(f'Could not post the payout: {e}', 'danger')
-    return redirect(url_for('ctas.cycle_detail', cycle_id=sub['cycle_id']))
+    return redirect(url_for('ctas.cycle_detail', cycle_id=sub['cycle_id'], tab='payouts'))
 
 
 # ── Payroll recovery ──────────────────────────────────────────────────────────
@@ -1308,7 +1406,7 @@ def payroll_import(cycle_id):
     except Exception as e:
         db.rollback()
         flash(f'Could not process the contributions file: {e}', 'danger')
-    return redirect(url_for('ctas.cycle_detail', cycle_id=cycle_id))
+    return redirect(url_for('ctas.cycle_detail', cycle_id=cycle_id, tab='contributions'))
 
 
 # ── Member portal ─────────────────────────────────────────────────────────────

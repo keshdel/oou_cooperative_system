@@ -431,6 +431,60 @@ class CtasAdminFlowTests(unittest.TestCase):
                 db.execute("DELETE FROM settings WHERE key='ctas_enabled'")
                 db.commit()
 
+    def test_bulk_advance_moves_many_members_in_one_action(self):
+        """The tabbed page's bulk action: one click advances everyone at the same
+        gate, while still applying the per-member checks."""
+        made = []
+        with self.app.app_context():
+            db = get_db()
+            db.execute("INSERT INTO ctas_cycles (name, status, frequency, periods, duration_months, "
+                       "contribution_amount, monthly_capacity, earliest_payout_month, "
+                       "affordability_method, liquidity_support) "
+                       "VALUES ('BulkCyc','open','monthly',4,4,50000,1,1,'manual',5000000)")
+            cid = db.execute("SELECT id FROM ctas_cycles WHERE name='BulkCyc'").fetchone()['id']
+            for i in range(3):
+                db.execute("INSERT INTO members (member_number, first_name, last_name, status, "
+                           "total_savings, monthly_savings, date_joined) "
+                           "VALUES (?,?, 'T','active',900000,0,'2024-01-01')",
+                           (f'CTAS/BK/{i}', f'B{i}'))
+                mid = db.execute("SELECT id FROM members WHERE member_number=?",
+                                 (f'CTAS/BK/{i}',)).fetchone()['id']
+                made.append(mid)
+                # The third member has NOT accepted terms.
+                db.execute("INSERT INTO ctas_subscriptions (cycle_id, member_id, target_amount, "
+                           "tenure_months, monthly_deduction, status, terms_accepted) "
+                           "VALUES (?,?,200000,4,50000,'submitted',?)", (cid, mid, 0 if i == 2 else 1))
+            db.commit()
+            sids = [r['id'] for r in db.execute(
+                "SELECT id FROM ctas_subscriptions WHERE cycle_id=? ORDER BY id", (cid,)).fetchall()]
+        try:
+            data = {'sub_ids': [str(s) for s in sids]}   # repeated field
+            for _ in range(3):        # submitted -> eligible -> finance -> approved
+                self.client.post(f'/ctas/cycles/{cid}/bulk-advance', data=data)
+            with self.app.app_context():
+                rows = get_db().execute("SELECT status FROM ctas_subscriptions WHERE cycle_id=? "
+                                        "ORDER BY id", (cid,)).fetchall()
+                self.assertEqual([r['status'] for r in rows], ['approved'] * 3)
+            # Final gate: the member without terms is held back, the others enrol.
+            self.client.post(f'/ctas/cycles/{cid}/bulk-advance', data=data)
+            with self.app.app_context():
+                rows = get_db().execute("SELECT status FROM ctas_subscriptions WHERE cycle_id=? "
+                                        "ORDER BY id", (cid,)).fetchall()
+                statuses = [r['status'] for r in rows]
+                self.assertEqual(statuses[:2], ['enrolled', 'enrolled'])
+                self.assertEqual(statuses[2], 'approved')     # blocked on terms, not enrolled
+        finally:
+            with self.app.app_context():
+                db = get_db()
+                for s in sids:
+                    db.execute("DELETE FROM ctas_schedule WHERE subscription_id=?", (s,))
+                db.execute("DELETE FROM ctas_subscriptions WHERE cycle_id=?", (cid,))
+                db.execute("DELETE FROM ctas_cycles WHERE id=?", (cid,))
+                for mid in made:
+                    db.execute("DELETE FROM members WHERE id=?", (mid,))
+                db.execute("DELETE FROM settings WHERE key='ctas_enabled'")
+                db.commit()
+
     def test_member_cannot_be_enrolled_without_accepting_terms(self):
         with self.app.app_context():
             db = get_db()
