@@ -30,11 +30,26 @@
     <p class="text-muted small">You can cancel at any time. Cancelling does not end your subscription —
         you would simply pay each contribution yourself.</p>
 
-    {% elif not due %}
+    {% elif stopped %}
+    <div class="alert alert-warning">
+        <h6 class="alert-heading"><i class="fas fa-triangle-exclamation"></i>
+            Automatic payment stopped</h6>
+        {% if stopped.status == 'expired' %}
+        <p class="mb-1">Your saved card {{ stopped.masked_label }} has expired, so we stopped charging it.</p>
+        {% else %}
+        <p class="mb-1">We could not charge your saved card {{ stopped.masked_label }} after several attempts,
+            so automatic payment was paused.</p>
+        {% endif %}
+        {% if stopped.last_error %}<p class="small mb-1 text-muted">Reason given: {{ stopped.last_error }}</p>{% endif %}
+        <p class="mb-0 small">Set it up again below with a current card — your subscription is unaffected.</p>
+    </div>
+    {% endif %}
+
+    {% if not mandate and not due %}
     <div class="alert alert-info">You have no outstanding contribution right now, so there is nothing to
         authorise with. Come back when your next contribution is due.</div>
 
-    {% else %}
+    {% elif not mandate %}
     <div class="card mb-3"><div class="card-body">
         <h6 class="card-title">What happens next</h6>
         <ol class="text-muted small mb-0">

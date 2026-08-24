@@ -15,7 +15,7 @@ except FileNotFoundError:
 
 import app as app_module  # noqa: E402
 from database import get_db  # noqa: E402
-from blueprints.ctas import ctas_enabled  # noqa: E402
+from blueprints.ctas import ctas_enabled, _store_token  # noqa: E402
 
 
 class CtasFeatureFlagTests(unittest.TestCase):
@@ -875,6 +875,124 @@ class CtasMemberPortalTests(unittest.TestCase):
             man = get_db().execute("SELECT status, cancelled_at FROM ctas_mandates WHERE id=?", (mid,)).fetchone()
             self.assertEqual(man['status'], 'cancelled')
             self.assertIsNotNone(man['cancelled_at'])
+
+    def test_card_expiry_detection(self):
+        from datetime import date as _d
+        from ctas_engine import card_expired
+        self.assertTrue(card_expired('01', '2026', _d(2026, 2, 1)))    # expired last month
+        self.assertFalse(card_expired('02', '2026', _d(2026, 2, 28)))  # valid to month end
+        self.assertFalse(card_expired('12', '2030', _d(2026, 2, 1)))
+        self.assertFalse(card_expired('', '', _d(2026, 2, 1)))         # unknown -> let gateway decide
+
+    def _mandate_fixture(self, exp_month='12', exp_year='2030', attempts=0, retry=None, max_att=3):
+        """A scheduled subscription with an active mandate and one due period."""
+        with self.app.app_context():
+            db = get_db()
+            db.execute("UPDATE ctas_cycles SET retry_days = 3, max_charge_attempts = ? WHERE id = ?",
+                       (max_att, self.cid))
+            db.execute("INSERT INTO ctas_subscriptions (cycle_id, member_id, target_amount, tenure_months, "
+                       "monthly_deduction, status, contributed_total, advance_balance) VALUES "
+                       "(?, (SELECT id FROM members WHERE member_number='CTAS/M/1'), 200000, 4, 50000, "
+                       "'scheduled', 0, 0)", (self.cid,))
+            db.commit()
+            sid = db.execute("SELECT id FROM ctas_subscriptions WHERE cycle_id=?", (self.cid,)).fetchone()['id']
+            db.execute("INSERT INTO ctas_schedule (subscription_id, cycle_id, period_number, due_date, "
+                       "expected_amount, paid_amount, status, charge_attempts, next_retry_at) "
+                       "VALUES (?, ?, 1, '2026-01-01', 50000, 0, 'late', ?, ?)",
+                       (sid, self.cid, attempts, retry))
+            db.execute("INSERT INTO ctas_mandates (member_id, subscription_id, status, authorization_code, "
+                       "masked_label, email, exp_month, exp_year) VALUES "
+                       "((SELECT id FROM members WHERE member_number='CTAS/M/1'), ?, 'active', ?, "
+                       "'**** 4321', 'ctasmem@x.com', ?, ?)",
+                       (sid, _store_token('AUTH_tok'), exp_month, exp_year))
+            db.commit()
+            return sid
+
+    def test_failed_charge_backs_off_then_suspends_after_max_attempts(self):
+        from unittest.mock import patch
+        import os as _os
+        sid = self._mandate_fixture(attempts=0, max_att=2)
+        _os.environ['TASK_RUNNER_TOKEN'] = 'charge-secret'
+        anon = self.app.test_client()
+        hdr = {'X-Task-Token': 'charge-secret'}
+
+        class _Decline:
+            def charge_authorization(self, *a, **k):
+                return {'status': False, 'message': 'Insufficient funds'}
+        try:
+            with patch('blueprints.ctas.get_gateway', return_value=_Decline()):
+                # First failure -> schedules a retry, does NOT suspend.
+                r1 = anon.post('/tasks/ctas/charge-due', headers=hdr)
+                self.assertEqual(r1.get_json()['failed'], 1)
+                self.assertEqual(r1.get_json()['suspended'], 0)
+                with self.app.app_context():
+                    row = get_db().execute("SELECT * FROM ctas_schedule WHERE subscription_id=?", (sid,)).fetchone()
+                    self.assertEqual(row['charge_attempts'], 1)
+                    self.assertIsNotNone(row['next_retry_at'])       # backed off
+                # Same day: the back-off means it is not retried again.
+                r2 = anon.post('/tasks/ctas/charge-due', headers=hdr)
+                self.assertEqual(r2.get_json()['failed'], 0)
+                # Clear the back-off to simulate the retry day arriving -> hits the cap.
+                with self.app.app_context():
+                    db = get_db()
+                    db.execute("UPDATE ctas_schedule SET next_retry_at = NULL WHERE subscription_id=?", (sid,))
+                    db.commit()
+                r3 = anon.post('/tasks/ctas/charge-due', headers=hdr)
+                self.assertEqual(r3.get_json()['suspended'], 1)
+                with self.app.app_context():
+                    db = get_db()
+                    man = db.execute("SELECT status FROM ctas_mandates WHERE subscription_id=?", (sid,)).fetchone()
+                    self.assertEqual(man['status'], 'suspended')     # stopped charging
+                    ex = db.execute("SELECT COUNT(*) FROM ctas_exceptions WHERE subscription_id=?",
+                                    (sid,)).fetchone()[0]
+                    self.assertGreaterEqual(ex, 1)                   # officers have a case to work
+        finally:
+            _os.environ.pop('TASK_RUNNER_TOKEN', None)
+
+    def test_expired_card_stops_charging_and_tells_the_member(self):
+        from unittest.mock import patch
+        import os as _os
+        sid = self._mandate_fixture(exp_month='01', exp_year='2020')
+        _os.environ['TASK_RUNNER_TOKEN'] = 'charge-secret'
+        anon = self.app.test_client()
+
+        class _NeverCalled:
+            def charge_authorization(self, *a, **k):
+                raise AssertionError('an expired card must not be charged')
+        try:
+            with patch('blueprints.ctas.get_gateway', return_value=_NeverCalled()):
+                r = anon.post('/tasks/ctas/charge-due', headers={'X-Task-Token': 'charge-secret'})
+                self.assertEqual(r.get_json()['skipped'], 1)
+            with self.app.app_context():
+                man = get_db().execute("SELECT status FROM ctas_mandates WHERE subscription_id=?",
+                                       (sid,)).fetchone()
+                self.assertEqual(man['status'], 'expired')
+        finally:
+            _os.environ.pop('TASK_RUNNER_TOKEN', None)
+
+    def test_successful_charge_posts_contribution_and_clears_retries(self):
+        from unittest.mock import patch
+        import os as _os
+        sid = self._mandate_fixture(attempts=1, retry=None)
+        _os.environ['TASK_RUNNER_TOKEN'] = 'charge-secret'
+        anon = self.app.test_client()
+
+        class _OK:
+            def charge_authorization(self, *a, **k):
+                return {'status': True, 'data': {'status': 'success'}}
+        try:
+            with patch('blueprints.ctas.get_gateway', return_value=_OK()):
+                r = anon.post('/tasks/ctas/charge-due', headers={'X-Task-Token': 'charge-secret'})
+                self.assertEqual(r.get_json()['charged'], 1)
+            with self.app.app_context():
+                db = get_db()
+                row = db.execute("SELECT * FROM ctas_schedule WHERE subscription_id=?", (sid,)).fetchone()
+                self.assertEqual(row['status'], 'paid')
+                self.assertIsNone(row['next_retry_at'])              # back-off cleared
+                sub = db.execute("SELECT contributed_total FROM ctas_subscriptions WHERE id=?", (sid,)).fetchone()
+                self.assertAlmostEqual(float(sub['contributed_total']), 50000.0, places=2)
+        finally:
+            _os.environ.pop('TASK_RUNNER_TOKEN', None)
 
     def test_charge_due_endpoint_is_token_guarded(self):
         import os as _os

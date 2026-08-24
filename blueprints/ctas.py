@@ -19,7 +19,7 @@ import csv
 import hmac
 import os
 import secrets
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from io import StringIO, TextIOWrapper
 from functools import wraps
 
@@ -1052,8 +1052,13 @@ def autopay_setup(sub_id):
     mandate = _active_mandate(db, sub_id)
 
     if request.method == 'GET':
+        # Show a stopped mandate (suspended after repeated failures, or expired
+        # card) so the member understands why and can set it up again.
+        stopped = None if mandate else db.execute(
+            "SELECT * FROM ctas_mandates WHERE subscription_id = ? AND status IN ('suspended','expired') "
+            "ORDER BY id DESC LIMIT 1", (sub_id,)).fetchone()
         return render_template('member/ctas-autopay.html', sub=sub, cycle=cycle, due=due,
-                               amount=amount, mandate=mandate,
+                               amount=amount, mandate=mandate, stopped=stopped,
                                consent=_consent_text(cycle, amount) if due else '')
 
     if mandate:
@@ -1216,24 +1221,42 @@ def ctas_charge_due():
     if not (by_token or by_user):
         return jsonify({'success': False, 'error': 'Unauthorised'}), 403
 
-    today = date.today().isoformat()
+    today = date.today()
+    today_s = today.isoformat()
     rows = db.execute('''
-        SELECT sc.*, mn.id AS mandate_id, mn.authorization_code, mn.email, mn.fail_count,
-               s.member_id
+        SELECT sc.*, mn.id AS mandate_id, mn.authorization_code, mn.email,
+               mn.exp_month, mn.exp_year, s.member_id
         FROM ctas_schedule sc
         JOIN ctas_subscriptions s ON s.id = sc.subscription_id
         JOIN ctas_mandates mn ON mn.subscription_id = s.id AND mn.status = 'active'
         WHERE sc.status IN ('due', 'grace', 'late', 'partial') AND sc.due_date <= ?
+          AND (sc.next_retry_at IS NULL OR sc.next_retry_at <= ?)
           AND s.status IN ('scheduled', 'active_recovery')
-        ORDER BY sc.due_date''', (today,)).fetchall()
+        ORDER BY sc.due_date''', (today_s, today_s)).fetchall()
 
-    charged = failed = 0
+    charged = failed = skipped = suspended = 0
     for r in rows:
         amount = round(float(r['expected_amount'] or 0) - float(r['paid_amount'] or 0), 2)
         if amount <= 0:
             continue
         sub = db.execute('SELECT * FROM ctas_subscriptions WHERE id = ?', (r['subscription_id'],)).fetchone()
         cycle = db.execute('SELECT * FROM ctas_cycles WHERE id = ?', (sub['cycle_id'],)).fetchone()
+        retry_days = int(cycle['retry_days'] if cycle['retry_days'] is not None else 3)
+        max_attempts = int(cycle['max_charge_attempts'] if cycle['max_charge_attempts'] is not None else 3)
+        attempts = int(r['charge_attempts'] or 0)
+
+        # An expired card can never succeed — stop trying and tell the member.
+        if ce.card_expired(r['exp_month'], r['exp_year'], today):
+            db.execute("UPDATE ctas_mandates SET status = 'expired', "
+                       "last_error = 'Saved card has expired.' WHERE id = ?", (r['mandate_id'],))
+            _raise_exception(db, sub['id'], 'missed_deduction', r['period_number'], amount,
+                             'Automatic payment stopped: the saved card has expired.')
+            _notify_member(db, r['member_id'], 'Target Advance — your saved card has expired',
+                           'Your card on file has expired, so automatic payment has stopped. '
+                           'Please set it up again with a current card.')
+            skipped += 1
+            continue
+
         reference = generate_reference('CTASAP')
         try:
             resp = get_gateway('paystack').charge_authorization(
@@ -1243,30 +1266,53 @@ def ctas_charge_due():
         except Exception as exc:   # pragma: no cover - network
             current_app.logger.warning('CTAS auto-charge error: %s', exc)
             ok, resp = False, {'message': str(exc)}
+
         if ok:
-            _post_contribution(db, sub, cycle, r['period_number'], amount,
-                               ref_suffix=f'-{reference}')
+            _post_contribution(db, sub, cycle, r['period_number'], amount, ref_suffix=f'-{reference}')
+            db.execute("UPDATE ctas_schedule SET charge_attempts = ?, last_attempt_at = ?, "
+                       "next_retry_at = NULL WHERE id = ?", (attempts + 1, datetime.now(), r['id']))
             db.execute("UPDATE ctas_mandates SET last_charged_at = ?, fail_count = 0, last_error = NULL "
                        "WHERE id = ?", (datetime.now(), r['mandate_id']))
             _notify_member(db, r['member_id'], 'Target Advance — contribution paid',
                            f"₦{amount:,.2f} for period {r['period_number']} was charged to your saved card.")
             charged += 1
-        else:
-            fails = int(r['fail_count'] or 0) + 1
-            db.execute("UPDATE ctas_mandates SET fail_count = ?, last_error = ? WHERE id = ?",
-                       (fails, str(resp.get('message') or 'Charge failed')[:200], r['mandate_id']))
+            continue
+
+        # Failed: step the ladder rather than retrying every run.
+        attempts += 1
+        reason = str(resp.get('message') or 'declined')[:200]
+        give_up = attempts >= max_attempts
+        next_retry = None if give_up else (today + timedelta(days=retry_days)).isoformat()
+        db.execute("UPDATE ctas_schedule SET charge_attempts = ?, last_attempt_at = ?, next_retry_at = ? "
+                   "WHERE id = ?", (attempts, datetime.now(), next_retry, r['id']))
+        db.execute("UPDATE ctas_mandates SET fail_count = ?, last_error = ? WHERE id = ?",
+                   (attempts, reason, r['mandate_id']))
+        if give_up:
+            # Stop charging; hand it to the officers as an exception to work.
+            db.execute("UPDATE ctas_mandates SET status = 'suspended' WHERE id = ?", (r['mandate_id'],))
             _raise_exception(db, sub['id'], 'missed_deduction', r['period_number'], amount,
-                             f"Automatic charge failed (attempt {fails}): {resp.get('message') or 'declined'}")
+                             f"Automatic payment suspended after {attempts} failed attempts: {reason}")
+            _notify_member(db, r['member_id'], 'Target Advance — automatic payment stopped',
+                           f"We could not charge ₦{amount:,.2f} for period {r['period_number']} after "
+                           f"{attempts} attempts, so automatic payment has been paused. Please pay this "
+                           f"contribution and set up your card again.")
+            suspended += 1
+        else:
             _notify_member(db, r['member_id'], 'Target Advance — payment failed',
-                           f"We could not charge ₦{amount:,.2f} for period {r['period_number']}. "
-                           f"Please check your card or pay at the office.")
-            failed += 1
-    audit(db, 'CTAS_AUTO_CHARGE', 'ctas', f"Auto-charge run: {charged} charged, {failed} failed")
+                           f"We could not charge ₦{amount:,.2f} for period {r['period_number']} "
+                           f"({reason}). We will try again in {retry_days} day(s).")
+        failed += 1
+
+    audit(db, 'CTAS_AUTO_CHARGE', 'ctas',
+          f"Auto-charge run: {charged} charged, {failed} failed, {suspended} suspended, {skipped} skipped")
     db.commit()
     if by_user and not by_token:
-        flash(f'Automatic charges: {charged} succeeded, {failed} failed.', 'info')
+        flash(f'Automatic charges: {charged} succeeded, {failed} failed'
+              + (f', {suspended} suspended' if suspended else '')
+              + (f', {skipped} skipped (expired card)' if skipped else '') + '.', 'info')
         return redirect(url_for('ctas.dashboard'))
-    return jsonify({'success': True, 'charged': charged, 'failed': failed})
+    return jsonify({'success': True, 'charged': charged, 'failed': failed,
+                    'suspended': suspended, 'skipped': skipped})
 
 
 # ── Exceptions: member exit (net-off waterfall) + arrears dashboard ────────────

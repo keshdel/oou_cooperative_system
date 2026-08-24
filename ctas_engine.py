@@ -173,6 +173,17 @@ def schedule_status(due_date, expected, paid, grace_days=7, today=None):
     return SCH_PARTIAL if paid > 0 else SCH_LATE
 
 
+def card_expired(exp_month, exp_year, today=None):
+    """True if a saved card's expiry has passed (cards die mid-cycle often)."""
+    try:
+        month, year = int(exp_month), int(exp_year)
+    except (TypeError, ValueError):
+        return False               # unknown expiry — let the gateway decide
+    today = today or date.today()
+    last_day = calendar.monthrange(year, month)[1]
+    return date(year, month, last_day) < today
+
+
 def build_schedule(cycle, periods=None):
     """The (period_number, due_date, expected_amount) rows for one subscription."""
     n = int(periods or cycle_periods(cycle) or 0)

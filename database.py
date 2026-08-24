@@ -1010,6 +1010,15 @@ def init_db():
     _exec_ignore(db, 'CREATE UNIQUE INDEX IF NOT EXISTS uq_ctas_schedule_sub_period '
                      'ON ctas_schedule(subscription_id, period_number)')
     _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_ctas_schedule_due ON ctas_schedule(due_date, status)')
+    # Automatic-charge retry tracking, so a declined card is retried on a sane
+    # ladder instead of being hammered every run.
+    _add_col(db, 'ctas_schedule', 'charge_attempts', 'INTEGER DEFAULT 0')
+    _add_col(db, 'ctas_schedule', 'last_attempt_at', 'TIMESTAMP')
+    _add_col(db, 'ctas_schedule', 'next_retry_at', 'DATE')
+    _add_col(db, 'ctas_cycles', 'retry_days', 'INTEGER DEFAULT 3')
+    _add_col(db, 'ctas_cycles', 'max_charge_attempts', 'INTEGER DEFAULT 3')
+    _add_col(db, 'ctas_plans', 'retry_days', 'INTEGER DEFAULT 3')
+    _add_col(db, 'ctas_plans', 'max_charge_attempts', 'INTEGER DEFAULT 3')
 
     # Recurring-payment mandates. Stores ONLY the payment provider's reusable
     # token plus masked display details — never card numbers (PCI). The consent
