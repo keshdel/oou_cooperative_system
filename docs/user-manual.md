@@ -53,6 +53,15 @@ Important checks:
 - Bank account detail balances should agree with the cooperative bank statement for the same period.
 - Use reversal workflows for corrections rather than deleting posted records.
 
+Correcting a whole upload:
+
+1. Fix the cause first — for example correct the share capital percentage in Settings.
+2. Open the batch and use "Reverse this upload", giving a reason. The reason is written to the audit log.
+3. Re-upload the corrected file under a new batch reference.
+4. Check one member's savings statement to confirm the figures now read correctly.
+
+Reversal cancels each row with an opposite entry rather than deleting it, so member balances and share capital are restored and the ledger stays balanced. Reversed rows are hidden from the Savings Records list, and running the reversal twice is safe.
+
 ## Loan Operations
 
 Loan application flow:
@@ -76,6 +85,35 @@ Repayments:
 - Manual and bulk repayments update both loan balance and GL.
 - Repayment emails can notify members of amount paid and remaining balance when outgoing email is configured.
 - Reversals update the loan subledger and GL together.
+
+## Target Advance (CTAS)
+
+An optional module. It stays hidden until the cooperative is switched on, from HQ
+under Billing → Clients → CTAS on. See `docs/ctas.md` for the full reference.
+
+What it is:
+
+- Members contribute a fixed amount every period; a ballot decides who receives the target amount in which period.
+- A member keeps contributing after they have collected, until the cycle ends.
+- Their own contributions fund part of their payout; the cooperative advances the rest and recovers it from their remaining contributions.
+- If a cycle is not fully subscribed, the cooperative bridges the gap. This changes what the cooperative must fund, never the member's target.
+
+Running a cycle:
+
+1. Define a plan (contribution × periods = target), then create a cycle from it with real dates.
+2. Record the CTAS reserve and the approved cooperative support on the Setup tab.
+3. Open enrolment; members apply themselves or are added by an officer.
+4. Approve each application through eligibility, finance review and committee approval, then enrol. Members at the same gate can be advanced together.
+5. Close enrolment and run the ballot. A projected shortfall blocks this until support is approved or an officer accepts the gap.
+6. Each period, export what is due, collect, and import the confirmed amounts.
+7. Pay each member on their balloted position.
+
+Important checks:
+
+- A member cannot be enrolled until they have accepted the scheme terms, which include credit checks and personal-data processing. Paper acceptance can be recorded by an officer and is audited.
+- The approval gates are separate duties and can be split between officers under Settings → Task Assignment.
+- Priority positions are charged only if the position is actually allocated, so no refunds arise.
+- The pool, advances and fee income are ordinary ledger accounts — reconcile them like any other.
 
 ## Accounting
 

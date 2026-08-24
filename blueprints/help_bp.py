@@ -1068,6 +1068,272 @@ ARTICLES = [
             },
         ],
     },
+
+    # ── Target Advance (CTAS) ────────────────────────────────────────────────
+    {
+        'slug':      'target-advance-overview',
+        'title':     'Target Advance: how the scheme works',
+        'category':  'Target Advance',
+        'summary':   'A rotating contribution scheme that gives each member a lump sum on their balloted position.',
+        'endpoints': ['ctas.dashboard', 'ctas.overview'],
+        'body': [
+            {
+                'head': 'The idea',
+                'text': 'Target Advance is the traditional <em>ajo</em> or <em>esusu</em> run properly. Members contribute a fixed amount every period. Each period one member (or more, if you allow it) collects the full target amount. A ballot decides the order, so nobody has to recruit contributors and everybody gets a fair chance at an early position.',
+            },
+            {
+                'head': 'Where the money comes from',
+                'steps': [
+                    'Every member contributes the same fixed amount each period — <b>including after they have collected</b>.',
+                    'When a member is paid, their own contributions so far cover part of it and the cooperative advances the rest.',
+                    'Their remaining contributions repay that advance until the cycle ends.',
+                    'If the cycle is not full, contributions will not cover a whole payout — the cooperative bridges the gap. That is the <b>cooperative guarantee</b>, and the Setup tab shows exactly how much it costs.',
+                ],
+            },
+            {
+                'head': 'Everything posts to your books',
+                'text': 'Nothing here sits outside your accounts. Contributions credit the CTAS Contribution Pool, payouts move money out of the pool and into CTAS Advances Receivable, and fees post to their own income accounts. You can trace every figure in the Trial Balance.',
+            },
+            {
+                'head': 'The Overview screen',
+                'text': 'Overview answers three questions at a glance: is the scheme profitable, is it funded, and is anything overdue. Money figures come straight from the ledger. Anything the system does not yet track is listed as such rather than shown as zero.',
+            },
+            {
+                'head': 'Tips',
+                'tips': [
+                    'Target Advance is an optional module. If you cannot see it, ask your provider to switch it on.',
+                    'Start with a short cycle and few members to learn the flow before running a real one.',
+                    'Read <b>Running a Target Advance cycle</b> next.',
+                ],
+            },
+        ],
+    },
+    {
+        'slug':      'target-advance-cycle',
+        'title':     'Running a Target Advance cycle',
+        'category':  'Target Advance',
+        'summary':   'From opening enrolment through approval, ballot, contributions and payouts.',
+        'endpoints': ['ctas.cycle_detail'],
+        'body': [
+            {
+                'head': 'The four tabs',
+                'steps': [
+                    '<b>Members</b> — approve applications and enrol members. This is the day-to-day work.',
+                    '<b>Contributions</b> — export what is due each period and import what was collected.',
+                    '<b>Payouts</b> — pay each member on their balloted position, and watch the cash projection.',
+                    '<b>Setup</b> — liquidity, priority pricing and deleting the cycle. Set once, then leave alone.',
+                ],
+            },
+            {
+                'head': 'Start here every time',
+                'text': 'The <b>Needs attention</b> bar at the top tells you what is blocking: members waiting on approval, members who have not accepted the terms, priority requests to decide, late contributions and any funding shortfall. Click any of them to jump straight to the right tab.',
+            },
+            {
+                'head': 'Step by step',
+                'steps': [
+                    '<b>Open enrolment</b> — members can now apply, or you can add them on the Members tab.',
+                    '<b>Approve</b> — each application passes three gates: confirm eligibility, finance review, committee approval. Then enrol.',
+                    '<b>Close enrolment</b> once you have your members.',
+                    '<b>Ready for ballot</b> — blocked if the projected cash falls short, unless you deliberately accept the gap.',
+                    '<b>Run ballot</b> — assigns everyone a payout position. This cannot be undone.',
+                    '<b>Collect and pay</b> — import contributions each period and pay out the member whose position it is.',
+                ],
+            },
+            {
+                'head': 'Approving several members at once',
+                'text': 'Members sitting at the same gate can be moved together: tick <em>Select all</em> and press the button. Every check still applies to each member individually, so anyone who is not ready — for example someone who has not accepted the terms — is held back and named for you.',
+            },
+            {
+                'head': 'Terms are required',
+                'text': 'A member cannot be enrolled until they have accepted the scheme terms, which cover the contribution obligation, how the cooperative recovers it, credit checks and the handling of their personal information. If they signed on paper, use <em>record</em> beside their name to log it — your attestation is saved to the audit trail.',
+            },
+            {
+                'head': 'Tips',
+                'tips': [
+                    'Separate the approval gates between officers under Settings → Task Assignment if your cooperative wants four-eyes control.',
+                    'Set a cycle start date — the contribution due dates are calculated from it.',
+                    'The ballot is recorded with the seed used, so its fairness can always be demonstrated.',
+                ],
+            },
+        ],
+    },
+    {
+        'slug':      'target-advance-setup',
+        'title':     'Plans, pricing and liquidity',
+        'category':  'Target Advance',
+        'summary':   'Define reusable plans, price early positions, and check the cooperative can fund a cycle.',
+        'endpoints': ['ctas.plans'],
+        'body': [
+            {
+                'head': 'Plans and cycles',
+                'text': 'A <b>plan</b> is the product — for example ₦50,000 monthly for 12 months to receive ₦600,000. A <b>cycle</b> is one run of that plan with real dates and real members. Define the plan once and reuse it every year.',
+            },
+            {
+                'head': 'Building a plan',
+                'steps': [
+                    'Set the contribution per period and how many periods — the target is calculated for you.',
+                    'Choose the frequency: weekly, fortnightly or monthly.',
+                    'Set how many members can be paid each period.',
+                    'Choose how affordability is checked (see below).',
+                ],
+            },
+            {
+                'head': 'Affordability',
+                'steps': [
+                    '<b>Savings</b> — a member may target up to a multiple of their savings balance. Works for any cooperative.',
+                    '<b>Salary</b> — the contribution must fit within a share of their monthly salary. For staff cooperatives.',
+                    '<b>Manual</b> — no automatic test; the committee decides.',
+                ],
+            },
+            {
+                'head': 'Priority positions',
+                'text': 'Members who need money sooner can pay for an earlier position. Price each position on the Setup tab — earlier ones normally cost more. A member requests, an officer grants or declines, and if several want the same position the ballot decides between them. <b>The fee is only charged if the position is actually allocated</b>, so nobody needs a refund.',
+            },
+            {
+                'head': 'Liquidity and the guarantee',
+                'text': 'Before a cycle can go to ballot, the projection must show it can be funded. Record your CTAS cash reserve and the support the committee has approved, and the Setup tab shows the balance for every period in green, amber or red. A cycle with a projected shortfall is blocked until support is approved — or until an officer knowingly accepts the gap, which is recorded.',
+            },
+        ],
+    },
+    {
+        'slug':      'target-advance-exceptions',
+        'title':     'Arrears, missed contributions and member exit',
+        'category':  'Target Advance',
+        'summary':   'What happens when a contribution is missed and how to settle a member who leaves.',
+        'endpoints': ['ctas.exceptions'],
+        'body': [
+            {
+                'head': 'Missed and short contributions',
+                'text': 'When you import a period and a member has paid nothing, or less than expected, the shortfall is added to their arrears, a case is raised here, and the member is notified. If they later pay more than expected, the extra reduces their arrears.',
+            },
+            {
+                'head': 'Failed automatic payments',
+                'text': 'If a member pays by saved card and the charge is declined, the system waits a few days and tries again. After the final attempt automatic payment is paused, a case is raised for you, and the member is asked to pay that contribution and add their card again. An expired card is never charged — it is detected first.',
+            },
+            {
+                'head': 'When a member leaves',
+                'steps': [
+                    'Open the member on the cycle and choose <b>Exit / settle</b>.',
+                    'What they still owe is recovered in order: savings, then share capital, then any other recovery you enter (dividends, terminal benefits, a cash payment).',
+                    'Anything still left over is written off — a committee decision, recorded as such.',
+                    'Everything posts to the ledger and the subscription is closed.',
+                ],
+            },
+            {
+                'head': 'Tips',
+                'tips': [
+                    'Work the open cases regularly — arrears are easiest to recover early.',
+                    'Resolve a case with a note once you have acted, so the next officer sees what happened.',
+                ],
+            },
+        ],
+    },
+    {
+        'slug':      'my-target-advance',
+        'title':     'My Target Advance',
+        'category':  'Member Portal',
+        'summary':   'Apply for a target advance, follow your ballot position and pay automatically.',
+        'endpoints': ['ctas.my_ctas', 'ctas.autopay_setup'],
+        'body': [
+            {
+                'head': 'What this is',
+                'text': 'You contribute a fixed amount each period, and on your allocated position you receive the full target amount in one payment — often long before you would have saved it yourself. You keep contributing until the cycle ends.',
+            },
+            {
+                'head': 'Applying',
+                'steps': [
+                    'Choose an open cycle and enter the amount you want to target and over how many periods.',
+                    'Read the terms and accept them — they cover your contributions, how the cooperative recovers them, credit checks and how your information is used.',
+                    'Type your full name as your signature and submit.',
+                    'The cooperative reviews your application, then enrols you for the ballot.',
+                ],
+            },
+            {
+                'head': 'After the ballot',
+                'text': 'You are told which period you will be paid in. Your contributions continue as normal both before and after you collect. The <em>My contributions</em> table shows every period, when it is due and whether it has been paid.',
+            },
+            {
+                'head': 'Getting paid earlier',
+                'text': 'If the cooperative offers priority positions, you can ask for an earlier one and accept the fee. If more members want that position than there are places, a ballot decides fairly between you — and if you miss out, <b>you pay nothing</b>.',
+            },
+            {
+                'head': 'Paying automatically',
+                'steps': [
+                    'Choose <b>Set up automatic payment</b> on your subscription.',
+                    'You pay your next contribution by card, and that card is then used for the rest automatically.',
+                    'Your card number is entered on the payment provider\'s own secure page — the cooperative never sees or stores it.',
+                    'You can cancel at any time from the same screen.',
+                ],
+            },
+        ],
+    },
+
+    # ── Corrections and governance ───────────────────────────────────────────
+    {
+        'slug':      'reverse-savings-upload',
+        'title':     'Correcting a savings upload',
+        'category':  'Savings',
+        'summary':   'Undo a whole upload that was posted with the wrong figures, without breaking your books.',
+        'endpoints': ['savings.salary_batch_detail'],
+        'body': [
+            {
+                'head': 'When to use this',
+                'text': 'If a savings upload went in with the wrong amounts — for example the share-capital percentage was set incorrectly — you can reverse the whole batch from the batch page.',
+            },
+            {
+                'head': 'It reverses, it does not delete',
+                'text': 'Each row is cancelled by an opposite entry. Member balances and share capital are restored, the ledger stays balanced, and both the original and the correction remain visible. Deleting the rows instead would leave member balances and your accounts disagreeing.',
+            },
+            {
+                'head': 'How to correct an upload',
+                'steps': [
+                    'Fix the cause first — for example correct the share-capital percentage in Settings.',
+                    'Open the batch and use <b>Reverse this upload</b>, giving a reason. The reason is saved to the audit trail.',
+                    'Re-upload the corrected file under a <b>new batch reference</b>.',
+                    'Check one member\'s savings statement to confirm the figures now read correctly.',
+                ],
+            },
+            {
+                'head': 'Tips',
+                'tips': [
+                    'Reversed rows are hidden from the Savings Records list, so the totals stay easy to read.',
+                    'Running the reversal twice is safe — rows already reversed are skipped.',
+                ],
+            },
+        ],
+    },
+    {
+        'slug':      'task-assignment',
+        'title':     'Deciding what each officer can do',
+        'category':  'Administration',
+        'summary':   'Assign duties by office or to a named officer, without changing any code.',
+        'endpoints': ['admin_panel.task_assignment', 'admin_panel.user_permissions'],
+        'body': [
+            {
+                'head': 'Two levels',
+                'steps': [
+                    '<b>By office</b> — what a Treasurer, General Secretary or Exco member can do by default.',
+                    '<b>By officer</b> — one named person allowed or denied a single duty regardless of their office.',
+                ],
+            },
+            {
+                'head': 'The President always has full access',
+                'text': 'The President or Administrator holds every duty and cannot be edited, so somebody can always restore access after a mistake. To limit such an account, change its role first.',
+            },
+            {
+                'head': 'Separating approval duties',
+                'text': 'Some duties exist specifically so they can be split between officers — the three Target Advance approval gates, for example. A small cooperative can give all of them to one person; a larger one can require different officers at each gate.',
+            },
+            {
+                'head': 'Tips',
+                'tips': [
+                    'Changes take effect on the officer\'s very next click — no sign-out needed.',
+                    'Menus follow duties, so an officer is never shown a link that will refuse them.',
+                    'Every change is written to the audit log.',
+                ],
+            },
+        ],
+    },
 ]
 
 # ── Category metadata ─────────────────────────────────────────────────────────
@@ -1081,6 +1347,7 @@ CATEGORIES = {
     'Reports':          {'icon': 'fas fa-file-alt',       'color': '#be185d'},
     'Communications':   {'icon': 'fas fa-paper-plane',    'color': '#2563eb'},
     'Administration':   {'icon': 'fas fa-cog',            'color': '#374151'},
+    'Target Advance':   {'icon': 'fas fa-recycle',        'color': '#4338ca'},
     'Member Portal':    {'icon': 'fas fa-user-circle',    'color': '#0891b2'},
 }
 
