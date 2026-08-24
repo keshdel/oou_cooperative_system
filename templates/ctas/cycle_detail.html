@@ -36,7 +36,18 @@
         {% endmacro %}
         {% if cycle.status == 'draft' %}{{ tbtn('open','Open enrolment','btn-primary') }}
         {% elif cycle.status == 'open' %}{{ tbtn('closed','Close enrolment','btn-outline-warning') }}
-        {% elif cycle.status == 'closed' %}{{ tbtn('ready_for_ballot','Ready for ballot','btn-primary') }} {{ tbtn('open','Re-open') }}
+        {% elif cycle.status == 'closed' %}
+            <form method="post" action="{{ url_for('ctas.cycle_transition', cycle_id=cycle.id) }}" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="to" value="ready_for_ballot">
+                <button class="btn btn-sm btn-primary">Ready for ballot</button>
+                {% if liq.shortfall > 0 %}
+                <label class="small ms-2 text-danger">
+                    <input type="checkbox" name="override_liquidity" value="1">
+                    proceed anyway (₦{{ "{:,.0f}".format(liq.shortfall) }} short)</label>
+                {% endif %}
+            </form>
+            {{ tbtn('open','Re-open') }}
         {% elif cycle.status == 'ready_for_ballot' %}
             <form method="post" action="{{ url_for('ctas.run_ballot', cycle_id=cycle.id) }}" class="d-inline"
                   onsubmit="return confirm('Run the ballot? Each enrolled member is assigned a random payout month. This cannot be undone.');">
@@ -104,6 +115,82 @@
     })();
     </script>
     {% endif %}
+
+    <!-- Liquidity assessment + cooperative guarantee -->
+    <div class="card mb-3 border-{{ {'green':'success','amber':'warning','red':'danger'}[liq.status] }}">
+        <div class="card-header d-flex justify-content-between align-items-center
+                    bg-{{ {'green':'success','amber':'warning','red':'danger'}[liq.status] }}
+                    {{ 'text-dark' if liq.status == 'amber' else 'text-white' }}">
+            <span><i class="fas fa-scale-balanced"></i> Liquidity —
+                {{ {'green':'sufficient','amber':'approaching limit','red':'projected shortfall'}[liq.status] }}</span>
+            <button class="btn btn-sm btn-light" data-bs-toggle="collapse" data-bs-target="#liqCfg">Settings</button>
+        </div>
+        <div class="card-body">
+            <div class="row g-3 mb-2">
+                <div class="col-md-3"><div class="small text-muted">Contributions / period</div>
+                    <div class="fw-bold">₦{{ "{:,.0f}".format(liq.inflow_per_period) }}</div>
+                    <div class="small text-muted">{{ liq.members }} member(s) × ₦{{ "{:,.0f}".format(liq.contribution) }}</div></div>
+                <div class="col-md-3"><div class="small text-muted">Each payout</div>
+                    <div class="fw-bold">₦{{ "{:,.0f}".format(liq.target) }}</div></div>
+                <div class="col-md-3"><div class="small text-muted">Reserve + approved support</div>
+                    <div class="fw-bold">₦{{ "{:,.0f}".format(liq.reserve + liq.support) }}</div></div>
+                <div class="col-md-3"><div class="small text-muted">Lowest projected balance</div>
+                    <div class="fw-bold {{ 'text-danger' if liq.lowest_balance < 0 }}">₦{{ "{:,.0f}".format(liq.lowest_balance) }}</div></div>
+            </div>
+
+            {% if liq.funding_gap_per_payout_period > 0 %}
+            <div class="alert alert-{{ 'danger' if liq.shortfall > 0 else 'warning' }} py-2 small mb-2">
+                <strong>Cooperative guarantee:</strong> contributions of
+                ₦{{ "{:,.0f}".format(liq.inflow_per_period) }} per period do not cover a
+                ₦{{ "{:,.0f}".format(liq.target) }} payout — the cooperative bridges
+                <strong>₦{{ "{:,.0f}".format(liq.funding_gap_per_payout_period) }}</strong> each payout period.
+                {% if liq.shortfall > 0 %}
+                Over the cycle this needs <strong>₦{{ "{:,.0f}".format(liq.shortfall) }}</strong> more than the
+                reserve and approved support. Increase support, reduce payouts per period, or enrol more members.
+                {% else %}This is covered by the reserve and approved support.{% endif %}
+            </div>
+            {% endif %}
+
+            <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                    <thead><tr><th>Period</th><th class="text-end">Payouts</th><th class="text-end">In</th>
+                        <th class="text-end">Out</th><th class="text-end">Projected balance</th><th></th></tr></thead>
+                    <tbody>
+                    {% for r in liq_rows %}
+                    <tr>
+                        <td>{{ r.period }}</td>
+                        <td class="text-end">{{ r.payees }}</td>
+                        <td class="text-end text-success">₦{{ "{:,.0f}".format(r.inflow) }}</td>
+                        <td class="text-end">{{ '₦' + "{:,.0f}".format(r.outflow) if r.outflow else '—' }}</td>
+                        <td class="text-end fw-semibold {{ 'text-danger' if r.balance < 0 }}">₦{{ "{:,.0f}".format(r.balance) }}</td>
+                        <td><span class="badge bg-{{ {'green':'success','amber':'warning text-dark','red':'danger'}[r.status] }}">
+                            {{ r.status|title }}</span></td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="form-text mt-1">
+                {% if cycle.status in ['draft','open','closed'] %}Projection assumes the cycle runs at full
+                capacity from the earliest payout position.{% else %}Based on the actual ballot result.{% endif %}
+            </div>
+        </div>
+        <div class="collapse" id="liqCfg"><div class="card-body border-top">
+            <form method="post" action="{{ url_for('ctas.set_liquidity', cycle_id=cycle.id) }}" class="row g-2 align-items-end">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="col-md-3"><label class="form-label small">CTAS cash reserve (₦)</label>
+                    <input class="form-control form-control-sm" type="number" step="0.01" min="0"
+                           name="liquidity_reserve" value="{{ cycle.liquidity_reserve or 0 }}"></div>
+                <div class="col-md-3"><label class="form-label small">Approved cooperative support (₦)</label>
+                    <input class="form-control form-control-sm" type="number" step="0.01" min="0"
+                           name="liquidity_support" value="{{ cycle.liquidity_support or 0 }}"></div>
+                <div class="col-md-3"><label class="form-label small">Warn below (₦, blank = one payout)</label>
+                    <input class="form-control form-control-sm" type="number" step="0.01" min="0"
+                           name="liquidity_buffer" value="{{ cycle.liquidity_buffer or '' }}"></div>
+                <div class="col-md-3"><button class="btn btn-primary btn-sm w-100">Save liquidity settings</button></div>
+            </form>
+        </div></div>
+    </div>
 
     <!-- Priority payout pricing -->
     {% if cycle.status in ['draft','open','closed','ready_for_ballot'] %}

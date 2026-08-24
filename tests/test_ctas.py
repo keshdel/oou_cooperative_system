@@ -172,6 +172,45 @@ class CtasEngineTests(unittest.TestCase):
         self.assertEqual(str(rows[3][1]), '2026-06-01')
         self.assertTrue(all(r[2] == 50000 for r in rows))
 
+    def test_fully_subscribed_cycle_needs_no_cooperative_money(self):
+        from ctas_engine import liquidity_projection
+        # 12 members x 50,000 monthly, one 600,000 payout per period: inflow
+        # exactly matches each payout, so the pool funds itself.
+        cyc = {'contribution_amount': 50000, 'periods': 12, 'duration_months': 12,
+               'monthly_capacity': 1, 'earliest_payout_month': 1}
+        rows, s = liquidity_projection(cyc, member_count=12)
+        self.assertEqual(s['target'], 600000.0)
+        self.assertEqual(s['funding_gap_per_payout_period'], 0.0)
+        self.assertEqual(s['shortfall'], 0.0)
+        self.assertTrue(all(r['balance'] >= 0 for r in rows))
+
+    def test_under_subscribed_cycle_shows_the_cooperative_guarantee(self):
+        from ctas_engine import liquidity_projection
+        # The spec's worked example: only 8 of 12 places taken.
+        # 8 x 50,000 = 400,000 in, but the payout is 600,000 -> 200,000 gap.
+        cyc = {'contribution_amount': 50000, 'periods': 12, 'duration_months': 12,
+               'monthly_capacity': 1, 'earliest_payout_month': 1}
+        rows, s = liquidity_projection(cyc, member_count=8)
+        self.assertEqual(s['inflow_per_period'], 400000.0)
+        self.assertEqual(s['funding_gap_per_payout_period'], 200000.0)
+        self.assertGreater(s['shortfall'], 0)                 # co-op must fund it
+        self.assertEqual(s['status'], 'red')
+        # Approving enough support clears the shortfall.
+        rows2, s2 = liquidity_projection(cyc, member_count=8, support=s['shortfall'], buffer_amount=0)
+        self.assertEqual(s2['shortfall'], 0.0)
+        self.assertNotEqual(s2['status'], 'red')
+
+    def test_projection_uses_the_real_ballot_once_it_has_run(self):
+        from ctas_engine import liquidity_projection
+        cyc = {'contribution_amount': 50000, 'periods': 4, 'duration_months': 4,
+               'monthly_capacity': 1, 'earliest_payout_month': 1}
+        # Everyone collects in period 1 -> a big early outflow.
+        rows, s = liquidity_projection(cyc, member_count=4, payouts_by_period={1: 4})
+        self.assertEqual(rows[0]['payees'], 4)
+        self.assertEqual(rows[1]['outflow'], 0)
+        self.assertLess(rows[0]['balance'], 0)                # cannot fund it on day one
+        self.assertGreater(s['shortfall'], 0)
+
     def test_granted_priority_gets_the_requested_position(self):
         from ctas_engine import assign_payout_months
         cyc = {'periods': 4, 'duration_months': 4, 'earliest_payout_month': 1, 'monthly_capacity': 1}
@@ -339,8 +378,11 @@ class CtasAdminFlowTests(unittest.TestCase):
                 self.assertAlmostEqual(float(rows[0]['expected_amount']), 50000.0, places=2)
 
             # Ballot then contribute period 1 -> that schedule row is paid.
+            # One member cannot fund their own 200k payout from 50k/period, so the
+            # liquidity gate applies; accept the gap deliberately for this test.
             self.client.post(f'/ctas/cycles/{cid}/transition', data={'to': 'closed'})
-            self.client.post(f'/ctas/cycles/{cid}/transition', data={'to': 'ready_for_ballot'})
+            self.client.post(f'/ctas/cycles/{cid}/transition',
+                             data={'to': 'ready_for_ballot', 'override_liquidity': '1'})
             self.client.post(f'/ctas/cycles/{cid}/ballot', data={})
             body = f"subscription_id,actual_amount\n{sid},50000\n".encode('utf-8')
             self.client.post(f'/ctas/cycles/{cid}/payroll/import',
@@ -385,6 +427,80 @@ class CtasAdminFlowTests(unittest.TestCase):
             with self.app.app_context():
                 db = get_db()
                 db.execute("DELETE FROM ctas_cycles WHERE name='AdCyc'")
+                db.execute("DELETE FROM settings WHERE key='ctas_enabled'")
+                db.commit()
+
+    def test_liquidity_gate_blocks_ballot_until_support_or_override(self):
+        with self.app.app_context():
+            db = get_db()
+            db.execute("INSERT INTO members (member_number, first_name, last_name, status, total_savings, "
+                       "monthly_savings, date_joined) VALUES ('CTAS/LQ/1','Liq','T','active',900000,0,'2024-01-01')")
+            db.commit()
+            mid = db.execute("SELECT id FROM members WHERE member_number='CTAS/LQ/1'").fetchone()['id']
+            # One member, four periods: contributions of 50k cannot fund a 200k payout.
+            db.execute("INSERT INTO ctas_cycles (name, status, frequency, periods, duration_months, "
+                       "contribution_amount, monthly_capacity, earliest_payout_month) "
+                       "VALUES ('LiqCyc','closed','monthly',4,4,50000,1,1)")
+            cid = db.execute("SELECT id FROM ctas_cycles WHERE name='LiqCyc'").fetchone()['id']
+            db.execute("INSERT INTO ctas_subscriptions (cycle_id, member_id, target_amount, tenure_months, "
+                       "monthly_deduction, status) VALUES (?,?,200000,4,50000,'enrolled')", (cid, mid))
+            db.commit()
+        try:
+            # Blocked: projected shortfall, no support approved.
+            self.client.post(f'/ctas/cycles/{cid}/transition', data={'to': 'ready_for_ballot'},
+                             follow_redirects=True)
+            with self.app.app_context():
+                self.assertEqual(get_db().execute("SELECT status FROM ctas_cycles WHERE id=?",
+                                                  (cid,)).fetchone()['status'], 'closed')
+            # Approving support lets it through.
+            self.client.post(f'/ctas/cycles/{cid}/liquidity',
+                             data={'liquidity_reserve': '0', 'liquidity_support': '1000000',
+                                   'liquidity_buffer': '0'})
+            self.client.post(f'/ctas/cycles/{cid}/transition', data={'to': 'ready_for_ballot'},
+                             follow_redirects=True)
+            with self.app.app_context():
+                self.assertEqual(get_db().execute("SELECT status FROM ctas_cycles WHERE id=?",
+                                                  (cid,)).fetchone()['status'], 'ready_for_ballot')
+        finally:
+            with self.app.app_context():
+                db = get_db()
+                db.execute("DELETE FROM ctas_subscriptions WHERE cycle_id=?", (cid,))
+                db.execute("DELETE FROM ctas_cycles WHERE id=?", (cid,))
+                db.execute("DELETE FROM members WHERE id=?", (mid,))
+                db.execute("DELETE FROM settings WHERE key='ctas_enabled'")
+                db.commit()
+
+    def test_liquidity_gate_can_be_overridden_deliberately(self):
+        with self.app.app_context():
+            db = get_db()
+            db.execute("INSERT INTO members (member_number, first_name, last_name, status, total_savings, "
+                       "monthly_savings, date_joined) VALUES ('CTAS/LQ/2','Liq','T2','active',900000,0,'2024-01-01')")
+            db.commit()
+            mid = db.execute("SELECT id FROM members WHERE member_number='CTAS/LQ/2'").fetchone()['id']
+            db.execute("INSERT INTO ctas_cycles (name, status, frequency, periods, duration_months, "
+                       "contribution_amount, monthly_capacity, earliest_payout_month) "
+                       "VALUES ('LiqCyc2','closed','monthly',4,4,50000,1,1)")
+            cid = db.execute("SELECT id FROM ctas_cycles WHERE name='LiqCyc2'").fetchone()['id']
+            db.execute("INSERT INTO ctas_subscriptions (cycle_id, member_id, target_amount, tenure_months, "
+                       "monthly_deduction, status) VALUES (?,?,200000,4,50000,'enrolled')", (cid, mid))
+            db.commit()
+        try:
+            self.client.post(f'/ctas/cycles/{cid}/transition',
+                             data={'to': 'ready_for_ballot', 'override_liquidity': '1'},
+                             follow_redirects=True)
+            with self.app.app_context():
+                db = get_db()
+                self.assertEqual(db.execute("SELECT status FROM ctas_cycles WHERE id=?",
+                                            (cid,)).fetchone()['status'], 'ready_for_ballot')
+                logged = db.execute("SELECT COUNT(*) FROM audit_log WHERE action = "
+                                    "'CTAS_LIQUIDITY_OVERRIDE'").fetchone()[0]
+                self.assertGreaterEqual(logged, 1)      # the decision is on record
+        finally:
+            with self.app.app_context():
+                db = get_db()
+                db.execute("DELETE FROM ctas_subscriptions WHERE cycle_id=?", (cid,))
+                db.execute("DELETE FROM ctas_cycles WHERE id=?", (cid,))
+                db.execute("DELETE FROM members WHERE id=?", (mid,))
                 db.execute("DELETE FROM settings WHERE key='ctas_enabled'")
                 db.commit()
 

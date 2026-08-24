@@ -41,6 +41,17 @@ CTAS_POOL = '2050'       # liability — members' contributions held in the rota
 CTAS_PRIORITY_FEE_INCOME = '4160'   # income — fee for an early payout position
 
 
+def _liquidity(db, cycle):
+    """Liquidity projection for a cycle, using the real ballot result once it
+    exists and the worst case (full capacity) before that."""
+    members = ce.participant_count(db, cycle['id'])
+    rows = db.execute("SELECT payout_month, COUNT(*) AS n FROM ctas_subscriptions "
+                      "WHERE cycle_id = ? AND payout_month IS NOT NULL GROUP BY payout_month",
+                      (cycle['id'],)).fetchall()
+    by_period = {int(r['payout_month']): int(r['n']) for r in rows} or None
+    return ce.liquidity_projection(cycle, members, payouts_by_period=by_period)
+
+
 def _priority_tiers(db, cycle_id=None, plan_id=None):
     """{position: fee} for a cycle (or a plan template)."""
     if cycle_id:
@@ -411,9 +422,11 @@ def cycle_detail(cycle_id):
         'outstanding_amount': sum(float(r['expected_amount'] or 0) - float(r['paid_amount'] or 0)
                                   for r in due_soon),
     }
+    liq_rows, liq = _liquidity(db, cycle)
     return render_template('ctas/cycle_detail.html', cycle=cycle, subs=subs, elig=elig,
                            members=members, summary=summary, due_soon=due_soon, ce=ce,
-                           priority_tiers=_priority_tiers(db, cycle_id=cycle_id))
+                           priority_tiers=_priority_tiers(db, cycle_id=cycle_id),
+                           liq_rows=liq_rows, liq=liq)
 
 
 def _advert_for_cycle(db, cycle):
@@ -557,6 +570,19 @@ def cycle_transition(cycle_id):
             raise ValueError(f'Cannot move a {cycle["status"]} cycle to {to}.')
         if to == ce.CYCLE_READY_FOR_BALLOT:
             ce.assert_ready_for_ballot(db, cycle)
+            # Liquidity gate (spec section 14): do not commit to payouts the
+            # cooperative cannot fund, unless an officer knowingly overrides.
+            _, liq = _liquidity(db, cycle)
+            if liq['shortfall'] > 0 and not request.form.get('override_liquidity'):
+                raise ValueError(
+                    f"Projected shortfall of ₦{liq['shortfall']:,.2f}: contributions plus the "
+                    f"₦{liq['reserve']:,.2f} reserve and ₦{liq['support']:,.2f} approved support do not "
+                    f"cover the scheduled payouts. Increase support, reduce payouts per period, "
+                    f"or enrol more members — or tick 'proceed anyway' to accept the gap.")
+            if liq['shortfall'] > 0:
+                audit(db, 'CTAS_LIQUIDITY_OVERRIDE', 'ctas',
+                      f"Cycle {cycle['name']}: proceeded to ballot with a projected shortfall of "
+                      f"₦{liq['shortfall']:,.2f}")
         db.execute('UPDATE ctas_cycles SET status = ?, updated_at = ? WHERE id = ?',
                    (to, datetime.now(), cycle_id))
         audit(db, 'CTAS_CYCLE_TRANSITION', 'ctas', f"Cycle {cycle['name']}: {cycle['status']} -> {to}")
@@ -688,6 +714,32 @@ def subscription_act(sub_id):
 
 
 # ── Priority payout: fee tiers, member requests, officer decisions ────────────
+
+@ctas.route('/ctas/cycles/<int:cycle_id>/liquidity', methods=['POST'])
+@ctas_required
+@role_required('admin', 'treasurer')
+def set_liquidity(cycle_id):
+    """Record what the cooperative has reserved for this cycle and how much it
+    has approved to lend the pool (the guarantee)."""
+    db = get_db()
+    if not db.execute('SELECT 1 FROM ctas_cycles WHERE id = ?', (cycle_id,)).fetchone():
+        abort(404)
+
+    def _num(key):
+        try:
+            return max(0.0, float(request.form.get(key) or 0))
+        except ValueError:
+            return 0.0
+
+    db.execute('UPDATE ctas_cycles SET liquidity_reserve = ?, liquidity_support = ?, '
+               'liquidity_buffer = ? WHERE id = ?',
+               (_num('liquidity_reserve'), _num('liquidity_support'), _num('liquidity_buffer'), cycle_id))
+    audit(db, 'CTAS_LIQUIDITY', 'ctas',
+          f"Cycle #{cycle_id}: reserve {_num('liquidity_reserve')}, support {_num('liquidity_support')}")
+    db.commit()
+    flash('Liquidity settings saved.', 'success')
+    return redirect(url_for('ctas.cycle_detail', cycle_id=cycle_id))
+
 
 @ctas.route('/ctas/cycles/<int:cycle_id>/priority-fees', methods=['POST'])
 @ctas_required

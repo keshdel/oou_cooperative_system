@@ -362,6 +362,72 @@ def net_off_waterfall(outstanding, savings, shares, other=0.0):
     }
 
 
+def liquidity_projection(cycle, member_count, payouts_by_period=None,
+                         reserve=None, support=None, buffer_amount=None):
+    """Period-by-period cash projection for a cycle (spec section 14).
+
+        contributions in  +  reserve  +  approved support  -  payouts out
+        =  projected liquidity position
+
+    Every subscribed member contributes every period (including after their own
+    payout), so inflow is steady while payouts land on specific periods. Returns
+    (rows, summary) where each row carries a green/amber/red status and the
+    summary reports the largest amount the cooperative must bridge — the
+    "cooperative guarantee" of section 13.
+    """
+    contribution = _f(_row_get(cycle, 'contribution_amount', 0))
+    periods = cycle_periods(cycle)
+    target = compute_target(contribution, periods)
+    capacity = int(_row_get(cycle, 'monthly_capacity', 1) or 1)
+    earliest = int(_row_get(cycle, 'earliest_payout_month', 1) or 1)
+
+    reserve = _f(_row_get(cycle, 'liquidity_reserve', 0)) if reserve is None else _f(reserve)
+    support = _f(_row_get(cycle, 'liquidity_support', 0)) if support is None else _f(support)
+    if buffer_amount is None:
+        buffer_amount = _f(_row_get(cycle, 'liquidity_buffer', 0)) or target   # default: one payout
+    else:
+        buffer_amount = _f(buffer_amount)
+
+    # Before the ballot we do not know who collects when, so assume the cycle
+    # runs at full capacity from the earliest payout position — the worst case.
+    if payouts_by_period is None:
+        payouts_by_period = {p: capacity for p in range(earliest, periods + 1)}
+
+    members = int(member_count or 0)
+    inflow = round(members * contribution, 2)
+    balance = round(reserve + support, 2)
+    rows = []
+    worst = balance
+    total_out = 0.0
+    for p in range(1, periods + 1):
+        payees = int(payouts_by_period.get(p, 0) or 0)
+        outflow = round(payees * target, 2)
+        total_out = round(total_out + outflow, 2)
+        balance = round(balance + inflow - outflow, 2)
+        worst = min(worst, balance)
+        if balance < 0:
+            status = 'red'
+        elif balance < buffer_amount:
+            status = 'amber'
+        else:
+            status = 'green'
+        rows.append({'period': p, 'payees': payees, 'inflow': inflow,
+                     'outflow': outflow, 'balance': balance, 'status': status})
+
+    shortfall = round(max(0.0, -worst), 2)          # extra cash needed beyond reserve+support
+    # The gap the cooperative underwrites when the cycle is not fully subscribed
+    # (section 13): payouts due in a period versus contributions collected.
+    per_period_gap = round(max(0.0, (capacity * target) - inflow), 2)
+    return rows, {
+        'members': members, 'contribution': contribution, 'target': target,
+        'inflow_per_period': inflow, 'reserve': reserve, 'support': support,
+        'buffer': buffer_amount, 'total_payouts': total_out,
+        'lowest_balance': round(worst, 2), 'shortfall': shortfall,
+        'funding_gap_per_payout_period': per_period_gap,
+        'status': 'red' if shortfall > 0 else ('amber' if worst < buffer_amount else 'green'),
+    }
+
+
 def priority_fee_for(tiers, position):
     """The fee for an early position, from {position: fee}. 0 if not priced."""
     try:

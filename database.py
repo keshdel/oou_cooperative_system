@@ -1020,6 +1020,13 @@ def init_db():
     _add_col(db, 'ctas_plans', 'retry_days', 'INTEGER DEFAULT 3')
     _add_col(db, 'ctas_plans', 'max_charge_attempts', 'INTEGER DEFAULT 3')
 
+    # Liquidity: what the cooperative has set aside for this cycle and how much
+    # it has approved to lend the pool when contributions fall short of a payout.
+    _add_col(db, 'ctas_cycles', 'liquidity_reserve', 'REAL DEFAULT 0')
+    _add_col(db, 'ctas_cycles', 'liquidity_support', 'REAL DEFAULT 0')
+    _add_col(db, 'ctas_cycles', 'liquidity_buffer', 'REAL DEFAULT 0')
+    _add_col(db, 'ctas_plans', 'liquidity_buffer', 'REAL DEFAULT 0')
+
     # Priority payout: a member may request an earlier position for a fee.
     _add_col(db, 'ctas_cycles', 'priority_enabled', 'INTEGER DEFAULT 0')
     _add_col(db, 'ctas_plans', 'priority_enabled', 'INTEGER DEFAULT 0')
