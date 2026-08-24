@@ -327,6 +327,116 @@ def new_cycle():
     return redirect(url_for('ctas.cycle_detail', cycle_id=cycle_id))
 
 
+@ctas.route('/ctas/overview')
+@ctas_required
+@role_required('admin', 'treasurer')
+def overview():
+    """Management view: is CTAS profitable, funded, and within risk appetite?
+    Money figures come from the general ledger (authoritative); operational
+    figures from the CTAS tables. Anything the system does not yet track is
+    reported as not tracked rather than guessed at."""
+    db = get_db()
+
+    def one(sql, params=()):
+        row = db.execute(sql, params).fetchone()
+        return (row[0] if row and row[0] is not None else 0)
+
+    def gl_balance(code, normal='credit'):
+        """Net movement on an account (income/liability net credit; asset net debit)."""
+        r = db.execute("SELECT COALESCE(SUM(jl.debit),0) AS d, COALESCE(SUM(jl.credit),0) AS c "
+                       "FROM journal_lines jl WHERE jl.account_code = ?", (code,)).fetchone()
+        d, c = float(r['d'] or 0), float(r['c'] or 0)
+        return round(c - d, 2) if normal == 'credit' else round(d - c, 2)
+
+    # ── Membership ──
+    membership = {
+        'applications': one("SELECT COUNT(*) FROM ctas_subscriptions"),
+        'awaiting': one("SELECT COUNT(*) FROM ctas_subscriptions WHERE status IN "
+                        "('submitted','eligible','finance_reviewed','approved')"),
+        'enrolled': one("SELECT COUNT(*) FROM ctas_subscriptions WHERE status = 'enrolled'"),
+        'active': one("SELECT COUNT(*) FROM ctas_subscriptions WHERE status IN "
+                      "('scheduled','active_recovery')"),
+        'completed': one("SELECT COUNT(*) FROM ctas_subscriptions WHERE status = 'completed'"),
+        'rejected': one("SELECT COUNT(*) FROM ctas_subscriptions WHERE status = 'rejected'"),
+        'cycles_running': one("SELECT COUNT(*) FROM ctas_cycles WHERE status IN "
+                              "('open','closed','ready_for_ballot','balloted','active')"),
+    }
+
+    # ── Contributions (from the due-date schedule) ──
+    expected = float(one("SELECT COALESCE(SUM(expected_amount),0) FROM ctas_schedule "
+                         "WHERE status != 'pending'"))
+    received = float(one("SELECT COALESCE(SUM(paid_amount),0) FROM ctas_schedule"))
+    contributions = {
+        'expected_to_date': round(expected, 2),
+        'received': round(received, 2),
+        'collection_rate': round((received / expected * 100), 1) if expected else None,
+        'late_rows': one("SELECT COUNT(*) FROM ctas_schedule WHERE status = 'late'"),
+        'due_rows': one("SELECT COUNT(*) FROM ctas_schedule WHERE status IN ('due','grace')"),
+        'arrears_total': round(float(one("SELECT COALESCE(SUM(arrears_amount),0) FROM ctas_subscriptions")), 2),
+        'members_in_arrears': one("SELECT COUNT(*) FROM ctas_subscriptions WHERE arrears_amount > 0"),
+    }
+
+    # ── Payouts ──
+    payouts = {
+        'completed': one("SELECT COUNT(*) FROM ctas_subscriptions WHERE paid_out_at IS NOT NULL"),
+        'paid_value': round(float(one("SELECT COALESCE(SUM(target_amount),0) FROM ctas_subscriptions "
+                                      "WHERE paid_out_at IS NOT NULL")), 2),
+        'upcoming': one("SELECT COUNT(*) FROM ctas_subscriptions WHERE status = 'scheduled'"),
+        'upcoming_value': round(float(one("SELECT COALESCE(SUM(target_amount),0) FROM ctas_subscriptions "
+                                          "WHERE status = 'scheduled'")), 2),
+        'priority_allocated': one("SELECT COUNT(*) FROM ctas_subscriptions WHERE is_priority = 1 "
+                                  "AND priority_status = 'granted' AND payout_month IS NOT NULL"),
+        'priority_requested': one("SELECT COUNT(*) FROM ctas_subscriptions WHERE priority_status = 'requested'"),
+    }
+
+    # ── Risk ──
+    risk = {
+        'gross_exposure': gl_balance(CTAS_ADVANCES, 'debit'),        # advances still owed
+        'members_owing': one("SELECT COUNT(*) FROM ctas_subscriptions WHERE advance_balance > 0"),
+        'in_arrears': contributions['members_in_arrears'],
+        'open_exceptions': one("SELECT COUNT(*) FROM ctas_exceptions WHERE status = 'open'"),
+        'write_offs': gl_balance(CTAS_WRITEOFF, 'debit'),
+        'suspended_mandates': one("SELECT COUNT(*) FROM ctas_mandates WHERE status IN ('suspended','expired')"),
+    }
+    risk['write_off_rate'] = (round(risk['write_offs'] / payouts['paid_value'] * 100, 2)
+                              if payouts['paid_value'] else None)
+
+    # ── Liquidity (aggregated across cycles still running) ──
+    running = db.execute("SELECT * FROM ctas_cycles WHERE status IN "
+                         "('open','closed','ready_for_ballot','balloted','active')").fetchall()
+    liq_rows = []
+    agg = {'reserve': 0.0, 'support': 0.0, 'shortfall': 0.0, 'future_payouts': 0.0}
+    for cyc in running:
+        rows, s = _liquidity(db, cyc)
+        liq_rows.append({'cycle': cyc, 'summary': s})
+        agg['reserve'] += s['reserve']
+        agg['support'] += s['support']
+        agg['shortfall'] += s['shortfall']
+        agg['future_payouts'] += s['total_payouts']
+    agg = {k: round(v, 2) for k, v in agg.items()}
+    agg['pool_held'] = gl_balance(CTAS_POOL, 'credit')      # members' money currently in the pool
+
+    # ── Profitability (straight from the ledger) ──
+    admin_fees = gl_balance(CTAS_ADMIN_FEE_INCOME, 'credit')
+    priority_fees = gl_balance(CTAS_PRIORITY_FEE_INCOME, 'credit')
+    profit = {
+        'admin_fees': admin_fees,
+        'priority_fees': priority_fees,
+        'total_income': round(admin_fees + priority_fees, 2),
+        'write_offs': risk['write_offs'],
+        'net': round(admin_fees + priority_fees - risk['write_offs'], 2),
+    }
+
+    # Honest about what is not modelled yet.
+    not_tracked = ['Secured exposure (deposits, pledged savings, guarantors)',
+                   'Guarantor exposure', 'Late-payment fee income',
+                   'Investment income on the CTAS float', 'Bad-debt provision']
+
+    return render_template('ctas/overview.html', membership=membership,
+                           contributions=contributions, payouts=payouts, risk=risk,
+                           liq=agg, liq_rows=liq_rows, profit=profit, not_tracked=not_tracked)
+
+
 # ── Admin: plans (reusable product definitions) ───────────────────────────────
 
 @ctas.route('/ctas/plans')

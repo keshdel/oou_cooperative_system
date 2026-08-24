@@ -1,0 +1,150 @@
+{% extends "base.html" %}
+{% block title %}Target Advance Overview - {{ coop_name }}{% endblock %}
+{% macro money(v) %}₦{{ "{:,.0f}".format(v or 0) }}{% endmacro %}
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-3">
+        <div class="col-md-8">
+            <h2><i class="fas fa-chart-pie"></i> Target Advance Overview</h2>
+            <p class="text-muted mb-0">Is the scheme profitable, sufficiently funded, and within risk appetite?</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="{{ url_for('ctas.exceptions') }}" class="btn btn-outline-warning">
+                <i class="fas fa-triangle-exclamation"></i> Exceptions
+                {% if risk.open_exceptions %}<span class="badge bg-danger">{{ risk.open_exceptions }}</span>{% endif %}</a>
+            <a href="{{ url_for('ctas.dashboard') }}" class="btn btn-secondary"><i class="fas fa-list"></i> Cycles</a>
+        </div>
+    </div>
+
+    <!-- Headline -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-3"><div class="card h-100"><div class="card-body">
+            <div class="small text-muted">Net CTAS income</div>
+            <div class="h4 mb-0 {{ 'text-success' if profit.net >= 0 else 'text-danger' }}">{{ money(profit.net) }}</div>
+            <div class="small text-muted">fees earned less write-offs</div></div></div></div>
+        <div class="col-md-3"><div class="card h-100"><div class="card-body">
+            <div class="small text-muted">Money at risk</div>
+            <div class="h4 mb-0">{{ money(risk.gross_exposure) }}</div>
+            <div class="small text-muted">advances still to be recovered</div></div></div></div>
+        <div class="col-md-3"><div class="card h-100"><div class="card-body">
+            <div class="small text-muted">Collection rate</div>
+            <div class="h4 mb-0 {{ 'text-success' if (contributions.collection_rate or 0) >= 95 else 'text-warning' }}">
+                {{ contributions.collection_rate if contributions.collection_rate is not none else '—' }}{% if contributions.collection_rate is not none %}%{% endif %}</div>
+            <div class="small text-muted">of contributions due so far</div></div></div></div>
+        <div class="col-md-3"><div class="card h-100 {{ 'border-danger' if liq.shortfall > 0 }}"><div class="card-body">
+            <div class="small text-muted">Funding shortfall</div>
+            <div class="h4 mb-0 {{ 'text-danger' if liq.shortfall > 0 else 'text-success' }}">{{ money(liq.shortfall) }}</div>
+            <div class="small text-muted">across running cycles</div></div></div></div>
+    </div>
+
+    <div class="row g-3">
+        <!-- Membership -->
+        <div class="col-lg-4"><div class="card h-100">
+            <div class="card-header bg-light"><h6 class="mb-0">Membership</h6></div>
+            <div class="card-body"><table class="table table-sm mb-0">
+                <tr><td>Applications</td><td class="text-end fw-semibold">{{ membership.applications }}</td></tr>
+                <tr><td>Awaiting approval</td><td class="text-end">{{ membership.awaiting }}</td></tr>
+                <tr><td>Enrolled (pre-ballot)</td><td class="text-end">{{ membership.enrolled }}</td></tr>
+                <tr><td>Active subscribers</td><td class="text-end fw-semibold">{{ membership.active }}</td></tr>
+                <tr><td>Completed</td><td class="text-end text-success">{{ membership.completed }}</td></tr>
+                <tr><td>Rejected</td><td class="text-end text-muted">{{ membership.rejected }}</td></tr>
+                <tr><td>Cycles running</td><td class="text-end">{{ membership.cycles_running }}</td></tr>
+            </table></div></div></div>
+
+        <!-- Contributions -->
+        <div class="col-lg-4"><div class="card h-100">
+            <div class="card-header bg-light"><h6 class="mb-0">Contributions</h6></div>
+            <div class="card-body"><table class="table table-sm mb-0">
+                <tr><td>Expected to date</td><td class="text-end">{{ money(contributions.expected_to_date) }}</td></tr>
+                <tr><td>Received</td><td class="text-end text-success fw-semibold">{{ money(contributions.received) }}</td></tr>
+                <tr><td>Collection rate</td><td class="text-end">{{ contributions.collection_rate if contributions.collection_rate is not none else '—' }}{% if contributions.collection_rate is not none %}%{% endif %}</td></tr>
+                <tr><td>Due / in grace</td><td class="text-end">{{ contributions.due_rows }}</td></tr>
+                <tr><td>Late</td><td class="text-end {{ 'text-danger' if contributions.late_rows }}">{{ contributions.late_rows }}</td></tr>
+                <tr><td>Members in arrears</td><td class="text-end {{ 'text-danger' if contributions.members_in_arrears }}">{{ contributions.members_in_arrears }}</td></tr>
+                <tr><td>Arrears value</td><td class="text-end {{ 'text-danger' if contributions.arrears_total }}">{{ money(contributions.arrears_total) }}</td></tr>
+            </table></div></div></div>
+
+        <!-- Payouts -->
+        <div class="col-lg-4"><div class="card h-100">
+            <div class="card-header bg-light"><h6 class="mb-0">Payouts</h6></div>
+            <div class="card-body"><table class="table table-sm mb-0">
+                <tr><td>Completed</td><td class="text-end fw-semibold">{{ payouts.completed }}</td></tr>
+                <tr><td>Value paid out</td><td class="text-end">{{ money(payouts.paid_value) }}</td></tr>
+                <tr><td>Upcoming</td><td class="text-end">{{ payouts.upcoming }}</td></tr>
+                <tr><td>Value upcoming</td><td class="text-end">{{ money(payouts.upcoming_value) }}</td></tr>
+                <tr><td>Priority allocated</td><td class="text-end">{{ payouts.priority_allocated }}</td></tr>
+                <tr><td>Priority awaiting decision</td><td class="text-end {{ 'text-warning' if payouts.priority_requested }}">{{ payouts.priority_requested }}</td></tr>
+            </table></div></div></div>
+
+        <!-- Risk -->
+        <div class="col-lg-6"><div class="card h-100">
+            <div class="card-header bg-light"><h6 class="mb-0">Risk</h6></div>
+            <div class="card-body"><table class="table table-sm mb-0">
+                <tr><td>Gross exposure (advances owed)</td><td class="text-end fw-semibold">{{ money(risk.gross_exposure) }}</td></tr>
+                <tr><td>Members owing</td><td class="text-end">{{ risk.members_owing }}</td></tr>
+                <tr><td>Members in arrears</td><td class="text-end {{ 'text-danger' if risk.in_arrears }}">{{ risk.in_arrears }}</td></tr>
+                <tr><td>Open exception cases</td><td class="text-end {{ 'text-warning' if risk.open_exceptions }}">{{ risk.open_exceptions }}</td></tr>
+                <tr><td>Stopped auto-payments</td><td class="text-end">{{ risk.suspended_mandates }}</td></tr>
+                <tr><td>Written off</td><td class="text-end {{ 'text-danger' if risk.write_offs }}">{{ money(risk.write_offs) }}</td></tr>
+                <tr><td>Write-off rate</td><td class="text-end">{{ risk.write_off_rate if risk.write_off_rate is not none else '—' }}{% if risk.write_off_rate is not none %}%{% endif %}</td></tr>
+            </table></div></div></div>
+
+        <!-- Profitability -->
+        <div class="col-lg-6"><div class="card h-100">
+            <div class="card-header bg-light"><h6 class="mb-0">Profitability <span class="text-muted small">(from the ledger)</span></h6></div>
+            <div class="card-body"><table class="table table-sm mb-0">
+                <tr><td>Administrative fees</td><td class="text-end text-success">{{ money(profit.admin_fees) }}</td></tr>
+                <tr><td>Priority fees</td><td class="text-end text-success">{{ money(profit.priority_fees) }}</td></tr>
+                <tr class="table-light"><td class="fw-semibold">Total CTAS income</td><td class="text-end fw-semibold">{{ money(profit.total_income) }}</td></tr>
+                <tr><td>Less write-offs</td><td class="text-end text-danger">({{ money(profit.write_offs) }})</td></tr>
+                <tr class="table-secondary"><td class="fw-bold">Net CTAS income</td>
+                    <td class="text-end fw-bold {{ 'text-danger' if profit.net < 0 }}">{{ money(profit.net) }}</td></tr>
+            </table></div></div></div>
+
+        <!-- Liquidity -->
+        <div class="col-12"><div class="card">
+            <div class="card-header bg-light"><h6 class="mb-0">Liquidity across running cycles</h6></div>
+            <div class="card-body">
+                <div class="row g-3 mb-3">
+                    <div class="col-md-3"><div class="small text-muted">Members' money in the pool</div>
+                        <div class="fw-bold">{{ money(liq.pool_held) }}</div></div>
+                    <div class="col-md-3"><div class="small text-muted">Reserve + approved support</div>
+                        <div class="fw-bold">{{ money(liq.reserve + liq.support) }}</div></div>
+                    <div class="col-md-3"><div class="small text-muted">Payouts scheduled</div>
+                        <div class="fw-bold">{{ money(liq.future_payouts) }}</div></div>
+                    <div class="col-md-3"><div class="small text-muted">Projected shortfall</div>
+                        <div class="fw-bold {{ 'text-danger' if liq.shortfall > 0 else 'text-success' }}">{{ money(liq.shortfall) }}</div></div>
+                </div>
+                {% if liq_rows %}
+                <div class="table-responsive"><table class="table table-sm align-middle mb-0">
+                    <thead><tr><th>Cycle</th><th class="text-end">Members</th><th class="text-end">In / period</th>
+                        <th class="text-end">Each payout</th><th class="text-end">Lowest balance</th><th>Status</th></tr></thead>
+                    <tbody>
+                    {% for r in liq_rows %}
+                    <tr>
+                        <td><a href="{{ url_for('ctas.cycle_detail', cycle_id=r.cycle.id) }}">{{ r.cycle.name }}</a></td>
+                        <td class="text-end">{{ r.summary.members }}</td>
+                        <td class="text-end">{{ money(r.summary.inflow_per_period) }}</td>
+                        <td class="text-end">{{ money(r.summary.target) }}</td>
+                        <td class="text-end {{ 'text-danger' if r.summary.lowest_balance < 0 }}">{{ money(r.summary.lowest_balance) }}</td>
+                        <td><span class="badge bg-{{ {'green':'success','amber':'warning text-dark','red':'danger'}[r.summary.status] }}">
+                            {{ {'green':'Sufficient','amber':'Watch','red':'Shortfall'}[r.summary.status] }}</span></td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table></div>
+                {% else %}<p class="text-muted mb-0">No cycles are running.</p>{% endif %}
+            </div>
+        </div></div>
+
+        <!-- Honesty about coverage -->
+        <div class="col-12">
+            <div class="card border-secondary"><div class="card-body py-2">
+                <span class="small text-muted"><i class="fas fa-circle-info"></i>
+                    <strong>Not yet tracked by the system</strong> (so not shown above):
+                    {{ not_tracked|join(' · ') }}.</span>
+            </div></div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -241,7 +241,8 @@ PERMISSIONS = [
         'description': 'Run CTAS cycles: enrol members, run the ballot and pay out advances. '
                        'Only visible when the CTAS add-on is enabled.',
         'default_roles': ('admin', 'treasurer'),
-        'endpoints': ('ctas.dashboard', 'ctas.plans', 'ctas.new_plan', 'ctas.new_cycle', 'ctas.cycle_detail',
+        'endpoints': ('ctas.dashboard', 'ctas.overview', 'ctas.plans', 'ctas.new_plan',
+                      'ctas.new_cycle', 'ctas.cycle_detail',
                       'ctas.cycle_transition', 'ctas.delete_cycle', 'ctas.promote_cycle',
                       'ctas.add_subscription',
                       'ctas.subscription_act',

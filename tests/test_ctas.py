@@ -430,6 +430,50 @@ class CtasAdminFlowTests(unittest.TestCase):
                 db.execute("DELETE FROM settings WHERE key='ctas_enabled'")
                 db.commit()
 
+    def test_overview_reports_real_figures_from_the_ledger(self):
+        with self.app.app_context():
+            db = get_db()
+            db.execute("INSERT INTO members (member_number, first_name, last_name, status, total_savings, "
+                       "monthly_savings, date_joined) VALUES ('CTAS/OV/1','Ov','T','active',900000,0,'2024-01-01')")
+            db.commit()
+            mid = db.execute("SELECT id FROM members WHERE member_number='CTAS/OV/1'").fetchone()['id']
+            db.execute("INSERT INTO ctas_cycles (name, status, frequency, periods, duration_months, "
+                       "contribution_amount, monthly_capacity, earliest_payout_month, liquidity_support) "
+                       "VALUES ('OvCyc','balloted','monthly',4,4,50000,1,1,1000000)")
+            cid = db.execute("SELECT id FROM ctas_cycles WHERE name='OvCyc'").fetchone()['id']
+            db.execute("INSERT INTO ctas_subscriptions (cycle_id, member_id, target_amount, tenure_months, "
+                       "monthly_deduction, admin_fee, status, contributed_total, advance_balance, "
+                       "payout_month, arrears_amount) "
+                       "VALUES (?,?,200000,4,50000,1500,'scheduled',0,0,1,0)", (cid, mid))
+            db.commit()
+            sid = db.execute("SELECT id FROM ctas_subscriptions WHERE cycle_id=?", (cid,)).fetchone()['id']
+        try:
+            # Pay out -> creates real ledger entries the overview must reflect.
+            self.client.post(f'/ctas/subscriptions/{sid}/payout', data={}, follow_redirects=True)
+            r = self.client.get('/ctas/overview')
+            self.assertEqual(r.status_code, 200)
+            page = r.data.decode('utf-8', 'replace')
+            self.assertIn('Net CTAS income', page)
+            self.assertIn('1,500', page)              # admin fee income, from the GL
+            self.assertIn('200,000', page)            # advance now at risk
+            self.assertIn('Not yet tracked', page)    # honest about coverage
+            with self.app.app_context():
+                db = get_db()
+                adv = db.execute("SELECT advance_balance FROM ctas_subscriptions WHERE id=?",
+                                 (sid,)).fetchone()['advance_balance']
+                self.assertAlmostEqual(float(adv), 200000.0, places=2)
+        finally:
+            with self.app.app_context():
+                db = get_db()
+                for x in db.execute("SELECT id FROM journal_entries WHERE source_module='ctas_payout'").fetchall():
+                    db.execute("DELETE FROM journal_lines WHERE entry_id=?", (x['id'],))
+                    db.execute("DELETE FROM journal_entries WHERE id=?", (x['id'],))
+                db.execute("DELETE FROM ctas_subscriptions WHERE cycle_id=?", (cid,))
+                db.execute("DELETE FROM ctas_cycles WHERE id=?", (cid,))
+                db.execute("DELETE FROM members WHERE id=?", (mid,))
+                db.execute("DELETE FROM settings WHERE key='ctas_enabled'")
+                db.commit()
+
     def test_liquidity_gate_blocks_ballot_until_support_or_override(self):
         with self.app.app_context():
             db = get_db()
