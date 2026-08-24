@@ -38,6 +38,18 @@ ctas = Blueprint('ctas', __name__)
 
 CTAS_WRITEOFF = '5150'   # expense — outstanding CTAS advance written off on member exit
 CTAS_POOL = '2050'       # liability — members' contributions held in the rotating pool
+CTAS_PRIORITY_FEE_INCOME = '4160'   # income — fee for an early payout position
+
+
+def _priority_tiers(db, cycle_id=None, plan_id=None):
+    """{position: fee} for a cycle (or a plan template)."""
+    if cycle_id:
+        rows = db.execute('SELECT position, fee FROM ctas_priority_fees WHERE cycle_id = ? '
+                          'ORDER BY position', (cycle_id,)).fetchall()
+    else:
+        rows = db.execute('SELECT position, fee FROM ctas_priority_fees WHERE plan_id = ? '
+                          'ORDER BY position', (plan_id,)).fetchall()
+    return {int(r['position']): float(r['fee'] or 0) for r in rows}
 
 
 def _notify_member(db, member_id, title, message, action_url='/my-ctas'):
@@ -162,6 +174,7 @@ def ctas_ensure_accounts(db) -> None:
         (CTAS_ADVANCES, 'CTAS Advances Receivable', 'asset', 'debit'),
         (CTAS_POOL, 'CTAS Contribution Pool', 'liability', 'credit'),
         (CTAS_ADMIN_FEE_INCOME, 'CTAS Admin Fee Income', 'income', 'credit'),
+        (CTAS_PRIORITY_FEE_INCOME, 'CTAS Priority Fee Income', 'income', 'credit'),
         (CTAS_WRITEOFF, 'CTAS Write-offs', 'expense', 'debit'),
     ):
         try:
@@ -399,7 +412,8 @@ def cycle_detail(cycle_id):
                                   for r in due_soon),
     }
     return render_template('ctas/cycle_detail.html', cycle=cycle, subs=subs, elig=elig,
-                           members=members, summary=summary, due_soon=due_soon, ce=ce)
+                           members=members, summary=summary, due_soon=due_soon, ce=ce,
+                           priority_tiers=_priority_tiers(db, cycle_id=cycle_id))
 
 
 def _advert_for_cycle(db, cycle):
@@ -673,6 +687,125 @@ def subscription_act(sub_id):
     return redirect(detail)
 
 
+# ── Priority payout: fee tiers, member requests, officer decisions ────────────
+
+@ctas.route('/ctas/cycles/<int:cycle_id>/priority-fees', methods=['POST'])
+@ctas_required
+@role_required('admin', 'treasurer')
+def set_priority_fees(cycle_id):
+    """Price each early payout position (earlier positions normally cost more)."""
+    db = get_db()
+    cycle = db.execute('SELECT * FROM ctas_cycles WHERE id = ?', (cycle_id,)).fetchone()
+    if not cycle:
+        abort(404)
+    enabled = 1 if request.form.get('priority_enabled') else 0
+    db.execute('UPDATE ctas_cycles SET priority_enabled = ? WHERE id = ?', (enabled, cycle_id))
+    db.execute('DELETE FROM ctas_priority_fees WHERE cycle_id = ?', (cycle_id,))
+    positions = request.form.getlist('position')
+    fees = request.form.getlist('fee')
+    saved = 0
+    for i, pos in enumerate(positions):
+        try:
+            p, f = int(pos), float(fees[i] if i < len(fees) else 0)
+        except (ValueError, IndexError):
+            continue
+        if p <= 0 or f <= 0:
+            continue
+        db.execute('INSERT INTO ctas_priority_fees (cycle_id, position, fee) VALUES (?, ?, ?)',
+                   (cycle_id, p, f))
+        saved += 1
+    audit(db, 'CTAS_PRIORITY_FEES', 'ctas',
+          f"Cycle {cycle['name']}: priority {'on' if enabled else 'off'}, {saved} priced position(s)")
+    db.commit()
+    flash(f"Priority payout {'enabled' if enabled else 'disabled'} — {saved} position(s) priced.", 'success')
+    return redirect(url_for('ctas.cycle_detail', cycle_id=cycle_id))
+
+
+@ctas.route('/my-ctas/<int:sub_id>/priority', methods=['POST'])
+@ctas_required
+@login_required
+def request_priority(sub_id):
+    """A member asks for an earlier payout position, accepting the fee."""
+    db = get_db()
+    member = member_for_user(db, current_user.id)
+    sub = db.execute('SELECT * FROM ctas_subscriptions WHERE id = ?', (sub_id,)).fetchone()
+    if not sub or not member or sub['member_id'] != member['id']:
+        abort(403)
+    cycle = db.execute('SELECT * FROM ctas_cycles WHERE id = ?', (sub['cycle_id'],)).fetchone()
+    if not cycle['priority_enabled']:
+        flash('Priority payout is not offered on this cycle.', 'warning')
+        return redirect(url_for('ctas.my_ctas'))
+    if sub['payout_month']:
+        flash('The ballot has already run, so positions can no longer be requested.', 'warning')
+        return redirect(url_for('ctas.my_ctas'))
+    if sub['status'] not in (ce.SUB_SUBMITTED, ce.SUB_ELIGIBLE, ce.SUB_FINANCE_REVIEWED,
+                             ce.SUB_APPROVED, ce.SUB_ENROLLED):
+        flash('Priority can only be requested before the ballot.', 'warning')
+        return redirect(url_for('ctas.my_ctas'))
+    try:
+        position = int(request.form.get('position') or 0)
+    except ValueError:
+        position = 0
+    tiers = _priority_tiers(db, cycle_id=cycle['id'])
+    if position not in tiers:
+        flash('Choose one of the priority positions offered.', 'danger')
+        return redirect(url_for('ctas.my_ctas'))
+    if not request.form.get('accept_fee'):
+        flash('Please accept the priority fee to continue.', 'danger')
+        return redirect(url_for('ctas.my_ctas'))
+
+    fee = ce.priority_fee_for(tiers, position)
+    db.execute("UPDATE ctas_subscriptions SET is_priority = 1, requested_payout_month = ?, "
+               "priority_fee = ?, priority_status = 'requested', priority_decided_at = NULL, "
+               "priority_note = NULL WHERE id = ?", (position, fee, sub_id))
+    audit(db, 'CTAS_PRIORITY_REQUEST', 'ctas',
+          f"Subscription #{sub_id} requested position {position} (fee {fee})")
+    db.commit()
+    flash(f'Priority request submitted for position {position} (fee ₦{fee:,.2f}). '
+          f'The cooperative will review it before the ballot.', 'success')
+    return redirect(url_for('ctas.my_ctas'))
+
+
+@ctas.route('/ctas/subscriptions/<int:sub_id>/priority', methods=['POST'])
+@ctas_required
+@role_required('admin', 'treasurer')
+def decide_priority(sub_id):
+    """Grant or decline a priority request. Granting does not bypass the rules —
+    the member must already be eligible, and if several want the same position
+    the ballot decides between them."""
+    db = get_db()
+    sub = db.execute('SELECT * FROM ctas_subscriptions WHERE id = ?', (sub_id,)).fetchone()
+    if not sub:
+        abort(404)
+    action = (request.form.get('action') or '').strip()
+    note = (request.form.get('note') or '').strip()
+    if sub['payout_month']:
+        flash('The ballot has already run for this member.', 'warning')
+        return redirect(url_for('ctas.cycle_detail', cycle_id=sub['cycle_id']))
+
+    if action == 'grant':
+        db.execute("UPDATE ctas_subscriptions SET priority_status = 'granted', priority_decided_at = ?, "
+                   "priority_note = ? WHERE id = ?", (datetime.now(), note, sub_id))
+        _notify_member(db, sub['member_id'], 'Target Advance — priority approved',
+                       f"Your request for payout position {sub['requested_payout_month']} was approved. "
+                       f"A fee of ₦{float(sub['priority_fee'] or 0):,.2f} applies, deducted from your payout. "
+                       f"If more members want the same position, the ballot decides between you.")
+        flash('Priority request granted.', 'success')
+    elif action == 'decline':
+        db.execute("UPDATE ctas_subscriptions SET priority_status = 'declined', is_priority = 0, "
+                   "priority_fee = 0, priority_decided_at = ?, priority_note = ? WHERE id = ?",
+                   (datetime.now(), note, sub_id))
+        _notify_member(db, sub['member_id'], 'Target Advance — priority not approved',
+                       'Your priority request was not approved, so you join the normal ballot. '
+                       'No priority fee will be charged.' + (f' {note}' if note else ''))
+        flash('Priority request declined — the member joins the normal ballot.', 'info')
+    else:
+        flash('Unknown action.', 'warning')
+    audit(db, 'CTAS_PRIORITY_DECIDE', 'ctas', f"Subscription #{sub_id}: priority {action}")
+    db.commit()
+    return redirect(url_for('ctas.cycle_detail', cycle_id=sub['cycle_id']))
+
+
 # ── Admin: ballot + payout ────────────────────────────────────────────────────
 
 @ctas.route('/ctas/cycles/<int:cycle_id>/ballot', methods=['POST'])
@@ -690,13 +823,31 @@ def run_ballot(cycle_id):
                               (cycle_id,)).fetchall()
         ids = [r['id'] for r in enrolled]
         seed = secrets.token_hex(8)
-        assignments = ce.assign_payout_months(ids, cycle, seed)
+        # Granted priority requests are placed first; oversubscribed positions
+        # are decided by the same seeded ballot.
+        granted = {r['id']: int(r['requested_payout_month'])
+                   for r in db.execute(
+                       "SELECT id, requested_payout_month FROM ctas_subscriptions "
+                       "WHERE cycle_id = ? AND status = 'enrolled' AND priority_status = 'granted' "
+                       "AND requested_payout_month IS NOT NULL", (cycle_id,)).fetchall()}
+        assignments = ce.assign_payout_months(ids, cycle, seed, priority=granted)
         for sub_id, month in assignments.items():
             db.execute("UPDATE ctas_subscriptions SET status = 'scheduled', payout_month = ?, "
                        "ballot_assigned_at = ? WHERE id = ?", (month, datetime.now(), sub_id))
+            # A member who asked for (and was granted) priority but did not win
+            # that position pays no priority fee — they were balloted normally.
+            if sub_id in granted and granted[sub_id] != month:
+                db.execute("UPDATE ctas_subscriptions SET is_priority = 0, priority_fee = 0, "
+                           "priority_status = 'not_allocated' WHERE id = ?", (sub_id,))
             row = db.execute('SELECT member_id FROM ctas_subscriptions WHERE id = ?', (sub_id,)).fetchone()
+            extra = ''
+            if sub_id in granted:
+                extra = (' Your priority position was allocated.' if granted[sub_id] == month
+                         else ' Your priority position was oversubscribed, so you were balloted '
+                              'normally and no priority fee is charged.')
             _notify_member(db, row['member_id'], 'Target Advance — ballot result',
-                           f'The ballot is complete. Your advance is scheduled for month {month} of the cycle.')
+                           f'The ballot is complete. Your advance is scheduled for month {month} '
+                           f'of the cycle.{extra}')
         summary = f"{len(ids)} member(s) assigned payout months (seed {seed})."
         db.execute("INSERT INTO ctas_ballot_runs (cycle_id, seed, summary, executed_by) VALUES (?, ?, ?, ?)",
                    (cycle_id, seed, summary, current_user.id))
@@ -725,7 +876,9 @@ def payout(sub_id):
     member = db.execute('SELECT * FROM members WHERE id = ?', (sub['member_id'],)).fetchone()
     ctas_ensure_accounts(db)
     target = float(sub['target_amount'])
-    fee = float(sub['admin_fee'] or 0)
+    admin_fee = float(sub['admin_fee'] or 0)
+    prio_fee = float(sub['priority_fee'] or 0) if sub['is_priority'] else 0.0
+    fee = round(admin_fee + prio_fee, 2)
     contributed = float(sub['contributed_total'] or 0)
     # Their own pooled contributions cover part of the payout; the co-op advances
     # the rest (recovered from their remaining contributions).
@@ -739,8 +892,11 @@ def payout(sub_id):
         lines.append({'account': CTAS_ADVANCES, 'debit': advance_portion,
                       'memo': f"CTAS advance to {member['first_name']} {member['last_name']}"})
     lines.append({'account': cash, 'credit': round(target - fee, 2), 'memo': 'CTAS payout disbursed'})
-    if fee:
-        lines.append({'account': CTAS_ADMIN_FEE_INCOME, 'credit': fee, 'memo': 'CTAS admin fee'})
+    if admin_fee:
+        lines.append({'account': CTAS_ADMIN_FEE_INCOME, 'credit': admin_fee, 'memo': 'CTAS admin fee'})
+    if prio_fee:
+        lines.append({'account': CTAS_PRIORITY_FEE_INCOME, 'credit': prio_fee,
+                      'memo': f"CTAS priority fee (position {sub['payout_month']})"})
     try:
         post_journal_safe(db, f"CTAS payout - subscription {sub_id}", lines,
                           date=datetime.now(), reference=f"CTAS-PO-{sub_id}",
@@ -943,9 +1099,17 @@ def my_ctas():
         m = _active_mandate(db, s['id'])
         if m:
             mandates[s['id']] = m
+    # Priority positions still on offer for each of the member's cycles.
+    prio = {}
+    for s in subs:
+        cyc = db.execute('SELECT priority_enabled FROM ctas_cycles WHERE id = ?', (s['cycle_id'],)).fetchone()
+        if cyc and cyc['priority_enabled'] and not s['payout_month']:
+            tiers = _priority_tiers(db, cycle_id=s['cycle_id'])
+            if tiers:
+                prio[s['id']] = tiers
     return render_template('member/my-ctas.html', member=member, subs=subs,
                            open_cycles=open_cycles, has_active=has_active, schedule=schedule,
-                           mandates=mandates)
+                           mandates=mandates, priority_offers=prio)
 
 
 @ctas.route('/my-ctas/apply', methods=['POST'])

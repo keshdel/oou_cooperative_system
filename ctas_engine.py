@@ -362,10 +362,24 @@ def net_off_waterfall(outstanding, savings, shares, other=0.0):
     }
 
 
-def assign_payout_months(subscription_ids, cycle, seed):
+def priority_fee_for(tiers, position):
+    """The fee for an early position, from {position: fee}. 0 if not priced."""
+    try:
+        return round(float(tiers.get(int(position), 0) or 0), 2)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def assign_payout_months(subscription_ids, cycle, seed, priority=None):
     """Deterministically (by seed) assign each enrolled subscription a unique
-    payout month, filling months earliest_payout_month..duration_months with up
-    to monthly_capacity slots each. Returns {subscription_id: month}."""
+    payout position, filling earliest_payout_month..periods with up to
+    monthly_capacity slots each. Returns {subscription_id: position}.
+
+    `priority` is {subscription_id: requested_position} for requests the
+    cooperative has GRANTED. Those are placed first; if more members want the
+    same position than there are slots, a seeded ballot decides between them and
+    the unsuccessful ones fall back into the normal ballot (spec section 12).
+    """
     earliest = int(_row_get(cycle, 'earliest_payout_month', 1) or 1)
     duration = cycle_periods(cycle)
     cap = int(_row_get(cycle, 'monthly_capacity', 1) or 1)
@@ -379,5 +393,24 @@ def assign_payout_months(subscription_ids, cycle, seed):
         raise ValueError('Not enough payout slots for the enrolled members.')
 
     rng = random.Random(str(seed))
-    rng.shuffle(ids)
-    return {sub_id: slots[i] for i, sub_id in enumerate(ids)}
+    assignments = {}
+
+    # 1) Granted priority requests, position by position.
+    wanted = {}
+    for sub_id, pos in (priority or {}).items():
+        if sub_id in ids and pos in slots:
+            wanted.setdefault(int(pos), []).append(sub_id)
+    for pos in sorted(wanted):
+        contenders = sorted(wanted[pos])          # sort first so the seed decides, not dict order
+        rng.shuffle(contenders)
+        available = slots.count(pos)
+        for sub_id in contenders[:available]:
+            assignments[sub_id] = pos
+            slots.remove(pos)
+
+    # 2) Everyone else (including unsuccessful priority applicants) is balloted.
+    remaining = sorted(s for s in ids if s not in assignments)
+    rng.shuffle(remaining)
+    for i, sub_id in enumerate(remaining):
+        assignments[sub_id] = slots[i]
+    return assignments

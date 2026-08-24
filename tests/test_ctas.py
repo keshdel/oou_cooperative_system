@@ -172,6 +172,34 @@ class CtasEngineTests(unittest.TestCase):
         self.assertEqual(str(rows[3][1]), '2026-06-01')
         self.assertTrue(all(r[2] == 50000 for r in rows))
 
+    def test_granted_priority_gets_the_requested_position(self):
+        from ctas_engine import assign_payout_months
+        cyc = {'periods': 4, 'duration_months': 4, 'earliest_payout_month': 1, 'monthly_capacity': 1}
+        out = assign_payout_months([10, 11, 12, 13], cyc, seed='s', priority={12: 1})
+        self.assertEqual(out[12], 1)                              # got what was granted
+        self.assertEqual(sorted(out.values()), [1, 2, 3, 4])      # others still balloted
+
+    def test_oversubscribed_priority_is_settled_by_ballot_not_first_come(self):
+        from ctas_engine import assign_payout_months
+        cyc = {'periods': 4, 'duration_months': 4, 'earliest_payout_month': 1, 'monthly_capacity': 1}
+        # Three members all want position 1; only one slot exists.
+        out = assign_payout_months([10, 11, 12, 13], cyc, seed='seed-a',
+                                   priority={10: 1, 11: 1, 12: 1})
+        winners = [s for s, p in out.items() if p == 1]
+        self.assertEqual(len(winners), 1)                         # exactly one wins
+        self.assertIn(winners[0], (10, 11, 12))
+        self.assertEqual(sorted(out.values()), [1, 2, 3, 4])       # everyone still placed
+        # Same seed -> same outcome (auditable); a different seed may differ.
+        again = assign_payout_months([10, 11, 12, 13], cyc, seed='seed-a',
+                                     priority={10: 1, 11: 1, 12: 1})
+        self.assertEqual(out, again)
+
+    def test_priority_fee_lookup(self):
+        from ctas_engine import priority_fee_for
+        tiers = {1: 30000, 2: 25000, 3: 20000}
+        self.assertEqual(priority_fee_for(tiers, 1), 30000.0)
+        self.assertEqual(priority_fee_for(tiers, 9), 0.0)          # unpriced position
+
     def test_position_one_is_allowed_so_every_period_has_a_slot(self):
         from ctas_engine import total_capacity, assign_payout_months
         # 12 periods, 1 payout/period, starting at position 1 -> 12 slots for 12 members.
@@ -357,6 +385,51 @@ class CtasAdminFlowTests(unittest.TestCase):
             with self.app.app_context():
                 db = get_db()
                 db.execute("DELETE FROM ctas_cycles WHERE name='AdCyc'")
+                db.execute("DELETE FROM settings WHERE key='ctas_enabled'")
+                db.commit()
+
+    def test_priority_fee_is_charged_at_payout_to_its_own_income_account(self):
+        with self.app.app_context():
+            db = get_db()
+            db.execute("INSERT INTO members (member_number, first_name, last_name, status, total_savings, "
+                       "monthly_savings, date_joined) VALUES ('CTAS/PR/1','Pri','T','active',900000,0,'2024-01-01')")
+            db.commit()
+            mid = db.execute("SELECT id FROM members WHERE member_number='CTAS/PR/1'").fetchone()['id']
+            db.execute("INSERT INTO ctas_cycles (name, status, frequency, periods, duration_months, "
+                       "contribution_amount, monthly_capacity, earliest_payout_month, priority_enabled) "
+                       "VALUES ('PrioCyc','balloted','monthly',4,4,50000,1,1,1)")
+            cid = db.execute("SELECT id FROM ctas_cycles WHERE name='PrioCyc'").fetchone()['id']
+            db.execute("INSERT INTO ctas_priority_fees (cycle_id, position, fee) VALUES (?, 1, 30000)", (cid,))
+            db.execute("INSERT INTO ctas_subscriptions (cycle_id, member_id, target_amount, tenure_months, "
+                       "monthly_deduction, admin_fee, status, contributed_total, advance_balance, "
+                       "payout_month, is_priority, priority_fee, priority_status, requested_payout_month) "
+                       "VALUES (?,?,200000,4,50000,1500,'scheduled',0,0,1,1,30000,'granted',1)", (cid, mid))
+            db.commit()
+            sid = db.execute("SELECT id FROM ctas_subscriptions WHERE cycle_id=?", (cid,)).fetchone()['id']
+        try:
+            self.client.post(f'/ctas/subscriptions/{sid}/payout', data={}, follow_redirects=True)
+            with self.app.app_context():
+                db = get_db()
+
+                def gl(acct, col):
+                    return float(db.execute(
+                        f"SELECT COALESCE(SUM(jl.{col}),0) FROM journal_lines jl JOIN journal_entries je "
+                        "ON je.id=jl.entry_id WHERE je.source_module='ctas_payout' AND jl.account_code=?",
+                        (acct,)).fetchone()[0])
+                self.assertAlmostEqual(gl('4160', 'credit'), 30000.0, places=2)   # priority fee income
+                self.assertAlmostEqual(gl('4150', 'credit'), 1500.0, places=2)    # admin fee income
+                # Member receives the target net of BOTH fees.
+                self.assertAlmostEqual(gl('1000', 'credit'), 168500.0, places=2)  # 200k - 1.5k - 30k
+        finally:
+            with self.app.app_context():
+                db = get_db()
+                for r in db.execute("SELECT id FROM journal_entries WHERE source_module='ctas_payout'").fetchall():
+                    db.execute("DELETE FROM journal_lines WHERE entry_id=?", (r['id'],))
+                    db.execute("DELETE FROM journal_entries WHERE id=?", (r['id'],))
+                db.execute("DELETE FROM ctas_priority_fees WHERE cycle_id=?", (cid,))
+                db.execute("DELETE FROM ctas_subscriptions WHERE cycle_id=?", (cid,))
+                db.execute("DELETE FROM ctas_cycles WHERE id=?", (cid,))
+                db.execute("DELETE FROM members WHERE id=?", (mid,))
                 db.execute("DELETE FROM settings WHERE key='ctas_enabled'")
                 db.commit()
 

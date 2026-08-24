@@ -105,6 +105,53 @@
     </script>
     {% endif %}
 
+    <!-- Priority payout pricing -->
+    {% if cycle.status in ['draft','open','closed','ready_for_ballot'] %}
+    <div class="card mb-3">
+        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+            <h6 class="mb-0"><i class="fas fa-bolt"></i> Priority payout</h6>
+            <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#prioCfg">
+                {{ 'Edit pricing' if priority_tiers else 'Set up' }}</button>
+        </div>
+        <div class="card-body py-2">
+            {% if cycle.priority_enabled and priority_tiers %}
+            <span class="text-muted small me-2">Members may pay for an earlier position:</span>
+            {% for pos, fee in priority_tiers|dictsort %}
+            <span class="badge bg-primary me-1">Position {{ pos }} · ₦{{ "{:,.0f}".format(fee) }}</span>
+            {% endfor %}
+            {% else %}
+            <span class="text-muted small">Not offered on this cycle. Members are all placed by the normal ballot.</span>
+            {% endif %}
+        </div>
+        <div class="collapse" id="prioCfg"><div class="card-body border-top">
+            <form method="post" action="{{ url_for('ctas.set_priority_fees', cycle_id=cycle.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="form-check mb-3">
+                    <input class="form-check-input" type="checkbox" name="priority_enabled" id="prioOn"
+                           value="1" {{ 'checked' if cycle.priority_enabled }}>
+                    <label class="form-check-label" for="prioOn">Offer priority positions on this cycle</label>
+                </div>
+                <p class="small text-muted">Price the early positions. Earlier positions normally cost more,
+                    because they are worth more to the member and cost the cooperative more liquidity.
+                    Leave a fee blank to stop offering that position.</p>
+                <div class="row g-2">
+                {% for p in range(1, (cycle.periods or cycle.duration_months or 6) + 1) %}
+                    {% if p <= 6 %}
+                    <div class="col-md-2">
+                        <label class="form-label small">Position {{ p }} fee (₦)</label>
+                        <input type="hidden" name="position" value="{{ p }}">
+                        <input class="form-control form-control-sm" type="number" step="0.01" min="0"
+                               name="fee" value="{{ priority_tiers.get(p, '') }}">
+                    </div>
+                    {% endif %}
+                {% endfor %}
+                </div>
+                <button class="btn btn-primary btn-sm mt-3">Save priority pricing</button>
+            </form>
+        </div></div>
+    </div>
+    {% endif %}
+
     <!-- Outstanding contributions (due-date schedule) -->
     {% if due_soon %}
     <div class="card mb-3">
@@ -152,6 +199,28 @@
                     {% if s.id in elig and not elig[s.id].eligible %}
                     <div class="small text-danger">{{ elig[s.id].reasons|join(' ') }}</div>{% endif %}
                     {% if s.rejected_reason %}<div class="small text-muted">Rejected: {{ s.rejected_reason }}</div>{% endif %}
+                    {% if s.priority_status == 'requested' %}
+                    <div class="small mt-1">
+                        <span class="badge bg-warning text-dark">Priority requested: position {{ s.requested_payout_month }}
+                            (₦{{ "{:,.0f}".format(s.priority_fee or 0) }})</span>
+                        <form method="post" action="{{ url_for('ctas.decide_priority', sub_id=s.id) }}" class="d-inline">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="action" value="grant">
+                            <button class="btn btn-sm btn-outline-success py-0">Grant</button></form>
+                        <form method="post" action="{{ url_for('ctas.decide_priority', sub_id=s.id) }}" class="d-inline">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="action" value="decline">
+                            <button class="btn btn-sm btn-outline-secondary py-0">Decline</button></form>
+                    </div>
+                    {% elif s.priority_status == 'granted' %}
+                    <div class="small text-success mt-1"><i class="fas fa-bolt"></i>
+                        Priority granted: position {{ s.requested_payout_month }}
+                        (₦{{ "{:,.0f}".format(s.priority_fee or 0) }})</div>
+                    {% elif s.priority_status == 'not_allocated' %}
+                    <div class="small text-muted mt-1">Priority oversubscribed — balloted normally, no fee</div>
+                    {% elif s.priority_status == 'declined' %}
+                    <div class="small text-muted mt-1">Priority declined</div>
+                    {% endif %}
                 </td>
                 <td class="text-end">₦{{ "{:,.2f}".format(s.target_amount or 0) }}</td>
                 <td class="text-end">{{ s.tenure_months }}m</td>

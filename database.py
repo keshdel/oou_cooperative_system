@@ -1020,6 +1020,29 @@ def init_db():
     _add_col(db, 'ctas_plans', 'retry_days', 'INTEGER DEFAULT 3')
     _add_col(db, 'ctas_plans', 'max_charge_attempts', 'INTEGER DEFAULT 3')
 
+    # Priority payout: a member may request an earlier position for a fee.
+    _add_col(db, 'ctas_cycles', 'priority_enabled', 'INTEGER DEFAULT 0')
+    _add_col(db, 'ctas_plans', 'priority_enabled', 'INTEGER DEFAULT 0')
+    _add_col(db, 'ctas_subscriptions', 'is_priority', 'INTEGER DEFAULT 0')
+    _add_col(db, 'ctas_subscriptions', 'priority_fee', 'REAL DEFAULT 0')
+    _add_col(db, 'ctas_subscriptions', 'priority_status', 'TEXT')
+    _add_col(db, 'ctas_subscriptions', 'priority_decided_at', 'TIMESTAMP')
+    _add_col(db, 'ctas_subscriptions', 'priority_note', 'TEXT')
+
+    # Fee charged for each early payout position (earlier positions cost more).
+    # A row belongs to either a plan (the template) or a cycle (the live copy).
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS ctas_priority_fees (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            plan_id INTEGER,
+            cycle_id INTEGER,
+            position INTEGER NOT NULL,
+            fee REAL DEFAULT 0
+        )
+    '''))
+    _exec_ignore(db, 'CREATE UNIQUE INDEX IF NOT EXISTS uq_ctas_prio_cycle ON ctas_priority_fees(cycle_id, position)')
+    _exec_ignore(db, 'CREATE UNIQUE INDEX IF NOT EXISTS uq_ctas_prio_plan ON ctas_priority_fees(plan_id, position)')
+
     # Recurring-payment mandates. Stores ONLY the payment provider's reusable
     # token plus masked display details — never card numbers (PCI). The consent
     # fields are the member's authorisation record.

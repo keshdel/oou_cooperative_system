@@ -95,7 +95,18 @@
                         {% endif %}
                     {% endif %}
                 </td>
-                <td class="text-end">{{ s.payout_month or '—' }}</td>
+                <td class="text-end">{{ s.payout_month or '—' }}
+                    {% if s.priority_status == 'requested' %}
+                    <div class="small text-warning">Priority requested (pos {{ s.requested_payout_month }})</div>
+                    {% elif s.priority_status == 'granted' %}
+                    <div class="small text-success">Priority approved (pos {{ s.requested_payout_month }})</div>
+                    {% elif s.priority_status == 'not_allocated' %}
+                    <div class="small text-muted">Priority oversubscribed — no fee charged</div>
+                    {% elif priority_offers.get(s.id) %}
+                    <button class="btn btn-sm btn-outline-primary py-0 mt-1" data-bs-toggle="collapse"
+                            data-bs-target="#prio{{ s.id }}">Get paid earlier</button>
+                    {% endif %}
+                </td>
                 <td style="min-width:160px">
                     {% if s.status in ['active_recovery','completed'] %}
                         {% set pct = ((s.total_recovered or 0) / (s.target_amount or 1) * 100)|round(0, 'floor') %}
@@ -106,6 +117,34 @@
                     {% else %}<span class="text-muted small">—</span>{% endif %}
                 </td>
             </tr>
+            {% if priority_offers.get(s.id) and not s.priority_status %}
+            <tr class="collapse" id="prio{{ s.id }}"><td colspan="6" class="bg-light">
+                <form method="post" action="{{ url_for('ctas.request_priority', sub_id=s.id) }}" class="py-2">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <div class="small mb-2">
+                        <strong>Want your money sooner?</strong> You can ask for an earlier payout position
+                        for a one-off fee, deducted from your payout. If more members want the same position
+                        than there are places, the ballot decides fairly between you — and if you miss out,
+                        <strong>you pay nothing</strong>.
+                    </div>
+                    <div class="row g-2 align-items-end">
+                        <div class="col-md-4"><label class="form-label small">Position wanted</label>
+                            <select class="form-select form-select-sm" name="position" required>
+                                {% for pos, fee in priority_offers[s.id]|dictsort %}
+                                <option value="{{ pos }}">Position {{ pos }} — fee ₦{{ "{:,.0f}".format(fee) }}</option>
+                                {% endfor %}
+                            </select></div>
+                        <div class="col-md-6"><div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="accept_fee"
+                                   id="af{{ s.id }}" value="1" required>
+                            <label class="form-check-label small" for="af{{ s.id }}">
+                                I accept the priority fee, charged only if I am allocated this position.</label>
+                        </div></div>
+                        <div class="col-md-2"><button class="btn btn-sm btn-primary w-100">Request</button></div>
+                    </div>
+                </form>
+            </td></tr>
+            {% endif %}
             {% else %}
             <tr><td colspan="6" class="text-center text-muted py-4">You have no target-advance applications yet.</td></tr>
             {% endfor %}
