@@ -235,6 +235,32 @@ PERMISSIONS = [
     },
 
     {
+        'key': 'ctas.eligibility',
+        'label': 'Confirm CTAS eligibility',
+        'group': 'CTAS',
+        'description': 'First approval gate: check the member qualifies for the target advance. '
+                       'Give this to a different officer from finance and committee approval if '
+                       'you want the stages separated.',
+        'default_roles': ('admin', 'secretary'),
+        'endpoints': (),
+    },
+    {
+        'key': 'ctas.finance',
+        'label': 'CTAS finance review',
+        'group': 'CTAS',
+        'description': 'Second approval gate: confirm the member can afford the contributions.',
+        'default_roles': ('admin', 'treasurer'),
+        'endpoints': (),
+    },
+    {
+        'key': 'ctas.approve',
+        'label': 'CTAS committee approval',
+        'group': 'CTAS',
+        'description': 'Final approval gate before a member is enrolled for the ballot.',
+        'default_roles': ('admin',),
+        'endpoints': (),
+    },
+    {
         'key': 'ctas.manage',
         'label': 'Manage the Target Advance Scheme (CTAS)',
         'group': 'CTAS',
@@ -248,6 +274,7 @@ PERMISSIONS = [
                       'ctas.subscription_act',
                       'ctas.run_ballot', 'ctas.payout',
                       'ctas.set_priority_fees', 'ctas.decide_priority', 'ctas.set_liquidity',
+                      'ctas.record_terms',
                       'ctas.payroll_export', 'ctas.payroll_import',
                       'ctas.exit_settle', 'ctas.exceptions', 'ctas.resolve_exception'),
     },

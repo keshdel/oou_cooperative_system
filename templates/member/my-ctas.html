@@ -30,11 +30,23 @@
                 Your savings balance is ₦{{ "{:,.2f}".format(member.total_savings or 0) }}. On a savings-basis cycle you can target up to a multiple of your savings.</div></div>
             <div class="col-md-6"><label class="form-label">Signature (type your full name) *</label>
                 <input class="form-control" name="signature_name" placeholder="{{ member.first_name }} {{ member.last_name }}" required></div>
-            <div class="col-md-6 d-flex align-items-end"><div class="form-check">
-                <input class="form-check-input" type="checkbox" name="terms" id="ctasTerms" value="1" required>
-                <label class="form-check-label" for="ctasTerms">
-                    I accept the scheme terms: my target is recovered by equal monthly deductions over the tenure, and I authorise the cooperative to recover it (including from my salary/savings where applicable).</label>
-            </div></div>
+            <div class="col-12">
+                <div class="border rounded p-3 bg-light" style="max-height:220px; overflow-y:auto;">
+                    <div class="fw-semibold mb-2">Scheme terms — please read before accepting</div>
+                    {% for heading, body in ctas_terms %}
+                    <div class="mb-2">
+                        <div class="small fw-semibold">{{ heading }}</div>
+                        <div class="small text-muted">{{ body }}</div>
+                    </div>
+                    {% endfor %}
+                </div>
+                <div class="form-check mt-2">
+                    <input class="form-check-input" type="checkbox" name="terms" id="ctasTerms" value="1" required>
+                    <label class="form-check-label" for="ctasTerms">
+                        <strong>I have read and accept all of the terms above</strong>, including the
+                        credit and affordability checks and the processing of my personal information.</label>
+                </div>
+            </div>
             <div class="col-12"><button class="btn btn-primary"><i class="fas fa-paper-plane"></i> Submit application</button></div>
         </form>
     </div></div>

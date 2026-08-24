@@ -40,6 +40,37 @@ CTAS_WRITEOFF = '5150'   # expense — outstanding CTAS advance written off on m
 CTAS_POOL = '2050'       # liability — members' contributions held in the rotating pool
 CTAS_PRIORITY_FEE_INCOME = '4160'   # income — fee for an early payout position
 
+# What a member agrees to when they join. Covers the contribution obligation,
+# how the cooperative may recover it, credit assessment and the processing of
+# personal data — the consents a cooperative needs on record.
+CTAS_TERMS = [
+    ('Your contributions',
+     'I will contribute the fixed amount every period for the full duration of the cycle, '
+     'whether or not I have already received my payout.'),
+    ('Receiving your target',
+     'I understand my payout position is decided by ballot, that I receive the target amount '
+     'on that position, and that my obligation to contribute continues until the cycle ends.'),
+    ('How the cooperative recovers contributions',
+     'I authorise the cooperative to collect my contributions by the method I have chosen — '
+     'salary deduction, an authorised card or account debit, or direct payment — and to apply '
+     'any payment I make to amounts I owe under this scheme.'),
+    ('If I leave or fall into arrears',
+     'If I exit the cooperative or fail to contribute, I authorise the cooperative to recover '
+     'what I still owe from my savings, share capital, dividends and any terminal benefits, '
+     'in that order, in line with the bye-laws.'),
+    ('Credit and affordability checks',
+     'I consent to the cooperative assessing my creditworthiness and affordability for this '
+     'scheme, including reviewing my savings, contribution and loan repayment history, and '
+     'where applicable confirming my employment and salary deduction capacity.'),
+    ('Processing my personal information',
+     'I consent to the cooperative collecting and processing my personal and financial '
+     'information for the purpose of operating this scheme, including assessing my application, '
+     'collecting contributions, making payouts and meeting its record-keeping obligations. '
+     'My information is kept secure, is not sold, and is shared only where necessary to operate '
+     'the scheme or where required by law. I may withdraw this consent by ending my '
+     'participation, subject to settling what I owe.'),
+]
+
 
 def _liquidity(db, cycle):
     """Liquidity projection for a cycle, using the real ballot result once it
@@ -539,7 +570,7 @@ def cycle_detail(cycle_id):
     return render_template('ctas/cycle_detail.html', cycle=cycle, subs=subs, elig=elig,
                            members=members, summary=summary, due_soon=due_soon, ce=ce,
                            priority_tiers=_priority_tiers(db, cycle_id=cycle_id),
-                           liq_rows=liq_rows, liq=liq)
+                           liq_rows=liq_rows, liq=liq, ctas_terms=CTAS_TERMS)
 
 
 def _advert_for_cycle(db, cycle):
@@ -766,6 +797,16 @@ def subscription_act(sub_id):
     now = datetime.now()
     detail = url_for('ctas.cycle_detail', cycle_id=sub['cycle_id'])
 
+    # Officers who are also members may act on their own application, but it is
+    # flagged and recorded — separation of duties is a judgement for the coop.
+    own = member_for_user(db, current_user.id)
+    acting_on_own = bool(own and own['id'] == sub['member_id'])
+    if acting_on_own and action in ('advance', 'reject'):
+        flash('Note: this is your own target-advance application. The action has been '
+              'recorded for audit — where possible another officer should review it.', 'warning')
+        audit(db, 'CTAS_SELF_REVIEW', 'ctas',
+              f"{current_user.username} acted ({action}) on their own subscription #{sub_id}")
+
     if action == 'reject' and sub['status'] in ce.APPROVAL_ORDER:
         reason = (request.form.get('reason') or '').strip()
         db.execute("UPDATE ctas_subscriptions SET status = 'rejected', rejected_reason = ? WHERE id = ?",
@@ -784,6 +825,19 @@ def subscription_act(sub_id):
         nxt = ce.next_stage(sub['status'])
         if not nxt:
             flash('This application is already fully approved and enrolled.', 'warning')
+            return redirect(detail)
+        # Each gate needs its own duty, so the stages can be split between officers.
+        needed = ce.STAGE_PERMISSION.get(nxt, 'ctas.manage')
+        if not perms.user_can(needed):
+            flash(f"You do not have permission to {ce.STAGE_DUTY_LABEL.get(nxt, 'do this')}. "
+                  f"An officer holding that duty must act — see Settings → Task Assignment.", 'danger')
+            return redirect(detail)
+        # A member must have accepted the scheme terms before they are enrolled —
+        # the terms carry the contribution, recovery, credit and data consents.
+        if nxt == ce.SUB_ENROLLED and not sub['terms_accepted']:
+            flash('This member has not accepted the scheme terms yet, so they cannot be enrolled. '
+                  'Ask them to accept in their member portal, or record their signed acceptance '
+                  'using "Record terms acceptance" on this page.', 'danger')
             return redirect(detail)
         # Re-run eligibility at the eligibility gate and again at enrolment.
         if nxt in (ce.SUB_ELIGIBLE, ce.SUB_ENROLLED):
@@ -930,6 +984,32 @@ def request_priority(sub_id):
     flash(f'Priority request submitted for position {position} (fee ₦{fee:,.2f}). '
           f'The cooperative will review it before the ballot.', 'success')
     return redirect(url_for('ctas.my_ctas'))
+
+
+@ctas.route('/ctas/subscriptions/<int:sub_id>/terms', methods=['POST'])
+@ctas_required
+@role_required('admin', 'treasurer')
+def record_terms(sub_id):
+    """Record that a member accepted the scheme terms offline (signed form).
+    The officer attests to it and their attestation is audited — this is not the
+    officer consenting on the member's behalf."""
+    db = get_db()
+    sub = db.execute('SELECT * FROM ctas_subscriptions WHERE id = ?', (sub_id,)).fetchone()
+    if not sub:
+        abort(404)
+    signature = (request.form.get('signature_name') or '').strip()
+    if not signature or not request.form.get('attest'):
+        flash('Enter the name the member signed with and confirm you hold their signed acceptance.',
+              'danger')
+        return redirect(url_for('ctas.cycle_detail', cycle_id=sub['cycle_id']))
+    db.execute("UPDATE ctas_subscriptions SET terms_accepted = 1, signature_name = ?, signed_at = ? "
+               "WHERE id = ?", (signature, datetime.now(), sub_id))
+    audit(db, 'CTAS_TERMS_RECORDED', 'ctas',
+          f"{current_user.username} recorded signed terms acceptance for subscription #{sub_id} "
+          f"(signed: {signature})")
+    db.commit()
+    flash(f'Recorded terms acceptance signed by {signature}.', 'success')
+    return redirect(url_for('ctas.cycle_detail', cycle_id=sub['cycle_id']))
 
 
 @ctas.route('/ctas/subscriptions/<int:sub_id>/priority', methods=['POST'])
@@ -1105,7 +1185,7 @@ def payroll_export(cycle_id):
         SELECT s.id, s.monthly_deduction, s.status, m.member_number, m.employee_id,
                m.first_name || ' ' || m.last_name AS name
         FROM ctas_subscriptions s JOIN members m ON m.id = s.member_id
-        WHERE s.cycle_id = ? AND s.status IN ('scheduled', 'active_recovery')
+        WHERE s.cycle_id = ? AND s.status IN ('enrolled', 'scheduled', 'active_recovery')
         ORDER BY m.member_number''', (cycle_id,)).fetchall()
     out = StringIO()
     w = csv.writer(out)
@@ -1115,6 +1195,10 @@ def payroll_export(cycle_id):
         exp = contribution or float(s['monthly_deduction'] or 0)
         w.writerow([s['id'], s['member_number'] or '', s['employee_id'] or '', s['name'],
                     s['status'], month, f"{exp:.2f}", ''])
+    if not subs:
+        # Still hand back a usable file, with an example row showing the format.
+        w.writerow(['', 'MEM/2026/0001', 'EMP001', 'Example Member', 'enrolled', month,
+                    f"{contribution:.2f}", ''])
     db.execute("INSERT INTO ctas_payroll_batches (cycle_id, month_number, kind, created_by) "
                "VALUES (?, ?, 'export', ?)", (cycle_id, month, current_user.id))
     db.commit()
@@ -1166,9 +1250,9 @@ def payroll_import(cycle_id):
                 if mn:
                     sub = db.execute(
                         "SELECT s.* FROM ctas_subscriptions s JOIN members m ON m.id = s.member_id "
-                        "WHERE m.member_number = ? AND s.cycle_id = ? AND s.status IN ('scheduled','active_recovery')",
+                        "WHERE m.member_number = ? AND s.cycle_id = ? AND s.status IN ('enrolled','scheduled','active_recovery')",
                         (mn, cycle_id)).fetchone()
-            if not sub or sub['status'] not in ('scheduled', 'active_recovery'):
+            if not sub or sub['status'] not in ('enrolled', 'scheduled', 'active_recovery'):
                 skipped += 1
                 continue
             # Idempotent per subscription+period.
@@ -1275,7 +1359,7 @@ def my_ctas():
                 prio[s['id']] = tiers
     return render_template('member/my-ctas.html', member=member, subs=subs,
                            open_cycles=open_cycles, has_active=has_active, schedule=schedule,
-                           mandates=mandates, priority_offers=prio)
+                           mandates=mandates, priority_offers=prio, ctas_terms=CTAS_TERMS)
 
 
 @ctas.route('/my-ctas/apply', methods=['POST'])
@@ -1561,7 +1645,7 @@ def ctas_charge_due():
         JOIN ctas_mandates mn ON mn.subscription_id = s.id AND mn.status = 'active'
         WHERE sc.status IN ('due', 'grace', 'late', 'partial') AND sc.due_date <= ?
           AND (sc.next_retry_at IS NULL OR sc.next_retry_at <= ?)
-          AND s.status IN ('scheduled', 'active_recovery')
+          AND s.status IN ('enrolled', 'scheduled', 'active_recovery')
         ORDER BY sc.due_date''', (today_s, today_s)).fetchall()
 
     charged = failed = skipped = suspended = 0

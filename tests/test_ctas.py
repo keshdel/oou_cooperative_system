@@ -358,7 +358,8 @@ class CtasAdminFlowTests(unittest.TestCase):
             cid = get_db().execute("SELECT id FROM ctas_cycles WHERE name='SchedCyc'").fetchone()['id']
         self.client.post(f'/ctas/cycles/{cid}/transition', data={'to': 'open'})
         self.client.post(f'/ctas/cycles/{cid}/subscriptions',
-                         data={'member_id': str(mid), 'target_amount': '200000', 'tenure_months': '4'})
+                         data={'member_id': str(mid), 'target_amount': '200000', 'tenure_months': '4',
+                               'terms': '1', 'signature_name': 'Sch T'})
         with self.app.app_context():
             sid = get_db().execute("SELECT id FROM ctas_subscriptions WHERE cycle_id=?", (cid,)).fetchone()['id']
         try:
@@ -430,6 +431,73 @@ class CtasAdminFlowTests(unittest.TestCase):
                 db.execute("DELETE FROM settings WHERE key='ctas_enabled'")
                 db.commit()
 
+    def test_member_cannot_be_enrolled_without_accepting_terms(self):
+        with self.app.app_context():
+            db = get_db()
+            db.execute("INSERT INTO members (member_number, first_name, last_name, status, "
+                       "total_savings, monthly_savings, date_joined) "
+                       "VALUES ('CTAS/TC/1','Terms','T','active',900000,0,'2024-01-01')")
+            db.execute("INSERT INTO ctas_cycles (name, status, frequency, periods, duration_months, "
+                       "contribution_amount, monthly_capacity, earliest_payout_month, "
+                       "affordability_method) VALUES ('TermsCyc','open','monthly',4,4,50000,2,1,'manual')")
+            db.commit()
+            mid = db.execute("SELECT id FROM members WHERE member_number='CTAS/TC/1'").fetchone()['id']
+            cid = db.execute("SELECT id FROM ctas_cycles WHERE name='TermsCyc'").fetchone()['id']
+            db.execute("INSERT INTO ctas_subscriptions (cycle_id, member_id, target_amount, "
+                       "tenure_months, monthly_deduction, status, terms_accepted) "
+                       "VALUES (?,?,200000,4,50000,'submitted',0)", (cid, mid))
+            db.commit()
+            sid = db.execute("SELECT id FROM ctas_subscriptions WHERE cycle_id=?", (cid,)).fetchone()['id']
+        try:
+            # Eligibility, finance and committee pass; enrolment is refused.
+            for _ in range(4):
+                self.client.post(f'/ctas/subscriptions/{sid}/act', data={'action': 'advance'})
+            with self.app.app_context():
+                st = get_db().execute("SELECT status FROM ctas_subscriptions WHERE id=?",
+                                      (sid,)).fetchone()['status']
+                self.assertEqual(st, 'approved')          # stopped at the terms gate
+            # Recording the member's signed acceptance unblocks enrolment.
+            self.client.post(f'/ctas/subscriptions/{sid}/terms',
+                             data={'signature_name': 'Terms T', 'attest': '1'})
+            with self.app.app_context():
+                db = get_db()
+                sub = db.execute("SELECT terms_accepted, signature_name FROM ctas_subscriptions "
+                                 "WHERE id=?", (sid,)).fetchone()
+                self.assertEqual(sub['terms_accepted'], 1)
+                self.assertEqual(sub['signature_name'], 'Terms T')
+                logged = db.execute("SELECT COUNT(*) FROM audit_log WHERE action='CTAS_TERMS_RECORDED'"
+                                    ).fetchone()[0]
+                self.assertGreaterEqual(logged, 1)        # the attestation is on record
+            self.client.post(f'/ctas/subscriptions/{sid}/act', data={'action': 'advance'})
+            with self.app.app_context():
+                st = get_db().execute("SELECT status FROM ctas_subscriptions WHERE id=?",
+                                      (sid,)).fetchone()['status']
+                self.assertEqual(st, 'enrolled')
+        finally:
+            with self.app.app_context():
+                db = get_db()
+                db.execute("DELETE FROM ctas_schedule WHERE subscription_id=?", (sid,))
+                db.execute("DELETE FROM ctas_subscriptions WHERE cycle_id=?", (cid,))
+                db.execute("DELETE FROM ctas_cycles WHERE id=?", (cid,))
+                db.execute("DELETE FROM members WHERE id=?", (mid,))
+                db.execute("DELETE FROM settings WHERE key='ctas_enabled'")
+                db.commit()
+
+    def test_stage_duties_are_separate_permissions(self):
+        """Each approval gate has its own duty, so a cooperative can split them."""
+        import ctas_engine as ce
+        import permissions as perms
+        self.assertEqual(ce.STAGE_PERMISSION[ce.SUB_ELIGIBLE], 'ctas.eligibility')
+        self.assertEqual(ce.STAGE_PERMISSION[ce.SUB_FINANCE_REVIEWED], 'ctas.finance')
+        self.assertEqual(ce.STAGE_PERMISSION[ce.SUB_APPROVED], 'ctas.approve')
+        keys = {p['key'] for p in perms.PERMISSIONS}
+        for k in ('ctas.eligibility', 'ctas.finance', 'ctas.approve'):
+            self.assertIn(k, keys)                        # assignable in Task Assignment
+        by_key = {p['key']: p for p in perms.PERMISSIONS}
+        # Sensible defaults: finance sits with the treasurer, approval with the president.
+        self.assertIn('treasurer', by_key['ctas.finance']['default_roles'])
+        self.assertEqual(by_key['ctas.approve']['default_roles'], ('admin',))
+
     def test_a_full_cycle_can_still_advance_and_ballot_its_members(self):
         """Capacity limits new joiners, not members who already hold a place.
         A cycle filled to capacity must still progress to the ballot."""
@@ -449,8 +517,8 @@ class CtasAdminFlowTests(unittest.TestCase):
                 mid = db.execute("SELECT id FROM members WHERE member_number = ?",
                                  (f'CTAS/FULL/{i}',)).fetchone()['id']
                 db.execute("INSERT INTO ctas_subscriptions (cycle_id, member_id, target_amount, "
-                           "tenure_months, monthly_deduction, status) "
-                           "VALUES (?,?,200000,4,50000,'submitted')", (cid, mid))
+                           "tenure_months, monthly_deduction, status, terms_accepted, signature_name) "
+                           "VALUES (?,?,200000,4,50000,'submitted',1,'Signed')", (cid, mid))
                 made.append(mid)
             db.commit()
             sids = [r['id'] for r in db.execute(
@@ -663,7 +731,8 @@ class CtasAdminFlowTests(unittest.TestCase):
             cid = get_db().execute("SELECT id FROM ctas_cycles WHERE name='DelCyc'").fetchone()['id']
         self.client.post(f'/ctas/cycles/{cid}/transition', data={'to': 'open'})
         self.client.post(f'/ctas/cycles/{cid}/subscriptions',
-                         data={'member_id': str(mid), 'target_amount': '200000', 'tenure_months': '4'})
+                         data={'member_id': str(mid), 'target_amount': '200000', 'tenure_months': '4',
+                               'terms': '1', 'signature_name': 'Sch T'})
         try:
             r = self.client.post(f'/ctas/cycles/{cid}/delete', follow_redirects=False)
             self.assertIn(r.status_code, (302, 303))
@@ -718,7 +787,8 @@ class CtasAdminFlowTests(unittest.TestCase):
                 cid = get_db().execute("SELECT id FROM ctas_cycles WHERE name='FlowCycle'").fetchone()['id']
             self.client.post(f'/ctas/cycles/{cid}/transition', data={'to': 'open'})
             self.client.post(f'/ctas/cycles/{cid}/subscriptions',
-                             data={'member_id': str(mid), 'target_amount': '300000', 'tenure_months': '4'})
+                             data={'member_id': str(mid), 'target_amount': '300000', 'tenure_months': '4',
+                                   'terms': '1', 'signature_name': 'Ada Flow'})
             with self.app.app_context():
                 sub = get_db().execute("SELECT * FROM ctas_subscriptions WHERE cycle_id=?", (cid,)).fetchone()
                 sid = sub['id']

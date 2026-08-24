@@ -40,6 +40,20 @@ STAGE_ACTION_LABEL = {
     SUB_APPROVED: 'Committee approval',
     SUB_ENROLLED: 'Enrol',
 }
+# Each approval gate needs its own duty, so a cooperative can separate them
+# across officers (or give one person all three and keep it simple).
+STAGE_PERMISSION = {
+    SUB_ELIGIBLE: 'ctas.eligibility',
+    SUB_FINANCE_REVIEWED: 'ctas.finance',
+    SUB_APPROVED: 'ctas.approve',
+    SUB_ENROLLED: 'ctas.manage',
+}
+STAGE_DUTY_LABEL = {
+    SUB_ELIGIBLE: 'confirm CTAS eligibility',
+    SUB_FINANCE_REVIEWED: 'carry out the CTAS finance review',
+    SUB_APPROVED: 'give CTAS committee approval',
+    SUB_ENROLLED: 'enrol CTAS members',
+}
 # Which timestamp/actor columns each advance stamps.
 STAGE_STAMP = {
     SUB_ELIGIBLE: ('eligibility_at', 'eligibility_by'),

@@ -282,7 +282,30 @@
             <tr>
                 <td>{{ s.member_name }}<div class="small text-muted">{{ s.member_number }} · savings ₦{{ "{:,.0f}".format(s.total_savings or 0) }}</div>
                     {% if s.terms_accepted %}<div class="small text-success"><i class="fas fa-check"></i> Terms accepted{% if s.signature_name %} — {{ s.signature_name }}{% endif %}</div>
-                    {% else %}<div class="small text-warning"><i class="fas fa-exclamation-triangle"></i> Terms not yet accepted</div>{% endif %}
+                    {% else %}
+                    <div class="small text-danger"><i class="fas fa-exclamation-triangle"></i>
+                        Terms not accepted — cannot be enrolled
+                        <a href="#" data-bs-toggle="collapse" data-bs-target="#terms{{ s.id }}">record acceptance</a>
+                    </div>
+                    <div class="collapse mt-1" id="terms{{ s.id }}">
+                        <form method="post" action="{{ url_for('ctas.record_terms', sub_id=s.id) }}"
+                              class="border rounded p-2 bg-light">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <div class="small text-muted mb-1">Use this only when you hold the member's
+                                signed acceptance of the scheme terms. Your attestation is recorded.</div>
+                            <div class="input-group input-group-sm">
+                                <input class="form-control" name="signature_name"
+                                       placeholder="Name the member signed with" required>
+                                <div class="input-group-text">
+                                    <input class="form-check-input mt-0 me-1" type="checkbox"
+                                           name="attest" value="1" required>
+                                    <span class="small">I hold their signed form</span>
+                                </div>
+                                <button class="btn btn-outline-primary">Record</button>
+                            </div>
+                        </form>
+                    </div>
+                    {% endif %}
                     {% if s.id in elig and not elig[s.id].eligible %}
                     <div class="small text-danger">{{ elig[s.id].reasons|join(' ') }}</div>{% endif %}
                     {% if s.rejected_reason %}<div class="small text-muted">Rejected: {{ s.rejected_reason }}</div>{% endif %}
