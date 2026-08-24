@@ -228,11 +228,22 @@ def total_capacity(cycle):
     return payout_periods * cap
 
 
-def participant_count(db, cycle_id):
+def participant_count(db, cycle_id, exclude_subscription_id=None):
+    """How many members currently occupy a place in this cycle.
+
+    `exclude_subscription_id` leaves one subscription out — used when re-checking
+    a member who already holds a place, so they are not counted against
+    themselves.
+    """
     placeholders = ','.join('?' for _ in ACTIVE_SUB_STATES)
+    params = [cycle_id, *ACTIVE_SUB_STATES]
+    extra = ''
+    if exclude_subscription_id is not None:
+        extra = ' AND id != ?'
+        params.append(exclude_subscription_id)
     return db.execute(
-        f"SELECT COUNT(*) FROM ctas_subscriptions WHERE cycle_id = ? AND status IN ({placeholders})",
-        (cycle_id, *ACTIVE_SUB_STATES)).fetchone()[0] or 0
+        f"SELECT COUNT(*) FROM ctas_subscriptions WHERE cycle_id = ? "
+        f"AND status IN ({placeholders}){extra}", params).fetchone()[0] or 0
 
 
 def member_has_active_subscription(db, member_id, exclude_cycle_id=None):
@@ -282,10 +293,15 @@ def affordability(db, member, cycle, target_amount, tenure_months):
         f'Target ₦{_f(target_amount):,.2f} exceeds {multiple:g}× your savings balance (max ₦{max_target:,.2f}).')
 
 
-def check_eligibility(db, member, cycle, target_amount, tenure_months, exclude_cycle_id=None):
+def check_eligibility(db, member, cycle, target_amount, tenure_months, exclude_cycle_id=None,
+                      exclude_subscription_id=None):
     """Full eligibility decision. Returns a dict the caller can act on/display.
+
     `exclude_cycle_id` skips the member's subscription in that cycle when checking
-    the one-active-scheme rule (used when re-checking an existing application)."""
+    the one-active-scheme rule, and `exclude_subscription_id` leaves that
+    subscription out of the capacity count. Both are used when re-checking an
+    application that already exists, so it is not judged against itself.
+    """
     reasons = []
     deduction = monthly_deduction(target_amount, tenure_months)
     fee = calculate_admin_fee(cycle, target_amount)
@@ -302,8 +318,11 @@ def check_eligibility(db, member, cycle, target_amount, tenure_months, exclude_c
     if member_has_active_subscription(db, member['id'], exclude_cycle_id=exclude_cycle_id):
         reasons.append('Member already has an active CTAS subscription.')
 
+    # Capacity only limits someone taking a NEW place — a member who already
+    # holds one is excluded, so advancing them through approval is never blocked.
     cap = total_capacity(cycle)
-    if cap and participant_count(db, cycle['id']) >= cap:
+    if cap and participant_count(db, cycle['id'],
+                                 exclude_subscription_id=exclude_subscription_id) >= cap:
         reasons.append('This cycle is full.')
 
     aff_ok, method, aff_msg = affordability(db, member, cycle, target_amount, tenure_months)

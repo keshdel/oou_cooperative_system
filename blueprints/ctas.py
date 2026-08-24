@@ -508,7 +508,10 @@ def cycle_detail(cycle_id):
     for s in subs:
         if s['status'] == ce.SUB_SUBMITTED:
             member = db.execute('SELECT * FROM members WHERE id = ?', (s['member_id'],)).fetchone()
-            elig[s['id']] = ce.check_eligibility(db, member, cycle, s['target_amount'], s['tenure_months'])
+            elig[s['id']] = ce.check_eligibility(db, member, cycle, s['target_amount'],
+                                                 s['tenure_months'],
+                                                 exclude_cycle_id=s['cycle_id'],
+                                                 exclude_subscription_id=s['id'])
     # Members available to add (active, not already in this cycle).
     members = db.execute('''
         SELECT id, first_name || ' ' || last_name AS name, member_number, total_savings, annual_salary
@@ -787,7 +790,8 @@ def subscription_act(sub_id):
             cycle = db.execute('SELECT * FROM ctas_cycles WHERE id = ?', (sub['cycle_id'],)).fetchone()
             member = db.execute('SELECT * FROM members WHERE id = ?', (sub['member_id'],)).fetchone()
             res = ce.check_eligibility(db, member, cycle, sub['target_amount'], sub['tenure_months'],
-                                       exclude_cycle_id=sub['cycle_id'])
+                                       exclude_cycle_id=sub['cycle_id'],
+                                       exclude_subscription_id=sub['id'])
             hard = [r for r in res['reasons'] if 'exceeds' not in r and 'salary' not in r.lower()]
             if hard:
                 flash('Cannot advance: ' + ' '.join(hard), 'danger')

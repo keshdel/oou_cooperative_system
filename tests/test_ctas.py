@@ -430,6 +430,62 @@ class CtasAdminFlowTests(unittest.TestCase):
                 db.execute("DELETE FROM settings WHERE key='ctas_enabled'")
                 db.commit()
 
+    def test_a_full_cycle_can_still_advance_and_ballot_its_members(self):
+        """Capacity limits new joiners, not members who already hold a place.
+        A cycle filled to capacity must still progress to the ballot."""
+        made = []
+        with self.app.app_context():
+            db = get_db()
+            db.execute("INSERT INTO ctas_cycles (name, status, frequency, periods, duration_months, "
+                       "contribution_amount, monthly_capacity, earliest_payout_month, "
+                       "affordability_method, liquidity_support) "
+                       "VALUES ('FullCyc','open','monthly',4,4,50000,1,1,'manual',5000000)")
+            cid = db.execute("SELECT id FROM ctas_cycles WHERE name='FullCyc'").fetchone()['id']
+            for i in range(4):                      # exactly fills capacity (4 periods x 1)
+                db.execute("INSERT INTO members (member_number, first_name, last_name, status, "
+                           "total_savings, monthly_savings, date_joined) "
+                           "VALUES (?, ?, 'T', 'active', 900000, 0, '2024-01-01')",
+                           (f'CTAS/FULL/{i}', f'M{i}'))
+                mid = db.execute("SELECT id FROM members WHERE member_number = ?",
+                                 (f'CTAS/FULL/{i}',)).fetchone()['id']
+                db.execute("INSERT INTO ctas_subscriptions (cycle_id, member_id, target_amount, "
+                           "tenure_months, monthly_deduction, status) "
+                           "VALUES (?,?,200000,4,50000,'submitted')", (cid, mid))
+                made.append(mid)
+            db.commit()
+            sids = [r['id'] for r in db.execute(
+                "SELECT id FROM ctas_subscriptions WHERE cycle_id = ? ORDER BY id", (cid,)).fetchall()]
+        try:
+            # Every member must reach 'enrolled' even though the cycle is full.
+            for sid in sids:
+                for _ in range(4):
+                    self.client.post(f'/ctas/subscriptions/{sid}/act', data={'action': 'advance'})
+            with self.app.app_context():
+                enrolled = get_db().execute(
+                    "SELECT COUNT(*) FROM ctas_subscriptions WHERE cycle_id = ? AND status = 'enrolled'",
+                    (cid,)).fetchone()[0]
+                self.assertEqual(enrolled, 4)          # was 0 before this fix
+            # And the ballot can then run.
+            self.client.post(f'/ctas/cycles/{cid}/transition', data={'to': 'closed'})
+            self.client.post(f'/ctas/cycles/{cid}/transition', data={'to': 'ready_for_ballot'})
+            self.client.post(f'/ctas/cycles/{cid}/ballot', data={})
+            with self.app.app_context():
+                positions = [r['payout_month'] for r in get_db().execute(
+                    "SELECT payout_month FROM ctas_subscriptions WHERE cycle_id = ?", (cid,)).fetchall()]
+                self.assertEqual(sorted(positions), [1, 2, 3, 4])
+        finally:
+            with self.app.app_context():
+                db = get_db()
+                for sid in sids:
+                    db.execute("DELETE FROM ctas_schedule WHERE subscription_id = ?", (sid,))
+                db.execute("DELETE FROM ctas_ballot_runs WHERE cycle_id = ?", (cid,))
+                db.execute("DELETE FROM ctas_subscriptions WHERE cycle_id = ?", (cid,))
+                db.execute("DELETE FROM ctas_cycles WHERE id = ?", (cid,))
+                for mid in made:
+                    db.execute("DELETE FROM members WHERE id = ?", (mid,))
+                db.execute("DELETE FROM settings WHERE key = 'ctas_enabled'")
+                db.commit()
+
     def test_overview_reports_real_figures_from_the_ledger(self):
         with self.app.app_context():
             db = get_db()
