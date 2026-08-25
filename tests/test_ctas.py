@@ -1177,6 +1177,113 @@ class CtasAdminFlowTests(unittest.TestCase):
         finally:
             self._cleanup_sub(cid, mid, sid)
 
+    def _add_guarantor(self, sid, mnum, savings, pledge):
+        """An accepted guarantee backed by real savings in the ledger."""
+        with self.app.app_context():
+            db = get_db()
+            db.execute("INSERT INTO members (member_number, first_name, last_name, status, "
+                       "total_savings, date_joined) VALUES (?, 'Gua','Rantor','active',?,'2024-01-01')",
+                       (mnum, savings))
+            gid = db.execute("SELECT id FROM members WHERE member_number=?", (mnum,)).fetchone()['id']
+            db.execute("INSERT INTO savings (member_id, amount, month, share_capital) "
+                       "VALUES (?, ?, '2026-01', 0)", (gid, savings))
+            db.execute("INSERT INTO ctas_guarantors (subscription_id, member_id, amount, status) "
+                       "VALUES (?, ?, ?, 'accepted')", (sid, gid, pledge))
+            db.commit()
+            g_row = db.execute("SELECT id FROM ctas_guarantors WHERE subscription_id=?", (sid,)).fetchone()['id']
+        return gid, g_row
+
+    def _drop_guarantor(self, gid, g_row):
+        with self.app.app_context():
+            db = get_db()
+            db.execute("DELETE FROM ctas_guarantors WHERE id=?", (g_row,))
+            db.execute("DELETE FROM savings WHERE member_id=?", (gid,))   # incl. the withdrawal row
+            db.execute("DELETE FROM members WHERE id=?", (gid,))
+            db.commit()
+
+    def test_calling_a_guarantee_needs_a_committee_decision_on_record(self):
+        """Recovering from a guarantor takes money from someone who is not the
+        member leaving, so it is refused without the committee reference."""
+        cid, mid, sid = self._make_recovery_sub('CTAS/EX/G1', savings=0, shares=0)
+        gid, g_row = self._add_guarantor(sid, 'CTAS/G/1', savings=60000, pledge=60000)
+        try:
+            r = self.client.post(f'/ctas/subscriptions/{sid}/exit',
+                                 data={'other_recovery': '0', 'reason': 'resignation',
+                                       f'guarantor_{g_row}': '60000'},   # no committee_reference
+                                 follow_redirects=True)
+            self.assertIn(b'committee decision', r.data)
+            with self.app.app_context():
+                db = get_db()
+                # Nothing taken, nothing settled.
+                g = db.execute("SELECT status, recovered_amount FROM ctas_guarantors WHERE id=?",
+                               (g_row,)).fetchone()
+                self.assertEqual(g['status'], 'accepted')
+                self.assertAlmostEqual(float(g['recovered_amount'] or 0), 0.0, places=2)
+                self.assertAlmostEqual(
+                    float(db.execute("SELECT total_savings FROM members WHERE id=?", (gid,)).fetchone()[0]),
+                    60000.0, places=2)
+                self.assertEqual(
+                    db.execute("SELECT status FROM ctas_subscriptions WHERE id=?", (sid,)).fetchone()[0],
+                    'active_recovery')
+        finally:
+            self._drop_guarantor(gid, g_row)
+            self._cleanup_sub(cid, mid, sid)
+
+    def test_authorised_guarantee_call_records_who_and_under_what_authority(self):
+        cid, mid, sid = self._make_recovery_sub('CTAS/EX/G2', savings=0, shares=0)
+        gid, g_row = self._add_guarantor(sid, 'CTAS/G/2', savings=60000, pledge=60000)
+        try:
+            self.client.post(f'/ctas/subscriptions/{sid}/exit',
+                             data={'other_recovery': '0', 'reason': 'resignation',
+                                   f'guarantor_{g_row}': '60000',
+                                   'committee_reference': 'MC/2026/14'},
+                             follow_redirects=True)
+            with self.app.app_context():
+                db = get_db()
+                g = db.execute("SELECT * FROM ctas_guarantors WHERE id=?", (g_row,)).fetchone()
+                self.assertEqual(g['status'], 'called')
+                self.assertAlmostEqual(float(g['recovered_amount']), 60000.0, places=2)
+                self.assertEqual(g['called_reference'], 'MC/2026/14')
+                self.assertIsNotNone(g['called_by'])
+                self.assertIsNotNone(g['called_at'])
+                # The guarantor's own savings funded it.
+                self.assertAlmostEqual(
+                    float(db.execute("SELECT total_savings FROM members WHERE id=?", (gid,)).fetchone()[0]),
+                    0.0, places=2)
+                # 100k outstanding, 60k from the guarantor, 40k written off.
+                def gl(acct, col):
+                    return db.execute(f"SELECT COALESCE(SUM(jl.{col}),0) FROM journal_lines jl "
+                                      "JOIN journal_entries je ON je.id=jl.entry_id "
+                                      "WHERE je.source_module='ctas_exit' AND jl.account_code=?",
+                                      (acct,)).fetchone()[0]
+                self.assertAlmostEqual(float(gl('2000', 'debit')), 60000.0, places=2)
+                self.assertAlmostEqual(float(gl('5150', 'debit')), 40000.0, places=2)
+                self.assertAlmostEqual(float(gl('1150', 'credit')), 100000.0, places=2)
+                # And it is on the audit trail.
+                self.assertGreaterEqual(db.execute(
+                    "SELECT COUNT(*) FROM audit_log WHERE action='CTAS_GUARANTOR_CALLED'").fetchone()[0], 1)
+                # The savings LEDGER is reduced, not just the cached column, so
+                # the same money cannot be called on a second time.
+                from utils import member_savings_balance
+                self.assertAlmostEqual(member_savings_balance(db, gid), 0.0, places=2)
+                row = db.execute("SELECT amount, payment_type, notes FROM savings "
+                                 "WHERE member_id=? AND payment_type='withdrawal'", (gid,)).fetchone()
+                self.assertAlmostEqual(float(row['amount']), -60000.0, places=2)
+                self.assertIn('MC/2026/14', row['notes'])
+        finally:
+            self._drop_guarantor(gid, g_row)
+            self._cleanup_sub(cid, mid, sid)
+
+    def test_calling_a_guarantee_is_a_separate_duty_from_running_ctas(self):
+        import permissions as perms
+        duty = next(d for d in perms.PERMISSIONS if d['key'] == 'ctas.guarantee_call')
+        # Deliberately admin-only: a treasurer running the scheme cannot also
+        # authorise taking money from a guarantor.
+        self.assertEqual(tuple(duty['default_roles']), ('admin',))
+        manage = next(d for d in perms.PERMISSIONS if d['key'] == 'ctas.manage')
+        self.assertIn('treasurer', manage['default_roles'])
+        self.assertNotIn('treasurer', duty['default_roles'])
+
     def test_payroll_recovery_posts_gl_is_idempotent_and_completes(self):
         import io
         with self.app.app_context():

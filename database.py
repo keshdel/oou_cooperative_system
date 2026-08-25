@@ -1067,6 +1067,12 @@ def init_db():
     '''))
     _exec_ignore(db, 'CREATE UNIQUE INDEX IF NOT EXISTS uq_ctas_guarantor '
                      'ON ctas_guarantors(subscription_id, member_id)')
+    # Who authorised calling on the guarantee, and the committee decision behind
+    # it — recovering from a guarantor takes money from a member who is not the
+    # one leaving, so the authority for it is kept on the record.
+    _add_col(db, 'ctas_guarantors', 'called_by', 'INTEGER')
+    _add_col(db, 'ctas_guarantors', 'called_at', 'TIMESTAMP')
+    _add_col(db, 'ctas_guarantors', 'called_reference', 'TEXT')
 
     # Fee charged for each early payout position (earlier positions cost more).
     # A row belongs to either a plan (the template) or a cycle (the live copy).

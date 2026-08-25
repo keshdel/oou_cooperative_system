@@ -51,6 +51,9 @@
               {% elif r.status == 'called' %}
                 <span class="badge bg-danger"><i class="fas fa-exclamation-circle"></i> Called</span>
                 <div class="small text-muted">&#8358;{{ '{:,.2f}'.format(r.recovered_amount or 0) }} recovered</div>
+                {% if r.called_reference %}
+                <div class="small text-muted">Authorised: {{ r.called_reference }}</div>
+                {% endif %}
               {% elif r.status == 'released' %}
                 <span class="badge bg-secondary"><i class="fas fa-unlock"></i> Released</span>
               {% elif r.status == 'declined' %}

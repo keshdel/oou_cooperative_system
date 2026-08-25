@@ -2172,11 +2172,14 @@ def exit_settle(sub_id):
             'available': round(min(float(g['amount'] or 0), reachable), 2),
         })
 
+    may_call = perms.user_can('ctas.guarantee_call')
+
     if request.method == 'GET':
         wf = ce.net_off_waterfall(outstanding, savings, shares, 0,
-                                  sum(g['available'] for g in guarantors))
+                                  sum(g['available'] for g in guarantors) if may_call else 0)
         return render_template('ctas/exit.html', sub=sub, outstanding=outstanding,
-                               savings=savings, shares=shares, wf=wf, guarantors=guarantors)
+                               savings=savings, shares=shares, wf=wf, guarantors=guarantors,
+                               may_call=may_call)
 
     try:
         other = float(request.form.get('other_recovery') or 0)
@@ -2195,6 +2198,23 @@ def exit_settle(sub_id):
         amt = min(amt, g['available'])
         if amt > 0:
             called.append({**g, 'called': amt})
+
+    # Calling on a guarantor takes money from a member who is not the one
+    # leaving, so it needs its own duty and a committee decision on record.
+    # Settling with no guarantor call is unaffected.
+    committee_ref = (request.form.get('committee_reference') or '').strip()
+    if called:
+        if not may_call:
+            flash('You do not have permission to call on a guarantor. An officer holding the '
+                  '"Authorise calling on a CTAS guarantor" duty must do this — see '
+                  'Settings → Task Assignment. You can still settle without calling on them.',
+                  'danger')
+            return redirect(url_for('ctas.exit_settle', sub_id=sub_id))
+        if not committee_ref:
+            flash('Record the committee decision authorising this call — for example the minute '
+                  'or resolution reference. It is kept against each guarantee.', 'danger')
+            return redirect(url_for('ctas.exit_settle', sub_id=sub_id))
+
     from_guarantors_available = round(sum(g['called'] for g in called), 2)
     wf = ce.net_off_waterfall(outstanding, savings, shares, other, from_guarantors_available)
     # If the earlier steps covered more than expected, only take what was needed.
@@ -2235,15 +2255,31 @@ def exit_settle(sub_id):
         # Guarantors: reduce the savings actually called on, record it against
         # the guarantee, and tell them — this is their money leaving.
         for g in called:
+            # Record it in the savings ledger, not just the cached column: the
+            # ledger is the source of truth for a member's balance, and a
+            # guarantor stays an active member whose balance must stay right
+            # (and must not be callable twice for the same money).
+            db.execute(
+                "INSERT INTO savings (member_id, amount, month, payment_type, payment_method, "
+                " notes, date, created_by) "
+                "VALUES (?, ?, ?, 'withdrawal', 'ctas_guarantee', ?, ?, ?)",
+                (g['member_id'], -g['called'], datetime.now().strftime('%Y-%m'),
+                 f"CTAS guarantee called for {sub['member_name']} "
+                 f"(subscription {sub_id}), authorised {committee_ref}",
+                 datetime.now(), current_user.id))
             db.execute("UPDATE members SET total_savings = COALESCE(total_savings, 0) - ? WHERE id = ?",
                        (g['called'], g['member_id']))
             db.execute("UPDATE ctas_guarantors SET recovered_amount = COALESCE(recovered_amount, 0) + ?, "
-                       "status = 'called' WHERE id = ?", (g['called'], g['id']))
+                       "status = 'called', called_by = ?, called_at = ?, called_reference = ? "
+                       "WHERE id = ?",
+                       (g['called'], current_user.id, datetime.now(), committee_ref, g['id']))
             _notify_member(db, g['member_id'], 'Target Advance — your guarantee was called',
                            f"₦{g['called']:,.2f} was recovered from your savings under the guarantee "
-                           f"you gave for {sub['member_name']}'s target advance.")
+                           f"you gave for {sub['member_name']}'s target advance. "
+                           f"Authorised by the committee ({committee_ref}).")
             audit(db, 'CTAS_GUARANTOR_CALLED', 'ctas',
-                  f"Sub #{sub_id}: called ₦{g['called']:,.2f} on guarantor {g['name']} (member {g['member_id']})")
+                  f"Sub #{sub_id}: called ₦{g['called']:,.2f} on guarantor {g['name']} "
+                  f"(member {g['member_id']}) under committee authority {committee_ref}")
         # Any guarantee not called is discharged when the subscription closes.
         db.execute("UPDATE ctas_guarantors SET status = 'released' "
                    "WHERE subscription_id = ? AND status = 'accepted'", (sub_id,))

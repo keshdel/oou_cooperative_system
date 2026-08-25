@@ -279,6 +279,18 @@ PERMISSIONS = [
                       'ctas.payroll_export', 'ctas.payroll_import',
                       'ctas.exit_settle', 'ctas.exceptions', 'ctas.resolve_exception'),
     },
+    {
+        'key': 'ctas.guarantee_call',
+        'label': 'Authorise calling on a CTAS guarantor',
+        'group': 'CTAS',
+        'description': 'Approve recovering an unpaid target advance from a guarantor\'s savings. '
+                       'This takes money from a member who is not the one leaving, so it is held '
+                       'apart from running the scheme and needs a committee decision on record.',
+        'default_roles': ('admin',),
+        # Checked inside the exit settlement rather than by a decorator, because
+        # it only applies when the officer actually calls on a guarantor.
+        'endpoints': (),
+    },
 
     # ── Money in and out ─────────────────────────────────────────────────────
     {
