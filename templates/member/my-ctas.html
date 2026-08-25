@@ -2,9 +2,14 @@
 {% block title %}My Target Advance - {{ coop_name }}{% endblock %}
 {% block content %}
 <div class="container-fluid">
-    <div class="mb-3">
-        <h2><i class="fas fa-recycle"></i> My Target Advance</h2>
-        <p class="text-muted mb-0">A balloted advance you receive as a lump sum and repay over time.</p>
+    <div class="mb-3 d-flex justify-content-between align-items-start flex-wrap gap-2">
+        <div>
+            <h2><i class="fas fa-recycle"></i> My Target Advance</h2>
+            <p class="text-muted mb-0">A balloted advance you receive as a lump sum and repay over time.</p>
+        </div>
+        <a href="{{ url_for('ctas.my_guarantees') }}" class="btn btn-sm btn-outline-secondary">
+            <i class="fas fa-user-shield"></i> Guarantee requests
+        </a>
     </div>
 
     <!-- Apply -->
@@ -155,6 +160,73 @@
                         <div class="col-md-2"><button class="btn btn-sm btn-primary w-100">Request</button></div>
                     </div>
                 </form>
+            </td></tr>
+            {% endif %}
+            {% if cover_need.get(s.id) or guarantors.get(s.id) %}
+            {% set need = cover_need.get(s.id) %}
+            <tr><td colspan="6" class="bg-light">
+                <div class="small mb-2">
+                    <strong><i class="fas fa-user-shield"></i> Guarantors</strong>
+                    {% if need %}
+                    — this cycle asks for {{ '{:.0%}'.format(need.ratio) }} of what you would still owe
+                    to be backed by value the cooperative can reach. Your cover is
+                    <strong>₦{{ "{:,.0f}".format(need.security.total) }}</strong>
+                    {% if need.security.guarantors %}(including ₦{{ "{:,.0f}".format(need.security.guarantors) }}
+                    from guarantors){% endif %},
+                    {% if need.floor > need.earliest %}
+                    which places you no earlier than <strong>{{ need.period_word }} {{ need.floor }}</strong>.
+                    Adding a guarantor can bring that forward.
+                    {% else %}
+                    enough for the earliest position.
+                    {% endif %}
+                    {% endif %}
+                </div>
+
+                {% if guarantors.get(s.id) %}
+                <ul class="list-unstyled small mb-2">
+                    {% for g in guarantors[s.id] %}
+                    <li class="d-flex justify-content-between align-items-center border-bottom py-1">
+                        <span>{{ g.name }} <span class="text-muted">({{ g.member_number }})</span>
+                            — ₦{{ "{:,.0f}".format(g.amount or 0) }}</span>
+                        <span>
+                            {% if g.status == 'pending' %}<span class="badge bg-warning text-dark">Awaiting reply</span>
+                            {% elif g.status == 'accepted' %}<span class="badge bg-success">Accepted</span>
+                            {% elif g.status == 'called' %}<span class="badge bg-danger">Called</span>
+                            {% elif g.status == 'released' %}<span class="badge bg-secondary">Released</span>
+                            {% else %}<span class="badge bg-secondary">{{ g.status|title }}</span>{% endif %}
+                            {% if g.status == 'pending' and not s.payout_month %}
+                            <form method="post" class="d-inline ms-1"
+                                  action="{{ url_for('ctas.withdraw_guarantor', gid=g.id) }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button class="btn btn-sm btn-link text-danger p-0">withdraw</button>
+                            </form>
+                            {% endif %}
+                        </span>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% endif %}
+
+                {% if not s.payout_month %}
+                <form method="post" action="{{ url_for('ctas.request_guarantor', sub_id=s.id) }}"
+                      class="row g-2 align-items-end">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <div class="col-md-5"><label class="form-label small mb-1">Ask a member to back you</label>
+                        <select class="form-select form-select-sm" name="guarantor_id" required>
+                            <option value="">Choose a member…</option>
+                            {% for c in candidates %}
+                            <option value="{{ c.id }}">{{ c.first_name }} {{ c.last_name }} ({{ c.member_number }})</option>
+                            {% endfor %}
+                        </select></div>
+                    <div class="col-md-4"><label class="form-label small mb-1">Amount they back (₦)</label>
+                        <input class="form-control form-control-sm" type="number" step="0.01" min="1"
+                               name="amount" required></div>
+                    <div class="col-md-3"><button class="btn btn-sm btn-outline-primary w-100">Send request</button></div>
+                    <div class="col-12"><div class="form-text">
+                        They must accept before it counts, and they can only back you with savings
+                        they have not already committed elsewhere.</div></div>
+                </form>
+                {% endif %}
             </td></tr>
             {% endif %}
             {% else %}

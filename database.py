@@ -1046,6 +1046,28 @@ def init_db():
     _add_col(db, 'ctas_subscriptions', 'security_value', 'REAL DEFAULT 0')
     _add_col(db, 'ctas_subscriptions', 'min_payout_position', 'INTEGER')
 
+    # Another member backing a CTAS subscription, so a member whose own savings
+    # are thin can still be balloted early. Mirrors loan_guarantors: the
+    # guarantor must consent before the pledge counts for anything.
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS ctas_guarantors (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            subscription_id INTEGER NOT NULL,
+            member_id INTEGER NOT NULL,
+            amount REAL DEFAULT 0,
+            status TEXT DEFAULT 'pending',
+            requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            responded_at TIMESTAMP,
+            comment TEXT,
+            signature_name TEXT,
+            recovered_amount REAL DEFAULT 0,
+            FOREIGN KEY (subscription_id) REFERENCES ctas_subscriptions (id),
+            FOREIGN KEY (member_id) REFERENCES members (id)
+        )
+    '''))
+    _exec_ignore(db, 'CREATE UNIQUE INDEX IF NOT EXISTS uq_ctas_guarantor '
+                     'ON ctas_guarantors(subscription_id, member_id)')
+
     # Fee charged for each early payout position (earlier positions cost more).
     # A row belongs to either a plan (the template) or a cycle (the live copy).
     db.execute(_adapt('''

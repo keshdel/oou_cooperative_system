@@ -324,13 +324,76 @@ def exposure_at_position(cycle, position, target=None):
     return round(max(0.0, _f(target) - contribution * pos), 2)
 
 
-def member_security(db, member):
+def guarantor_cover(db, subscription_id):
+    """Total accepted guarantee backing one subscription. Pending, declined and
+    withdrawn pledges are worth nothing — only a consented guarantee counts."""
+    if db is None or not subscription_id:
+        return 0.0
+    try:
+        row = db.execute(
+            "SELECT COALESCE(SUM(amount), 0) FROM ctas_guarantors "
+            "WHERE subscription_id = ? AND status = 'accepted'", (subscription_id,)).fetchone()
+        return round(_f(row[0]), 2)
+    except Exception:
+        return 0.0
+
+
+def guarantor_capacity(db, member_id, exclude_guarantee_id=None):
+    """What this member can still pledge to back someone else.
+
+    Their own savings and share capital, less anything they have already
+    guaranteed elsewhere and less their own unrecovered CTAS advance. Without
+    this one member could back a dozen others with the same money.
+    """
+    if db is None or not member_id:
+        return 0.0
+    try:
+        from utils import member_savings_balance, member_share_capital
+        own = _f(member_savings_balance(db, member_id)) + _f(member_share_capital(db, member_id))
+    except Exception:
+        own = 0.0
+    params = [member_id]
+    sql = ("SELECT COALESCE(SUM(amount), 0) FROM ctas_guarantors "
+           "WHERE member_id = ? AND status IN ('pending', 'accepted')")
+    if exclude_guarantee_id:
+        sql += ' AND id <> ?'
+        params.append(exclude_guarantee_id)
+    try:
+        pledged = _f(db.execute(sql, params).fetchone()[0])
+        owing = _f(db.execute(
+            "SELECT COALESCE(SUM(advance_balance), 0) FROM ctas_subscriptions "
+            "WHERE member_id = ? AND status IN ('active_recovery', 'scheduled')",
+            (member_id,)).fetchone()[0])
+    except Exception:
+        pledged = owing = 0.0
+    return round(max(0.0, own - pledged - owing), 2)
+
+
+def pledged_to_others(db, member_id):
+    """What this member has committed backing someone else's subscription.
+
+    Deducted from their own cover: money promised to another member cannot also
+    stand behind their own advance, or the same naira is counted twice.
+    """
+    if db is None or not member_id:
+        return 0.0
+    try:
+        row = db.execute(
+            "SELECT COALESCE(SUM(amount), 0) FROM ctas_guarantors "
+            "WHERE member_id = ? AND status IN ('pending', 'accepted')", (member_id,)).fetchone()
+        return round(_f(row[0]), 2)
+    except Exception:
+        return 0.0
+
+
+def member_security(db, member, subscription_id=None):
     """Value backing a member's advance, by source, with a 'total'.
 
     Mirrors the exit net-off waterfall — savings and share capital are what the
-    cooperative can actually reach today. Guarantor cover and security deposits
-    have their keys present at zero so those slices are additive rather than a
-    rewrite of every caller.
+    cooperative can reach directly, plus any consented guarantee over this
+    subscription, less anything this member has pledged to back someone else.
+    The 'deposit' key is present at zero so that slice stays additive rather
+    than a rewrite of every caller.
     """
     savings = share = 0.0
     member_id = _row_get(member, 'id')
@@ -346,10 +409,12 @@ def member_security(db, member):
     parts = {
         'savings': round(savings, 2),
         'share_capital': round(share, 2),
-        'guarantors': 0.0,      # set by the guarantor slice
+        'guarantors': guarantor_cover(db, subscription_id),
         'deposit': 0.0,         # set by the security-deposit slice
+        # Negative so the total is a plain sum; it is money promised elsewhere.
+        'pledged_out': -pledged_to_others(db, member_id),
     }
-    parts['total'] = round(sum(parts.values()), 2)
+    parts['total'] = round(max(0.0, sum(parts.values())), 2)
     return parts
 
 
@@ -379,7 +444,7 @@ def min_safe_position(cycle, security_total, target=None, ratio=None):
 
 
 def check_eligibility(db, member, cycle, target_amount, tenure_months, exclude_cycle_id=None,
-                      exclude_subscription_id=None):
+                      exclude_subscription_id=None, subscription_id=None):
     """Full eligibility decision. Returns a dict the caller can act on/display.
 
     `exclude_cycle_id` skips the member's subscription in that cycle when checking
@@ -417,7 +482,7 @@ def check_eligibility(db, member, cycle, target_amount, tenure_months, exclude_c
     # Security cover never blocks a place — it decides how early the member can
     # be balloted (see min_safe_position). Reported here so the officer sees it
     # at the approval gates rather than discovering it when the ballot runs.
-    security = member_security(db, member)
+    security = member_security(db, member, subscription_id)
     ratio = coverage_ratio_for(cycle)
     min_pos = min_safe_position(cycle, security['total'], target_amount)
     earliest = int(_row_get(cycle, 'earliest_payout_month', 1) or 1)
@@ -466,10 +531,15 @@ def assert_ready_for_ballot(db, cycle):
 
 # ── Ballot engine ─────────────────────────────────────────────────────────────
 
-def net_off_waterfall(outstanding, savings, shares, other=0.0):
+def net_off_waterfall(outstanding, savings, shares, other=0.0, guarantors=0.0):
     """Recover an outstanding CTAS balance on member exit in priority order:
     savings balance -> share capital -> other (dividends/terminal benefits, entered
-    by the officer) -> write-off. Returns the amount taken from each source."""
+    by the officer) -> guarantors -> write-off. Returns the amount taken from
+    each source.
+
+    Guarantors come last before a write-off deliberately: it is another member's
+    money, so everything belonging to the exiting member is exhausted first.
+    """
     remaining = round(_f(outstanding), 2)
     from_savings = round(min(remaining, _f(savings)), 2)
     remaining = round(remaining - from_savings, 2)
@@ -477,11 +547,15 @@ def net_off_waterfall(outstanding, savings, shares, other=0.0):
     remaining = round(remaining - from_shares, 2)
     from_other = round(min(remaining, _f(other)), 2)
     remaining = round(remaining - from_other, 2)
+    from_guarantors = round(min(remaining, _f(guarantors)), 2)
+    remaining = round(remaining - from_guarantors, 2)
     write_off = round(max(0.0, remaining), 2)
     return {
         'from_savings': from_savings, 'from_shares': from_shares,
-        'from_other': from_other, 'write_off': write_off,
-        'total': round(from_savings + from_shares + from_other + write_off, 2),
+        'from_other': from_other, 'from_guarantors': from_guarantors,
+        'write_off': write_off,
+        'total': round(from_savings + from_shares + from_other
+                       + from_guarantors + write_off, 2),
     }
 
 

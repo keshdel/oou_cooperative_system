@@ -321,6 +321,100 @@ class CtasEngineTests(unittest.TestCase):
         self.assertNotEqual(got[10], 2)
         self.assertEqual(sorted(got.values()), [2, 3, 4, 5, 6])
 
+    def test_waterfall_calls_guarantors_last_before_a_write_off(self):
+        from ctas_engine import net_off_waterfall
+        # Everything belonging to the member is used before another member's money.
+        wf = net_off_waterfall(100000, savings=30000, shares=5000, other=5000, guarantors=40000)
+        self.assertEqual(wf['from_savings'], 30000.0)
+        self.assertEqual(wf['from_shares'], 5000.0)
+        self.assertEqual(wf['from_other'], 5000.0)
+        self.assertEqual(wf['from_guarantors'], 40000.0)
+        self.assertEqual(wf['write_off'], 20000.0)
+        self.assertEqual(wf['total'], 100000.0)
+        # A guarantee is only drawn on for what is actually left owing.
+        wf2 = net_off_waterfall(40000, savings=30000, shares=0, other=0, guarantors=50000)
+        self.assertEqual(wf2['from_guarantors'], 10000.0)
+        self.assertEqual(wf2['write_off'], 0.0)
+        # Existing callers that pass no guarantee are unaffected.
+        wf3 = net_off_waterfall(50000, savings=10000, shares=0, other=0)
+        self.assertEqual(wf3['from_guarantors'], 0.0)
+        self.assertEqual(wf3['write_off'], 40000.0)
+
+    def test_only_accepted_guarantees_count_towards_cover(self):
+        from database import get_db
+        from ctas_engine import guarantor_cover
+        with self.app.app_context():
+            db = get_db()
+            db.execute("INSERT INTO ctas_guarantors (subscription_id, member_id, amount, status) "
+                       "VALUES (9001, 8001, 50000, 'accepted')")
+            db.execute("INSERT INTO ctas_guarantors (subscription_id, member_id, amount, status) "
+                       "VALUES (9001, 8002, 30000, 'pending')")
+            db.execute("INSERT INTO ctas_guarantors (subscription_id, member_id, amount, status) "
+                       "VALUES (9001, 8003, 70000, 'declined')")
+            db.commit()
+            # Pending and declined pledges are worth nothing.
+            self.assertEqual(guarantor_cover(db, 9001), 50000.0)
+            self.assertEqual(guarantor_cover(db, 9999), 0.0)
+            db.execute('DELETE FROM ctas_guarantors WHERE subscription_id = 9001')
+            db.commit()
+
+    def test_guarantor_capacity_is_not_double_pledged(self):
+        from database import get_db
+        from ctas_engine import guarantor_capacity
+        with self.app.app_context():
+            db = get_db()
+            db.execute("INSERT INTO members (member_number, first_name, last_name, status, "
+                       "total_savings, date_joined) VALUES "
+                       "('GTEST/1', 'Gua', 'Rantor', 'active', 0, '2024-01-01')")
+            gid = db.execute("SELECT id FROM members WHERE member_number = 'GTEST/1'").fetchone()['id']
+            db.execute("INSERT INTO savings (member_id, amount, month, share_capital) "
+                       "VALUES (?, 100000, '2026-01', 5000)", (gid,))
+            db.commit()
+            self.assertEqual(guarantor_capacity(db, gid), 105000.0)   # savings + share capital
+
+            db.execute("INSERT INTO ctas_guarantors (subscription_id, member_id, amount, status) "
+                       "VALUES (9101, ?, 60000, 'accepted')", (gid,))
+            db.commit()
+            # The same money cannot back two people.
+            self.assertEqual(guarantor_capacity(db, gid), 45000.0)
+            # Excluding the pledge under review restores it (used when accepting).
+            g_id = db.execute('SELECT id FROM ctas_guarantors WHERE member_id = ?', (gid,)).fetchone()['id']
+            self.assertEqual(guarantor_capacity(db, gid, exclude_guarantee_id=g_id), 105000.0)
+
+            db.execute('DELETE FROM ctas_guarantors WHERE member_id = ?', (gid,))
+            db.execute('DELETE FROM savings WHERE member_id = ?', (gid,))
+            db.execute('DELETE FROM members WHERE id = ?', (gid,))
+            db.commit()
+
+    def test_pledging_to_another_member_reduces_your_own_cover(self):
+        """The same naira must not back two people: money pledged out is
+        deducted from the guarantor's own security."""
+        from database import get_db
+        from ctas_engine import member_security
+        with self.app.app_context():
+            db = get_db()
+            db.execute("INSERT INTO members (member_number, first_name, last_name, status, "
+                       "total_savings, date_joined) VALUES "
+                       "('GTEST/2', 'Pled', 'Gor', 'active', 0, '2024-01-01')")
+            mid = db.execute("SELECT id FROM members WHERE member_number = 'GTEST/2'").fetchone()['id']
+            db.execute("INSERT INTO savings (member_id, amount, month, share_capital) "
+                       "VALUES (?, 200000, '2026-01', 10000)", (mid,))
+            db.commit()
+            member = db.execute('SELECT * FROM members WHERE id = ?', (mid,)).fetchone()
+            self.assertEqual(member_security(db, member)['total'], 210000.0)
+
+            db.execute("INSERT INTO ctas_guarantors (subscription_id, member_id, amount, status) "
+                       "VALUES (9201, ?, 80000, 'accepted')", (mid,))
+            db.commit()
+            sec = member_security(db, member)
+            self.assertEqual(sec['pledged_out'], -80000.0)
+            self.assertEqual(sec['total'], 130000.0)      # 210,000 - 80,000
+
+            db.execute('DELETE FROM ctas_guarantors WHERE member_id = ?', (mid,))
+            db.execute('DELETE FROM savings WHERE member_id = ?', (mid,))
+            db.execute('DELETE FROM members WHERE id = ?', (mid,))
+            db.commit()
+
     def test_eligibility_blocks_second_active_subscription(self):
         from database import get_db
         from ctas_engine import check_eligibility

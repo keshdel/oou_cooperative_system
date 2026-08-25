@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+
+{% block title %}Guarantee Requests - {{ coop_name }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+
+  <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+    <h4 class="mb-0"><i class="fas fa-user-shield me-2"></i>Target Advance guarantee requests</h4>
+    <a href="{{ url_for('ctas.my_ctas') }}" class="btn btn-sm btn-outline-secondary">
+      Back to my target advance
+    </a>
+  </div>
+
+  <div class="alert alert-info py-2 small">
+    Guaranteeing another member commits <strong>your own savings and share capital</strong>. If they
+    leave the cooperative still owing, the cooperative may recover the amount you guaranteed from
+    your balances — but only after everything belonging to them has been used first.
+    You can back at most <strong>&#8358;{{ '{:,.2f}'.format(capacity) }}</strong> at the moment.
+  </div>
+
+  <div class="card">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead>
+          <tr>
+            <th>Requested by</th>
+            <th>Cycle</th>
+            <th class="text-end">You would back</th>
+            <th>Status</th>
+            <th class="text-end">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in requests %}
+          <tr>
+            <td>
+              <div class="fw-semibold">{{ r.applicant_name }}</div>
+              <div class="small text-muted">{{ r.member_number }}</div>
+            </td>
+            <td>
+              {{ r.cycle_name }}
+              <div class="small text-muted">Target &#8358;{{ '{:,.2f}'.format(r.target_amount or 0) }}</div>
+            </td>
+            <td class="text-end fw-semibold">&#8358;{{ '{:,.2f}'.format(r.amount or 0) }}</td>
+            <td>
+              {% if r.status == 'pending' %}
+                <span class="badge bg-warning text-dark"><i class="fas fa-clock"></i> Awaiting you</span>
+              {% elif r.status == 'accepted' %}
+                <span class="badge bg-success"><i class="fas fa-check"></i> Accepted</span>
+              {% elif r.status == 'called' %}
+                <span class="badge bg-danger"><i class="fas fa-exclamation-circle"></i> Called</span>
+                <div class="small text-muted">&#8358;{{ '{:,.2f}'.format(r.recovered_amount or 0) }} recovered</div>
+              {% elif r.status == 'released' %}
+                <span class="badge bg-secondary"><i class="fas fa-unlock"></i> Released</span>
+              {% elif r.status == 'declined' %}
+                <span class="badge bg-secondary">Declined</span>
+              {% else %}
+                <span class="badge bg-light text-dark">{{ r.status|title }}</span>
+              {% endif %}
+            </td>
+            <td class="text-end">
+              {% if r.status == 'pending' %}
+              <button class="btn btn-sm btn-success" type="button"
+                      data-bs-toggle="modal" data-bs-target="#accept{{ r.id }}">Accept</button>
+              <form method="post" class="d-inline"
+                    action="{{ url_for('ctas.respond_ctas_guarantee', gid=r.id, action='decline') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-sm btn-outline-secondary">Decline</button>
+              </form>
+              {% else %}
+              <span class="text-muted small">&mdash;</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" class="text-center text-muted py-4">
+            No one has asked you to guarantee a target advance.
+          </td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {% for r in requests if r.status == 'pending' %}
+  <div class="modal fade" id="accept{{ r.id }}" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+      <form method="post" class="modal-content"
+            action="{{ url_for('ctas.respond_ctas_guarantee', gid=r.id, action='accept') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="modal-header">
+          <h5 class="modal-title">Guarantee {{ r.applicant_name }}</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <p class="mb-3">
+            You are agreeing to back <strong>&#8358;{{ '{:,.2f}'.format(r.amount or 0) }}</strong> of
+            {{ r.applicant_name }}'s target advance in {{ r.cycle_name }}.
+          </p>
+          <ul class="small text-muted">
+            <li>Your savings and share capital are committed up to that amount.</li>
+            <li>The cooperative uses everything belonging to {{ r.applicant_name }} first, and only
+              calls on you if a balance still remains when they exit.</li>
+            <li>The guarantee is released once their advance is fully recovered.</li>
+          </ul>
+          <label class="form-label small mb-1" for="sig{{ r.id }}">Type your full name to accept</label>
+          <input class="form-control" id="sig{{ r.id }}" name="signature_name" required
+                 autocomplete="off" placeholder="Your full name">
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button class="btn btn-success">I accept this guarantee</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+
+</div>
+{% endblock %}

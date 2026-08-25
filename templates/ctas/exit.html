@@ -16,7 +16,9 @@
         <div class="col-lg-7">
             <div class="card mb-3"><div class="card-header bg-light"><h6 class="mb-0">Net-off waterfall</h6></div>
             <div class="card-body">
-                <p class="text-muted small">Outstanding is recovered in order: savings → share capital → other recoveries → write-off.</p>
+                <p class="text-muted small">Outstanding is recovered in order: savings → share capital →
+                    other recoveries → guarantors → write-off. Guarantors come last because it is
+                    another member's money; everything belonging to this member is used first.</p>
                 <table class="table mb-0">
                     <tr><td>Outstanding advance</td><td class="text-end fw-bold">₦{{ "{:,.2f}".format(outstanding) }}</td></tr>
                     <tr><td>From savings <span class="text-muted small">(available ₦{{ "{:,.0f}".format(savings) }})</span></td>
@@ -25,6 +27,8 @@
                         <td class="text-end">₦{{ "{:,.2f}".format(wf.from_shares) }}</td></tr>
                     <tr><td>From other recoveries <span class="text-muted small">(you enter)</span></td>
                         <td class="text-end" id="otherCell">₦0.00</td></tr>
+                    <tr><td>From guarantors <span class="text-muted small">(you choose, below)</span></td>
+                        <td class="text-end">₦{{ "{:,.2f}".format(wf.from_guarantors) }}</td></tr>
                     <tr class="table-warning"><td>Write-off (committee approval)</td>
                         <td class="text-end" id="writeoffCell">₦{{ "{:,.2f}".format(wf.write_off) }}</td></tr>
                 </table>
@@ -38,6 +42,23 @@
                     <div class="mb-3"><label class="form-label">Other recoveries received (₦)</label>
                         <input class="form-control" type="number" step="0.01" min="0" name="other_recovery" id="other" value="0">
                         <div class="form-text">Dividends, terminal benefits or a cash top-up applied to the balance.</div></div>
+                    {% if guarantors %}
+                    <div class="mb-3">
+                        <label class="form-label">Call on guarantors (₦)</label>
+                        <div class="form-text mb-2">Nothing is taken automatically. Enter what to
+                            recover from each — capped at what they pledged and what they actually hold.</div>
+                        {% for g in guarantors %}
+                        <div class="input-group input-group-sm mb-2">
+                            <span class="input-group-text flex-grow-1 justify-content-between">
+                                <span>{{ g.name }}</span>
+                                <span class="text-muted">max ₦{{ "{:,.0f}".format(g.available) }}</span>
+                            </span>
+                            <input class="form-control" style="max-width:9rem" type="number" step="0.01"
+                                   min="0" max="{{ g.available }}" name="guarantor_{{ g.id }}" value="0">
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
                     <div class="mb-3"><label class="form-label">Reason / note</label>
                         <textarea class="form-control" name="reason" rows="2" placeholder="e.g. Resignation effective 2026-09-30"></textarea></div>
                     <button class="btn btn-danger w-100"><i class="fas fa-gavel"></i> Settle exit</button>

@@ -480,6 +480,7 @@
                       <th>Member</th>
                       <th class="text-end">Savings</th>
                       <th class="text-end">Share capital</th>
+                      <th class="text-end">Guarantors</th>
                       <th class="text-end">Cover</th>
                       <th class="text-end">Owed at position {{ security.earliest }}</th>
                       <th class="text-center">Earliest position</th>
@@ -491,6 +492,19 @@
                       <td>{{ r.name }}</td>
                       <td class="text-end">{{ money0(r.security.savings) }}</td>
                       <td class="text-end">{{ money0(r.security.share_capital) }}</td>
+                      <td class="text-end">
+                        {% if r.security.guarantors %}
+                          <span class="text-success">+{{ money0(r.security.guarantors) }}</span>
+                        {% endif %}
+                        {% if r.security.pledged_out %}
+                          <div class="small text-danger"
+                               title="Pledged to back another member, so it cannot also back this one">
+                            &minus;{{ money0(-r.security.pledged_out) }} pledged out</div>
+                        {% endif %}
+                        {% if not r.security.guarantors and not r.security.pledged_out %}
+                          <span class="text-muted">&mdash;</span>
+                        {% endif %}
+                      </td>
                       <td class="text-end">{{ money0(r.security.total) }}</td>
                       <td class="text-end">{{ money0(r.exposure_earliest) }}</td>
                       <td class="text-center">

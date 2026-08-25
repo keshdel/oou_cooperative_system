@@ -209,6 +209,17 @@ def ctas_enabled(db=None) -> bool:
         return False
 
 
+def _member_reachable_value(db, member_id) -> float:
+    """Savings plus share capital the cooperative can actually reach for a
+    member — the ceiling on what a guarantee can be called on for."""
+    try:
+        from utils import member_savings_balance, member_share_capital
+        return round(float(member_savings_balance(db, member_id))
+                     + float(member_share_capital(db, member_id)), 2)
+    except Exception:
+        return 0.0
+
+
 def _ctas_max_exposure(db) -> float:
     """Coop-wide ceiling on advances outstanding. 0 = uncapped (the default)."""
     try:
@@ -356,8 +367,8 @@ def new_cycle():
              monthly_capacity, earliest_payout_month, max_participants,
              admin_fee_flat, admin_fee_percentage, admin_fee_cap, admin_fee_threshold,
              ballot_date, affordability_method, affordability_ratio, savings_multiple,
-             grace_days, created_by)
-            VALUES (?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+             grace_days, coverage_ratio, created_by)
+            VALUES (?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
         (name, (request.form.get('start_date') or '').strip() or None,
          (request.form.get('end_date') or '').strip() or None,
          periods, contribution,   # duration_months = periods (back-compat), fixed_monthly_amount = contribution
@@ -369,7 +380,10 @@ def new_cycle():
          (request.form.get('ballot_date') or '').strip() or None,
          (plan['affordability_method'] if plan else (request.form.get('affordability_method') or 'savings')).strip(),
          _pn('affordability_ratio', 0.5), _pn('savings_multiple', 3),
-         int(_pn('grace_days', 7)), current_user.id))
+         int(_pn('grace_days', 7)),
+         # Inherited from the plan when there is one, so the cooperative sets the
+         # cover it thinks appropriate once; still overridable per cycle.
+         _pn('coverage_ratio', 0), current_user.id))
     cycle_id = last_insert_id(db)   # capture before the audit insert changes last-rowid
     audit(db, 'CTAS_CYCLE_CREATE', 'ctas', f"Created cycle {name}")
     db.commit()
@@ -523,15 +537,17 @@ def new_plan():
             (name, description, contribution_amount, frequency, periods, target_amount,
              monthly_capacity, earliest_payout_month, admin_fee_flat, admin_fee_percentage,
              admin_fee_cap, admin_fee_threshold, affordability_method, affordability_ratio,
-             savings_multiple, grace_days, created_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+             savings_multiple, grace_days, coverage_ratio, created_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
         (name, (request.form.get('description') or '').strip(), contribution, frequency, periods, target,
          int(_num('monthly_capacity', 1)), int(_num('earliest_payout_month', 1)),
          _num('admin_fee_flat', 0), _num('admin_fee_percentage', 0),
          _num('admin_fee_cap', 0), _num('admin_fee_threshold', 0),
          (request.form.get('affordability_method') or 'savings').strip(),
          _num('affordability_ratio', 0.5), _num('savings_multiple', 3),
-         int(_num('grace_days', 7)), current_user.id))
+         int(_num('grace_days', 7)),
+         # Held as a fraction; the form asks for a percentage the coop chooses.
+         max(0.0, min(200.0, _num('coverage_pct', 0))) / 100.0, current_user.id))
     audit(db, 'CTAS_PLAN_CREATE', 'ctas',
           f"Created plan {name} ({contribution:g} x {periods} {frequency}) target {target:g}")
     db.commit()
@@ -561,7 +577,8 @@ def cycle_detail(cycle_id):
             elig[s['id']] = ce.check_eligibility(db, member, cycle, s['target_amount'],
                                                  s['tenure_months'],
                                                  exclude_cycle_id=s['cycle_id'],
-                                                 exclude_subscription_id=s['id'])
+                                                 exclude_subscription_id=s['id'],
+                                                 subscription_id=s['id'])
     # Members available to add (active, not already in this cycle).
     members = db.execute('''
         SELECT id, first_name || ' ' || last_name AS name, member_number, total_savings, annual_salary
@@ -635,7 +652,7 @@ def _security_preview(db, cycle, subs):
         member = db.execute('SELECT * FROM members WHERE id = ?', (sub['member_id'],)).fetchone()
         if not member:
             continue
-        parts = ce.member_security(db, member)
+        parts = ce.member_security(db, member, sub['id'])
         floor = ce.min_safe_position(cycle, parts['total'], sub['target_amount'])
         if floor > earliest:
             held_back += 1
@@ -932,7 +949,8 @@ def subscription_act(sub_id):
             member = db.execute('SELECT * FROM members WHERE id = ?', (sub['member_id'],)).fetchone()
             res = ce.check_eligibility(db, member, cycle, sub['target_amount'], sub['tenure_months'],
                                        exclude_cycle_id=sub['cycle_id'],
-                                       exclude_subscription_id=sub['id'])
+                                       exclude_subscription_id=sub['id'],
+                                       subscription_id=sub['id'])
             hard = [r for r in res['reasons'] if 'exceeds' not in r and 'salary' not in r.lower()]
             if hard:
                 flash('Cannot advance: ' + ' '.join(hard), 'danger')
@@ -1136,7 +1154,8 @@ def bulk_advance(cycle_id):
             continue
         if nxt in (ce.SUB_ELIGIBLE, ce.SUB_ENROLLED):
             res = ce.check_eligibility(db, member, cycle, sub['target_amount'], sub['tenure_months'],
-                                       exclude_cycle_id=cycle_id, exclude_subscription_id=sub['id'])
+                                       exclude_cycle_id=cycle_id, exclude_subscription_id=sub['id'],
+                                       subscription_id=sub['id'])
             hard = [r for r in res['reasons'] if 'exceeds' not in r and 'salary' not in r.lower()]
             if hard:
                 blocked.append(f"{name}: {' '.join(hard)}")
@@ -1272,7 +1291,7 @@ def run_ballot(cycle_id):
             member = db.execute('SELECT * FROM members WHERE id = ?', (sub['member_id'],)).fetchone()
             if not member:
                 continue
-            security = ce.member_security(db, member)
+            security = ce.member_security(db, member, sub['id'])
             floor = ce.min_safe_position(cycle, security['total'], sub['target_amount'])
             floors[sub['id']] = floor
             db.execute("UPDATE ctas_subscriptions SET security_value = ?, min_payout_position = ? "
@@ -1572,9 +1591,180 @@ def my_ctas():
             tiers = _priority_tiers(db, cycle_id=s['cycle_id'])
             if tiers:
                 prio[s['id']] = tiers
+    # Guarantors this member has asked for, and the cover each cycle expects.
+    guarantors, cover_need = {}, {}
+    for s in subs:
+        guarantors[s['id']] = db.execute(
+            "SELECT g.*, m.first_name || ' ' || m.last_name AS name, m.member_number "
+            "FROM ctas_guarantors g JOIN members m ON m.id = g.member_id "
+            "WHERE g.subscription_id = ? ORDER BY g.id", (s['id'],)).fetchall()
+        cyc = db.execute('SELECT * FROM ctas_cycles WHERE id = ?', (s['cycle_id'],)).fetchone()
+        if cyc and ce.coverage_ratio_for(cyc) > 0 and not s['payout_month']:
+            sec = ce.member_security(db, member, s['id'])
+            cover_need[s['id']] = {
+                'ratio': ce.coverage_ratio_for(cyc),
+                'security': sec,
+                'floor': ce.min_safe_position(cyc, sec['total'], s['target_amount']),
+                'earliest': int(cyc['earliest_payout_month'] or 1),
+                'period_word': ce.period_word(cyc),
+            }
+    # Members who could be asked to guarantee (not the applicant, not already asked).
+    candidates = db.execute(
+        "SELECT id, first_name, last_name, member_number FROM members "
+        "WHERE status = 'active' AND id <> ? ORDER BY first_name", (member['id'],)).fetchall()
     return render_template('member/my-ctas.html', member=member, subs=subs,
                            open_cycles=open_cycles, has_active=has_active, schedule=schedule,
-                           mandates=mandates, priority_offers=prio, ctas_terms=CTAS_TERMS)
+                           mandates=mandates, priority_offers=prio, ctas_terms=CTAS_TERMS,
+                           guarantors=guarantors, cover_need=cover_need, candidates=candidates)
+
+
+@ctas.route('/my-ctas/<int:sub_id>/guarantors', methods=['POST'])
+@ctas_required
+@login_required
+def request_guarantor(sub_id):
+    """Ask another member to back this subscription. The pledge is worth nothing
+    until they consent — it is recorded as pending and they are notified."""
+    db = get_db()
+    member = member_for_user(db, current_user.id)
+    sub = db.execute('SELECT * FROM ctas_subscriptions WHERE id = ?', (sub_id,)).fetchone()
+    if not member or not sub or sub['member_id'] != member['id']:
+        abort(403)
+    if sub['payout_month']:
+        flash('The ballot has run for this cycle, so guarantors can no longer be added.', 'warning')
+        return redirect(url_for('ctas.my_ctas'))
+    try:
+        guarantor_id = int(request.form.get('guarantor_id') or 0)
+        amount = round(max(0.0, float(request.form.get('amount') or 0)), 2)
+    except ValueError:
+        flash('Enter a valid guarantor and amount.', 'danger')
+        return redirect(url_for('ctas.my_ctas'))
+
+    guarantor = db.execute("SELECT * FROM members WHERE id = ? AND status = 'active'",
+                           (guarantor_id,)).fetchone()
+    if not guarantor or guarantor_id == member['id']:
+        flash('Choose another active member as your guarantor.', 'danger')
+        return redirect(url_for('ctas.my_ctas'))
+    if amount <= 0:
+        flash('Enter how much they are backing you for.', 'danger')
+        return redirect(url_for('ctas.my_ctas'))
+    if db.execute('SELECT 1 FROM ctas_guarantors WHERE subscription_id = ? AND member_id = ?',
+                  (sub_id, guarantor_id)).fetchone():
+        flash('That member has already been asked.', 'warning')
+        return redirect(url_for('ctas.my_ctas'))
+
+    capacity = ce.guarantor_capacity(db, guarantor_id)
+    if amount > capacity:
+        flash(f"{guarantor['first_name']} can back at most ₦{capacity:,.2f} right now — that is "
+              f"their savings and share capital less what they already guarantee or owe.", 'danger')
+        return redirect(url_for('ctas.my_ctas'))
+
+    db.execute("INSERT INTO ctas_guarantors (subscription_id, member_id, amount, status) "
+               "VALUES (?, ?, ?, 'pending')", (sub_id, guarantor_id, amount))
+    _notify_member(db, guarantor_id, 'Target Advance — guarantee request',
+                   f"{member['first_name']} {member['last_name']} has asked you to guarantee "
+                   f"₦{amount:,.2f} of their target advance. Review it under Guarantor Requests.")
+    audit(db, 'CTAS_GUARANTOR_REQUEST', 'ctas',
+          f"Sub #{sub_id}: asked member {guarantor_id} to guarantee ₦{amount:,.2f}")
+    db.commit()
+    flash(f"Request sent to {guarantor['first_name']} {guarantor['last_name']}. "
+          f"It only counts once they accept.", 'success')
+    return redirect(url_for('ctas.my_ctas'))
+
+
+@ctas.route('/my-ctas/guarantors/<int:gid>/withdraw', methods=['POST'])
+@ctas_required
+@login_required
+def withdraw_guarantor(gid):
+    """The applicant cancels a request they made."""
+    db = get_db()
+    member = member_for_user(db, current_user.id)
+    row = db.execute('SELECT g.*, s.member_id AS applicant_id, s.payout_month FROM ctas_guarantors g '
+                     'JOIN ctas_subscriptions s ON s.id = g.subscription_id WHERE g.id = ?',
+                     (gid,)).fetchone()
+    if not member or not row or row['applicant_id'] != member['id']:
+        abort(403)
+    if row['payout_month']:
+        flash('The ballot has run — this guarantee stands until the advance is recovered.', 'warning')
+        return redirect(url_for('ctas.my_ctas'))
+    db.execute("UPDATE ctas_guarantors SET status = 'withdrawn', responded_at = ? WHERE id = ?",
+               (datetime.now(), gid))
+    audit(db, 'CTAS_GUARANTOR_WITHDRAWN', 'ctas', f"Guarantee #{gid} withdrawn by the applicant")
+    db.commit()
+    flash('Guarantee request withdrawn.', 'info')
+    return redirect(url_for('ctas.my_ctas'))
+
+
+@ctas.route('/my-ctas/guarantees/<int:gid>/<action>', methods=['POST'])
+@ctas_required
+@login_required
+def respond_ctas_guarantee(gid, action):
+    """The guarantor accepts or declines. Accepting is a commitment of their own
+    savings, so it needs a typed signature and is capacity-checked again here."""
+    db = get_db()
+    member = member_for_user(db, current_user.id)
+    g = db.execute('SELECT * FROM ctas_guarantors WHERE id = ? AND member_id = ?',
+                   (gid, member['id'] if member else 0)).fetchone()
+    if not member or not g:
+        abort(403)
+    if g['status'] != 'pending':
+        flash('That request has already been answered.', 'warning')
+        return redirect(url_for('ctas.my_guarantees'))
+
+    sub = db.execute('SELECT * FROM ctas_subscriptions WHERE id = ?', (g['subscription_id'],)).fetchone()
+    applicant = db.execute('SELECT * FROM members WHERE id = ?', (sub['member_id'],)).fetchone()
+
+    if action == 'accept':
+        signature = (request.form.get('signature_name') or '').strip()
+        if not signature:
+            flash('Type your full name to confirm you accept this guarantee.', 'danger')
+            return redirect(url_for('ctas.my_guarantees'))
+        capacity = ce.guarantor_capacity(db, member['id'], exclude_guarantee_id=gid)
+        if float(g['amount'] or 0) > capacity:
+            flash(f'You can back at most ₦{capacity:,.2f} right now, so this guarantee of '
+                  f'₦{float(g["amount"] or 0):,.2f} cannot be accepted.', 'danger')
+            return redirect(url_for('ctas.my_guarantees'))
+        db.execute("UPDATE ctas_guarantors SET status = 'accepted', responded_at = ?, "
+                   "signature_name = ? WHERE id = ?", (datetime.now(), signature, gid))
+        _notify_member(db, sub['member_id'], 'Target Advance — guarantee accepted',
+                       f"{member['first_name']} {member['last_name']} has accepted your guarantee "
+                       f"request for ₦{float(g['amount'] or 0):,.2f}.")
+        msg = 'Guarantee accepted. It now counts towards their security cover.'
+    else:
+        db.execute("UPDATE ctas_guarantors SET status = 'declined', responded_at = ?, "
+                   "comment = ? WHERE id = ?",
+                   (datetime.now(), (request.form.get('comment') or '').strip(), gid))
+        _notify_member(db, sub['member_id'], 'Target Advance — guarantee declined',
+                       f"{member['first_name']} {member['last_name']} declined your guarantee request.")
+        msg = 'Guarantee declined.'
+    audit(db, 'CTAS_GUARANTOR_RESPONSE', 'ctas',
+          f"Guarantee #{gid} {action}ed by member {member['id']} "
+          f"for {applicant['first_name'] if applicant else '?'}")
+    db.commit()
+    flash(msg, 'success')
+    return redirect(url_for('ctas.my_guarantees'))
+
+
+@ctas.route('/my-ctas/guarantees')
+@ctas_required
+@login_required
+def my_guarantees():
+    """The member's inbox of CTAS guarantee requests made of them."""
+    db = get_db()
+    member = member_for_user(db, current_user.id)
+    if not member:
+        flash('Your account is not linked to a member record yet.', 'warning')
+        return redirect(url_for('portal.member_portal'))
+    rows = db.execute('''
+        SELECT g.*, s.target_amount, s.payout_month, s.status AS sub_status,
+               c.name AS cycle_name,
+               m.first_name || ' ' || m.last_name AS applicant_name, m.member_number
+        FROM ctas_guarantors g
+        JOIN ctas_subscriptions s ON s.id = g.subscription_id
+        JOIN ctas_cycles c ON c.id = s.cycle_id
+        JOIN members m ON m.id = s.member_id
+        WHERE g.member_id = ? ORDER BY g.id DESC''', (member['id'],)).fetchall()
+    return render_template('member/my-ctas-guarantees.html', requests=rows,
+                           capacity=ce.guarantor_capacity(db, member['id']))
 
 
 @ctas.route('/my-ctas/apply', methods=['POST'])
@@ -1967,17 +2157,56 @@ def exit_settle(sub_id):
     savings = float(sub['total_savings'] or 0)
     shares = float(sub['shares_value'] or 0)
 
+    # Accepted guarantees, and what each guarantor can actually be called on for
+    # today. A pledge is capped by the guarantor's own savings and share capital.
+    guarantors = []
+    for g in db.execute(
+            "SELECT g.*, m.first_name || ' ' || m.last_name AS name, m.id AS gid "
+            "FROM ctas_guarantors g JOIN members m ON m.id = g.member_id "
+            "WHERE g.subscription_id = ? AND g.status = 'accepted' ORDER BY g.id",
+            (sub_id,)).fetchall():
+        reachable = _member_reachable_value(db, g['gid'])
+        guarantors.append({
+            'id': g['id'], 'member_id': g['gid'], 'name': g['name'],
+            'pledged': round(float(g['amount'] or 0), 2),
+            'available': round(min(float(g['amount'] or 0), reachable), 2),
+        })
+
     if request.method == 'GET':
-        wf = ce.net_off_waterfall(outstanding, savings, shares, 0)
+        wf = ce.net_off_waterfall(outstanding, savings, shares, 0,
+                                  sum(g['available'] for g in guarantors))
         return render_template('ctas/exit.html', sub=sub, outstanding=outstanding,
-                               savings=savings, shares=shares, wf=wf)
+                               savings=savings, shares=shares, wf=wf, guarantors=guarantors)
 
     try:
         other = float(request.form.get('other_recovery') or 0)
     except ValueError:
         other = 0.0
     reason = (request.form.get('reason') or '').strip()
-    wf = ce.net_off_waterfall(outstanding, savings, shares, other)
+
+    # The officer decides how much to call from each guarantor; nothing is taken
+    # automatically, and never more than that guarantor pledged or actually has.
+    called = []
+    for g in guarantors:
+        try:
+            amt = round(max(0.0, float(request.form.get(f"guarantor_{g['id']}") or 0)), 2)
+        except ValueError:
+            amt = 0.0
+        amt = min(amt, g['available'])
+        if amt > 0:
+            called.append({**g, 'called': amt})
+    from_guarantors_available = round(sum(g['called'] for g in called), 2)
+    wf = ce.net_off_waterfall(outstanding, savings, shares, other, from_guarantors_available)
+    # If the earlier steps covered more than expected, only take what was needed.
+    if wf['from_guarantors'] < from_guarantors_available:
+        short = round(from_guarantors_available - wf['from_guarantors'], 2)
+        for g in reversed(called):
+            take = min(short, g['called'])
+            g['called'] = round(g['called'] - take, 2)
+            short = round(short - take, 2)
+            if short <= 0:
+                break
+        called = [g for g in called if g['called'] > 0]
     ctas_ensure_accounts(db)
     cash = get_default_cash_account(db)
     try:
@@ -1988,6 +2217,9 @@ def exit_settle(sub_id):
             lines.append({'account': SHARE_CAPITAL, 'debit': wf['from_shares'], 'memo': 'CTAS exit: from share capital'})
         if wf['from_other'] > 0:
             lines.append({'account': cash, 'debit': wf['from_other'], 'memo': 'CTAS exit: other recoveries'})
+        for g in called:
+            lines.append({'account': MEMBER_DEPOSITS, 'debit': g['called'],
+                          'memo': f"CTAS exit: called on guarantor {g['name']}"})
         if wf['write_off'] > 0:
             lines.append({'account': CTAS_WRITEOFF, 'debit': wf['write_off'], 'memo': 'CTAS exit: write-off'})
         if outstanding > 0:
@@ -2000,6 +2232,21 @@ def exit_settle(sub_id):
         db.execute("UPDATE members SET total_savings = COALESCE(total_savings, 0) - ?, "
                    "shares_value = COALESCE(shares_value, 0) - ? WHERE id = ?",
                    (wf['from_savings'], wf['from_shares'], sub['member_id']))
+        # Guarantors: reduce the savings actually called on, record it against
+        # the guarantee, and tell them — this is their money leaving.
+        for g in called:
+            db.execute("UPDATE members SET total_savings = COALESCE(total_savings, 0) - ? WHERE id = ?",
+                       (g['called'], g['member_id']))
+            db.execute("UPDATE ctas_guarantors SET recovered_amount = COALESCE(recovered_amount, 0) + ?, "
+                       "status = 'called' WHERE id = ?", (g['called'], g['id']))
+            _notify_member(db, g['member_id'], 'Target Advance — your guarantee was called',
+                           f"₦{g['called']:,.2f} was recovered from your savings under the guarantee "
+                           f"you gave for {sub['member_name']}'s target advance.")
+            audit(db, 'CTAS_GUARANTOR_CALLED', 'ctas',
+                  f"Sub #{sub_id}: called ₦{g['called']:,.2f} on guarantor {g['name']} (member {g['member_id']})")
+        # Any guarantee not called is discharged when the subscription closes.
+        db.execute("UPDATE ctas_guarantors SET status = 'released' "
+                   "WHERE subscription_id = ? AND status = 'accepted'", (sub_id,))
         db.execute("UPDATE ctas_subscriptions SET total_recovered = target_amount, outstanding = 0, "
                    "advance_balance = 0, arrears_amount = 0, status = 'completed', completed_at = ? WHERE id = ?",
                    (datetime.now(), sub_id))
@@ -2008,7 +2255,8 @@ def exit_settle(sub_id):
                    "VALUES (?, 'exit_recovery', 'resolved', ?, ?, ?, ?, ?)",
                    (sub_id, outstanding, f"Member exit; outstanding ₦{outstanding:,.2f}. {reason}",
                     f"savings ₦{wf['from_savings']:,.2f}, shares ₦{wf['from_shares']:,.2f}, "
-                    f"other ₦{wf['from_other']:,.2f}, write-off ₦{wf['write_off']:,.2f}",
+                    f"other ₦{wf['from_other']:,.2f}, guarantors ₦{wf['from_guarantors']:,.2f}, "
+                    f"write-off ₦{wf['write_off']:,.2f}",
                     datetime.now(), current_user.id))
         audit(db, 'CTAS_EXIT', 'ctas',
               f"Exit settle sub #{sub_id}: outstanding {outstanding}, write-off {wf['write_off']}")
