@@ -239,9 +239,14 @@ def ledger_reconciliation(db, sample_limit=10):
                s.date, s.amount, s.month
         FROM savings s
         JOIN members m ON m.id = s.member_id
-        WHERE COALESCE(s.payment_type, '') != 'dividend'
+        WHERE COALESCE(s.payment_type, '') NOT IN ('dividend', 'reversal')
+          AND s.reversed_at IS NULL
         ORDER BY s.date DESC, s.id DESC
     ''', sample_limit))
+    # 'reversal' rows and rows already reversed are excluded deliberately: their
+    # ledger effect is the reversal entry, which is linked to the ORIGINAL entry
+    # rather than carrying a reference of its own. Counting them here reported a
+    # correctly-posted reversal as an unposted savings deposit.
 
     sections.append(_sample_missing_by_ref(db, 'Loan disbursements', '''
         SELECT l.id, l.member_id, m.member_number,
@@ -631,65 +636,167 @@ def journal_entry_detail(db, entry_id):
     }
 
 
-def _reverse_source_effect(db, e):
-    """Undo the subledger record behind an operational entry, for the precisely-
-    linked modules only. Returns a short human note, or None if there is nothing
-    to undo (GL-only reversal). Assumes the caller has already guarded against
-    double-reversal via the journal entry's reversed_at.
+class UnsupportedReversalError(ValueError):
+    """The books could be corrected, but the records behind the entry could not.
+
+    Raised rather than posting a half-undo: an entry whose operational record
+    still says the opposite of the ledger is worse than one that was never
+    reversed, because nothing on screen shows the two disagree.
     """
-    module = (e.get('source_module') or '')
-    sid = e.get('source_id')
-    if not sid:
+
+
+# Modules whose journal entry IS the whole record — there is no operational row
+# behind it, so offsetting the ledger is a complete undo.
+LEDGER_ONLY_MODULES = frozenset({'', 'manual', 'opening', 'adjustment'})
+
+# Where the ones the journal cannot undo are undone instead, so a refusal tells
+# the officer what to do rather than just saying no.
+REVERSAL_GUIDANCE = {
+    'ctas_payout':       'Settle or correct it from the CTAS cycle page.',
+    'ctas_contribution': 'Correct it from the CTAS cycle page.',
+    'ctas_recovery':     'Correct it from the CTAS cycle page.',
+    'ctas_exit':         'Reopen it from the CTAS exceptions page.',
+    'loan_disbursement': 'Correct it from the loan record.',
+    'loans':             'Correct it from the loan record.',
+    'dividend':          'Cancel the declaration from the dividends page.',
+    'payments':          'Correct it from the payment record.',
+    'savings':           'This came from the historical backfill, which links to a '
+                         'member rather than one savings row, so it cannot be undone here.',
+    'revenue':           'Delete or correct the revenue record itself.',
+    'expenses':          'Delete or correct the expense record itself.',
+    'honorarium':        'Correct it from the honorarium record.',
+    'investments':       'Correct it from the investment record.',
+}
+
+
+def _reverse_savings_deposit(db, e, sid):
+    """Undo a member's savings deposit: a compensating negative row, the cached
+    balances put back, and the original marked reversed so it drops out of the
+    records list and frees its receipt number for a corrected re-upload."""
+    sav = db.execute('SELECT * FROM savings WHERE id = ?', (sid,)).fetchone()
+    if not sav:
         return None
-
-    if module == 'savings_deposit':
-        sav = db.execute('SELECT * FROM savings WHERE id = ?', (sid,)).fetchone()
-        if not sav:
-            return None
-        amt = float(sav['amount'] or 0)
-        keys = sav.keys()
-        shr = float(sav['share_capital'] or 0) if 'share_capital' in keys else 0.0
-        # Compensating negative deposit so SUM(amount) nets to zero — nothing deleted.
-        db.execute('''INSERT INTO savings
-                          (member_id, amount, share_capital, month, payment_type,
-                           late_fee, payment_method, receipt_number, notes, date)
-                      VALUES (?, ?, ?, ?, 'reversal', 0, 'reversal', ?, ?, ?)''',
-                   (sav['member_id'], -amt, -shr, sav['month'],
-                    f"REV-{sav['receipt_number'] or sav['id']}",
-                    f"Reversal of savings deposit #{sav['id']}", datetime.now()))
-        db.execute('''UPDATE members
-                          SET total_savings = COALESCE(total_savings, 0) - ?,
-                              shares_value  = COALESCE(shares_value, 0) - ?
-                      WHERE id = ?''', (amt, shr, sav['member_id']))
-        return f"Member savings reduced by ₦{amt:,.2f}."
-
-    if module == 'loan_repayment':
-        rep = db.execute('SELECT * FROM repayments WHERE id = ?', (sid,)).fetchone()
-        if not rep:
-            return None
-        if 'reversed_at' in rep.keys() and rep['reversed_at']:
-            return None
-        loan = db.execute('SELECT * FROM loans WHERE id = ?', (rep['loan_id'],)).fetchone()
-        if not loan:
-            return None
-        restored = round(float(loan['balance'] or 0) + float(rep['amount'] or 0), 2)
-        new_status = 'active' if (loan['status'] == 'completed') else loan['status']
-        db.execute('UPDATE loans SET balance = ?, status = ?, completed_at = NULL WHERE id = ?',
-                   (restored, new_status, loan['id']))
-        db.execute('UPDATE repayments SET reversed_at = ? WHERE id = ?', (datetime.now(), rep['id']))
-        return f"Loan {loan['loan_number'] or loan['id']} balance restored by ₦{float(rep['amount'] or 0):,.2f}."
-
-    return None
+    amt = float(sav['amount'] or 0)
+    keys = sav.keys()
+    shr = float(sav['share_capital'] or 0) if 'share_capital' in keys else 0.0
+    # Compensating negative deposit so SUM(amount) nets to zero — nothing deleted.
+    db.execute('''INSERT INTO savings
+                      (member_id, amount, share_capital, month, payment_type,
+                       late_fee, payment_method, receipt_number, notes, date)
+                  VALUES (?, ?, ?, ?, 'reversal', 0, 'reversal', ?, ?, ?)''',
+               (sav['member_id'], -amt, -shr, sav['month'],
+                f"REV-{sav['receipt_number'] or sav['id']}",
+                f"Reversal of savings deposit #{sav['id']}", datetime.now()))
+    db.execute('''UPDATE members
+                      SET total_savings = COALESCE(total_savings, 0) - ?,
+                          shares_value  = COALESCE(shares_value, 0) - ?
+                  WHERE id = ?''', (amt, shr, sav['member_id']))
+    _mark_savings_row_reversed(db, sid)
+    return f"Member savings reduced by ₦{amt:,.2f}."
 
 
-def reverse_journal_entry(db, entry_id, created_by=None):
-    """Reverse a journal entry by posting a balanced offsetting entry, and — for
-    precisely-linked savings deposits and loan repayments — also undo the source
-    record (subledger). Everything happens in the caller's transaction.
+def _reverse_savings_payout(db, e, sid):
+    """Undo a savings payout/withdrawal. The original row is negative, so the
+    compensating row is positive and the member's balance goes back up."""
+    sav = db.execute('SELECT * FROM savings WHERE id = ?', (sid,)).fetchone()
+    if not sav:
+        return None
+    if 'reversed_at' in sav.keys() and sav['reversed_at']:
+        return None
+    paid = abs(float(sav['amount'] or 0))       # stored negative on the payout
+    db.execute('''INSERT INTO savings
+                      (member_id, amount, share_capital, month, payment_type,
+                       late_fee, payment_method, receipt_number, notes, date)
+                  VALUES (?, ?, 0, ?, 'reversal', 0, 'reversal', ?, ?, ?)''',
+               (sav['member_id'], paid, sav['month'],
+                f"REV-{sav['receipt_number'] or sav['id']}",
+                f"Reversal of savings payout #{sav['id']}", datetime.now()))
+    db.execute('UPDATE members SET total_savings = COALESCE(total_savings, 0) + ? WHERE id = ?',
+               (paid, sav['member_id']))
+    _mark_savings_row_reversed(db, sid)
+
+    note = f"Member savings restored by ₦{paid:,.2f}."
+    # A full payout can double as an exit (see the savings payout handler), and
+    # reinstating a member is a membership decision, not a bookkeeping one — so
+    # say so instead of quietly flipping their status back.
+    member = db.execute("SELECT status FROM members WHERE id = ?", (sav['member_id'],)).fetchone()
+    if member and member['status'] == 'former':
+        note += (' This member is still archived as former — reinstate them from their '
+                 'profile if the exit is also being undone.')
+    return note
+
+
+def _mark_savings_row_reversed(db, sid):
+    """Mark a savings row reversed and free its receipt number, so the records
+    list hides it and a corrected row can reuse the reference."""
+    db.execute(
+        "UPDATE savings SET reversed_at = ?, "
+        "receipt_number = CASE WHEN receipt_number IS NOT NULL AND receipt_number != '' "
+        "THEN receipt_number || '~REV' || CAST(id AS TEXT) ELSE receipt_number END "
+        "WHERE id = ? AND reversed_at IS NULL", (datetime.now(), sid))
+
+
+def _reverse_loan_repayment(db, e, sid):
+    """Undo a loan repayment: put the balance back and reopen the loan."""
+    rep = db.execute('SELECT * FROM repayments WHERE id = ?', (sid,)).fetchone()
+    if not rep:
+        return None
+    if 'reversed_at' in rep.keys() and rep['reversed_at']:
+        return None
+    loan = db.execute('SELECT * FROM loans WHERE id = ?', (rep['loan_id'],)).fetchone()
+    if not loan:
+        return None
+    restored = round(float(loan['balance'] or 0) + float(rep['amount'] or 0), 2)
+    new_status = 'active' if (loan['status'] == 'completed') else loan['status']
+    db.execute('UPDATE loans SET balance = ?, status = ?, completed_at = NULL WHERE id = ?',
+               (restored, new_status, loan['id']))
+    db.execute('UPDATE repayments SET reversed_at = ? WHERE id = ?', (datetime.now(), rep['id']))
+    return f"Loan {loan['loan_number'] or loan['id']} balance restored by ₦{float(rep['amount'] or 0):,.2f}."
+
+
+# source_module -> the function that undoes its operational record. A module
+# posting to the GL that appears in neither this registry nor
+# LEDGER_ONLY_MODULES cannot be reversed from the journal.
+REVERSAL_HANDLERS = {
+    'savings_deposit': _reverse_savings_deposit,
+    'savings_payout':  _reverse_savings_payout,
+    'loan_repayment':  _reverse_loan_repayment,
+}
+
+
+def reversal_support(module):
+    """(can_reverse, why_not) for a source module — used by the journal screens
+    so the button is only offered where the undo is actually complete."""
+    module = (module or '')
+    if module in REVERSAL_HANDLERS or module in LEDGER_ONLY_MODULES:
+        return True, None
+    guidance = REVERSAL_GUIDANCE.get(module)
+    return False, (
+        f"Entries from '{module}' cannot be undone from the journal, because the ledger "
+        f"would be corrected while its own records still said the opposite. "
+        + (guidance or 'Undo it where it was created.'))
+
+
+def _reverse_source_effect(db, e):
+    """Undo the operational record behind an entry via the registered handler.
+    Returns a short human note, or None when there is nothing to undo."""
+    handler = REVERSAL_HANDLERS.get(e.get('source_module') or '')
+    sid = e.get('source_id')
+    if not handler or not sid:
+        return None
+    return handler(db, e, sid)
+
+
+def reverse_journal_entry(db, entry_id, created_by=None, reason=None):
+    """Reverse a journal entry by posting a balanced offsetting entry and undoing
+    the operational record behind it. Everything happens in the caller's
+    transaction.
 
     Never deletes: the original stays and is linked to its reversal. Refuses to
-    reverse an entry that is in a locked period, that is itself a reversal, or
-    that has already been reversed. The reversal is dated today (the open
+    reverse an entry that is in a locked period, that is itself a reversal, that
+    has already been reversed, or whose module has no registered handler — see
+    REVERSAL_HANDLERS. `reason` is required and kept on the reversal entry, so
+    every undo carries why it happened. The reversal is dated today (the open
     period). Does NOT commit. Returns (new_entry_id, source_note-or-None).
     """
     entry = db.execute('SELECT * FROM journal_entries WHERE id = ?', (entry_id,)).fetchone()
@@ -700,6 +807,17 @@ def reverse_journal_entry(db, entry_id, created_by=None):
         raise ValueError('This entry is itself a reversal and cannot be reversed.')
     if e.get('reversed_at'):
         raise ValueError('This entry has already been reversed.')
+
+    reason = (reason or '').strip()
+    if not reason:
+        raise ValueError('Give a reason for reversing this entry — it is kept on the record.')
+
+    # Refuse rather than half-undo: correcting the ledger while the module's own
+    # records still say the opposite leaves nothing on screen showing the two
+    # disagree.
+    ok, why_not = reversal_support(e.get('source_module'))
+    if not ok:
+        raise UnsupportedReversalError(why_not)
 
     # Only entries in the OPEN period may be reversed.
     lock = get_lock_date(db)
@@ -719,14 +837,15 @@ def reverse_journal_entry(db, entry_id, created_by=None):
                'memo': (l['memo'] or '')} for l in lines]
 
     new_id = post_journal(
-        db, f"Reversal of {e['entry_number']}", offset,
+        db, f"Reversal of {e['entry_number']} — {reason}", offset,
         date=datetime.now(), reference=e['entry_number'],
         source_module='reversal', source_id=entry_id, created_by=created_by)
     if new_id is None:
         raise ValueError('Nothing to reverse — the original entry has no lines.')
 
     now = datetime.now()
-    db.execute('UPDATE journal_entries SET reversal_of = ? WHERE id = ?', (entry_id, new_id))
+    db.execute('UPDATE journal_entries SET reversal_of = ?, reversal_reason = ? WHERE id = ?',
+               (entry_id, reason, new_id))
     db.execute('UPDATE journal_entries SET reversed_at = ? WHERE id = ?', (now, entry_id))
 
     # Undo the subledger for precisely-linked operational entries.

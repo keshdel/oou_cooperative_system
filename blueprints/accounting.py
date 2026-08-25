@@ -15,6 +15,7 @@ from utils import role_required, audit
 from ledger import (get_accounts, trial_balance, backfill_from_transactions,
                     ledger_reconciliation, account_ledger, journal_entry_detail,
                     get_lock_date, reverse_journal_entry, PeriodLockedError,
+                    UnsupportedReversalError, reversal_support,
                     get_default_cash_account)
 
 accounting = Blueprint('accounting', __name__, url_prefix='/accounting')
@@ -779,10 +780,12 @@ def journal_entry_view(entry_id):
                                       data['entry'].get('source_id'))
     lock = get_lock_date(db)
     entry_locked = bool(lock) and str(data['entry'].get('date') or '')[:10] <= lock
+    can_reverse, reverse_block = reversal_support(data['entry'].get('source_module'))
     return render_template('accounting/journal-entry.html',
                            data=data, entry=data['entry'], lines=data['lines'],
                            source_label=src_label, source_url=src_url,
-                           lock_date=lock, entry_locked=entry_locked)
+                           lock_date=lock, entry_locked=entry_locked,
+                           can_reverse=can_reverse, reverse_block=reverse_block)
 
 
 @accounting.route('/journal/<int:entry_id>/quick-view')
@@ -798,10 +801,12 @@ def journal_entry_quick_view(entry_id):
                                       data['entry'].get('source_id'))
     lock = get_lock_date(db)
     entry_locked = bool(lock) and str(data['entry'].get('date') or '')[:10] <= lock
+    can_reverse, reverse_block = reversal_support(data['entry'].get('source_module'))
     html = render_template('accounting/_journal_quick_view.html',
                            data=data, entry=data['entry'], lines=data['lines'],
                            source_label=src_label, source_url=src_url,
-                           lock_date=lock, entry_locked=entry_locked)
+                           lock_date=lock, entry_locked=entry_locked,
+                           can_reverse=can_reverse, reverse_block=reverse_block)
     return jsonify({
         'ok': True,
         'title': data['entry'].get('entry_number') or f"JE-{entry_id}",
@@ -814,18 +819,25 @@ def journal_entry_quick_view(entry_id):
 @role_required('admin', 'treasurer')
 def reverse_entry(entry_id):
     db = get_db()
+    reason = (request.form.get('reason') or '').strip()
     try:
-        new_id, source_note = reverse_journal_entry(db, entry_id, created_by=current_user.id)
-        db.commit()
+        new_id, source_note = reverse_journal_entry(db, entry_id, created_by=current_user.id,
+                                                    reason=reason)
+        # Audited BEFORE the commit, so the log lands in the same transaction as
+        # the reversal it describes.
         audit(db, 'REVERSE_JOURNAL', 'accounting',
-              f'Reversed journal entry {entry_id} with new entry {new_id}'
+              f'Reversed journal entry {entry_id} with new entry {new_id}. Reason: {reason}'
               + (f' ({source_note})' if source_note else ''))
+        db.commit()
         msg = 'Entry reversed — a balanced offsetting entry has been posted.'
         if source_note:
             msg += ' ' + source_note
         flash(msg, 'success')
         return redirect(url_for('accounting.journal_entry_view', entry_id=new_id))
     except PeriodLockedError as e:
+        db.rollback()
+        flash(str(e), 'warning')
+    except UnsupportedReversalError as e:
         db.rollback()
         flash(str(e), 'warning')
     except ValueError as e:

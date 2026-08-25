@@ -1485,6 +1485,8 @@ def init_db():
     # reversed_at is set on an original once it has been reversed.
     _add_col(db, 'journal_entries', 'reversal_of', 'INTEGER')
     _add_col(db, 'journal_entries', 'reversed_at', 'TIMESTAMP')
+    # Why the undo happened, kept on the reversal entry.
+    _add_col(db, 'journal_entries', 'reversal_reason', 'TEXT')
 
     # Dividend declarations (year-end surplus distribution)
     db.execute(_adapt('''

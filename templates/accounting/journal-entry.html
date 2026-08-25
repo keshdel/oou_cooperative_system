@@ -13,15 +13,51 @@
             <a href="{{ url_for('accounting.journal_register') }}" class="btn btn-outline-secondary btn-sm">
                 <i class="fas fa-arrow-left"></i> Journal Register</a>
             {% if can('accounting.post')
-                  and not data.reversed_by and not entry.reversal_of and not entry_locked %}
-            <form method="post" action="{{ url_for('accounting.reverse_entry', entry_id=entry.id) }}" class="d-inline"
-                  onsubmit="return confirm('Post a reversing entry that cancels this one?{% if entry.source_module == 'savings_deposit' %}\n\nThis will also reverse the member savings deposit (their balance goes down).{% elif entry.source_module == 'loan_repayment' %}\n\nThis will also reverse the loan repayment (the loan balance goes back up).{% elif entry.source_module and entry.source_module not in ['manual','reversal','opening',''] %}\n\nNote: this entry came from the {{ entry.source_module }} module. Reversing corrects the LEDGER only — review the original record separately.{% endif %}');">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <button class="btn btn-outline-danger btn-sm"><i class="fas fa-rotate-left"></i> Reverse entry</button>
-            </form>
+                  and not data.reversed_by and not entry.reversal_of and not entry_locked and can_reverse %}
+            <button class="btn btn-outline-danger btn-sm" type="button"
+                    data-bs-toggle="collapse" data-bs-target="#reverseBox">
+                <i class="fas fa-rotate-left"></i> Reverse entry</button>
             {% endif %}
         </div>
     </div>
+
+    <!-- Reverse: reason required, and it says what else the undo will change -->
+    {% if can('accounting.post')
+          and not data.reversed_by and not entry.reversal_of and not entry_locked and can_reverse %}
+    <div class="collapse mb-3" id="reverseBox">
+        <div class="card border-danger">
+            <div class="card-body">
+                <h6 class="mb-2">Reverse this entry</h6>
+                <p class="small text-muted mb-2">
+                    Nothing is deleted — a balanced offsetting entry is posted and the original is
+                    kept and linked to it.
+                    {% if entry.source_module == 'savings_deposit' %}
+                    The member's savings deposit is also reversed, so their balance goes down.
+                    {% elif entry.source_module == 'savings_payout' %}
+                    The member's savings payout is also reversed, so their balance goes back up.
+                    {% elif entry.source_module == 'loan_repayment' %}
+                    The loan repayment is also reversed, so the loan balance goes back up.
+                    {% endif %}
+                </p>
+                <form method="post" action="{{ url_for('accounting.reverse_entry', entry_id=entry.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <label class="form-label small mb-1">Why is this being reversed?</label>
+                    <input class="form-control form-control-sm mb-2" name="reason" required
+                           maxlength="300" placeholder="e.g. Posted to the wrong member">
+                    <button class="btn btn-danger btn-sm">
+                        <i class="fas fa-rotate-left"></i> Post reversing entry</button>
+                    <button class="btn btn-link btn-sm" type="button"
+                            data-bs-toggle="collapse" data-bs-target="#reverseBox">Cancel</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    {% elif can('accounting.post') and not data.reversed_by and not entry.reversal_of
+            and not entry_locked and not can_reverse %}
+    <div class="alert alert-secondary py-2 small">
+        <i class="fas fa-circle-info"></i> {{ reverse_block }}
+    </div>
+    {% endif %}
 
     <!-- Reversal status -->
     {% if data.reversed_by %}

@@ -1801,6 +1801,150 @@ class HardeningFeatureTests(unittest.TestCase):
         self.assertEqual(export.status_code, 200)
         self.assertIn(b'posted_to_gl', export.data)
 
+    # ── Undoing a posted transaction ─────────────────────────────────────────
+
+    def _post_savings_payout(self, member_id, amount, deposit_first=20000.0):
+        """Give a member a balance, then pay some of it out through the real
+        route. Returns (savings_row_id, journal_entry_id) for the payout."""
+        import io, random
+        from ledger import post_journal_safe, get_default_cash_account, MEMBER_DEPOSITS
+        with self.app.app_context():
+            db = get_db()
+            receipt = f'DEP/TEST/{random.randint(100000, 999999)}'
+            db.execute("INSERT INTO savings (member_id, amount, month, payment_type, "
+                       " receipt_number, date) VALUES (?, ?, '2026-08', 'monthly', ?, '2026-08-05')",
+                       (member_id, deposit_first, receipt))
+            sid = db.execute('SELECT id FROM savings WHERE receipt_number = ?', (receipt,)).fetchone()['id']
+            db.execute('UPDATE members SET total_savings = COALESCE(total_savings,0) + ? WHERE id = ?',
+                       (deposit_first, member_id))
+            # Post it to the ledger like the real deposit path, so the
+            # reconciliation report does not see an unposted savings row.
+            post_journal_safe(db, 'Savings deposit (test fixture)', [
+                {'account': get_default_cash_account(db), 'debit': deposit_first, 'memo': 'deposit'},
+                {'account': MEMBER_DEPOSITS, 'credit': deposit_first, 'memo': 'member'},
+            ], reference=receipt, source_module='savings_deposit', source_id=sid)
+            db.commit()
+        rv = self.client.post('/savings/payout', data={
+            'member_id': str(member_id), 'amount': str(amount),
+            'reason': 'Member requested a partial withdrawal',
+            'payment_method': 'bank',
+            'evidence': (io.BytesIO(b'%PDF-1.4 test evidence'), 'evidence.pdf'),
+        }, content_type='multipart/form-data', follow_redirects=True)
+        self.assertNotIn(b'Payout blocked', rv.data)
+        with self.app.app_context():
+            db = get_db()
+            row = db.execute("SELECT id FROM savings WHERE member_id = ? AND payment_type = 'withdrawal' "
+                             "ORDER BY id DESC", (member_id,)).fetchone()
+            self.assertIsNotNone(row, 'payout did not create a withdrawal row')
+            je = db.execute("SELECT id FROM journal_entries WHERE source_module = 'savings_payout' "
+                            "AND source_id = ?", (row['id'],)).fetchone()
+            self.assertIsNotNone(je, 'payout did not post to the ledger')
+            return row['id'], je['id']
+
+    def test_reversing_a_savings_payout_puts_the_money_back(self):
+        """Undoing a payout restores the member's balance, nets the ledger to
+        zero and keeps both rows — nothing is deleted."""
+        self.login_admin()
+        member_id = self.create_member()
+        with self.app.app_context():
+            from utils import member_savings_balance
+            base = member_savings_balance(get_db(), member_id)
+
+        sav_id, entry_id = self._post_savings_payout(member_id, 5000.0, deposit_first=20000.0)
+        with self.app.app_context():
+            from utils import member_savings_balance
+            db = get_db()
+            self.assertAlmostEqual(member_savings_balance(db, member_id), base + 15000.0, places=2)
+
+        rv = self.client.post(f'/accounting/journal/{entry_id}/reverse',
+                              data={'reason': 'Paid out to the wrong member'},
+                              follow_redirects=True)
+        self.assertNotIn(b'cannot be undone', rv.data)
+        with self.app.app_context():
+            from utils import member_savings_balance
+            db = get_db()
+            # Balance back to the pre-payout figure (deposit kept, payout undone).
+            self.assertAlmostEqual(member_savings_balance(db, member_id), base + 20000.0, places=2)
+            # Original kept and marked, compensating row written.
+            orig = db.execute('SELECT reversed_at, amount FROM savings WHERE id = ?', (sav_id,)).fetchone()
+            self.assertIsNotNone(orig['reversed_at'])
+            self.assertAlmostEqual(float(orig['amount']), -5000.0, places=2)
+            comp = db.execute("SELECT amount FROM savings WHERE payment_type = 'reversal' "
+                              "AND notes LIKE ?", (f'%payout #{sav_id}%',)).fetchone()
+            self.assertIsNotNone(comp, 'no compensating row for this payout')
+            self.assertAlmostEqual(float(comp['amount']), 5000.0, places=2)
+            # Ledger: the payout entry and its reversal cancel out.
+            net = db.execute(
+                "SELECT COALESCE(SUM(jl.debit),0) - COALESCE(SUM(jl.credit),0) FROM journal_lines jl "
+                "JOIN journal_entries je ON je.id = jl.entry_id "
+                "WHERE (je.id = ? OR je.reversal_of = ?) AND jl.account_code = '2000'",
+                (entry_id, entry_id)).fetchone()[0]
+            self.assertAlmostEqual(float(net), 0.0, places=2)
+            # The reason is kept on the reversal, and the undo is audited.
+            rev = db.execute('SELECT reversal_reason FROM journal_entries WHERE reversal_of = ?',
+                             (entry_id,)).fetchone()
+            self.assertEqual(rev['reversal_reason'], 'Paid out to the wrong member')
+            aud = db.execute("SELECT description FROM audit_log WHERE action = 'REVERSE_JOURNAL' "
+                             "ORDER BY id DESC").fetchone()
+            self.assertIsNotNone(aud, 'the reversal was not audited')
+            self.assertIn('wrong member', aud['description'])
+
+    def test_reversal_needs_a_reason(self):
+        self.login_admin()
+        member_id = self.create_member()
+        _, entry_id = self._post_savings_payout(member_id, 3000.0)
+        rv = self.client.post(f'/accounting/journal/{entry_id}/reverse',
+                              data={'reason': '   '}, follow_redirects=True)
+        self.assertIn(b'Give a reason', rv.data)
+        with self.app.app_context():
+            db = get_db()
+            self.assertIsNone(db.execute('SELECT reversed_at FROM journal_entries WHERE id = ?',
+                                         (entry_id,)).fetchone()['reversed_at'])
+
+    def test_journal_refuses_to_undo_a_module_it_cannot_fully_undo(self):
+        """A module with records behind it but no handler is refused outright,
+        rather than correcting the ledger and leaving its own records saying the
+        opposite."""
+        self.login_admin()
+        with self.app.app_context():
+            db = get_db()
+            from ledger import post_journal
+            eid = post_journal(db, 'CTAS payout (test)', [
+                {'account': '1150', 'debit': 50000, 'memo': 'advance'},
+                {'account': '1000', 'credit': 50000, 'memo': 'cash'},
+            ], source_module='ctas_payout', source_id=999)
+            db.commit()
+        rv = self.client.post(f'/accounting/journal/{eid}/reverse',
+                              data={'reason': 'wrong amount'}, follow_redirects=True)
+        self.assertIn(b'cannot be undone from the journal', rv.data)
+        self.assertIn(b'CTAS cycle page', rv.data)          # says where to undo it instead
+        with self.app.app_context():
+            db = get_db()
+            self.assertIsNone(db.execute('SELECT reversed_at FROM journal_entries WHERE id = ?',
+                                         (eid,)).fetchone()['reversed_at'])
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM journal_entries WHERE reversal_of = ?',
+                                        (eid,)).fetchone()[0], 0)
+
+    def test_every_ledger_posting_module_is_classified(self):
+        """Any module that posts to the GL must either have a reversal handler
+        or be knowingly ledger-only — so a new one cannot quietly become
+        un-undoable without someone deciding that."""
+        import glob, re
+        from ledger import REVERSAL_HANDLERS, LEDGER_ONLY_MODULES, REVERSAL_GUIDANCE
+        found = set()
+        for path in glob.glob('blueprints/*.py') + glob.glob('*.py'):
+            with open(path, encoding='utf-8') as fh:
+                found.update(re.findall(r"source_module\s*=\s*'([a-z_]+)'", fh.read()))
+        found.discard('reversal')          # a reversal is never itself reversed
+        unclassified = sorted(m for m in found
+                              if m not in REVERSAL_HANDLERS
+                              and m not in LEDGER_ONLY_MODULES
+                              and m not in REVERSAL_GUIDANCE)
+        self.assertEqual(unclassified, [],
+                         f'these modules post to the ledger but no one has decided how they are '
+                         f'undone: {unclassified}. Add a handler, mark them ledger-only, or give '
+                         f'them guidance in REVERSAL_GUIDANCE.')
+
     def test_salary_batch_reverse_restores_savings_shares_and_ledger(self):
         """A mistaken upload can be reversed with a reason: member savings and
         shares are restored, the ledger gets a balancing entry, nothing is

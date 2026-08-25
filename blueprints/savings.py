@@ -217,16 +217,10 @@ def salary_batch_reverse(batch_ref):
                 skipped_n += 1          # already reversed, or never posted to GL
                 continue
             try:
-                reverse_journal_entry(db, entry['id'], created_by=current_user.id)
-                # Mark the original row reversed and free its receipt number, so
-                # the corrected batch can be re-uploaded (excluded from the
-                # duplicate check; no clash with the unique receipt index).
-                db.execute(
-                    "UPDATE savings SET reversed_at = ?, "
-                    "receipt_number = CASE WHEN receipt_number IS NOT NULL AND receipt_number != '' "
-                    "THEN receipt_number || '~REV' || CAST(id AS TEXT) ELSE receipt_number END "
-                    "WHERE id = ? AND reversed_at IS NULL",
-                    (datetime.now(), s['id']))
+                # The handler marks the original row reversed and frees its
+                # receipt number, so the corrected batch can be re-uploaded.
+                reverse_journal_entry(db, entry['id'], created_by=current_user.id,
+                                      reason=f'Batch {batch_ref} reversed: {reason}')
                 reversed_n += 1
             except PeriodLockedError as ple:
                 errors.append(str(ple))

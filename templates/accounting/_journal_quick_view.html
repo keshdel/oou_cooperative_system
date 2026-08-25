@@ -126,11 +126,14 @@
       </a>
       {% if can('accounting.post')
             and not data.reversed_by and not entry.reversal_of and not entry_locked %}
-      <form method="post" action="{{ url_for('accounting.reverse_entry', entry_id=entry.id) }}"
-            onsubmit="return confirm('Post a reversing entry that cancels this one?');">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button class="btn btn-outline-danger btn-sm">Reverse entry</button>
-      </form>
+        {% if can_reverse %}
+        {# Reversing needs a reason, so it is done on the full page rather than
+           from a one-click button in a popup. #}
+        <a href="{{ url_for('accounting.journal_entry_view', entry_id=entry.id) }}"
+           class="btn btn-outline-danger btn-sm">Reverse entry</a>
+        {% else %}
+        <span class="small text-muted align-self-center">{{ reverse_block }}</span>
+        {% endif %}
       {% endif %}
     </div>
   </div>
