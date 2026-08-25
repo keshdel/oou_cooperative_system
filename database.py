@@ -1036,6 +1036,16 @@ def init_db():
     _add_col(db, 'ctas_subscriptions', 'priority_decided_at', 'TIMESTAMP')
     _add_col(db, 'ctas_subscriptions', 'priority_note', 'TEXT')
 
+    # Security cover: how much of what a member would still owe, if they stopped
+    # contributing right after collecting, must be backed by value the
+    # cooperative can actually reach. 0 = off (the default, so nothing changes
+    # for a cooperative that has not opted in). Enforced at the ballot by
+    # holding under-covered members back to later, lower-exposure positions.
+    _add_col(db, 'ctas_cycles', 'coverage_ratio', 'REAL DEFAULT 0')
+    _add_col(db, 'ctas_plans', 'coverage_ratio', 'REAL DEFAULT 0')
+    _add_col(db, 'ctas_subscriptions', 'security_value', 'REAL DEFAULT 0')
+    _add_col(db, 'ctas_subscriptions', 'min_payout_position', 'INTEGER')
+
     # Fee charged for each early payout position (earlier positions cost more).
     # A row belongs to either a plan (the template) or a cycle (the live copy).
     db.execute(_adapt('''

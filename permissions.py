@@ -274,6 +274,7 @@ PERMISSIONS = [
                       'ctas.subscription_act',
                       'ctas.run_ballot', 'ctas.payout',
                       'ctas.set_priority_fees', 'ctas.decide_priority', 'ctas.set_liquidity',
+                      'ctas.set_security',
                       'ctas.record_terms', 'ctas.bulk_advance',
                       'ctas.payroll_export', 'ctas.payroll_import',
                       'ctas.exit_settle', 'ctas.exceptions', 'ctas.resolve_exception'),

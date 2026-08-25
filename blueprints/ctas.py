@@ -209,6 +209,25 @@ def ctas_enabled(db=None) -> bool:
         return False
 
 
+def _ctas_max_exposure(db) -> float:
+    """Coop-wide ceiling on advances outstanding. 0 = uncapped (the default)."""
+    try:
+        row = db.execute("SELECT value FROM settings WHERE key = 'ctas_max_net_exposure'").fetchone()
+        return max(0.0, float(row['value'])) if row and row['value'] else 0.0
+    except Exception:
+        return 0.0
+
+
+def _ctas_advances_outstanding(db) -> float:
+    """Advances paid out and not yet recovered, from the ledger (GL 1150)."""
+    try:
+        r = db.execute("SELECT COALESCE(SUM(debit),0) AS d, COALESCE(SUM(credit),0) AS c "
+                       "FROM journal_lines WHERE account_code = ?", (CTAS_ADVANCES,)).fetchone()
+        return round(float(r['d'] or 0) - float(r['c'] or 0), 2)
+    except Exception:
+        return 0.0
+
+
 def ctas_ensure_accounts(db) -> None:
     """Seed the two CTAS GL accounts — only when the feature is turned on, so a
     coop that never uses CTAS keeps a clean chart of accounts."""
@@ -587,6 +606,12 @@ def cycle_detail(cycle_id):
     bulk_ready = [s['id'] for s in pending_stages
                   if s['status'] == next_gate and s['terms_accepted']] if next_gate else []
 
+    # Who the security cover would hold back, worked out before the ballot runs
+    # rather than discovered when it fails.
+    security = _security_preview(db, cycle, subs)
+    attention['under_covered'] = security['held_back']
+    attention['any'] = attention['any'] or security['held_back'] > 0
+
     tab = (request.args.get('tab') or 'members').strip()
     if tab not in ('members', 'contributions', 'payouts', 'setup'):
         tab = 'members'
@@ -595,7 +620,44 @@ def cycle_detail(cycle_id):
                            priority_tiers=_priority_tiers(db, cycle_id=cycle_id),
                            liq_rows=liq_rows, liq=liq, ctas_terms=CTAS_TERMS,
                            active_tab=tab, attention=attention, bulk_ready=bulk_ready,
-                           next_gate=next_gate)
+                           next_gate=next_gate, security=security)
+
+
+def _security_preview(db, cycle, subs):
+    """Per-member security cover for a cycle, plus whether the ballot can seat
+    everyone. Read-only — the ballot recomputes and records the real figures."""
+    ratio = ce.coverage_ratio_for(cycle)
+    earliest = int(cycle['earliest_payout_month'] or 1)
+    rows, held_back = [], 0
+    for sub in subs:
+        if sub['status'] not in (ce.SUB_ENROLLED, ce.SUB_SCHEDULED):
+            continue
+        member = db.execute('SELECT * FROM members WHERE id = ?', (sub['member_id'],)).fetchone()
+        if not member:
+            continue
+        parts = ce.member_security(db, member)
+        floor = ce.min_safe_position(cycle, parts['total'], sub['target_amount'])
+        if floor > earliest:
+            held_back += 1
+        rows.append({'sub_id': sub['id'], 'name': f"{member['first_name']} {member['last_name']}",
+                     'security': parts, 'floor': floor,
+                     'exposure': ce.exposure_at_position(cycle, floor, sub['target_amount']),
+                     'exposure_earliest': ce.exposure_at_position(cycle, earliest, sub['target_amount'])})
+
+    # The same seating check the ballot applies, so the officer sees it early.
+    infeasible = None
+    if ratio > 0 and rows:
+        cap = int(cycle['monthly_capacity'] or 1)
+        slots = [p for p in range(earliest, ce.cycle_periods(cycle) + 1) for _ in range(cap)]
+        for f in sorted({r['floor'] for r in rows}, reverse=True):
+            need = sum(1 for r in rows if r['floor'] >= f)
+            have = sum(1 for p in slots if p >= f)
+            if need > have:
+                infeasible = (f'{need} members need position {f} or later to meet the cover, '
+                              f'but only {have} such positions exist.')
+                break
+    return {'ratio': ratio, 'rows': rows, 'held_back': held_back,
+            'infeasible': infeasible, 'earliest': earliest}
 
 
 def _advert_for_cycle(db, cycle):
@@ -934,6 +996,32 @@ def set_liquidity(cycle_id):
     return redirect(url_for('ctas.cycle_detail', cycle_id=cycle_id, tab='setup'))
 
 
+@ctas.route('/ctas/cycles/<int:cycle_id>/security', methods=['POST'])
+@ctas_required
+@role_required('admin', 'treasurer')
+def set_security(cycle_id):
+    """Set how much of a member's exposure must be backed by value the
+    cooperative can reach. Applied when the ballot runs, so it can be changed
+    right up to that point."""
+    db = get_db()
+    cycle = db.execute('SELECT * FROM ctas_cycles WHERE id = ?', (cycle_id,)).fetchone()
+    if not cycle:
+        abort(404)
+    if cycle['status'] in (ce.CYCLE_BALLOTED, ce.CYCLE_COMPLETED):
+        flash('The ballot has already run — the cover requirement no longer applies.', 'warning')
+        return redirect(url_for('ctas.cycle_detail', cycle_id=cycle_id, tab='setup'))
+    try:
+        pct = max(0.0, min(200.0, float(request.form.get('coverage_pct') or 0)))
+    except ValueError:
+        pct = 0.0
+    db.execute('UPDATE ctas_cycles SET coverage_ratio = ? WHERE id = ?', (pct / 100.0, cycle_id))
+    audit(db, 'CTAS_SECURITY', 'ctas', f"Cycle #{cycle_id}: security cover set to {pct:g}%")
+    db.commit()
+    flash('Security cover requirement saved. It is applied when the ballot runs.'
+          if pct > 0 else 'Security cover turned off for this cycle.', 'success')
+    return redirect(url_for('ctas.cycle_detail', cycle_id=cycle_id, tab='setup'))
+
+
 @ctas.route('/ctas/cycles/<int:cycle_id>/priority-fees', methods=['POST'])
 @ctas_required
 @role_required('admin', 'treasurer')
@@ -1174,7 +1262,23 @@ def run_ballot(cycle_id):
                        "SELECT id, requested_payout_month FROM ctas_subscriptions "
                        "WHERE cycle_id = ? AND status = 'enrolled' AND priority_status = 'granted' "
                        "AND requested_payout_month IS NOT NULL", (cycle_id,)).fetchall()}
-        assignments = ce.assign_payout_months(ids, cycle, seed, priority=granted)
+        # Security cover: a member whose recoverable value is thin for the
+        # earliest positions is held back to one the cover reaches. Recorded on
+        # the subscription so the ballot outcome can be explained afterwards.
+        floors = {}
+        for sub in db.execute(
+                "SELECT s.id, s.target_amount, s.member_id FROM ctas_subscriptions s "
+                "WHERE s.cycle_id = ? AND s.status = 'enrolled'", (cycle_id,)).fetchall():
+            member = db.execute('SELECT * FROM members WHERE id = ?', (sub['member_id'],)).fetchone()
+            if not member:
+                continue
+            security = ce.member_security(db, member)
+            floor = ce.min_safe_position(cycle, security['total'], sub['target_amount'])
+            floors[sub['id']] = floor
+            db.execute("UPDATE ctas_subscriptions SET security_value = ?, min_payout_position = ? "
+                       "WHERE id = ?", (security['total'], floor, sub['id']))
+
+        assignments = ce.assign_payout_months(ids, cycle, seed, priority=granted, floors=floors)
         for sub_id, month in assignments.items():
             db.execute("UPDATE ctas_subscriptions SET status = 'scheduled', payout_month = ?, "
                        "ballot_assigned_at = ? WHERE id = ?", (month, datetime.now(), sub_id))
@@ -1221,6 +1325,19 @@ def payout(sub_id):
     ctas_ensure_accounts(db)
     target = float(sub['target_amount'])
     admin_fee = float(sub['admin_fee'] or 0)
+
+    # Coop-wide ceiling on money out on advance at any one time. Set
+    # `ctas_max_net_exposure` in settings; 0 or unset leaves it uncapped.
+    cap = _ctas_max_exposure(db)
+    if cap > 0:
+        outstanding = _ctas_advances_outstanding(db)
+        adding = round(max(0.0, target - float(sub['contributed_total'] or 0)), 2)
+        if round(outstanding + adding, 2) > cap:
+            flash(f'This payout would take advances outstanding to '
+                  f'₦{outstanding + adding:,.2f}, above the cooperative’s limit of '
+                  f'₦{cap:,.2f}. Collect contributions, or raise the limit in settings, '
+                  f'before paying out.', 'danger')
+            return redirect(url_for('ctas.cycle_detail', cycle_id=sub['cycle_id'], tab='payouts'))
     prio_fee = float(sub['priority_fee'] or 0) if sub['is_priority'] else 0.0
     fee = round(admin_fee + prio_fee, 2)
     contributed = float(sub['contributed_total'] or 0)

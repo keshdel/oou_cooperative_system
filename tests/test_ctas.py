@@ -260,6 +260,67 @@ class CtasEngineTests(unittest.TestCase):
         with self.assertRaises(ValueError):                # 6 members, only 5 slots
             assign_payout_months(ids + [15], c, seed='abc')
 
+    def test_exposure_falls_as_the_payout_position_gets_later(self):
+        from ctas_engine import exposure_at_position
+        # 12 periods x 10,000 = 120,000 target
+        c = self._cycle(periods=12, duration_months=12, contribution_amount=10000,
+                        earliest_payout_month=1, monthly_capacity=1)
+        self.assertEqual(exposure_at_position(c, 1), 110000.0)   # collected having paid one period
+        self.assertEqual(exposure_at_position(c, 8), 40000.0)
+        self.assertEqual(exposure_at_position(c, 12), 0.0)       # fully contributed, nothing owed
+
+    def test_min_safe_position_is_off_at_zero_and_delays_thin_cover(self):
+        from ctas_engine import min_safe_position
+        c = self._cycle(periods=12, duration_months=12, contribution_amount=10000,
+                        earliest_payout_month=1, monthly_capacity=1)
+        # Gate off: everyone may take the earliest position regardless of cover.
+        self.assertEqual(min_safe_position(c, 0, 120000, ratio=0), 1)
+        # 100% cover: 42,000 of cover reaches the position where exposure <= 42,000.
+        # Exposure at position 8 is 40,000, at 7 it is 50,000 -> position 8.
+        self.assertEqual(min_safe_position(c, 42000, 120000, ratio=1.0), 8)
+        # Half cover required: 42,000 covers half of 84,000 -> exposure <= 84,000 -> position 4.
+        self.assertEqual(min_safe_position(c, 42000, 120000, ratio=0.5), 4)
+        # Ample cover always reaches the earliest position.
+        self.assertEqual(min_safe_position(c, 500000, 120000, ratio=1.0), 1)
+        # No cover at all still gets the last position, where nothing is owed.
+        self.assertEqual(min_safe_position(c, 0, 120000, ratio=1.0), 12)
+
+    def test_ballot_respects_security_floors_and_is_unchanged_without_them(self):
+        from ctas_engine import assign_payout_months
+        c = self._cycle(duration_months=6, earliest_payout_month=2, monthly_capacity=1)
+        ids = [10, 11, 12, 13, 14]
+        # No floors (or all at the earliest position) => original ballot, same result.
+        baseline = assign_payout_months(ids, c, seed='abc')
+        self.assertEqual(assign_payout_months(ids, c, seed='abc', floors={}), baseline)
+        self.assertEqual(
+            assign_payout_months(ids, c, seed='abc', floors={i: 2 for i in ids}), baseline)
+
+        floors = {10: 5, 11: 5}                      # two members need position 5 or later
+        got = assign_payout_months(ids, c, seed='abc', floors=floors)
+        self.assertGreaterEqual(got[10], 5)
+        self.assertGreaterEqual(got[11], 5)
+        self.assertEqual(sorted(got.values()), [2, 3, 4, 5, 6])   # still one slot each
+        self.assertEqual(got, assign_payout_months(ids, c, seed='abc', floors=floors))
+
+    def test_ballot_refuses_when_floors_cannot_all_be_seated(self):
+        from ctas_engine import assign_payout_months
+        c = self._cycle(duration_months=6, earliest_payout_month=2, monthly_capacity=1)
+        ids = [10, 11, 12, 13, 14]
+        # Three members need position 5+, but only positions 5 and 6 exist.
+        with self.assertRaises(ValueError) as ctx:
+            assign_payout_months(ids, c, seed='abc', floors={10: 5, 11: 5, 12: 5})
+        self.assertIn('security cover', str(ctx.exception))
+
+    def test_priority_cannot_buy_a_position_below_the_security_floor(self):
+        from ctas_engine import assign_payout_months
+        c = self._cycle(duration_months=6, earliest_payout_month=2, monthly_capacity=1)
+        ids = [10, 11, 12, 13, 14]
+        # Member 10 pays for position 2 but their cover only reaches position 5.
+        got = assign_payout_months(ids, c, seed='abc', priority={10: 2}, floors={10: 5})
+        self.assertGreaterEqual(got[10], 5)
+        self.assertNotEqual(got[10], 2)
+        self.assertEqual(sorted(got.values()), [2, 3, 4, 5, 6])
+
     def test_eligibility_blocks_second_active_subscription(self):
         from database import get_db
         from ctas_engine import check_eligibility

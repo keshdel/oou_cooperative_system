@@ -77,6 +77,8 @@
       <span class="badge bg-success">{{ attention.ready_to_pay }}</span> ready to pay out</a>{% endif %}
     {% if attention.shortfall > 0 %}<a href="#" class="text-decoration-none" data-goto="setup">
       <span class="badge bg-danger">{{ money0(attention.shortfall) }}</span> funding shortfall</a>{% endif %}
+    {% if attention.under_covered %}<a href="#" class="text-decoration-none" data-goto="setup">
+      <span class="badge bg-warning text-dark">{{ attention.under_covered }}</span> held back by cover</a>{% endif %}
   </div></div>
   {% endif %}
 
@@ -424,6 +426,86 @@
                 </div>
                 <button class="btn btn-sm btn-primary mt-3">Save priority pricing</button>
               </form>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-12">
+          <div class="card">
+            <div class="card-header bg-light"><h6 class="mb-0">Security cover</h6></div>
+            <div class="card-body">
+              <p class="small text-muted">
+                A member who collects early and then stops contributing still owes the balance.
+                Requiring cover holds a thinly-covered member back to a later, lower-exposure
+                position instead of refusing them a place. Cover counts savings and share capital —
+                what the exit waterfall can actually reach. Leave at 0 to switch this off.
+              </p>
+              {% if cycle.status in ('balloted', 'completed') %}
+                <div class="alert alert-secondary py-2 small mb-3">
+                  The ballot has run, so the cover requirement no longer applies to this cycle.
+                </div>
+              {% else %}
+              <form method="post" action="{{ url_for('ctas.set_security', cycle_id=cycle.id) }}"
+                    class="row g-2 align-items-end mb-3">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="col-md-4">
+                  <label class="form-label small mb-1">Cover required (% of exposure)</label>
+                  <input class="form-control form-control-sm" type="number" step="1" min="0" max="200"
+                         name="coverage_pct"
+                         value="{{ (security.ratio * 100)|round(0, 'floor')|int if security.ratio else 0 }}">
+                </div>
+                <div class="col-md-3">
+                  <button class="btn btn-sm btn-primary w-100">Save cover</button>
+                </div>
+              </form>
+              {% endif %}
+
+              {% if security.infeasible %}
+                <div class="alert alert-danger py-2 small">
+                  <strong>The ballot cannot seat everyone.</strong> {{ security.infeasible }}
+                  Lower the cover, add cover for those members, or lengthen the cycle.
+                </div>
+              {% elif security.held_back %}
+                <div class="alert alert-warning py-2 small">
+                  {{ security.held_back }} member(s) will be held back to a later position by the
+                  cover requirement.
+                </div>
+              {% endif %}
+
+              {% if security.ratio and security.rows %}
+              <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                  <thead>
+                    <tr>
+                      <th>Member</th>
+                      <th class="text-end">Savings</th>
+                      <th class="text-end">Share capital</th>
+                      <th class="text-end">Cover</th>
+                      <th class="text-end">Owed at position {{ security.earliest }}</th>
+                      <th class="text-center">Earliest position</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for r in security.rows %}
+                    <tr>
+                      <td>{{ r.name }}</td>
+                      <td class="text-end">{{ money0(r.security.savings) }}</td>
+                      <td class="text-end">{{ money0(r.security.share_capital) }}</td>
+                      <td class="text-end">{{ money0(r.security.total) }}</td>
+                      <td class="text-end">{{ money0(r.exposure_earliest) }}</td>
+                      <td class="text-center">
+                        {% if r.floor > security.earliest %}
+                          <span class="badge bg-warning text-dark">{{ r.floor }}</span>
+                        {% else %}
+                          <span class="badge bg-success">{{ r.floor }}</span>
+                        {% endif %}
+                      </td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+              {% endif %}
             </div>
           </div>
         </div>

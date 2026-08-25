@@ -307,6 +307,77 @@ def affordability(db, member, cycle, target_amount, tenure_months):
         f'Target ₦{_f(target_amount):,.2f} exceeds {multiple:g}× your savings balance (max ₦{max_target:,.2f}).')
 
 
+# ── Security cover ────────────────────────────────────────────────────────────
+# affordability() asks whether a member can AFFORD the contribution. These
+# functions ask the different question of what could be RECOVERED if they
+# stopped contributing the moment they collected. Exposure shrinks as the payout
+# position gets later, so a thinly-covered member is balloted into a later
+# position rather than refused a place.
+
+def exposure_at_position(cycle, position, target=None):
+    """What a member would still owe if they collected at `position` and never
+    contributed again: the target less everything contributed up to that point."""
+    contribution = _f(_row_get(cycle, 'contribution_amount', 0))
+    if target is None:
+        target = compute_target(contribution, cycle_periods(cycle))
+    pos = max(0, int(position or 0))
+    return round(max(0.0, _f(target) - contribution * pos), 2)
+
+
+def member_security(db, member):
+    """Value backing a member's advance, by source, with a 'total'.
+
+    Mirrors the exit net-off waterfall — savings and share capital are what the
+    cooperative can actually reach today. Guarantor cover and security deposits
+    have their keys present at zero so those slices are additive rather than a
+    rewrite of every caller.
+    """
+    savings = share = 0.0
+    member_id = _row_get(member, 'id')
+    if db is not None and member_id:
+        try:
+            from utils import member_savings_balance, member_share_capital
+            savings = _f(member_savings_balance(db, member_id))
+            share = _f(member_share_capital(db, member_id))
+        except Exception:
+            savings = _f(_row_get(member, 'total_savings', 0))
+    else:
+        savings = _f(_row_get(member, 'total_savings', 0))
+    parts = {
+        'savings': round(savings, 2),
+        'share_capital': round(share, 2),
+        'guarantors': 0.0,      # set by the guarantor slice
+        'deposit': 0.0,         # set by the security-deposit slice
+    }
+    parts['total'] = round(sum(parts.values()), 2)
+    return parts
+
+
+def coverage_ratio_for(cycle):
+    """Required cover as a fraction of exposure. 0 disables the gate."""
+    return max(0.0, _f(_row_get(cycle, 'coverage_ratio', 0)))
+
+
+def min_safe_position(cycle, security_total, target=None, ratio=None):
+    """Earliest payout position whose exposure this member's security covers.
+
+    A ratio of 0 disables the gate and returns the cycle's earliest position.
+    Exposure is zero once a member has contributed the full target, so there is
+    always some position that qualifies — a short member is delayed, never
+    excluded (though capacity may still make a cycle infeasible; the ballot
+    reports that separately).
+    """
+    earliest = int(_row_get(cycle, 'earliest_payout_month', 1) or 1)
+    periods = cycle_periods(cycle)
+    ratio = coverage_ratio_for(cycle) if ratio is None else max(0.0, _f(ratio))
+    if ratio <= 0:
+        return earliest
+    for pos in range(earliest, periods + 1):
+        if _f(security_total) >= round(ratio * exposure_at_position(cycle, pos, target), 2):
+            return pos
+    return periods
+
+
 def check_eligibility(db, member, cycle, target_amount, tenure_months, exclude_cycle_id=None,
                       exclude_subscription_id=None):
     """Full eligibility decision. Returns a dict the caller can act on/display.
@@ -343,6 +414,14 @@ def check_eligibility(db, member, cycle, target_amount, tenure_months, exclude_c
     if not aff_ok:
         reasons.append(aff_msg)
 
+    # Security cover never blocks a place — it decides how early the member can
+    # be balloted (see min_safe_position). Reported here so the officer sees it
+    # at the approval gates rather than discovering it when the ballot runs.
+    security = member_security(db, member)
+    ratio = coverage_ratio_for(cycle)
+    min_pos = min_safe_position(cycle, security['total'], target_amount)
+    earliest = int(_row_get(cycle, 'earliest_payout_month', 1) or 1)
+
     return {
         'eligible': not reasons,
         'reasons': reasons,
@@ -350,6 +429,17 @@ def check_eligibility(db, member, cycle, target_amount, tenure_months, exclude_c
         'admin_fee': fee,
         'affordability_method': method,
         'affordability_message': aff_msg,
+        'security': security,
+        'coverage_ratio': ratio,
+        'min_payout_position': min_pos,
+        'security_message': (
+            'Security cover not required for this cycle.' if ratio <= 0 else
+            f"Cover ₦{security['total']:,.2f} backs a payout from position {min_pos} "
+            f"(exposure ₦{exposure_at_position(cycle, min_pos, target_amount):,.2f} "
+            f"at {ratio:.0%} cover)." + (
+                '' if min_pos <= earliest else
+                f" Too thin for position {earliest}, so this member is held back to {min_pos}.")
+        ),
     }
 
 
@@ -469,7 +559,7 @@ def priority_fee_for(tiers, position):
         return 0.0
 
 
-def assign_payout_months(subscription_ids, cycle, seed, priority=None):
+def assign_payout_months(subscription_ids, cycle, seed, priority=None, floors=None):
     """Deterministically (by seed) assign each enrolled subscription a unique
     payout position, filling earliest_payout_month..periods with up to
     monthly_capacity slots each. Returns {subscription_id: position}.
@@ -478,6 +568,12 @@ def assign_payout_months(subscription_ids, cycle, seed, priority=None):
     cooperative has GRANTED. Those are placed first; if more members want the
     same position than there are slots, a seeded ballot decides between them and
     the unsuccessful ones fall back into the normal ballot (spec section 12).
+
+    `floors` is {subscription_id: earliest position this member's security
+    covers} from min_safe_position. A member is never balloted — nor granted a
+    priority position — earlier than their floor, so cover cannot be bought
+    around. When no floor exceeds the cycle's earliest position the original
+    ballot runs untouched, keeping results reproducible for existing cycles.
     """
     earliest = int(_row_get(cycle, 'earliest_payout_month', 1) or 1)
     duration = cycle_periods(cycle)
@@ -491,13 +587,32 @@ def assign_payout_months(subscription_ids, cycle, seed, priority=None):
     if len(ids) > len(slots):
         raise ValueError('Not enough payout slots for the enrolled members.')
 
+    floors = {k: max(earliest, int(v or earliest)) for k, v in (floors or {}).items()}
+
+    def floor_of(sub_id):
+        return floors.get(sub_id, earliest)
+
+    constrained = any(floor_of(s) > earliest for s in ids)
+
+    # Every member held back to position f or later competes for the slots at f
+    # or later; if they outnumber those slots the cycle cannot be balloted.
+    if constrained:
+        for f in sorted({floor_of(s) for s in ids}, reverse=True):
+            need = sum(1 for s in ids if floor_of(s) >= f)
+            have = sum(1 for p in slots if p >= f)
+            if need > have:
+                raise ValueError(
+                    f'{need} members need a payout position of {f} or later to meet the '
+                    f'security cover, but only {have} such positions exist. Lower the cover '
+                    f'requirement, add cover for those members, or lengthen the cycle.')
+
     rng = random.Random(str(seed))
     assignments = {}
 
-    # 1) Granted priority requests, position by position.
+    # 1) Granted priority requests, position by position — never below a floor.
     wanted = {}
     for sub_id, pos in (priority or {}).items():
-        if sub_id in ids and pos in slots:
+        if sub_id in ids and pos in slots and int(pos) >= floor_of(sub_id):
             wanted.setdefault(int(pos), []).append(sub_id)
     for pos in sorted(wanted):
         contenders = sorted(wanted[pos])          # sort first so the seed decides, not dict order
@@ -507,9 +622,19 @@ def assign_payout_months(subscription_ids, cycle, seed, priority=None):
             assignments[sub_id] = pos
             slots.remove(pos)
 
-    # 2) Everyone else (including unsuccessful priority applicants) is balloted.
     remaining = sorted(s for s in ids if s not in assignments)
-    rng.shuffle(remaining)
-    for i, sub_id in enumerate(remaining):
-        assignments[sub_id] = slots[i]
+
+    # 2) Everyone else (including unsuccessful priority applicants) is balloted.
+    if not constrained:
+        rng.shuffle(remaining)
+        for i, sub_id in enumerate(remaining):
+            assignments[sub_id] = slots[i]
+        return assignments
+
+    # Tightest floors first: they have the fewest positions open to them, and
+    # anyone placed later has strictly more choices, so this always succeeds
+    # once the feasibility check above has passed.
+    for sub_id in sorted(remaining, key=lambda s: (-floor_of(s), s)):
+        options = [i for i, pos in enumerate(slots) if pos >= floor_of(sub_id)]
+        assignments[sub_id] = slots.pop(rng.choice(options))
     return assignments
