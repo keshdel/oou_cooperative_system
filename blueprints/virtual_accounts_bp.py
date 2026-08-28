@@ -13,10 +13,11 @@ from flask_login import current_user, login_required
 from database import get_db
 from ledger import account_balance
 from utils import audit, role_required
-from virtual_accounts import (ALLOCATION_RULES, VA_UNALLOCATED, account_for_member,
-                              apply_plan, build_plan, member_loan_balances,
-                              members_without_accounts, pending_total, provision_account,
-                              receipts, set_setting, set_va_enabled, va_config, va_enabled)
+from virtual_accounts import (ALLOCATION_RULES, MEMBER_PREFERENCES, VA_UNALLOCATED,
+                              account_for_member, apply_plan, build_plan, ctas_due_rows,
+                              member_loan_balances, members_without_accounts, pending_total,
+                              provision_account, receipts, set_setting, set_va_enabled,
+                              va_config, va_enabled)
 
 virtual_accounts_bp = Blueprint('virtual_accounts', __name__, url_prefix='/admin/virtual-accounts')
 
@@ -34,7 +35,7 @@ def index():
     cfg = va_config(db)
 
     accounts = db.execute('''
-        SELECT v.*, m.member_number, m.first_name, m.last_name
+        SELECT v.*, m.member_number, m.first_name, m.last_name, m.payment_preference
         FROM member_virtual_accounts v
         JOIN members m ON m.id = v.member_id
         ORDER BY m.member_number
@@ -49,6 +50,7 @@ def index():
         config=cfg,
         enabled=va_enabled(db),
         rules=ALLOCATION_RULES,
+        preferences=MEMBER_PREFERENCES,
         accounts=accounts,
         without=members_without_accounts(db, cfg['va_provider']),
         recent=receipts(db, limit=50),
@@ -198,7 +200,25 @@ def apply_receipt(receipt_id):
         savings = request.form.get('savings_amount', type=float) or 0.0
         loan_id = request.form.get('loan_id', type=int)
         loan_amount = request.form.get('loan_amount', type=float) or 0.0
+        ctas_amount = request.form.get('ctas_amount', type=float) or 0.0
         plan = []
+        if ctas_amount > 0:
+            # Oldest unpaid period first, same order the member would pay in.
+            due = ctas_due_rows(db, receipt['member_id'])
+            remaining = ctas_amount
+            for row in due:
+                if remaining <= 0:
+                    break
+                owed = round(float(row['expected_amount'] or 0) -
+                             float(row['paid_amount'] or 0), 2)
+                part = round(min(remaining, owed), 2)
+                if part > 0:
+                    plan.append({'target': 'ctas', 'subscription_id': row['subscription_id'],
+                                 'period': row['period_number'], 'amount': part})
+                    remaining = round(remaining - part, 2)
+            if remaining > 0.005:
+                flash(f'₦{remaining:,.2f} of the Target Advance amount is more than is owed — '
+                      'it was not applied.', 'warning')
         if loan_id and loan_amount > 0:
             plan.append({'target': 'loan', 'loan_id': loan_id, 'amount': loan_amount})
         if savings > 0:
@@ -235,8 +255,10 @@ def receipt_detail(receipt_id):
         'SELECT * FROM virtual_account_allocations WHERE receipt_id = ? ORDER BY id',
         (receipt_id,)).fetchall()
     loans = member_loan_balances(db, receipt['member_id']) if receipt['member_id'] else []
+    ctas_due = ctas_due_rows(db, receipt['member_id']) if receipt['member_id'] else []
     return render_template('admin/virtual-account-receipt.html',
                            receipt=receipt, allocations=allocations, loans=loans,
+                           ctas_due=ctas_due, preferences=MEMBER_PREFERENCES,
                            members=db.execute(
                                "SELECT id, member_number, first_name, last_name FROM members "
                                "WHERE status = 'active' ORDER BY member_number").fetchall())

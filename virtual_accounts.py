@@ -32,13 +32,24 @@ from utils import share_capital_split, split_repayment
 # Liability — money received from a member but not yet applied to anything.
 VA_UNALLOCATED = '2010'
 
-# How an unattended inflow is applied. A cooperative picks one.
+# How an unattended inflow is applied when the member has not said. A
+# cooperative picks one.
 ALLOCATION_RULES = {
     'savings':    'Put it all into savings',
     'loan_first': 'Clear what they owe on their loans first, rest to savings',
     'manual':     'Hold it and let an officer decide',
 }
 DEFAULT_RULE = 'savings'
+
+# What a member can say their own transfers are for. Their choice beats the
+# cooperative's rule, because they know what they are paying for. Each option
+# spills the remainder into savings rather than leaving money in limbo.
+MEMBER_PREFERENCES = {
+    '':        "Let the cooperative decide",
+    'savings': 'My savings',
+    'loan':    'My loan repayment, then savings',
+    'ctas':    'My Target Advance contribution, then savings',
+}
 
 _SETTING_KEYS = ('va_enabled', 'va_provider', 'va_preferred_bank', 'va_allocation_rule')
 
@@ -253,28 +264,110 @@ def member_loan_balances(db, member_id):
         "ORDER BY id", (member_id,)).fetchall()
 
 
+def member_preference(db, member_id):
+    """What this member said their transfers are for. '' means they have not
+    said, so the cooperative's rule applies."""
+    try:
+        row = db.execute('SELECT payment_preference FROM members WHERE id = ?',
+                         (member_id,)).fetchone()
+        pref = (row['payment_preference'] or '') if row else ''
+    except Exception:
+        return ''
+    return pref if pref in MEMBER_PREFERENCES else ''
+
+
+def set_member_preference(db, member_id, preference):
+    if preference not in MEMBER_PREFERENCES:
+        return False
+    db.execute('UPDATE members SET payment_preference = ? WHERE id = ?',
+               (preference, member_id))
+    return True
+
+
+def ctas_due_rows(db, member_id):
+    """This member's unpaid Target Advance contributions, oldest first.
+
+    Empty when the module is off, they never joined, or they are up to date —
+    all of which simply mean there is nothing to pay towards.
+    """
+    try:
+        from blueprints.ctas import ctas_enabled
+        if not ctas_enabled(db):
+            return []
+        return db.execute('''
+            SELECT sc.*, s.member_id
+            FROM ctas_schedule sc
+            JOIN ctas_subscriptions s ON s.id = sc.subscription_id
+            WHERE s.member_id = ?
+              AND s.status IN ('enrolled', 'scheduled', 'active_recovery')
+              AND sc.status IN ('due', 'grace', 'late', 'partial')
+              AND COALESCE(sc.expected_amount, 0) > COALESCE(sc.paid_amount, 0)
+            ORDER BY sc.due_date, sc.period_number
+        ''', (member_id,)).fetchall()
+    except Exception:
+        return []
+
+
+def _loan_legs(db, member_id, remaining):
+    legs = []
+    for loan in member_loan_balances(db, member_id):
+        if remaining <= 0:
+            break
+        part = round(min(remaining, float(loan['balance'] or 0)), 2)
+        if part > 0:
+            legs.append({'target': 'loan', 'loan_id': loan['id'], 'amount': part})
+            remaining = round(remaining - part, 2)
+    return legs, remaining
+
+
+def _ctas_legs(db, member_id, remaining):
+    legs = []
+    for row in ctas_due_rows(db, member_id):
+        if remaining <= 0:
+            break
+        owed = round(float(row['expected_amount'] or 0) - float(row['paid_amount'] or 0), 2)
+        part = round(min(remaining, owed), 2)
+        if part > 0:
+            legs.append({'target': 'ctas', 'subscription_id': row['subscription_id'],
+                         'period': row['period_number'], 'amount': part})
+            remaining = round(remaining - part, 2)
+    return legs, remaining
+
+
 def build_plan(db, member_id, amount, rule=None):
     """Work out where an inflow should go, without applying anything.
 
-    Returns a list of {'target', 'loan_id', 'amount'}. An empty list means hold
-    it — either the rule says an officer decides, or there is nothing to apply
-    it to.
+    The member's own instruction wins: they know what they are paying for, and
+    a member who has said "this is my Target Advance" should not have it swept
+    into savings by a cooperative-wide default. Only when they have not said
+    does the cooperative's rule decide.
+
+    Returns a list of legs. An empty list means hold it — either an officer
+    decides, or there is nothing to apply it to.
     """
-    rule = rule or va_config(db)['va_allocation_rule']
     amount = round(float(amount or 0), 2)
-    if amount <= 0 or rule == 'manual':
+    if amount <= 0:
         return []
 
     plan = []
     remaining = amount
-    if rule == 'loan_first':
-        for loan in member_loan_balances(db, member_id):
-            if remaining <= 0:
-                break
-            part = round(min(remaining, float(loan['balance'] or 0)), 2)
-            if part > 0:
-                plan.append({'target': 'loan', 'loan_id': loan['id'], 'amount': part})
-                remaining = round(remaining - part, 2)
+    pref = member_preference(db, member_id)
+
+    if pref == 'ctas':
+        plan, remaining = _ctas_legs(db, member_id, remaining)
+    elif pref == 'loan':
+        plan, remaining = _loan_legs(db, member_id, remaining)
+    elif pref == 'savings':
+        pass                                    # straight to savings below
+    else:
+        rule = rule or va_config(db)['va_allocation_rule']
+        if rule == 'manual':
+            return []
+        if rule == 'loan_first':
+            plan, remaining = _loan_legs(db, member_id, remaining)
+
+    # Whatever is left becomes savings. A member who names a target and sends
+    # more than it needs is saving the difference, not leaving it unallocated.
     if remaining > 0:
         plan.append({'target': 'savings', 'loan_id': None, 'amount': remaining})
     return plan
@@ -309,6 +402,9 @@ def apply_plan(db, receipt_id, plan, created_by=None):
             continue
         if part['target'] == 'loan':
             note = _apply_to_loan(db, receipt, member_id, part.get('loan_id'), amt, created_by)
+        elif part['target'] == 'ctas':
+            note = _apply_to_ctas(db, receipt, member_id, part.get('subscription_id'),
+                                  part.get('period'), amt, created_by)
         else:
             note = _apply_to_savings(db, receipt, member_id, amt, created_by)
         if note:
@@ -414,6 +510,43 @@ def _apply_to_loan(db, receipt, member_id, loan_id, amount, created_by):
     ], reference=rep_num, source_module='va_loan', source_id=alloc_id, created_by=created_by)
 
     return f"₦{amount:,.2f} to loan {loan['loan_number']}"
+
+
+def _apply_to_ctas(db, receipt, member_id, subscription_id, period, amount, created_by):
+    """Put part of a transfer towards the member's Target Advance contribution.
+
+    The CTAS module owns this bookkeeping — whether the money funds the pool or
+    repays an advance already paid out, and how the schedule is ticked off — so
+    this hands over to its posting path rather than reproducing the rules. Only
+    the account the money comes from differs: it is already banked, sitting in
+    Unallocated Member Receipts, not arriving as fresh cash.
+    """
+    from blueprints.ctas import _post_contribution
+
+    sub = db.execute('SELECT * FROM ctas_subscriptions WHERE id = ? AND member_id = ?',
+                     (subscription_id, member_id)).fetchone()
+    if not sub:
+        return _apply_to_savings(db, receipt, member_id, amount, created_by)
+    cycle = db.execute('SELECT * FROM ctas_cycles WHERE id = ?', (sub['cycle_id'],)).fetchone()
+    if not cycle:
+        return _apply_to_savings(db, receipt, member_id, amount, created_by)
+
+    alloc_id = _record_allocation(db, receipt['id'], 'ctas', subscription_id, None,
+                                  amount, created_by)
+    posted = _post_contribution(db, sub, cycle, period, amount, created_by=created_by,
+                                ref_suffix=f'-VA{alloc_id}', debit_account=VA_UNALLOCATED)
+    posted = round(float(posted or 0), 2)
+
+    # A member in recovery cannot repay more than they owe; the difference is
+    # theirs, so it is saved rather than left sitting in the holding account.
+    leftover = round(amount - posted, 2)
+    if leftover > 0.005:
+        db.execute('UPDATE virtual_account_allocations SET amount = ? WHERE id = ?',
+                   (posted, alloc_id))
+        extra = _apply_to_savings(db, receipt, member_id, leftover, created_by)
+        return f'₦{posted:,.2f} to Target Advance, {extra}' if posted > 0 else extra
+
+    return f'₦{posted:,.2f} to Target Advance (period {period})'
 
 
 def auto_allocate(db, receipt_id):

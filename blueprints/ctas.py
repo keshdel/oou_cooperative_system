@@ -146,13 +146,18 @@ def _apply_to_schedule(db, subscription_id, period, amount, grace_days=7):
                (paid, status, datetime.now() if status == ce.SCH_PAID else row['paid_at'], row['id']))
 
 
-def _post_contribution(db, sub, cycle, period, amount, created_by=None, ref_suffix=''):
+def _post_contribution(db, sub, cycle, period, amount, created_by=None, ref_suffix='',
+                       debit_account=None):
     """Record one contribution: post it to the GL (pool before payout, advance
     repayment after), update the subscription, and tick off its schedule row.
-    Returns the amount actually posted. The single path used by both the CSV
-    import and automatic debits."""
+    Returns the amount actually posted. The single path used by the CSV import,
+    automatic debits, and money transferred to a member's own account number.
+
+    ``debit_account`` overrides the cash side. A transfer that already landed in
+    the bank is held in Unallocated Member Receipts, so debiting cash again
+    would count the same money twice."""
     ctas_ensure_accounts(db)
-    cash = get_default_cash_account(db)
+    cash = debit_account or get_default_cash_account(db)
     amount = round(float(amount or 0), 2)
     contributed = round(float(sub['contributed_total'] or 0) + amount, 2)
 

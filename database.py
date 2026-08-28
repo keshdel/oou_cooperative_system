@@ -388,6 +388,9 @@ def init_db():
     _add_col(db, 'members', 'employee_id', 'TEXT')
     # A member can decline SMS without losing in-app and push notifications.
     _add_col(db, 'members', 'sms_optout', 'INTEGER DEFAULT 0')
+    # What a member says their transfers are for: '' follows the cooperative's
+    # rule, otherwise 'savings', 'loan' or 'ctas'.
+    _add_col(db, 'members', 'payment_preference', 'TEXT')
     # Optional annual salary — only used for salary-based CTAS affordability; 0
     # when the cooperative is not salary/staff-based (the default is savings-based).
     _add_col(db, 'members', 'annual_salary', 'REAL DEFAULT 0')

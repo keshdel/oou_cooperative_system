@@ -56,7 +56,10 @@
                         <option value="{{ key }}" {% if config.va_allocation_rule == key %}selected{% endif %}>{{ label }}</option>
                         {% endfor %}
                     </select>
-                    <small class="text-muted">Anything the rule cannot decide waits below for an officer.</small>
+                    <small class="text-muted">
+                        Used only where the member has not chosen for themselves. A member who
+                        says what their transfers are for on their own page overrides this.
+                    </small>
                 </div>
                 <div class="col-md-3">
                     <label class="form-label">Issuing bank</label>
@@ -200,7 +203,8 @@
             <div class="table-responsive">
                 <table class="table table-sm table-hover align-middle">
                     <thead><tr>
-                        <th>Member</th><th>Account number</th><th>Bank</th><th>In the name of</th><th>Status</th>
+                        <th>Member</th><th>Account number</th><th>Bank</th>
+                        <th>Their transfers pay for</th><th>Status</th>
                     </tr></thead>
                     <tbody>
                     {% for a in accounts %}
@@ -209,7 +213,13 @@
                             <span class="text-muted">({{ a.member_number }})</span></td>
                         <td class="font-monospace fw-semibold">{{ a.account_number }}</td>
                         <td class="small">{{ a.bank_name }}</td>
-                        <td class="small text-muted">{{ a.account_name }}</td>
+                        <td class="small">
+                            {% if a.payment_preference %}
+                                {{ preferences.get(a.payment_preference, a.payment_preference) }}
+                            {% else %}
+                                <span class="text-muted">Your rule &mdash; {{ rules[config.va_allocation_rule]|lower }}</span>
+                            {% endif %}
+                        </td>
                         <td>{% if a.status == 'active' %}
                             <span class="badge bg-success">active</span>
                             {% else %}<span class="badge bg-secondary">{{ a.status }}</span>{% endif %}</td>

@@ -252,6 +252,49 @@ def member_link_required():
     return render_template('member/link-required.html')
 
 
+def _in_target_advance(db, member_id):
+    """True if this member has a live Target Advance subscription."""
+    try:
+        from blueprints.ctas import ctas_enabled
+        if not ctas_enabled(db):
+            return False
+        row = db.execute(
+            "SELECT 1 FROM ctas_subscriptions WHERE member_id = ? "
+            "AND status IN ('enrolled', 'scheduled', 'active_recovery') LIMIT 1",
+            (member_id,)).fetchone()
+        return row is not None
+    except Exception:
+        return False
+
+
+@portal.route('/payment-preference', methods=['POST'])
+@login_required
+def set_payment_preference():
+    """The member says what money sent to their account number is for."""
+    from virtual_accounts import MEMBER_PREFERENCES, set_member_preference
+
+    db = get_db()
+    member = member_for_user(db)
+    if not member:
+        flash('Member profile not found.', 'warning')
+        return redirect(url_for('main.dashboard'))
+
+    choice = request.form.get('payment_preference', '')
+    if choice == 'ctas' and not _in_target_advance(db, member['id']):
+        flash('You are not currently on a Target Advance cycle.', 'warning')
+        return redirect(url_for('portal.my_savings'))
+    if not set_member_preference(db, member['id'], choice):
+        flash('That is not one of the options.', 'danger')
+        return redirect(url_for('portal.my_savings'))
+
+    db.commit()
+    audit(db, 'SET_PAYMENT_PREFERENCE', 'members',
+          f"Member {member['id']} set transfers to pay for: {choice or 'cooperative default'}")
+    db.commit()
+    flash(f'Saved. Your transfers will go to: {MEMBER_PREFERENCES[choice]}.', 'success')
+    return redirect(url_for('portal.my_savings'))
+
+
 # ── My Savings ────────────────────────────────────────────────────────────────────
 
 @portal.route('/my-savings')
@@ -367,20 +410,30 @@ def my_savings():
     page        = min(page, total_pages)
     savings_paged = augmented[(page - 1) * per_page : page * per_page]
 
-    # The member's own account number, if the cooperative issues them.
+    # The member's own account number, and what they said their transfers pay for.
     virtual_account = None
+    payment_choices = {}
+    payment_preference = ''
     try:
-        from virtual_accounts import account_for_member, va_config, va_enabled
+        from virtual_accounts import (MEMBER_PREFERENCES, account_for_member,
+                                      member_preference, va_config, va_enabled)
         if va_enabled(db):
             row = account_for_member(db, member['id'], va_config(db)['va_provider'])
             if row and row['status'] == 'active':
                 virtual_account = row
+                payment_preference = member_preference(db, member['id'])
+                payment_choices = dict(MEMBER_PREFERENCES)
+                # Only offer Target Advance to a member who is actually in it.
+                if not _in_target_advance(db, member['id']):
+                    payment_choices.pop('ctas', None)
     except Exception:
         pass
 
     return render_template('member/my-savings.html',
                            member=_member_extras(member, db),
                            virtual_account=virtual_account,
+                           payment_choices=payment_choices,
+                           payment_preference=payment_preference,
                            savings=savings_paged,
                            total_savings=total_savings,
                            year_savings=year_savings,

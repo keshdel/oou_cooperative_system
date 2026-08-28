@@ -92,6 +92,15 @@
                   class="row g-3">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="mode" value="manual">
+                {% if ctas_due %}
+                {% set ctas_owed = ctas_due | sum(attribute='expected_amount') - ctas_due | sum(attribute='paid_amount') %}
+                <div class="col-md-3">
+                    <label class="form-label">Target Advance</label>
+                    <input type="number" step="0.01" min="0" class="form-control" name="ctas_amount"
+                           placeholder="0.00">
+                    <small class="text-muted">&#8358;{{ "{:,.2f}".format(ctas_owed) }} owed</small>
+                </div>
+                {% endif %}
                 {% if loans %}
                 <div class="col-md-4">
                     <label class="form-label">Towards loan</label>
@@ -135,7 +144,9 @@
                     <tr>
                         <td class="small text-nowrap">{{ a.created_at | fmtdt }}</td>
                         <td class="small">
-                            {% if a.target == 'loan' %}Loan repayment{% else %}Savings{% endif %}
+                            {% if a.target == 'loan' %}Loan repayment
+                            {% elif a.target == 'ctas' %}Target Advance
+                            {% else %}Savings{% endif %}
                         </td>
                         <td>&#8358;{{ "{:,.2f}".format(a.amount or 0) }}</td>
                         <td>{% if a.reversed_at %}
@@ -147,9 +158,11 @@
                 </table>
             </div>
             <p class="text-muted small mb-0">
-                To undo one of these, reverse its journal entry &mdash; the money goes back to
-                unallocated and can be applied somewhere else. The transfer itself is never
-                undone, because it genuinely arrived.
+                To undo a savings or loan line, reverse its journal entry &mdash; the money goes
+                back to unallocated and can be applied somewhere else. Target Advance lines are
+                corrected from the Target Advance cycle page instead, because that module keeps
+                its own schedule. The transfer itself is never undone, because it genuinely
+                arrived.
             </p>
             {% else %}
             <p class="text-muted mb-0">Nothing applied yet.</p>

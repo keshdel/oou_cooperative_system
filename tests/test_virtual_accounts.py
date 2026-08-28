@@ -60,6 +60,12 @@ class _VaTestCase(unittest.TestCase):
             db.execute('DELETE FROM member_virtual_accounts')
             db.execute("DELETE FROM savings WHERE payment_method IN ('virtual_account', 'reversal')")
             db.execute("DELETE FROM repayments WHERE payment_method = 'virtual_account'")
+            db.execute("DELETE FROM ctas_schedule WHERE subscription_id IN "
+                       "(SELECT id FROM ctas_subscriptions WHERE member_id IN "
+                       "(SELECT id FROM members WHERE member_number LIKE 'VA/%'))")
+            db.execute("DELETE FROM ctas_subscriptions WHERE member_id IN "
+                       "(SELECT id FROM members WHERE member_number LIKE 'VA/%')")
+            db.execute("DELETE FROM ctas_cycles WHERE name LIKE 'VA test%'")
             db.execute("DELETE FROM members WHERE member_number LIKE 'VA/%'")
             db.execute("DELETE FROM settings WHERE key LIKE 'va\\_%' ESCAPE '\\'")
             db.commit()
@@ -496,6 +502,163 @@ class ProvisioningTests(_VaTestCase):
             listed = [m['id'] for m in va.members_without_accounts(db)]
             self.assertNotIn(mid, listed)
 
+# ── The member says what their money is for ───────────────────────────────────
+
+class MemberPreferenceTests(_VaTestCase):
+    """A member's own instruction beats the cooperative's blanket rule."""
+
+    def _ctas_cycle(self, db, member_id, contribution=5000.0, periods=2):
+        from blueprints.ctas import set_ctas_enabled
+        set_ctas_enabled(db, True)
+        db.execute("INSERT INTO ctas_cycles (name, status, contribution_amount, "
+                   "duration_months, monthly_capacity, grace_days) "
+                   "VALUES ('VA test cycle', 'active', ?, ?, 1, 7)",
+                   (contribution, periods))
+        cid = last_insert_id(db)
+        db.execute("INSERT INTO ctas_subscriptions (cycle_id, member_id, target_amount, "
+                   "tenure_months, monthly_deduction, status, contributed_total, "
+                   "advance_balance, outstanding) "
+                   "VALUES (?, ?, ?, ?, ?, 'enrolled', 0, 0, ?)",
+                   (cid, member_id, contribution * periods, periods, contribution,
+                    contribution * periods))
+        sid = last_insert_id(db)
+        for period in range(1, periods + 1):
+            db.execute("INSERT INTO ctas_schedule (subscription_id, cycle_id, period_number, "
+                       "due_date, expected_amount, paid_amount, status) "
+                       "VALUES (?, ?, ?, ?, ?, 0, 'due')",
+                       (sid, cid, period, '2026-0%d-01' % period, contribution))
+        db.commit()
+        return cid, sid
+
+    def test_member_choice_overrides_the_cooperative_rule(self):
+        with self.app.app_context():
+            db = get_db()
+            mid = self._member(db, 'VA/21', '9900000123')
+            self._loan(db, mid, principal=10000, total=11000)
+            va.set_setting(db, 'va_allocation_rule', 'loan_first')   # coop says loan
+            va.set_member_preference(db, mid, 'savings')             # member says savings
+            db.commit()
+
+            plan = va.build_plan(db, mid, 5000)
+            self.assertEqual([p['target'] for p in plan], ['savings'])
+
+    def test_member_can_send_money_to_their_target_advance(self):
+        with self.app.app_context():
+            db = get_db()
+            mid = self._member(db, 'VA/22', '9900000123')
+            _, sid = self._ctas_cycle(db, mid, contribution=5000, periods=2)
+            va.set_member_preference(db, mid, 'ctas')
+            db.commit()
+
+            receipt_id, _ = self._inflow(db, 5000, '9900000123')
+            applied, note = va.auto_allocate(db, receipt_id)
+            db.commit()
+
+            self.assertTrue(applied)
+            self.assertIn('Target Advance', note)
+            sub = db.execute('SELECT * FROM ctas_subscriptions WHERE id = ?', (sid,)).fetchone()
+            self.assertAlmostEqual(float(sub['contributed_total']), 5000, places=2)
+            row = db.execute('SELECT * FROM ctas_schedule WHERE subscription_id = ? '
+                             'AND period_number = 1', (sid,)).fetchone()
+            self.assertAlmostEqual(float(row['paid_amount']), 5000, places=2)
+
+    def test_the_money_is_not_counted_twice_in_the_ledger(self):
+        # It was banked on arrival, so applying it must move it out of holding —
+        # not debit cash a second time.
+        with self.app.app_context():
+            db = get_db()
+            mid = self._member(db, 'VA/23', '9900000123')
+            self._ctas_cycle(db, mid, contribution=5000, periods=2)
+            va.set_member_preference(db, mid, 'ctas')
+            db.commit()
+
+            cash = get_default_cash_account(db)
+            cash_before = account_balance(db, cash)
+            hold_before = owed(db, va.VA_UNALLOCATED)
+
+            receipt_id, _ = self._inflow(db, 5000, '9900000123')
+            va.auto_allocate(db, receipt_id)
+            db.commit()
+
+            # Cash rose once, by the amount that actually arrived.
+            self.assertAlmostEqual(account_balance(db, cash), cash_before + 5000, places=2)
+            # Holding is back where it started — in, and straight out again.
+            self.assertAlmostEqual(owed(db, va.VA_UNALLOCATED), hold_before, places=2)
+
+    def test_more_than_the_contribution_spills_into_savings(self):
+        with self.app.app_context():
+            db = get_db()
+            mid = self._member(db, 'VA/24', '9900000123')
+            self._ctas_cycle(db, mid, contribution=5000, periods=2)
+            va.set_member_preference(db, mid, 'ctas')
+            db.commit()
+
+            receipt_id, _ = self._inflow(db, 12000, '9900000123')   # two periods + 2000
+            va.auto_allocate(db, receipt_id)
+            db.commit()
+
+            member = db.execute('SELECT total_savings FROM members WHERE id = ?',
+                                (mid,)).fetchone()
+            self.assertAlmostEqual(float(member['total_savings']), 2000, places=2)
+            receipt = db.execute('SELECT status FROM virtual_account_receipts WHERE id = ?',
+                                 (receipt_id,)).fetchone()
+            self.assertEqual(receipt['status'], 'allocated')
+
+    def test_choosing_target_advance_without_a_cycle_falls_back_to_savings(self):
+        # Never leave money in limbo because a member's choice no longer applies.
+        with self.app.app_context():
+            db = get_db()
+            mid = self._member(db, 'VA/25', '9900000123')
+            va.set_member_preference(db, mid, 'ctas')
+            db.commit()
+
+            receipt_id, _ = self._inflow(db, 5000, '9900000123')
+            applied, _ = va.auto_allocate(db, receipt_id)
+            db.commit()
+
+            self.assertTrue(applied)
+            member = db.execute('SELECT total_savings FROM members WHERE id = ?',
+                                (mid,)).fetchone()
+            self.assertAlmostEqual(float(member['total_savings']), 5000, places=2)
+
+    def test_member_choice_beats_the_manual_rule_too(self):
+        # Someone who has said what it is for should not wait on an officer.
+        with self.app.app_context():
+            db = get_db()
+            mid = self._member(db, 'VA/26', '9900000123')
+            va.set_setting(db, 'va_allocation_rule', 'manual')
+            va.set_member_preference(db, mid, 'savings')
+            db.commit()
+
+            receipt_id, _ = self._inflow(db, 5000, '9900000123')
+            applied, _ = va.auto_allocate(db, receipt_id)
+            db.commit()
+            self.assertTrue(applied)
+
+    def test_an_unknown_choice_is_rejected(self):
+        with self.app.app_context():
+            db = get_db()
+            mid = self._member(db, 'VA/27', '9900000123')
+            self.assertFalse(va.set_member_preference(db, mid, 'crypto'))
+            self.assertEqual(va.member_preference(db, mid), '')
+
+    def test_blank_choice_returns_to_the_cooperative_rule(self):
+        with self.app.app_context():
+            db = get_db()
+            mid = self._member(db, 'VA/28', '9900000123')
+            self._loan(db, mid, principal=10000, total=11000)
+            va.set_setting(db, 'va_allocation_rule', 'loan_first')
+            va.set_member_preference(db, mid, 'savings')
+            db.commit()
+            self.assertEqual([p['target'] for p in va.build_plan(db, mid, 5000)], ['savings'])
+
+            va.set_member_preference(db, mid, '')
+            db.commit()
+            # The loan owes 11,000, so all 5,000 goes to it and nothing spills.
+            self.assertEqual([p['target'] for p in va.build_plan(db, mid, 5000)], ['loan'])
+            # Send more than the loan owes and the difference is saved.
+            self.assertEqual([p['target'] for p in va.build_plan(db, mid, 15000)],
+                             ['loan', 'savings'])
 
 if __name__ == '__main__':
     unittest.main()

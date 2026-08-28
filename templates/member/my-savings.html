@@ -80,8 +80,28 @@
             </button>
           </div>
         </div>
-        <div class="col-md-5 text-md-end">
+        <div class="col-md-5">
+          {% if payment_choices %}
+          <form method="POST" action="{{ url_for('portal.set_payment_preference') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <label class="form-label small fw-semibold mb-1" for="paymentPreference">
+              What should your transfers pay for?
+            </label>
+            <div class="input-group input-group-sm">
+              <select class="form-select" id="paymentPreference" name="payment_preference">
+                {% for key, label in payment_choices.items() %}
+                <option value="{{ key }}" {% if payment_preference == key %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+              </select>
+              <button class="btn btn-outline-primary" type="submit">Save</button>
+            </div>
+            <small class="text-muted d-block mt-1">
+              Anything left over after that goes into your savings.
+            </small>
+          </form>
+          {% else %}
           <span class="badge bg-light text-dark border">Works with every Nigerian bank app</span>
+          {% endif %}
         </div>
       </div>
     </div>
