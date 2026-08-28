@@ -540,6 +540,28 @@ ARTICLES = [
                 'text':  'The table at the bottom of the page shows gross savings, total late fees, and net savings per calendar year.',
             },
             {
+                'head':  'Your personal account number',
+                'text':  'If your cooperative has switched this on, your own account number is shown at the top of this page. Transfer to it from any bank app and the money is credited to you automatically — you do not need to quote a reference or send anyone proof. Save it in your bank app as a beneficiary and you can pay whenever you like.',
+            },
+            {
+                'head':  'Choosing what your transfers pay for',
+                'steps': [
+                    '<b>My savings</b> — everything goes into your savings.',
+                    '<b>My loan repayment, then savings</b> — clears what you owe first; anything left over is saved.',
+                    '<b>My Target Advance contribution, then savings</b> — shown only if you are on a Target Advance cycle. Pays your due contributions oldest first; anything left over is saved.',
+                    '<b>Let the cooperative decide</b> — follows whatever rule your cooperative has set.',
+                ],
+            },
+            {
+                'head':  'About that choice',
+                'tips':  [
+                    'You only set it once. Every transfer after that follows it until you change it.',
+                    'Your choice overrides the cooperative\'s rule, because you know what you are paying for.',
+                    'Money left over never gets stuck — it always ends up in your savings.',
+                    'If your choice stops applying, for example your Target Advance cycle ends, transfers go to savings instead.',
+                ],
+            },
+            {
                 'head':  'Tips',
                 'tips':  [
                     'Click <b>Print Statement</b> to get a print-ready version for personal records.',
@@ -1334,6 +1356,204 @@ ARTICLES = [
             },
         ],
     },
+
+    # ── Member account numbers ───────────────────────────────────────────────
+    {
+        'slug':      'account-numbers-overview',
+        'title':     'How member account numbers work',
+        'category':  'Account Numbers',
+        'summary':   'Give every member their own bank account number so transfers post themselves.',
+        'endpoints': ['virtual_accounts.index'],
+        'body': [
+            {
+                'head': 'The problem this solves',
+                'text': 'Without it, a member transfers to the cooperative\'s account, forgets the reference, sends a screenshot, and somebody posts it by hand. Here every member gets a permanent account number in their own name, so the account the money landed in tells you whose it is. Nothing is matched by hand.',
+            },
+            {
+                'head': 'Money is handled in two steps',
+                'steps': [
+                    '<b>It is banked.</b> The moment a transfer lands it is recorded — cash goes up, and the same amount is held under <b>Unallocated Member Receipts</b>. The cooperative owes the member that money from that second, whether or not anyone has decided what it is for.',
+                    '<b>It is applied.</b> Separately, the money moves out of holding into the member\'s savings, loan or Target Advance. This is a decision, and it can be undone on its own.',
+                ],
+            },
+            {
+                'head': 'Who decides what a payment is for',
+                'steps': [
+                    '<b>The member, if they said.</b> On their My Savings page they choose savings, their loan, or their Target Advance. Their choice wins.',
+                    '<b>Your rule, if they did not.</b> Set in Settings on this page: all to savings, clear loans first, or hold it for an officer.',
+                    '<b>Anything left over becomes savings</b>, so a member who sends more than their target needs is simply saving the difference.',
+                ],
+            },
+            {
+                'head': 'What it will never do',
+                'tips': [
+                    'It never guesses whose money it is. A transfer it cannot match is held as <b>unidentified</b> for you to look at.',
+                    'It never reverses the arrival itself. The money genuinely landed in the bank, so only the decision about it can be undone.',
+                    'It never deletes anything. Undoing an allocation returns the amount to waiting, ready to apply elsewhere.',
+                ],
+            },
+            {
+                'head': 'Reading the page',
+                'steps': [
+                    '<b>Account numbers issued</b> — how many members have one, and how many still do not.',
+                    '<b>Waiting to be applied</b> — money received that nobody has assigned yet.',
+                    '<b>Holding account (2010)</b> — the same money as seen by the ledger. A green tick means the two agree.',
+                    '<b>Unidentified transfers</b> — money that could not be tied to a member.',
+                ],
+            },
+            {
+                'head': 'Tips',
+                'tips': [
+                    'The red number beside <b>Account Numbers</b> in the menu counts payments needing a person. No number means nothing to do.',
+                    'If the queue and the holding account ever disagree, contact your CoopMS provider — something needs looking at.',
+                ],
+            },
+        ],
+    },
+    {
+        'slug':      'account-numbers-setup',
+        'title':     'Setting up member account numbers',
+        'category':  'Account Numbers',
+        'summary':   'The full sequence, from Paystack approval to the first live transfer.',
+        'endpoints': [],
+        'body': [
+            {
+                'head': 'Start the long part first',
+                'text': 'Paystack has to approve your cooperative for dedicated accounts before a single number can be issued, and that takes a few days. Request it first and do everything else while you wait.',
+            },
+            {
+                'head': 'Step by step',
+                'steps': [
+                    '<b>1. Ask Paystack for approval.</b> In your Paystack dashboard, request <b>Dedicated Virtual Accounts</b>. They will ask for business documents such as your CAC registration.',
+                    '<b>2. Check every member has an email address.</b> The bank will not issue a number without one. Fix any blanks in the members list.',
+                    '<b>3. Check the webhook in Paystack.</b> Under Settings, API Keys &amp; Webhooks, the URL must be your CoopMS address followed by <code>/webhooks/paystack</code>. This is how payments reach CoopMS — if it is wrong, transfers never appear.',
+                    '<b>4. Open Account Numbers</b> in the left menu and click <b>Settings</b>.',
+                    '<b>5. Set Status to On.</b> Do this once Paystack has approved you.',
+                    '<b>6. Choose your fallback rule</b> — what a transfer pays for when the member has not said themselves.',
+                    '<b>7. Save.</b> Your chart of accounts gains one line, Unallocated Member Receipts, which holds money that has arrived but not been applied.',
+                    '<b>8. Create the numbers.</b> Click <b>Create for [number] members</b>. Anyone missing an email is listed on the <b>No account yet</b> tab.',
+                    '<b>9. Test with your own money.</b> Transfer a small amount to your own number. It should appear within about a minute and be applied.',
+                    '<b>10. Tell the members.</b> Each sees their number on My Savings with a Copy button, and chooses there what their transfers pay for.',
+                ],
+            },
+            {
+                'head': 'Do step 9 before step 10',
+                'text': 'The first real transfer is the true test. If it arrives as <b>unidentified</b> rather than matched to you, stop and contact your CoopMS provider before telling members. Your money is safe and correctly recorded either way, but one small adjustment is needed first.',
+            },
+            {
+                'head': 'Choosing the fallback rule',
+                'steps': [
+                    '<b>Put it all into savings</b> — simplest, and right for most cooperatives.',
+                    '<b>Clear what they owe on their loans first, rest to savings</b> — if repayments should come before saving.',
+                    '<b>Hold it and let an officer decide</b> — safest, but somebody must handle every payment.',
+                ],
+            },
+            {
+                'head': 'Tips',
+                'tips': [
+                    'A member who already has a number keeps it. Numbers are never reissued, because that would strand every standing transfer set up against the old one.',
+                    'Changing the rule later only affects money that arrives after the change.',
+                    'You are charged a small fee per payment received, set by Paystack — only when money actually comes in.',
+                ],
+            },
+        ],
+    },
+    {
+        'slug':      'account-numbers-money',
+        'title':     'Handling money that comes in',
+        'category':  'Account Numbers',
+        'summary':   'Identify, apply, split and correct the transfers that land in member accounts.',
+        'endpoints': ['virtual_accounts.receipt_detail'],
+        'body': [
+            {
+                'head': 'Your daily check',
+                'text': 'Open Account Numbers and look at two queues. Most days both are empty and there is nothing to do.',
+            },
+            {
+                'head': 'Unidentified transfers',
+                'steps': [
+                    'Money arrived but could not be tied to a member — usually a transfer to the cooperative\'s own account rather than a member\'s number.',
+                    'The money is safe and already in your books, held under Unallocated Member Receipts.',
+                    'Click <b>Identify</b>, choose the member, and it moves to the waiting queue.',
+                ],
+            },
+            {
+                'head': 'Waiting to be applied',
+                'steps': [
+                    '<b>Apply by rule</b> — uses the member\'s own choice, or your fallback rule if they have not chosen.',
+                    '<b>Split by hand</b> — open the transfer and divide it yourself between Target Advance, a loan and savings.',
+                    'A part-applied transfer stays in the queue with the remainder shown, so nothing is lost track of.',
+                ],
+            },
+            {
+                'head': 'You cannot apply more than arrived',
+                'text': 'The system refuses a split that adds up to more than the transfer, and tells you how much is actually left. This keeps the holding account from going negative, which would mean the books claimed money the cooperative never received.',
+            },
+            {
+                'head': 'If you apply money to the wrong place',
+                'steps': [
+                    '<b>Savings or loan</b> — reverse its journal entry. The amount returns to waiting and can be applied somewhere else.',
+                    '<b>Target Advance</b> — correct it from the Target Advance cycle page instead, because that module keeps its own contribution schedule.',
+                    'The transfer itself is never undone. The money genuinely arrived, and pretending otherwise would put your books out of step with your bank statement.',
+                ],
+            },
+            {
+                'head': 'Tips',
+                'tips': [
+                    'Nothing is ever deleted — every correction leaves both the original and the reversal on record.',
+                    'The <b>Applied to</b> list on a transfer shows exactly where every naira went, and what has since been reversed.',
+                ],
+            },
+        ],
+    },
+
+    # ── Text messages ────────────────────────────────────────────────────────
+    {
+        'slug':      'sms-alerts',
+        'title':     'Sending text messages to members',
+        'category':  'Communications',
+        'summary':   'Reach members who do not use the mobile app, on your own SMS account.',
+        'endpoints': [],
+        'body': [
+            {
+                'head': 'Who gets a text',
+                'text': 'Only members with no mobile app installed. Members who have the app already get a free alert on their phone, and paying to tell the same person twice is waste — so the system checks first and texts only those it could not otherwise reach.',
+            },
+            {
+                'head': 'You use your own SMS account',
+                'text': 'The cooperative opens and funds its own provider account and is billed directly. Nothing is shared with other cooperatives, and you control your own spending.',
+            },
+            {
+                'head': 'Setting it up',
+                'steps': [
+                    '<b>1. Open an account</b> at termii.com in the cooperative\'s name — use the cooperative\'s email, not a personal one, so it survives a change of officers.',
+                    '<b>2. Fund it.</b> SMS is prepaid; credit runs down as messages go out.',
+                    '<b>3. Register a sender name</b> — what members see instead of a phone number. Maximum 11 characters. Approval usually takes a day or two.',
+                    '<b>4. Copy the API key</b> from the provider dashboard. Treat it like a password.',
+                    '<b>5. In CoopMS go to Settings, then the SMS tab.</b>',
+                    '<b>6. Tick "Send text messages"</b>, choose your provider, paste the API key and enter the sender name. Leave the country code as 234 unless you are outside Nigeria.',
+                    '<b>7. Send a test</b> to your own phone using the box on the page.',
+                ],
+            },
+            {
+                'head': 'If the test fails',
+                'steps': [
+                    '<b>Sender name not approved</b> — the most common cause. Check your provider dashboard.',
+                    '<b>No credit</b> — top up and try again.',
+                    '<b>Wrong API key</b> — paste it again; leaving the field blank keeps the saved one.',
+                ],
+            },
+            {
+                'head': 'Keeping the bill down',
+                'tips': [
+                    'Encourage members onto the mobile app — those alerts cost nothing.',
+                    'A message over 160 characters is billed as more than one.',
+                    'A member can switch texts off on their own profile; their in-app alerts continue.',
+                    'The log at the bottom of the SMS tab shows every message sent, skipped or failed, so you can see what your credit bought.',
+                ],
+            },
+        ],
+    },
 ]
 
 # ── Category metadata ─────────────────────────────────────────────────────────
@@ -1348,6 +1568,7 @@ CATEGORIES = {
     'Communications':   {'icon': 'fas fa-paper-plane',    'color': '#2563eb'},
     'Administration':   {'icon': 'fas fa-cog',            'color': '#374151'},
     'Target Advance':   {'icon': 'fas fa-recycle',        'color': '#4338ca'},
+    'Account Numbers':  {'icon': 'fas fa-building-columns', 'color': '#1d4ed8'},
     'Member Portal':    {'icon': 'fas fa-user-circle',    'color': '#0891b2'},
 }
 

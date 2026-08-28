@@ -35,6 +35,9 @@ Members can log in to:
 - Apply for loans after accepting terms, data processing consent, and repayment schedule.
 - Update profile, nominee, contact, and bank details.
 - Submit savings change requests.
+- Transfer to their own personal account number, credited automatically.
+- Choose what their transfers pay for: savings, loan repayment, or Target Advance.
+- Switch off text messages while keeping in-app alerts.
 - Contact support.
 
 Staff users who also have a member profile can switch into member view and return to admin view from the account menu.
@@ -61,6 +64,127 @@ Correcting a whole upload:
 4. Check one member's savings statement to confirm the figures now read correctly.
 
 Reversal cancels each row with an opposite entry rather than deleting it, so member balances and share capital are restored and the ledger stays balanced. Reversed rows are hidden from the Savings Records list, and running the reversal twice is safe.
+
+## Member Account Numbers
+
+Each member can be given a permanent bank account number in their own name (a
+dedicated virtual account, issued through Paystack). Money transferred to it is
+identified by the account it landed in, so nothing is matched by hand and the
+member never has to quote a reference or send proof of payment.
+
+Off by default. Turn it on under Account Numbers, then Settings.
+
+### How an inflow is handled
+
+Money arrives unannounced — no pending record is waiting for it and nothing says
+what it is for. So it is handled in two steps:
+
+1. **Banked.** Debit Cash and Bank, credit Unallocated Member Receipts (2010).
+   The cooperative owes the member that money from the moment it lands, and the
+   books say so immediately.
+2. **Applied.** Debit 2010, credit savings, the member's loan, or their Target
+   Advance. This is a separate decision and is separately reversible.
+
+Account 2010 is seeded only when the feature is switched on, so a cooperative
+that never uses it keeps a clean chart of accounts.
+
+### What a payment is for
+
+Resolution order:
+
+1. **The member's own choice**, set on their My Savings page — savings, loan
+   repayment, or Target Advance contribution. This wins, including over the
+   "hold it for an officer" rule: someone who has already said what the money is
+   for should not queue for a person to decide it again.
+2. **The cooperative's fallback rule**, set in Settings — all to savings, clear
+   loans first, or hold for an officer.
+3. **Anything left over becomes savings**, so a member who sends more than their
+   named target needs is saving the difference rather than leaving money in the
+   holding account.
+
+A member choice that stops applying — Target Advance selected, then the cycle
+ends — falls back to savings rather than stranding the money.
+
+### Two deliberate refusals
+
+- **A member is never guessed.** An inflow that cannot be tied to a member is
+  held as `unmatched`, still banked, for an officer to identify.
+- **The arrival is never reversed.** The money genuinely landed in the bank, so
+  only the decision about it can be undone. Reversing an allocation returns the
+  amount to unallocated, ready to be applied elsewhere.
+
+Applying more than arrived is refused outright, which keeps the holding account
+from going negative.
+
+### Setup
+
+1. Request Dedicated Virtual Accounts approval in the cooperative's Paystack
+   dashboard. This takes a few days and gates everything else.
+2. Ensure every active member has an email address — the bank requires one.
+3. Confirm the Paystack webhook points at `<site>/webhooks/paystack`.
+4. Account Numbers → Settings → status On, choose the fallback rule, save.
+5. Create the account numbers for all active members.
+6. Test with a small real transfer before telling members.
+7. Tell members: their number is on My Savings, where they also choose what
+   their transfers pay for.
+
+Account numbers are never reissued to a member who already has one — that would
+strand every standing transfer set up against the old number.
+
+### Daily operation
+
+Open Account Numbers and check:
+
+- **Unidentified transfers** — click Identify and choose the member.
+- **Waiting to be applied** — apply by rule, or split by hand across Target
+  Advance, a loan and savings.
+- **The queue against the holding account** — they are two views of the same
+  money and should always agree. The page shows a tick when they do.
+
+The menu badge counts payments needing a person; no badge means nothing to do.
+
+See `docs/virtual-accounts.md` for the full technical reference.
+
+### Corrections
+
+- Savings and loan allocations reverse from the journal. The amount returns to
+  waiting and can be applied elsewhere.
+- Target Advance allocations are corrected from the Target Advance cycle page,
+  because that module owns its own contribution schedule.
+- Nothing is ever deleted. Both the original and its reversal stay on record.
+
+## Text Messages (SMS)
+
+Members with the mobile app already receive free push notifications. SMS closes
+the gap for members without it — and only for them, so the cooperative pays for
+far fewer messages than a blanket send.
+
+Credentials are per cooperative: each society opens and funds its own provider
+account (Termii or Africa's Talking) and is billed directly. The API key sits in
+that tenant's own settings alongside its payment gateway keys and is never
+shared.
+
+### Setup
+
+1. Open a provider account in the cooperative's name and fund it. SMS is
+   prepaid.
+2. Register a sender ID — up to 11 characters, approved by the provider, usually
+   within a day or two.
+3. Settings → SMS: enable, choose the provider, paste the API key, enter the
+   sender ID. Country code defaults to 234.
+4. Send a test message to a known phone before enabling it for members.
+
+Leaving the API key field blank on a later save keeps the stored key.
+
+### Operational notes
+
+- Sending never interrupts the operation that triggered it. A failed message is
+  logged, not raised, so a savings posting or loan approval always completes.
+- Every attempt — sent, failed, or skipped — is recorded with its reason, so a
+  cooperative can see what its credit was spent on.
+- A member can decline SMS from their own profile; in-app and push alerts
+  continue.
+- Messages over 160 characters are billed as more than one.
 
 ## Loan Operations
 
@@ -208,6 +332,7 @@ Operational guidance:
 
 - Send to a selected test member before large campaigns.
 - Skipped recipients usually have no email address.
+- Text messages reach members without the mobile app; see Text Messages (SMS) above.
 - WhatsApp should only be enabled after member consent and approved WhatsApp template setup.
 - Delivery logs are part of the audit record.
 
