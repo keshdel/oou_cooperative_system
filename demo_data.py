@@ -146,7 +146,7 @@ def load_demo_data(db, created_by=None):
             (r['recipient_name'], float(r['amount']), r.get('description'),
              r.get('month'), _d(r.get('date'))))
 
-    posted = ledger.backfill_from_transactions(db, created_by=created_by)
+    posted, _ = ledger.backfill_from_transactions(db, created_by=created_by)
     return {
         'skipped': False,
         'members': len(memmap),

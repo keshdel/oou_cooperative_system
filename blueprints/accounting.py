@@ -629,14 +629,20 @@ def backfill():
     """Post journal entries for existing transactions not yet in the ledger."""
     db = get_db()
     try:
-        n = backfill_from_transactions(db, created_by=current_user.id)
+        n, skipped = backfill_from_transactions(db, created_by=current_user.id)
         db.commit()
         audit(db, 'GL_BACKFILL', 'accounting',
-              f'Backfilled {n} transactions into the general ledger')
+              f'Backfilled {n} transactions into the general ledger '
+              f'({skipped} skipped as covered by the opening balance)')
         if n:
             flash(f'Posted {n} historical transaction(s) to the general ledger.', 'success')
         else:
             flash('The ledger is already up to date — nothing to backfill.', 'info')
+        if skipped:
+            # Migrated records are already inside the opening balance. Say so,
+            # or the untouched count reads like a failure.
+            flash(f'{skipped} record(s) dated on or before the opening balance were left '
+                  f'alone — the opening entry already accounts for them.', 'info')
     except Exception as e:
         db.rollback()
         flash(f'Error backfilling ledger: {e}', 'danger')

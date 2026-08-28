@@ -56,6 +56,22 @@ def _date_str(date):
     return str(date)[:10]
 
 
+def opening_balance_date(db):
+    """The date of the opening-balance entry ('YYYY-MM-DD'), or None if the
+    books were never migrated.
+
+    Anything dated on or before this is already represented inside the opening
+    entry, because that entry IS the position at that date.
+    """
+    try:
+        row = db.execute(
+            "SELECT MAX(date) AS d FROM journal_entries WHERE source_module = 'opening'"
+        ).fetchone()
+        return _date_str(row['d']) if row and row['d'] else None
+    except Exception:
+        return None
+
+
 def get_lock_date(db):
     """The date the books are locked through ('YYYY-MM-DD'), or None if unlocked."""
     try:
@@ -338,11 +354,28 @@ def backfill_from_transactions(db, created_by=None):
     or by source for honorarium) are skipped, so this is safe to run more than
     once and safe to run alongside live posting. Does NOT commit.
 
-    Returns the number of journal entries posted.
+    Records dated on or before the opening-balance entry are skipped. A migrated
+    cooperative imports its members' balances as subledger rows with NO journal
+    entries, because the opening balance already states the position those rows
+    add up to. Posting them again would count the same money twice and double
+    the ledger, so migrated history is left alone and only activity after the
+    cutover is posted.
+
+    Returns (posted, skipped_pre_cutover).
     """
     from utils import split_repayment
     posted = 0
+    skipped_pre_cutover = 0
     cash_account = get_default_cash_account(db)
+    cutoff = opening_balance_date(db)
+
+    def _covered_by_opening(date):
+        """True if this record predates the cutover and is already in the books."""
+        nonlocal skipped_pre_cutover
+        if cutoff and _date_str(date) <= cutoff:
+            skipped_pre_cutover += 1
+            return True
+        return False
 
     # Savings deposits
     for s in db.execute('SELECT * FROM savings').fetchall():
@@ -351,7 +384,7 @@ def backfill_from_transactions(db, created_by=None):
         if (s['payment_type'] or '') == 'dividend':
             continue
         ref = s['receipt_number'] or f"SAV-{s['id']}"
-        if _je_exists_ref(db, ref):
+        if _je_exists_ref(db, ref) or _covered_by_opening(s['date']):
             continue
         amount = float(s['amount'] or 0)
         late   = float(s['late_fee'] or 0)
@@ -371,7 +404,8 @@ def backfill_from_transactions(db, created_by=None):
     # Loan disbursements (active or completed loans)
     for l in db.execute("SELECT * FROM loans WHERE status IN ('active','completed')").fetchall():
         ref = l['loan_number']
-        if _je_exists_ref(db, ref):
+        if _je_exists_ref(db, ref) or _covered_by_opening(
+                l['disbursement_date'] or l['date_applied']):
             continue
         principal = float(l['amount'] or 0)
         if principal <= 0:
@@ -395,7 +429,7 @@ def backfill_from_transactions(db, created_by=None):
     for r in db.execute('''SELECT r.*, l.amount AS principal, l.total_repayment, l.loan_number
                            FROM repayments r JOIN loans l ON l.id = r.loan_id''').fetchall():
         ref = r['repayment_number'] or f"REP-{r['id']}"
-        if _je_exists_ref(db, ref):
+        if _je_exists_ref(db, ref) or _covered_by_opening(r['date']):
             continue
         amount = float(r['amount'] or 0)
         if amount <= 0:
@@ -415,7 +449,7 @@ def backfill_from_transactions(db, created_by=None):
     # Expenses
     for e in db.execute('SELECT * FROM expenses').fetchall():
         ref = e['expense_number'] or f"EXP-{e['id']}"
-        if _je_exists_ref(db, ref):
+        if _je_exists_ref(db, ref) or _covered_by_opening(e['date']):
             continue
         amt = float(e['amount'] or 0)
         if amt <= 0:
@@ -431,7 +465,7 @@ def backfill_from_transactions(db, created_by=None):
         if rv['category'] in OPERATIONAL_REVENUE_CATEGORIES:
             continue
         ref = rv['revenue_number'] or f"REV-{rv['id']}"
-        if _je_exists_ref(db, ref):
+        if _je_exists_ref(db, ref) or _covered_by_opening(rv['date']):
             continue
         amt = float(rv['amount'] or 0)
         if amt <= 0:
@@ -448,7 +482,7 @@ def backfill_from_transactions(db, created_by=None):
             "SELECT 1 FROM journal_entries WHERE source_module = 'honorarium' AND source_id = ?",
             (h['id'],)
         ).fetchone()
-        if exists:
+        if exists or _covered_by_opening(h['date']):
             continue
         amt = float(h['amount'] or 0)
         if amt <= 0:
@@ -462,7 +496,7 @@ def backfill_from_transactions(db, created_by=None):
     # Investments
     for iv in db.execute('SELECT * FROM investments').fetchall():
         ref = iv['investment_number'] or f"INV-{iv['id']}"
-        if _je_exists_ref(db, ref):
+        if _je_exists_ref(db, ref) or _covered_by_opening(iv['date']):
             continue
         amt = float(iv['amount'] or 0)
         if amt <= 0:
@@ -473,7 +507,7 @@ def backfill_from_transactions(db, created_by=None):
         ], date=iv['date'], reference=ref, source_module='investments', created_by=created_by):
             posted += 1
 
-    return posted
+    return posted, skipped_pre_cutover
 
 
 def trial_balance(db, as_of=None):

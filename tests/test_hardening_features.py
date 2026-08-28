@@ -2137,6 +2137,56 @@ class HardeningFeatureTests(unittest.TestCase):
                            (base_sav, base_shr, member_id))
                 db.commit()
 
+    def test_backfill_skips_records_covered_by_the_opening_balance(self):
+        """A migrated cooperative imports member balances as subledger rows with
+        no journal entries, because the opening balance already states the
+        position they add up to. Backfill must leave those alone -- posting them
+        again doubles the ledger. Records dated after the cutover still post."""
+        from ledger import backfill_from_transactions, post_journal, opening_balance_date
+        self.login_admin()
+        member_id = self.create_member()
+        try:
+            with self.app.app_context():
+                db = get_db()
+                # The opening balance: the cooperative's position at cutover.
+                post_journal(db, 'Opening balances',
+                             [{'account': '1000', 'debit': 500000},
+                              {'account': '2000', 'credit': 500000}],
+                             date='2026-07-31', reference='OPENING-2026-07-31',
+                             source_module='opening', created_by=1)
+                # One savings row from before the cutover (already in the opening
+                # figure) and one from after (genuinely new activity).
+                db.execute("INSERT INTO savings (member_id, amount, month, receipt_number, date) "
+                           "VALUES (?, 250000, '2026-06', 'BACKFILL-PRE', '2026-06-30')", (member_id,))
+                db.execute("INSERT INTO savings (member_id, amount, month, receipt_number, date) "
+                           "VALUES (?, 40000, '2026-08', 'BACKFILL-POST', '2026-08-15')", (member_id,))
+                db.commit()
+
+                self.assertEqual(opening_balance_date(db), '2026-07-31')
+
+                posted, skipped = backfill_from_transactions(db, created_by=1)
+                db.commit()
+
+                self.assertGreaterEqual(skipped, 1)
+                pre = db.execute("SELECT 1 FROM journal_entries WHERE reference = 'BACKFILL-PRE'").fetchone()
+                post = db.execute("SELECT 1 FROM journal_entries WHERE reference = 'BACKFILL-POST'").fetchone()
+                self.assertIsNone(pre, 'pre-cutover savings must NOT be posted again')
+                self.assertIsNotNone(post, 'post-cutover savings must still be posted')
+
+                # Re-running changes nothing further.
+                again, _ = backfill_from_transactions(db, created_by=1)
+                db.commit()
+                self.assertEqual(again, 0)
+        finally:
+            with self.app.app_context():
+                db = get_db()
+                for ref in ('OPENING-2026-07-31', 'BACKFILL-POST'):
+                    for e in db.execute('SELECT id FROM journal_entries WHERE reference = ?', (ref,)).fetchall():
+                        db.execute('DELETE FROM journal_lines WHERE entry_id = ?', (e['id'],))
+                        db.execute('DELETE FROM journal_entries WHERE id = ?', (e['id'],))
+                db.execute("DELETE FROM savings WHERE receipt_number IN ('BACKFILL-PRE','BACKFILL-POST')")
+                db.commit()
+
     def test_migration_savings_import_applies_share_capital_split(self):
         """A bulk savings import must carve out share capital exactly like a
         manual entry or a salary upload. It used to store the gross amount as
@@ -3092,7 +3142,7 @@ class HardeningFeatureTests(unittest.TestCase):
                      'Late fee already posted with savings journal', 'Savings', '2026-09-01')
             ''')
 
-            posted = backfill_from_transactions(db, created_by=1)
+            posted, _ = backfill_from_transactions(db, created_by=1)
             duplicate = db.execute(
                 "SELECT id FROM journal_entries WHERE reference = 'REV/OPERATIONAL/MEMO/1'"
             ).fetchone()
