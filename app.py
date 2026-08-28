@@ -123,6 +123,7 @@ from blueprints.feedback     import feedback_bp
 from blueprints.marketing    import marketing
 from blueprints.hq_billing   import hq_billing
 from blueprints.ctas         import ctas as ctas_bp
+from blueprints.virtual_accounts_bp import virtual_accounts_bp
 from mobile_api             import mobile_api
 
 app.register_blueprint(auth)
@@ -146,6 +147,7 @@ app.register_blueprint(feedback_bp)
 app.register_blueprint(marketing)
 app.register_blueprint(hq_billing)
 app.register_blueprint(ctas_bp)
+app.register_blueprint(virtual_accounts_bp)
 app.register_blueprint(mobile_api)
 
 csrf.exempt(mobile_api)
@@ -206,6 +208,25 @@ def _can_permission(permission):
         return False
 
 
+def _va_flags():
+    """Template helper: are member account numbers on, and is anything stuck?
+
+    The badge counts transfers that need a human — money we could not tie to a
+    member, and money the rule declined to apply.
+    """
+    try:
+        from virtual_accounts import va_enabled
+        db = get_db()
+        if not va_enabled(db):
+            return False, 0
+        row = db.execute(
+            "SELECT COUNT(*) AS n FROM virtual_account_receipts "
+            "WHERE status IN ('unmatched', 'unallocated', 'part_allocated')").fetchone()
+        return True, int(row['n'] or 0)
+    except Exception:
+        return False, 0
+
+
 def _ctas_enabled_flag():
     """Template helper: is the optional CTAS module active for this cooperative?"""
     try:
@@ -218,6 +239,7 @@ def _ctas_enabled_flag():
 @app.context_processor
 def utility_processor():
     db = get_db()
+    va_on, va_attention = _va_flags()
     coop_name  = db.execute("SELECT value FROM settings WHERE key = 'coop_name'").fetchone()
     coop_logo  = db.execute("SELECT value FROM settings WHERE key = 'coop_logo'").fetchone()
     coop_short = db.execute("SELECT value FROM settings WHERE key = 'coop_short_name'").fetchone()
@@ -277,6 +299,8 @@ def utility_processor():
         'feedback_improve_options': feedback_improve_options,
         'marketing_hq_enabled':     os.environ.get('MARKETING_HQ', '0') == '1',
         'ctas_enabled':             _ctas_enabled_flag(),
+        'va_enabled':               va_on,
+        'va_attention':             va_attention,
         # Menus and buttons follow the officer's assigned permissions, not their
         # role — see permissions.py and Settings → Task Assignment.
         'can':                      _can_permission,

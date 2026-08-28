@@ -1,0 +1,298 @@
+{% extends "base.html" %}
+{% block title %}Member Account Numbers - {{ coop_name }}{% endblock %}
+{% block content %}
+<div class="container-fluid">
+
+    <div class="row mb-3">
+        <div class="col-md-8">
+            <h2><i class="fas fa-building-columns"></i> Member Account Numbers</h2>
+            <p class="text-muted mb-0">
+                Each member gets a permanent account number in their own name. When they transfer
+                to it from any bank app, the money is identified automatically &mdash; nobody has
+                to match a reference by hand.
+            </p>
+        </div>
+        <div class="col-md-4 text-end">
+            {% if enabled and without %}
+            <form method="post" action="{{ url_for('virtual_accounts.provision_all') }}" class="d-inline"
+                  onsubmit="return confirm('Create account numbers for {{ without|length }} member(s)?')">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-primary">
+                    <i class="fas fa-wand-magic-sparkles"></i> Create for {{ without|length }} member(s)
+                </button>
+            </form>
+            {% endif %}
+            <button class="btn btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#vaSettings">
+                <i class="fas fa-gear"></i> Settings
+            </button>
+        </div>
+    </div>
+
+    {% if not enabled %}
+    <div class="alert alert-warning">
+        <i class="fas fa-triangle-exclamation me-1"></i>
+        Virtual accounts are <strong>switched off</strong>. Turn them on in Settings below.
+        Your Paystack account also has to be approved for dedicated accounts before any
+        number can be issued.
+    </div>
+    {% endif %}
+
+    <!-- ── Settings ────────────────────────────────────────────────────────── -->
+    <div class="collapse mb-4 {% if not enabled %}show{% endif %}" id="vaSettings">
+        <div class="card"><div class="card-body">
+            <form method="post" action="{{ url_for('virtual_accounts.save_settings') }}" class="row g-3">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="col-md-3">
+                    <label class="form-label">Status</label>
+                    <select class="form-select" name="va_enabled">
+                        <option value="0" {% if not enabled %}selected{% endif %}>Off</option>
+                        <option value="1" {% if enabled %}selected{% endif %}>On</option>
+                    </select>
+                </div>
+                <div class="col-md-5">
+                    <label class="form-label">What should an incoming transfer pay for?</label>
+                    <select class="form-select" name="va_allocation_rule">
+                        {% for key, label in rules.items() %}
+                        <option value="{{ key }}" {% if config.va_allocation_rule == key %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                    <small class="text-muted">Anything the rule cannot decide waits below for an officer.</small>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Issuing bank</label>
+                    <input type="text" class="form-control" name="va_preferred_bank"
+                           value="{{ config.va_preferred_bank }}">
+                    <small class="text-muted">e.g. wema-bank, titan-paystack</small>
+                </div>
+                <div class="col-md-1 d-flex align-items-end">
+                    <button class="btn btn-primary w-100"><i class="fas fa-save"></i></button>
+                </div>
+            </form>
+        </div></div>
+    </div>
+
+    <!-- ── Money position ──────────────────────────────────────────────────── -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="card h-100"><div class="card-body">
+                <div class="text-muted small">Account numbers issued</div>
+                <div class="h4 mb-0">{{ accounts|length }}</div>
+                {% if without %}<small class="text-warning">{{ without|length }} member(s) without one</small>{% endif %}
+            </div></div>
+        </div>
+        <div class="col-md-3">
+            <div class="card h-100"><div class="card-body">
+                <div class="text-muted small">Waiting to be applied</div>
+                <div class="h4 mb-0">&#8358;{{ "{:,.2f}".format(pending_total) }}</div>
+                <small class="text-muted">{{ waiting|length }} transfer(s)</small>
+            </div></div>
+        </div>
+        <div class="col-md-3">
+            <div class="card h-100"><div class="card-body">
+                <div class="text-muted small">Holding account (2010)</div>
+                <div class="h4 mb-0">&#8358;{{ "{:,.2f}".format(holding_balance) }}</div>
+                {% if (holding_balance - pending_total)|abs > 0.01 %}
+                <small class="text-danger"><i class="fas fa-triangle-exclamation"></i> Does not agree with the queue</small>
+                {% else %}
+                <small class="text-success"><i class="fas fa-check"></i> Agrees with the queue</small>
+                {% endif %}
+            </div></div>
+        </div>
+        <div class="col-md-3">
+            <div class="card h-100 {% if unmatched %}border-danger{% endif %}"><div class="card-body">
+                <div class="text-muted small">Unidentified transfers</div>
+                <div class="h4 mb-0">{{ unmatched|length }}</div>
+                <small class="text-muted">Money we cannot tie to a member</small>
+            </div></div>
+        </div>
+    </div>
+
+    <!-- ── Needs attention ─────────────────────────────────────────────────── -->
+    {% if unmatched %}
+    <div class="card border-danger mb-4">
+        <div class="card-header bg-danger text-white">
+            <i class="fas fa-question-circle me-1"></i> Transfers we could not identify
+        </div>
+        <div class="card-body">
+            <p class="text-muted small">
+                The money is already in the bank and in the books, held under
+                &ldquo;Unallocated Member Receipts&rdquo;. Tell us whose it is and it can be applied.
+            </p>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle">
+                    <thead><tr>
+                        <th>Received</th><th>Amount</th><th>Paid into</th><th>Sender</th><th>Match to</th>
+                    </tr></thead>
+                    <tbody>
+                    {% for r in unmatched %}
+                    <tr>
+                        <td class="small text-nowrap">{{ r.received_at | fmtdt }}</td>
+                        <td class="fw-semibold">&#8358;{{ "{:,.2f}".format(r.amount or 0) }}</td>
+                        <td class="small font-monospace">{{ r.account_number or '—' }}</td>
+                        <td class="small">{{ r.sender_name or '—' }}<br>
+                            <span class="text-muted">{{ r.sender_bank or '' }}</span></td>
+                        <td>
+                            <a href="{{ url_for('virtual_accounts.receipt_detail', receipt_id=r.id) }}"
+                               class="btn btn-sm btn-outline-danger">Identify</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if waiting %}
+    <div class="card border-warning mb-4">
+        <div class="card-header bg-warning">
+            <i class="fas fa-hourglass-half me-1"></i> Waiting to be applied
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-sm align-middle">
+                    <thead><tr>
+                        <th>Received</th><th>Member</th><th>Amount</th><th>Left</th><th></th>
+                    </tr></thead>
+                    <tbody>
+                    {% for r in waiting %}
+                    <tr>
+                        <td class="small text-nowrap">{{ r.received_at | fmtdt }}</td>
+                        <td class="small">{{ r.first_name }} {{ r.last_name }}
+                            <span class="text-muted">({{ r.member_number }})</span></td>
+                        <td>&#8358;{{ "{:,.2f}".format(r.amount or 0) }}</td>
+                        <td class="fw-semibold">&#8358;{{ "{:,.2f}".format((r.amount or 0) - (r.allocated_amount or 0)) }}</td>
+                        <td class="text-end">
+                            <form method="post" action="{{ url_for('virtual_accounts.apply_receipt', receipt_id=r.id) }}"
+                                  class="d-inline">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="mode" value="rule">
+                                <button class="btn btn-sm btn-primary">Apply by rule</button>
+                            </form>
+                            <a href="{{ url_for('virtual_accounts.receipt_detail', receipt_id=r.id) }}"
+                               class="btn btn-sm btn-outline-secondary">Split by hand</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- ── Tabs: accounts / recent money ───────────────────────────────────── -->
+    <ul class="nav nav-tabs mb-3" role="tablist">
+        <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tab-accounts">
+            Account numbers ({{ accounts|length }})</a></li>
+        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-money">
+            Recent transfers ({{ recent|length }})</a></li>
+        {% if without %}
+        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-without">
+            No account yet ({{ without|length }})</a></li>
+        {% endif %}
+    </ul>
+
+    <div class="tab-content">
+        <div class="tab-pane fade show active" id="tab-accounts">
+            {% if accounts %}
+            <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle">
+                    <thead><tr>
+                        <th>Member</th><th>Account number</th><th>Bank</th><th>In the name of</th><th>Status</th>
+                    </tr></thead>
+                    <tbody>
+                    {% for a in accounts %}
+                    <tr>
+                        <td class="small">{{ a.first_name }} {{ a.last_name }}
+                            <span class="text-muted">({{ a.member_number }})</span></td>
+                        <td class="font-monospace fw-semibold">{{ a.account_number }}</td>
+                        <td class="small">{{ a.bank_name }}</td>
+                        <td class="small text-muted">{{ a.account_name }}</td>
+                        <td>{% if a.status == 'active' %}
+                            <span class="badge bg-success">active</span>
+                            {% else %}<span class="badge bg-secondary">{{ a.status }}</span>{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p class="text-muted">No account numbers issued yet.</p>
+            {% endif %}
+        </div>
+
+        <div class="tab-pane fade" id="tab-money">
+            {% if recent %}
+            <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle">
+                    <thead><tr>
+                        <th>Received</th><th>Member</th><th>Amount</th><th>Applied</th>
+                        <th>Sender</th><th>Status</th><th></th>
+                    </tr></thead>
+                    <tbody>
+                    {% for r in recent %}
+                    <tr>
+                        <td class="small text-nowrap">{{ r.received_at | fmtdt }}</td>
+                        <td class="small">{% if r.member_number %}{{ r.first_name }} {{ r.last_name }}
+                            <span class="text-muted">({{ r.member_number }})</span>
+                            {% else %}<span class="text-danger">unidentified</span>{% endif %}</td>
+                        <td>&#8358;{{ "{:,.2f}".format(r.amount or 0) }}</td>
+                        <td class="small">&#8358;{{ "{:,.2f}".format(r.allocated_amount or 0) }}</td>
+                        <td class="small text-muted">{{ r.sender_name or '—' }}</td>
+                        <td>
+                            {% if r.status == 'allocated' %}<span class="badge bg-success">applied</span>
+                            {% elif r.status == 'part_allocated' %}<span class="badge bg-info">part applied</span>
+                            {% elif r.status == 'unmatched' %}<span class="badge bg-danger">unidentified</span>
+                            {% else %}<span class="badge bg-warning text-dark">waiting</span>{% endif %}
+                        </td>
+                        <td class="text-end">
+                            <a href="{{ url_for('virtual_accounts.receipt_detail', receipt_id=r.id) }}"
+                               class="btn btn-sm btn-outline-secondary">Open</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p class="text-muted">No transfers received yet.</p>
+            {% endif %}
+        </div>
+
+        {% if without %}
+        <div class="tab-pane fade" id="tab-without">
+            <p class="text-muted small">
+                A member needs an email address before the bank will issue their number.
+            </p>
+            <div class="table-responsive">
+                <table class="table table-sm align-middle">
+                    <thead><tr><th>Member</th><th>Email</th><th></th></tr></thead>
+                    <tbody>
+                    {% for m in without %}
+                    <tr>
+                        <td class="small">{{ m.first_name }} {{ m.last_name }}
+                            <span class="text-muted">({{ m.member_number }})</span></td>
+                        <td class="small">{% if m.email %}{{ m.email }}
+                            {% else %}<span class="text-danger">no email</span>{% endif %}</td>
+                        <td class="text-end">
+                            <form method="post"
+                                  action="{{ url_for('virtual_accounts.provision', member_id=m.id) }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button class="btn btn-sm btn-outline-primary"
+                                        {% if not m.email or not enabled %}disabled{% endif %}>
+                                    Create account number
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

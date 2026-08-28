@@ -406,12 +406,87 @@ def paystack_webhook():
         abort(400)
 
     if event.get('event') == 'charge.success':
-        reference = event.get('data', {}).get('reference', '')
-        if reference:
-            db = get_db()
-            _record_payment(db, reference)
+        data = event.get('data', {}) or {}
+        # A transfer into a member's own account number arrives on the same
+        # event, but there is no pending row waiting for it — it is money nobody
+        # announced, so it takes the virtual-account path instead.
+        if data.get('channel') == 'dedicated_nuban':
+            _record_virtual_account_inflow(get_db(), data)
+        elif data.get('reference'):
+            _record_payment(get_db(), data['reference'])
 
     return jsonify({'status': 'ok'}), 200
+
+
+def _record_virtual_account_inflow(db, data):
+    """Bank a transfer that landed in a member's dedicated account, then apply it
+    using the cooperative's rule.
+
+    Never raises: a webhook that 500s gets retried, and a retry that fails the
+    same way just repeats. Anything that goes wrong is logged and the money is
+    left for an officer to look at.
+    """
+    from virtual_accounts import auto_allocate, record_receipt, va_enabled
+
+    try:
+        if not va_enabled(db):
+            return
+        reference = data.get('reference', '')
+        if not reference:
+            return
+
+        metadata = data.get('metadata') or {}
+        auth = data.get('authorization') or {}
+        customer = data.get('customer') or {}
+        account_number = (metadata.get('receiver_account_number')
+                          or auth.get('receiver_bank_account_number') or '')
+
+        receipt_id, is_new = record_receipt(
+            db,
+            provider_reference=reference,
+            amount=float(data.get('amount', 0)) / 100.0,      # Paystack sends kobo
+            account_number=account_number,
+            customer_code=customer.get('customer_code', ''),
+            sender_name=auth.get('account_name') or auth.get('sender_name') or '',
+            sender_bank=auth.get('sender_bank') or auth.get('bank') or '',
+            narration=data.get('narration') or metadata.get('narration') or '',
+            provider='paystack',
+        )
+        if not is_new:
+            db.rollback()      # already banked; a redelivery must change nothing
+            return
+
+        auto_allocate(db, receipt_id)
+        db.commit()
+        _notify_member_of_receipt(db, receipt_id)
+    except Exception as exc:
+        db.rollback()
+        current_app.logger.error('Virtual account inflow failed: %s', exc)
+
+
+def _notify_member_of_receipt(db, receipt_id):
+    """Tell the member their money landed. Best effort — the money is already
+    banked, so a failed alert must not undo anything."""
+    try:
+        from utils import notify
+        row = db.execute('''SELECT r.*, u.id AS user_id
+                            FROM virtual_account_receipts r
+                            JOIN members m ON m.id = r.member_id
+                            JOIN users u ON lower(u.email) = lower(m.email)
+                            WHERE r.id = ?''', (receipt_id,)).fetchone()
+        if not row:
+            return
+        amount = float(row['amount'] or 0)
+        if row['status'] == 'allocated':
+            message = f'We received your transfer of ₦{amount:,.2f} and applied it to your account.'
+        else:
+            message = (f'We received your transfer of ₦{amount:,.2f}. '
+                       'It will be applied to your account shortly.')
+        notify(db, row['user_id'], 'Payment received', message,
+               notification_type='success')
+        db.commit()
+    except Exception:
+        db.rollback()
 
 
 # ─── Flutterwave Webhook ──────────────────────────────────────────────────────

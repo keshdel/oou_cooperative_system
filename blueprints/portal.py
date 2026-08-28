@@ -367,8 +367,20 @@ def my_savings():
     page        = min(page, total_pages)
     savings_paged = augmented[(page - 1) * per_page : page * per_page]
 
+    # The member's own account number, if the cooperative issues them.
+    virtual_account = None
+    try:
+        from virtual_accounts import account_for_member, va_config, va_enabled
+        if va_enabled(db):
+            row = account_for_member(db, member['id'], va_config(db)['va_provider'])
+            if row and row['status'] == 'active':
+                virtual_account = row
+    except Exception:
+        pass
+
     return render_template('member/my-savings.html',
                            member=_member_extras(member, db),
+                           virtual_account=virtual_account,
                            savings=savings_paged,
                            total_savings=total_savings,
                            year_savings=year_savings,

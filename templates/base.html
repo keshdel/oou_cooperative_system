@@ -144,6 +144,13 @@
                         <i class="fas fa-piggy-bank"></i> Savings
                     </a>
                     {% endif %}
+                    {% if can('payments.virtual_accounts') and va_enabled %}
+                    <a href="{{ url_for('virtual_accounts.index') }}"
+                       class="{% if request.blueprint == 'virtual_accounts' %}active{% endif %}">
+                        <i class="fas fa-building-columns"></i> Account Numbers
+                        {% if va_attention %}<span class="badge bg-danger ms-1">{{ va_attention }}</span>{% endif %}
+                    </a>
+                    {% endif %}
                     {% if can('members.savings_requests') %}
                     <a href="{{ url_for('members.savings_requests') }}"
                        class="{% if request.endpoint and 'savings_request' in request.endpoint %}active{% endif %}">

@@ -131,6 +131,18 @@ PERMISSIONS = [
         'endpoints': ('savings.add_saving', 'savings.record_payout',
                       'savings.salary_upload', 'savings.download_salary_template'),
     },
+    {
+        'key': 'payments.virtual_accounts',
+        'label': 'Member account numbers and received transfers',
+        'group': 'Savings',
+        'description': 'Issue each member a bank account number, and decide what '
+                       'incoming transfers are for.',
+        'default_roles': ('admin', 'treasurer'),
+        'endpoints': ('virtual_accounts.index', 'virtual_accounts.save_settings',
+                      'virtual_accounts.provision', 'virtual_accounts.provision_all',
+                      'virtual_accounts.match_receipt', 'virtual_accounts.apply_receipt',
+                      'virtual_accounts.receipt_detail'),
+    },
 
     # ── Loans ────────────────────────────────────────────────────────────────
     {

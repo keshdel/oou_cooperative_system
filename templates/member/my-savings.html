@@ -59,6 +59,45 @@
     </div>
   </div>
 
+  {% if virtual_account %}
+  <!-- The member's own account number: transfer to it and it lands automatically -->
+  <div class="card border-primary mb-4 no-print">
+    <div class="card-body">
+      <div class="row align-items-center g-3">
+        <div class="col-md-7">
+          <h6 class="text-primary mb-1"><i class="fas fa-building-columns me-1"></i>Your personal account number</h6>
+          <p class="text-muted small mb-2">
+            Transfer to this account from any bank app and it is credited to you automatically.
+            You do not need to send proof or quote a reference.
+          </p>
+          <div class="d-flex align-items-center gap-3 flex-wrap">
+            <div>
+              <div class="h4 mb-0 font-monospace" id="vaNumber">{{ virtual_account.account_number }}</div>
+              <small class="text-muted">{{ virtual_account.bank_name }} &middot; {{ virtual_account.account_name }}</small>
+            </div>
+            <button class="btn btn-sm btn-outline-primary" onclick="copyAccountNumber()">
+              <i class="fas fa-copy me-1"></i><span id="vaCopyLabel">Copy</span>
+            </button>
+          </div>
+        </div>
+        <div class="col-md-5 text-md-end">
+          <span class="badge bg-light text-dark border">Works with every Nigerian bank app</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script>
+  function copyAccountNumber() {
+      const number = document.getElementById('vaNumber').textContent.trim();
+      const label  = document.getElementById('vaCopyLabel');
+      navigator.clipboard.writeText(number).then(() => {
+          label.textContent = 'Copied';
+          setTimeout(() => { label.textContent = 'Copy'; }, 2000);
+      }).catch(() => { label.textContent = 'Copy failed'; });
+  }
+  </script>
+  {% endif %}
+
   <!-- Summary cards -->
   <div class="row g-3 mb-4 no-print">
     <div class="col-6 col-md-3">

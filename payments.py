@@ -146,6 +146,52 @@ class PaystackGateway:
             payload['metadata'] = metadata
         return self._post('/transaction/charge_authorization', payload)
 
+    # ── Dedicated virtual accounts ────────────────────────────────────────────
+    #
+    # A member gets a permanent NUBAN in their own name. They transfer to it from
+    # any bank app and the money is identified by the account it landed in, so
+    # nobody has to match a reference by hand.
+
+    def create_customer(self, email: str, first_name: str = '', last_name: str = '',
+                        phone: str = '') -> dict:
+        """Register the member with Paystack. Returns data.customer_code.
+
+        Safe to call twice: Paystack returns the existing customer for an email
+        it already knows.
+        """
+        return self._post('/customer', {
+            'email':      email,
+            'first_name': first_name,
+            'last_name':  last_name,
+            'phone':      phone or '',
+        })
+
+    def create_dedicated_account(self, customer_code: str, preferred_bank: str = 'wema-bank') -> dict:
+        """Issue the NUBAN. Returns data.account_number / data.bank / data.id."""
+        return self._post('/dedicated_account', {
+            'customer':       customer_code,
+            'preferred_bank': preferred_bank,
+        })
+
+    def deactivate_dedicated_account(self, dedicated_account_id: str) -> dict:
+        """Stop an account receiving money (a member who left, or a reissue)."""
+        req = urllib.request.Request(
+            f'{self.BASE_URL}/dedicated_account/{dedicated_account_id}',
+            headers=self._headers(), method='DELETE')
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                return json.loads(resp.read())
+        except urllib.error.HTTPError as e:
+            body = e.read()
+            try:
+                return json.loads(body)
+            except Exception:
+                raise RuntimeError(f'Paystack HTTP {e.code}: {body}') from e
+
+    def dedicated_account_providers(self) -> dict:
+        """Banks this merchant account may issue NUBANs with."""
+        return self._get('/dedicated_account/available_providers')
+
     def validate_webhook(self, payload_bytes: bytes, signature_header: str) -> bool:
         """
         Verify Paystack webhook signature.

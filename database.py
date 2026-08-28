@@ -770,6 +770,83 @@ def init_db():
     _add_col(db, 'coop_tenants', 'updated_at', 'TIMESTAMP')
     _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_coop_tenants_code ON coop_tenants(code, is_active)')
 
+    # ── Dedicated virtual accounts ────────────────────────────────────────────
+    # A permanent bank account number per member. Money transferred to it is
+    # identified by the account it landed in, so nothing is matched by hand.
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS member_virtual_accounts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            member_id INTEGER NOT NULL,
+            provider TEXT DEFAULT 'paystack',
+            customer_code TEXT,
+            account_number TEXT,
+            account_name TEXT,
+            bank_name TEXT,
+            bank_slug TEXT,
+            provider_account_id TEXT,
+            status TEXT DEFAULT 'active',
+            created_by INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            closed_at TIMESTAMP,
+            FOREIGN KEY (member_id) REFERENCES members (id)
+        )
+    '''))
+    _exec_ignore(db, 'CREATE UNIQUE INDEX IF NOT EXISTS idx_mva_member_provider '
+                     'ON member_virtual_accounts(member_id, provider)')
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_mva_account_number '
+                     'ON member_virtual_accounts(account_number)')
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_mva_customer '
+                     'ON member_virtual_accounts(customer_code)')
+
+    # Money arrives unannounced, so every inflow is banked first and applied
+    # second. provider_reference is the idempotency key — a webhook redelivery
+    # must never create a second receipt.
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS virtual_account_receipts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            member_id INTEGER,
+            virtual_account_id INTEGER,
+            provider TEXT DEFAULT 'paystack',
+            provider_reference TEXT,
+            amount REAL NOT NULL,
+            account_number TEXT,
+            sender_name TEXT,
+            sender_bank TEXT,
+            narration TEXT,
+            status TEXT DEFAULT 'unallocated',
+            allocated_amount REAL DEFAULT 0,
+            received_at TIMESTAMP,
+            allocated_at TIMESTAMP,
+            allocated_by INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (member_id) REFERENCES members (id)
+        )
+    '''))
+    _exec_ignore(db, 'CREATE UNIQUE INDEX IF NOT EXISTS idx_var_provider_ref '
+                     'ON virtual_account_receipts(provider, provider_reference)')
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_var_status '
+                     'ON virtual_account_receipts(status, id)')
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_var_member '
+                     'ON virtual_account_receipts(member_id, id)')
+
+    # What each receipt was applied to, so one leg can be undone on its own.
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS virtual_account_allocations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            receipt_id INTEGER NOT NULL,
+            target TEXT NOT NULL,
+            target_id INTEGER,
+            loan_id INTEGER,
+            amount REAL NOT NULL,
+            created_by INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            reversed_at TIMESTAMP,
+            FOREIGN KEY (receipt_id) REFERENCES virtual_account_receipts (id)
+        )
+    '''))
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_vaa_receipt '
+                     'ON virtual_account_allocations(receipt_id)')
+
     # Every SMS attempt, so a cooperative can see what its credit was spent on.
     db.execute(_adapt('''
         CREATE TABLE IF NOT EXISTS sms_log (

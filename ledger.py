@@ -700,6 +700,9 @@ REVERSAL_GUIDANCE = {
     'expenses':          'Delete or correct the expense record itself.',
     'honorarium':        'Correct it from the honorarium record.',
     'investments':       'Correct it from the investment record.',
+    'va_receipt':        'This is money that genuinely arrived in the bank, so it cannot be '
+                         'undone. Undo how it was applied instead, from the received '
+                         'transfers page.',
 }
 
 
@@ -788,6 +791,47 @@ def _reverse_loan_repayment(db, e, sid):
     return f"Loan {loan['loan_number'] or loan['id']} balance restored by ₦{float(rep['amount'] or 0):,.2f}."
 
 
+def _unapply_receipt(db, alloc):
+    """Put an allocated amount back into its receipt, so the money returns to
+    the unallocated pool and can be applied somewhere else."""
+    db.execute('UPDATE virtual_account_allocations SET reversed_at = ? WHERE id = ?',
+               (datetime.now(), alloc['id']))
+    receipt = db.execute('SELECT * FROM virtual_account_receipts WHERE id = ?',
+                         (alloc['receipt_id'],)).fetchone()
+    if not receipt:
+        return
+    applied = round(float(receipt['allocated_amount'] or 0) - float(alloc['amount'] or 0), 2)
+    applied = max(applied, 0.0)
+    status = 'part_allocated' if applied > 0 else 'unallocated'
+    db.execute('UPDATE virtual_account_receipts SET allocated_amount = ?, status = ? '
+               'WHERE id = ?', (applied, status, receipt['id']))
+
+
+def _reverse_va_savings(db, e, alloc_id):
+    """Undo a transfer that was applied to savings. The money is not returned to
+    the member — it goes back to unallocated, because it really did arrive."""
+    alloc = db.execute('SELECT * FROM virtual_account_allocations WHERE id = ?',
+                       (alloc_id,)).fetchone()
+    if not alloc or alloc['reversed_at']:
+        return None
+    note = _reverse_savings_deposit(db, e, alloc['target_id'])
+    _unapply_receipt(db, alloc)
+    amt = float(alloc['amount'] or 0)
+    return ((note or '') + f" ₦{amt:,.2f} is unallocated again and can be applied elsewhere.").strip()
+
+
+def _reverse_va_loan(db, e, alloc_id):
+    """Undo a transfer that was applied to a loan."""
+    alloc = db.execute('SELECT * FROM virtual_account_allocations WHERE id = ?',
+                       (alloc_id,)).fetchone()
+    if not alloc or alloc['reversed_at']:
+        return None
+    note = _reverse_loan_repayment(db, e, alloc['target_id'])
+    _unapply_receipt(db, alloc)
+    amt = float(alloc['amount'] or 0)
+    return ((note or '') + f" ₦{amt:,.2f} is unallocated again and can be applied elsewhere.").strip()
+
+
 # source_module -> the function that undoes its operational record. A module
 # posting to the GL that appears in neither this registry nor
 # LEDGER_ONLY_MODULES cannot be reversed from the journal.
@@ -795,6 +839,8 @@ REVERSAL_HANDLERS = {
     'savings_deposit': _reverse_savings_deposit,
     'savings_payout':  _reverse_savings_payout,
     'loan_repayment':  _reverse_loan_repayment,
+    'va_savings':      _reverse_va_savings,
+    'va_loan':         _reverse_va_loan,
 }
 
 
