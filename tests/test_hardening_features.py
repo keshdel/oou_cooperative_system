@@ -2137,6 +2137,63 @@ class HardeningFeatureTests(unittest.TestCase):
                            (base_sav, base_shr, member_id))
                 db.commit()
 
+    def test_migration_savings_import_applies_share_capital_split(self):
+        """A bulk savings import must carve out share capital exactly like a
+        manual entry or a salary upload. It used to store the gross amount as
+        deposit with share_capital 0, so a migrated cooperative's shares silently
+        read zero and members' deposits looked inflated. The export then has to
+        hand back the GROSS figure, or an export/re-import round trip splits the
+        already-split amount a second time and shrinks every balance."""
+        self.login_admin()
+        member_id = self.create_member()
+        month = '2026-11'
+        receipt = 'RCPT/MIGSPLIT/0001'
+        base_sav = base_shr = 0.0
+        try:
+            with self.app.app_context():
+                db = get_db()
+                m0 = db.execute('SELECT total_savings, shares_value FROM members WHERE id = ?',
+                                (member_id,)).fetchone()
+                base_sav = float(m0['total_savings'] or 0)
+                base_shr = float((m0['shares_value'] if 'shares_value' in m0.keys() else 0) or 0)
+                db.execute("DELETE FROM settings WHERE key = 'share_capital_pct'")
+                db.execute("INSERT INTO settings (key, value) VALUES ('share_capital_pct', '5')")
+                db.commit()
+
+            csv_body = ('member_number,email,amount,month,payment_type,receipt_number,date\n'
+                        f'OOU/TEST/0001,ada.audit@example.com,10000,{month},monthly,{receipt},{month}-05\n')
+            up = self.client.post('/migration/savings',
+                data={'file': (BytesIO(csv_body.encode('utf-8')), 'savings.csv')},
+                content_type='multipart/form-data', follow_redirects=False)
+            self.assertIn(up.status_code, (302, 303))
+
+            with self.app.app_context():
+                db = get_db()
+                row = db.execute('SELECT * FROM savings WHERE receipt_number = ?', (receipt,)).fetchone()
+                self.assertIsNotNone(row)
+                self.assertAlmostEqual(float(row['amount']), 9500.0, places=2)             # 95% deposit
+                self.assertAlmostEqual(float(row['share_capital'] or 0), 500.0, places=2)  # 5% shares
+                m1 = db.execute('SELECT total_savings, shares_value FROM members WHERE id = ?',
+                                (member_id,)).fetchone()
+                self.assertAlmostEqual(float(m1['total_savings']), base_sav + 9500.0, places=2)
+                self.assertAlmostEqual(float(m1['shares_value'] or 0), base_shr + 500.0, places=2)
+
+            # The export hands back the gross contribution, so re-importing the
+            # file it produces reproduces the same split rather than shrinking it.
+            ex = self.client.get('/migration/savings/export')
+            self.assertEqual(ex.status_code, 200)
+            line = [l for l in ex.data.decode('utf-8').splitlines() if receipt in l]
+            self.assertTrue(line, 'exported savings row not found')
+            self.assertIn('10000', line[0])
+        finally:
+            with self.app.app_context():
+                db = get_db()
+                db.execute("DELETE FROM settings WHERE key = 'share_capital_pct'")
+                db.execute('DELETE FROM savings WHERE member_id = ? AND month = ?', (member_id, month))
+                db.execute('UPDATE members SET total_savings = ?, shares_value = ? WHERE id = ?',
+                           (base_sav, base_shr, member_id))
+                db.commit()
+
     def test_member_can_have_two_savings_in_one_month(self):
         """Salary deduction + voluntary savings in the same month must both
         import — month is not a uniqueness criterion."""

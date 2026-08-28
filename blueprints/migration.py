@@ -16,7 +16,7 @@ from werkzeug.security import generate_password_hash
 
 from crypto import encrypt_field
 from database import get_db
-from utils import role_required, audit, member_prefix
+from utils import role_required, audit, member_prefix, share_capital_split
 from ledger import get_accounts, post_journal, account_exists, ACCUM_SURPLUS
 
 migration = Blueprint('migration', __name__, url_prefix='/migration')
@@ -586,17 +586,25 @@ def import_savings():
                         date_raw = row.get('date', '').strip()
                         date = _parse_date(date_raw) or datetime.now()
 
+                        # The CSV amount is the gross contribution, exactly as
+                        # typed on the savings form, so a bulk import must carve
+                        # out the same share-capital portion a manual entry does.
+                        # Without this the share split silently comes out zero and
+                        # members' balances look short of what they contributed.
+                        deposit_amount, share_amount = share_capital_split(db, amount)
+
                         db.execute('''
                             INSERT INTO savings
-                                (member_id, amount, month, payment_type, late_fee,
+                                (member_id, amount, share_capital, month, payment_type, late_fee,
                                  payment_method, receipt_number, notes, date)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        ''', (member['id'], amount, month, payment_type, late_fee,
-                              payment_method, receipt_number, notes, date))
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ''', (member['id'], deposit_amount, share_amount, month, payment_type,
+                              late_fee, payment_method, receipt_number, notes, date))
 
                         db.execute(
-                            'UPDATE members SET total_savings = total_savings + ? WHERE id = ?',
-                            (amount, member['id'])
+                            'UPDATE members SET total_savings = total_savings + ?, '
+                            'shares_value = COALESCE(shares_value, 0) + ? WHERE id = ?',
+                            (deposit_amount, share_amount, member['id'])
                         )
                     success += 1
                 except _SkipRow:
@@ -649,7 +657,7 @@ def template_savings():
 def export_savings():
     db = get_db()
     rows = db.execute('''
-        SELECT m.member_number, m.email, s.amount, s.month, s.late_fee,
+        SELECT m.member_number, m.email, s.amount, s.share_capital, s.month, s.late_fee,
                s.payment_method, s.receipt_number, s.date, s.notes
         FROM savings s JOIN members m ON s.member_id = m.id
         ORDER BY m.member_number, s.month
@@ -659,7 +667,12 @@ def export_savings():
     w.writerow(['member_number', 'email', 'amount', 'month', 'late_fee',
                 'payment_method', 'receipt_number', 'date', 'notes'])
     for r in rows:
-        w.writerow(list(r))
+        # Export the gross contribution (deposit + share capital), which is what
+        # the importer expects and re-splits. Exporting the net deposit would
+        # shrink balances a little more on every export/re-import round trip.
+        gross = round(float(r['amount'] or 0) + float(r['share_capital'] or 0), 2)
+        w.writerow([r['member_number'], r['email'], gross, r['month'], r['late_fee'],
+                    r['payment_method'], r['receipt_number'], r['date'], r['notes']])
     return _csv_response(out, 'savings_export.csv')
 
 
@@ -1488,7 +1501,9 @@ _PURGEABLE_TABLES = [
     # general ledger + dividends (children before parents for FK safety)
     'dividend_allocations', 'dividend_declarations',
     'journal_lines', 'journal_entries',
-    'repayments', 'loans', 'savings',
+    # Loan children before loans, or Postgres rejects the delete on the FK.
+    'repayments', 'loan_request_events', 'loan_approvals', 'loan_guarantors',
+    'loans', 'savings',
     'honorarium', 'expenses', 'revenue', 'investments',
     'notifications', 'audit_log', 'members',
 ]
