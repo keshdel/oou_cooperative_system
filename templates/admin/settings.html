@@ -39,6 +39,11 @@
                     </a>
                 </li>
                 <li class="nav-item">
+                    <a class="nav-link" id="sms-tab" data-bs-toggle="tab" href="#sms-settings" role="tab">
+                        <i class="fas fa-comment-dots"></i> SMS
+                    </a>
+                </li>
+                <li class="nav-item">
                     <a class="nav-link" id="users-tab" data-bs-toggle="tab" href="#users" role="tab">
                         <i class="fas fa-users-cog"></i> User Management
                     </a>
@@ -974,6 +979,170 @@
                             </div>
                         </div>
                     </div>
+                </div>
+
+                <!-- SMS TAB - the fallback channel for members without the app -->
+                <div class="tab-pane fade" id="sms-settings" role="tabpanel">
+                    <div class="alert alert-info small">
+                        <i class="fas fa-info-circle me-1"></i>
+                        SMS is only used when a member has <strong>not</strong> installed the mobile app &mdash;
+                        push notifications are free, so we never pay to tell the same member twice.
+                        The provider account below is <strong>this cooperative&#39;s own</strong>: you buy the
+                        credit, and only your society&#39;s messages are sent on it.
+                    </div>
+                    <div class="row">
+                        <div class="col-md-7">
+                            <form method="POST" action="{{ url_for('admin_panel.update_sms_settings') }}">
+
+                                <div class="mb-3 form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" id="sms_enabled"
+                                           name="sms_enabled" {% if settings.sms_enabled == '1' %}checked{% endif %}>
+                                    <label class="form-check-label" for="sms_enabled">
+                                        <strong>Enable SMS alerts</strong>
+                                    </label>
+                                    <small class="d-block text-muted">When off, no message is sent and no credit is spent.</small>
+                                </div>
+
+                                <div class="row g-2 mb-2">
+                                    <div class="col-md-7">
+                                        <label class="form-label">Provider</label>
+                                        <select class="form-select" name="sms_provider">
+                                            <option value="termii" {% if (settings.sms_provider or 'termii') == 'termii' %}selected{% endif %}>
+                                                Termii (Nigerian, billed in naira)
+                                            </option>
+                                            <option value="africastalking" {% if settings.sms_provider == 'africastalking' %}selected{% endif %}>
+                                                Africa&#39;s Talking
+                                            </option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-5">
+                                        <label class="form-label">Country code</label>
+                                        <input type="text" class="form-control" name="sms_country_code"
+                                               placeholder="234"
+                                               value="{{ settings.sms_country_code|default('234') }}">
+                                        <small class="text-muted">Digits only. 234 = Nigeria.</small>
+                                    </div>
+                                </div>
+
+                                <div class="mb-2">
+                                    <label class="form-label">Sender ID</label>
+                                    <input type="text" class="form-control" name="sms_sender_id"
+                                           maxlength="11" placeholder="e.g. CoopMS"
+                                           value="{{ settings.sms_sender_id|default('') }}">
+                                    <small class="text-muted">
+                                        Up to 11 characters, and it must be a sender ID your provider approved &mdash;
+                                        an unregistered one is rejected or silently dropped.
+                                    </small>
+                                </div>
+
+                                <div class="mb-2">
+                                    <label class="form-label">API Key</label>
+                                    <div class="input-group">
+                                        <input type="password" class="form-control font-monospace" name="sms_api_key"
+                                               id="smsApiKey"
+                                               placeholder="{% if settings.sms_api_key %}(saved &mdash; leave blank to keep){% else %}paste your provider API key{% endif %}">
+                                        <button class="btn btn-outline-secondary" type="button"
+                                                onclick="toggleVis('smsApiKey', this)">
+                                            <i class="fas fa-eye"></i>
+                                        </button>
+                                    </div>
+                                    <small class="text-muted">Held against this cooperative only; never shared with another society.</small>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label">Username <span class="text-muted">(Africa&#39;s Talking only)</span></label>
+                                    <input type="text" class="form-control" name="sms_username"
+                                           placeholder="sandbox"
+                                           value="{{ settings.sms_username|default('') }}">
+                                    <small class="text-muted">Leave blank for Termii.</small>
+                                </div>
+
+                                <div class="text-end">
+                                    <button type="submit" class="btn btn-primary">
+                                        <i class="fas fa-save me-1"></i> Save SMS Settings
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+
+                        <div class="col-md-5">
+                            <div class="card border-0 bg-light mb-3">
+                                <div class="card-body">
+                                    <h6 class="mb-3"><i class="fas fa-paper-plane text-primary"></i> Send Test SMS</h6>
+                                    <p class="text-muted small">Save your settings first. This sends a real message and spends one credit.</p>
+                                    <div class="mb-3">
+                                        <input type="tel" class="form-control" id="testSmsRecipient"
+                                               placeholder="08012345678">
+                                    </div>
+                                    <button class="btn btn-outline-primary w-100" onclick="sendTestSms()">
+                                        <i class="fas fa-paper-plane me-1"></i> Send Test SMS
+                                    </button>
+                                    <div id="testSmsResult" class="mt-3"></div>
+                                </div>
+                            </div>
+
+                            <div class="card border-success">
+                                <div class="card-header bg-success text-white py-2">
+                                    <i class="fas fa-star me-1"></i><strong>Getting started</strong>
+                                </div>
+                                <div class="card-body small">
+                                    <ol class="ps-3 mb-0">
+                                        <li>Open an account with your chosen provider in the cooperative&#39;s name</li>
+                                        <li>Fund it &mdash; SMS is prepaid, per message</li>
+                                        <li>Register a sender ID (approval usually takes a day or two)</li>
+                                        <li>Paste the API key into the form and save</li>
+                                        <li>Send a test to your own phone before switching it on for members</li>
+                                    </ol>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <hr class="my-4">
+                    <h6 class="fw-bold mb-2"><i class="fas fa-list me-1"></i> Recent SMS activity</h6>
+                    <p class="text-muted small">Every attempt is recorded, so you can see what your credit was spent on.</p>
+                    {% if sms_log %}
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>When</th>
+                                    <th>Member</th>
+                                    <th>Number</th>
+                                    <th>Purpose</th>
+                                    <th>Message</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in sms_log %}
+                                <tr>
+                                    <td class="text-nowrap small">{{ row.created_at | fmtdt }}</td>
+                                    <td class="small">
+                                        {% if row.first_name %}{{ row.first_name }} {{ row.last_name }}
+                                        <span class="text-muted">({{ row.member_number }})</span>
+                                        {% else %}<span class="text-muted">&mdash;</span>{% endif %}
+                                    </td>
+                                    <td class="small text-nowrap">{{ row.msisdn }}</td>
+                                    <td class="small">{{ row.purpose }}</td>
+                                    <td class="small text-truncate" style="max-width:260px" title="{{ row.body }}">{{ row.body }}</td>
+                                    <td>
+                                        {% if row.status == 'sent' %}
+                                            <span class="badge bg-success">sent</span>
+                                        {% elif row.status == 'skipped' %}
+                                            <span class="badge bg-secondary" title="{{ row.error }}">skipped</span>
+                                        {% else %}
+                                            <span class="badge bg-danger" title="{{ row.error }}">failed</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <p class="text-muted small mb-0">No messages sent yet.</p>
+                    {% endif %}
                 </div>
 
                 <!-- 6. USER MANAGEMENT TAB -->
@@ -1932,6 +2101,32 @@ function sendTestMail() {
         })
         .catch(err => {
             resultDiv.innerHTML = `<div class="alert alert-danger py-2">Request failed: ${err}</div>`;
+        });
+}
+
+function sendTestSms() {
+    const recipient = document.getElementById('testSmsRecipient').value.trim();
+    const resultDiv = document.getElementById('testSmsResult');
+    if (!recipient) {
+        resultDiv.innerHTML = '<div class="alert alert-warning py-2">Please enter a phone number.</div>';
+        return;
+    }
+    resultDiv.innerHTML = '<div class="alert alert-info py-2"><i class="fas fa-spinner fa-spin"></i> Sending...</div>';
+
+    const form = new FormData();
+    form.append('recipient', recipient);
+
+    fetch('{{ url_for("admin_panel.test_sms") }}', { method: 'POST', body: form })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                resultDiv.innerHTML = '<div class="alert alert-success py-2"><i class="fas fa-check"></i> ' + data.message + '</div>';
+            } else {
+                resultDiv.innerHTML = '<div class="alert alert-danger py-2"><i class="fas fa-times"></i> ' + data.error + '</div>';
+            }
+        })
+        .catch(err => {
+            resultDiv.innerHTML = '<div class="alert alert-danger py-2">Request failed: ' + err + '</div>';
         });
 }
 

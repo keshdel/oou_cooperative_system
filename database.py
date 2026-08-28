@@ -386,6 +386,8 @@ def init_db():
     _add_col(db, 'members', 'card_token', 'TEXT')
     _add_col(db, 'members', 'card_path',  'TEXT')
     _add_col(db, 'members', 'employee_id', 'TEXT')
+    # A member can decline SMS without losing in-app and push notifications.
+    _add_col(db, 'members', 'sms_optout', 'INTEGER DEFAULT 0')
     # Optional annual salary — only used for salary-based CTAS affordability; 0
     # when the cooperative is not salary/staff-based (the default is savings-based).
     _add_col(db, 'members', 'annual_salary', 'REAL DEFAULT 0')
@@ -767,6 +769,24 @@ def init_db():
     _add_col(db, 'coop_tenants', 'is_active', 'INTEGER DEFAULT 1')
     _add_col(db, 'coop_tenants', 'updated_at', 'TIMESTAMP')
     _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_coop_tenants_code ON coop_tenants(code, is_active)')
+
+    # Every SMS attempt, so a cooperative can see what its credit was spent on.
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS sms_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            member_id INTEGER,
+            msisdn TEXT,
+            purpose TEXT,
+            body TEXT,
+            status TEXT DEFAULT 'sent',
+            error TEXT,
+            provider_ref TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (member_id) REFERENCES members (id)
+        )
+    '''))
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_sms_log_created ON sms_log(created_at)')
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_sms_log_member ON sms_log(member_id, status)')
 
     # ── HQ billing (operator-side): client registry, invoices, line items ──
     # Only used by the HQ instance (MARKETING_HQ=1). Each client is a tenant

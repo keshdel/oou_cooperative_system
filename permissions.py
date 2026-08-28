@@ -407,7 +407,8 @@ PERMISSIONS = [
         'default_roles': ('admin',),
         'endpoints': ('admin_panel.settings', 'admin_panel.update_settings',
                       'admin_panel.update_security_settings', 'admin_panel.update_mail_settings',
-                      'admin_panel.test_mail', 'admin_panel.reconcile_savings',
+                      'admin_panel.test_mail', 'admin_panel.update_sms_settings',
+                      'admin_panel.test_sms', 'admin_panel.reconcile_savings',
                       'admin_panel.readiness_status', 'admin_panel.test_db'),
     },
     {

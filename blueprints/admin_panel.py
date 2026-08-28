@@ -1,5 +1,6 @@
 import os
 import random
+import re
 from datetime import datetime, timedelta
 
 from flask import Blueprint, jsonify, render_template, redirect, url_for, request, flash
@@ -11,7 +12,8 @@ from database import USE_POSTGRES, get_db, last_insert_id
 from email_service import send_member_onboarding_email
 from security import generate_account_setup_token, validate_password_strength
 from utils import (role_required, audit, validate_image, logo_data_uri,
-                   member_savings_balance, reconcile_member_savings, notify)
+                   member_savings_balance, reconcile_member_savings, notify,
+                   coop_name as _coop_name)
 from ledger import (post_journal_safe, get_default_cash_account, OPERATING_EXPENSES, FEE_INCOME,
                     HONORARIUM)
 import permissions as perms
@@ -93,6 +95,11 @@ _EDITABLE_SETTING_KEYS = set(_DEFAULT_SETTINGS) | {
     'support_email',
     'office_address',
     'whatsapp_number',
+    'sms_enabled',
+    'sms_provider',
+    'sms_sender_id',
+    'sms_username',
+    'sms_country_code',
     'password_min_length',
     'password_require_upper',
     'password_require_lower',
@@ -108,6 +115,7 @@ _PROTECTED_SETTING_KEYS = {
     'resend_api_key',
     'brevo_api_key',
     'smtp_pass',
+    'sms_api_key',
 }
 
 _PASSWORD_POLICY_BOOLEAN_KEYS = {
@@ -143,6 +151,22 @@ def _format_last_login(value):
         return datetime.fromisoformat(str(value)).strftime('%Y-%m-%d %H:%M')
     except (TypeError, ValueError):
         return str(value)[:16]
+
+
+def _sms_log_rows(db, limit=30):
+    """The most recent SMS attempts, so an admin can see what credit bought."""
+    try:
+        return db.execute('''
+            SELECT s.id, s.msisdn, s.purpose, s.body, s.status, s.error,
+                   s.provider_ref, s.created_at,
+                   m.member_number, m.first_name, m.last_name
+            FROM sms_log s
+            LEFT JOIN members m ON m.id = s.member_id
+            ORDER BY s.id DESC
+            LIMIT ?
+        ''', (limit,)).fetchall()
+    except Exception:
+        return []
 
 
 def _mobile_device_rows(db):
@@ -352,11 +376,13 @@ def settings():
         ).fetchall()
         readiness = _system_readiness(db)
         mobile_devices = _mobile_device_rows(db)
+        sms_log = _sms_log_rows(db)
 
         return render_template('admin/settings.html',
                                settings=settings_dict,
                                system_users=user_list,
                                mobile_devices=mobile_devices,
+                               sms_log=sms_log,
                                current_is_super=current_is_super,
                                audit_logs=audit_logs,
                                backup_history=[],
@@ -368,6 +394,7 @@ def settings():
                                settings=_DEFAULT_SETTINGS,
                                system_users=[],
                                mobile_devices=[],
+                               sms_log=[],
                                current_is_super=False,
                                audit_logs=[],
                                backup_history=[],
@@ -1093,6 +1120,89 @@ def test_mail():
         return jsonify({'success': True, 'message': f'Test email sent to {recipient}'})
     return jsonify({'success': False,
                     'error': 'Send failed. Check Resend sender verification or SMTP host, username, password/app password, and TLS/SSL settings.'})
+
+
+@admin_panel.route('/settings/update-sms', methods=['POST'])
+@login_required
+@role_required('admin')
+def update_sms_settings():
+    """Save this cooperative's own SMS provider credentials.
+
+    Each society buys and pays for its own provider account, so the key lives in
+    this tenant's settings and is never shared. A blank key keeps the saved one.
+    """
+    from sms import PROVIDERS
+
+    db = get_db()
+    try:
+        provider = (request.form.get('sms_provider', '') or 'termii').strip().lower()
+        if provider not in PROVIDERS:
+            flash(f'Unknown SMS provider "{provider}".', 'danger')
+            return redirect(url_for('admin_panel.settings') + '#sms-settings')
+
+        updates = {
+            'sms_enabled':      '1' if request.form.get('sms_enabled') else '0',
+            'sms_provider':     provider,
+            'sms_sender_id':    request.form.get('sms_sender_id', '').strip(),
+            'sms_username':     request.form.get('sms_username', '').strip(),
+            'sms_country_code': re.sub(r'\D', '', request.form.get('sms_country_code', '')) or '234',
+        }
+        api_key = request.form.get('sms_api_key', '').strip()
+        if api_key:
+            updates['sms_api_key'] = api_key      # blank → keep existing
+
+        for key, val in updates.items():
+            _upsert_setting(db, key, val, f'SMS setting: {key}')
+        db.commit()
+        audit(db, 'UPDATE_SMS_SETTINGS', 'settings',
+              f'SMS settings updated (provider {provider}, '
+              f'{"on" if updates["sms_enabled"] == "1" else "off"})')
+        flash('SMS settings saved successfully!', 'success')
+    except Exception as e:
+        db.rollback()
+        flash(f'Error saving SMS settings: {str(e)}', 'danger')
+    return redirect(url_for('admin_panel.settings') + '#sms-settings')
+
+
+@admin_panel.route('/settings/test-sms', methods=['POST'])
+@login_required
+@role_required('admin')
+def test_sms():
+    """Send one real message so an admin can prove the credentials work."""
+    from flask import jsonify
+    from sms import send_sms, sms_config, get_provider, normalise_msisdn, looks_sendable
+
+    recipient = request.form.get('recipient', '').strip()
+    if not recipient:
+        return jsonify({'success': False, 'error': 'A phone number is required'})
+
+    db = get_db()
+    cfg = sms_config(db)
+    if str(cfg.get('sms_enabled', '')) != '1':
+        return jsonify({'success': False,
+                        'error': 'SMS is disabled. Turn it on and save first.'})
+    provider = get_provider(cfg)
+    if not provider or not provider.configured():
+        return jsonify({'success': False,
+                        'error': 'No API key saved for this provider. Save one first.'})
+
+    msisdn = normalise_msisdn(recipient, cfg.get('sms_country_code'))
+    if not looks_sendable(msisdn):
+        return jsonify({'success': False, 'error': f'"{recipient}" is not a usable phone number'})
+
+    text = (f'Test message from {_coop_name(db)} on CoopMS. '
+            f'Your SMS setup is working ({datetime.now().strftime("%H:%M")}).')
+    ok = send_sms(db, msisdn, text, purpose='test')
+    if ok:
+        audit(db, 'TEST_SMS', 'settings', f'Test SMS sent to {msisdn}')
+        db.commit()
+        return jsonify({'success': True, 'message': f'Test SMS sent to +{msisdn}'})
+    row = db.execute(
+        "SELECT error FROM sms_log WHERE purpose = 'test' ORDER BY id DESC LIMIT 1").fetchone()
+    detail = (row['error'] if row and row['error'] else '') or ''
+    return jsonify({'success': False,
+                    'error': ('Send failed. Check the API key, sender ID and your provider '
+                              'credit balance.' + (f' Provider said: {detail}' if detail else ''))})
 
 
 # ── Subscription billing ──────────────────────────────────────────────────────

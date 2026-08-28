@@ -1134,7 +1134,7 @@ def edit_profile():
                 emergency_contact_name = ?, emergency_contact_phone = ?,
                 nominee_name = ?, nominee_relationship = ?, nominee_phone = ?,
                 nominee_email = ?, nominee_address = ?,
-                bvn = ?, nin = ?, photo_path = ?
+                bvn = ?, nin = ?, photo_path = ?, sms_optout = ?
             WHERE id = ?
         ''', (
             first_name, last_name, email, phone,
@@ -1144,7 +1144,9 @@ def edit_profile():
             emergency_contact_name, emergency_contact_phone,
             nominee_name, nominee_relationship, nominee_phone,
             nominee_email, nominee_address,
-            encrypt_field(bvn), encrypt_field(nin), photo_path, member['id'],
+            encrypt_field(bvn), encrypt_field(nin), photo_path,
+            0 if request.form.get('sms_optin') else 1,
+            member['id'],
         ))
         db.execute(
             'UPDATE users SET username = ?, email = ?, full_name = ?, phone = ? WHERE id = ?',

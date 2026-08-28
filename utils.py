@@ -526,8 +526,50 @@ def notify(db, user_id: int, title: str, message: str,
             send_mobile_pushes(db, user_id, title, message, notification_type, action_url)
         except Exception:
             pass
+        _sms_fallback(db, user_id, title, message)
     except Exception:
         pass  # notifications are non-critical — never break the main flow
+
+
+def _has_mobile_device(db, user_id) -> bool:
+    """True if this user has a registered device, so push already reached them."""
+    try:
+        row = db.execute(
+            "SELECT 1 FROM mobile_devices WHERE user_id = ? "
+            "AND COALESCE(enabled, 1) = 1 LIMIT 1", (user_id,)).fetchone()
+        return row is not None
+    except Exception:
+        return False
+
+
+def _sms_fallback(db, user_id, title, message) -> None:
+    """Text the member only when push could not reach them — a member with the
+    app installed costs nothing, so we do not pay to tell them twice."""
+    try:
+        from sms import sms_enabled, send_sms
+        if not sms_enabled(db):
+            return
+        if _has_mobile_device(db, user_id):
+            return
+        member = member_for_user(db, user_id)
+        phone = (member['phone'] if member and 'phone' in member.keys() else '') or ''
+        if not phone:
+            return
+        body = f"{title}: {message}".strip()
+        from email_service import run_in_background
+        run_in_background(_send_sms_task, phone, body, member['id'])
+    except Exception:
+        pass
+
+
+def _send_sms_task(phone, body, member_id):
+    """Runs off the request thread with its own app context and connection."""
+    try:
+        from database import get_db
+        from sms import send_sms
+        send_sms(get_db(), phone, body, member_id=member_id, purpose='notification')
+    except Exception:
+        pass
 
 
 def notify_member(db, member_email: str, title: str, message: str,
