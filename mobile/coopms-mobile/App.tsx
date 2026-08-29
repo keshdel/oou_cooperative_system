@@ -54,6 +54,8 @@ type FatalScreenProps = {
   message: string;
   details?: string;
   onRetry?: () => void;
+  secondaryLabel?: string;
+  onSecondary?: () => void;
 };
 
 type AppErrorBoundaryState = {
@@ -75,7 +77,8 @@ function money(value?: number) {
   return `NGN ${(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-function FatalScreen({ title = 'App could not start', message, details, onRetry }: FatalScreenProps) {
+function FatalScreen({ title = 'App could not start', message, details, onRetry,
+                      secondaryLabel, onSecondary }: FatalScreenProps) {
   return (
     <SafeAreaView style={styles.fatalRoot}>
       <StatusBar barStyle="light-content" />
@@ -86,6 +89,12 @@ function FatalScreen({ title = 'App could not start', message, details, onRetry 
         {onRetry ? (
           <Pressable style={styles.primaryButton} onPress={onRetry}>
             <Text style={styles.primaryButtonText}>Try Again</Text>
+          </Pressable>
+        ) : null}
+        {onSecondary && secondaryLabel ? (
+          <Pressable style={({ pressed }) => [styles.fatalSecondary, pressed && styles.pressed]}
+                     onPress={onSecondary}>
+            <Text style={styles.fatalSecondaryText}>{secondaryLabel}</Text>
           </Pressable>
         ) : null}
       </View>
@@ -1190,11 +1199,17 @@ function AppContent() {
 
   useEffect(() => {
     let alive = true;
+    let settled = false;
+
+    // The watchdog exists for a boot that never comes back — a request left
+    // hanging by a dead connection. It MUST be cancelled the moment boot
+    // finishes: left armed, it fires over a perfectly good session and throws
+    // the member out for no reason.
     const watchdog = setTimeout(() => {
-      if (!alive) return;
-      setStartupError('Startup took longer than expected. This is usually a temporary network connection issue.');
+      if (!alive || settled) return;
+      setStartupError('Could not reach your cooperative. This is almost always a slow or dropped connection.');
       setLoading(false);
-    }, 60000);
+    }, 25000);
 
     (async () => {
       try {
@@ -1229,13 +1244,15 @@ function AppContent() {
         }
       } catch (error) {
         if (!alive) return;
-        setStartupError(error instanceof Error ? error.message : 'Could not load saved mobile session.');
-        await clearTenant().catch(() => undefined);
-        await clearToken().catch(() => undefined);
-        setToken(null);
-        setDashboard(null);
-        setHasTenant(false);
+        // Do NOT wipe the saved cooperative or sign-in here. A failure at this
+        // point is nearly always the network, and making the member find their
+        // society code again every time the signal drops is what made the app
+        // feel broken. If the stored session really is unreadable, the member
+        // can choose Start Over on the error screen.
+        setStartupError(error instanceof Error ? error.message : 'Could not start CoopMS.');
       } finally {
+        settled = true;
+        clearTimeout(watchdog);
         if (alive) setLoading(false);
       }
     })();
@@ -1302,11 +1319,17 @@ function AppContent() {
   if (startupError) {
     return (
       <FatalScreen
-        title="Session reset needed"
-        message="The saved mobile session could not be loaded. Tap Try Again to restart with a clean cooperative selection."
+        title="Could not connect"
+        message="CoopMS could not reach your cooperative. Check your internet connection and try again — your sign-in is still saved."
         details={startupError}
         onRetry={() => {
           setStartupError('');
+          setBootAttempt((value) => value + 1);
+        }}
+        secondaryLabel="Start over with a different cooperative"
+        onSecondary={() => {
+          setStartupError('');
+          void changeCooperative();
           setBootAttempt((value) => value + 1);
         }}
       />
@@ -1363,6 +1386,8 @@ const styles = StyleSheet.create({
   fatalCard: { width: '100%', backgroundColor: '#fff', borderRadius: 16, padding: 18, borderWidth: 1, borderColor: BORDER },
   fatalTitle: { color: NAVY, fontSize: 22, fontWeight: '900', marginBottom: 10 },
   fatalMessage: { color: INK, fontSize: 15, lineHeight: 21, marginBottom: 12 },
+  fatalSecondary: { alignItems: 'center', paddingVertical: 12, marginTop: 4 },
+  fatalSecondaryText: { color: MUTED, fontSize: 14, fontWeight: '600' },
   fatalDetails: { color: '#D93030', backgroundColor: '#FFF1F1', borderRadius: 8, padding: 10, marginBottom: 14, fontSize: 12, lineHeight: 17 },
   authRoot: { flex: 1, backgroundColor: NAVY },
   authContent: { flex: 1, justifyContent: 'center', padding: 24 },
