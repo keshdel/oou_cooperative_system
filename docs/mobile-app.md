@@ -100,13 +100,63 @@ profile, so EAS manages the build number. Bump the user-visible `version` in
 
 ## Over-the-air updates
 
-Once `expo-updates` is added, JavaScript-only changes can be pushed without a new
-store review. Native changes — a new native module, an icon, permissions — still
-need a rebuild. This is not configured yet.
+`expo-updates` is configured. A build checks for an update on launch, downloads
+it in the background, and applies it the next time the app is opened — so a
+member is never interrupted mid-task.
+
+**Publishing a JavaScript change** (most fixes, copy, layout, new screens):
+
+```powershell
+eas update --branch preview --message "what changed"
+```
+
+```powershell
+eas update --branch production --message "what changed"
+```
+
+No rebuild, no store review, no reinstall. Phones pick it up on their next
+launch.
+
+**When a rebuild is unavoidable:**
+
+- a new native module (anything with an `expo install`)
+- the icon, splash, permissions or app name
+- an SDK upgrade
+- a change to `version` in `app.json`
+
+`runtimeVersion` follows `appVersion`, so an update only reaches builds with the
+same version number. Bump `version` and you have deliberately cut off older
+builds from updates — which is right, because they no longer have the native
+code to run them. Leave it alone for JavaScript-only releases.
+
+Each build profile subscribes to a channel of the same name (`preview`,
+`production`), set in `eas.json`. `eas update --branch <name>` publishes to it.
+
+The bottom of the Profile screen shows the running version and the first eight
+characters of the update id, so a member reporting a problem can tell you exactly
+what they are on.
+
+## Distributing to members
+
+The download page is `deploy/vps/landing/app.html`, served at
+**https://cooperativems.com/app.html**. It links to `/app/coopms.apk`.
+
+The APK is not in git — it is build output. After a release build, copy it up:
+
+```powershell
+scp coopms.apk root@206.81.30.5:~/oou_cooperative_system/deploy/vps/landing/app/
+```
+
+Then it is live. Members who already have the app do **not** need to download it
+again unless the release was a native change; everything else reaches them over
+the air.
+
+Once the app is on Google Play, replace the download button on `app.html` with
+the Play badge and keep the APK as a fallback for members who cannot use Play.
 
 ## Not built yet
 
 1. Document upload for loan requirements
 2. Guarantor approval screen (a member accepting a request to guarantee)
 3. App lock / biometric unlock
-4. Over-the-air updates (`expo-updates`)
+4. iOS build (needs an Apple Developer account)

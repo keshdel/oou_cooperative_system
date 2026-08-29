@@ -2,6 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
+import * as Updates from 'expo-updates';
 import React, { Component, type ErrorInfo, type ReactNode, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -72,6 +73,17 @@ const MUTED = '#607086';
 // Both app stores require a reachable privacy policy; Apple also expects a
 // link inside the app itself.
 const PRIVACY_URL = 'https://cooperativems.com/privacy.html';
+
+/** What this phone is actually running. When a member reports a problem, this
+ *  is the difference between guessing and knowing which build and which
+ *  over-the-air update they are on. */
+function buildStamp() {
+  const version = Constants.expoConfig?.version || '1.0.0';
+  if (Updates.isEmbeddedLaunch || !Updates.updateId) {
+    return `Version ${version}`;
+  }
+  return `Version ${version} · update ${Updates.updateId.slice(0, 8)}`;
+}
 
 function money(value?: number) {
   return `NGN ${(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -597,6 +609,8 @@ function ProfileScreen({ token, data, reload }: { token: string; data: Dashboard
         <Ionicons name="shield-checkmark-outline" size={15} color={MUTED} />
         <Text style={styles.privacyLinkText}>Privacy Policy</Text>
       </Pressable>
+
+      <Text style={styles.buildStamp}>{buildStamp()}</Text>
     </ScrollView>
   );
 }
@@ -1451,6 +1465,7 @@ const styles = StyleSheet.create({
   optionWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8, marginBottom: 10 },
   optionStack: { gap: 8, marginTop: 8, marginBottom: 10 },
   privacyLink: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 18 },
+  buildStamp: { textAlign: 'center', color: '#9AA7B8', fontSize: 11, paddingBottom: 22 },
   privacyLinkText: { color: MUTED, fontSize: 13, fontWeight: '600' },
   payInRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 10 },
   payInNumber: { fontSize: 24, fontWeight: '900', color: INK, letterSpacing: 1 },

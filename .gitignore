@@ -64,3 +64,8 @@ deploy/vps/.landing-domain
 functions/venv/
 .claude/worktrees/
 .codex/
+
+# Release APK served from the landing site. Build output, not source — it is
+# copied to the server directly (see deploy/vps/landing/app/README.txt).
+deploy/vps/landing/app/*.apk
+deploy/vps/landing/app/*.aab

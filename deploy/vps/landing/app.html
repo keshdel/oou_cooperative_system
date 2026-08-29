@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Get the CoopMS app</title>
+<meta name="description" content="Download the CoopMS mobile app for Android. Check your savings, apply for a loan and pay into your cooperative from your phone.">
+<meta property="og:title" content="Get the CoopMS app">
+<meta property="og:description" content="Your cooperative in your pocket — savings, loans and payments from your phone.">
+<link rel="icon" type="image/svg+xml" href="assets/brand/coopms-favicon.svg">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+  :root{
+    --head:#082b66; --body:#3c4a60; --muted:#5f6d86; --faint:#8a97ad;
+    --paper:#fff; --mist:#f5f7fb; --line:#e4e9f2;
+    --navy:#082b66; --accent:#f4b51c;
+    --mono:ui-monospace,'SF Mono','Cascadia Code','Roboto Mono',Menlo,Consolas,monospace;
+    --r:14px; --maxw:1160px; --measure:60ch;
+  }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html{ scroll-behavior:smooth; -webkit-text-size-adjust:100%; }
+  body{ font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+        color:var(--body); background:var(--paper); line-height:1.65; -webkit-font-smoothing:antialiased; }
+  a{ color:var(--navy); }
+  .wrap{ max-width:var(--maxw); margin:0 auto; padding:0 24px; }
+  h1,h2,h3{ color:var(--head); letter-spacing:-.025em; line-height:1.12; font-weight:800; }
+
+  header{ border-bottom:1px solid var(--line); background:#fff; }
+  .hrow{ display:flex; align-items:center; justify-content:space-between; height:66px; gap:16px; }
+  .brand{ display:inline-flex; align-items:center; gap:10px; text-decoration:none; }
+  .logo-mark{ width:30px; height:30px; flex:none; }
+  .wm{ font-weight:800; letter-spacing:.06em; color:var(--navy); font-size:15px; }
+  .back{ font-size:14px; font-weight:600; text-decoration:none; color:var(--muted); }
+  .back:hover{ color:var(--navy); }
+
+  /* Hero */
+  .hero{ display:grid; grid-template-columns:1fr; gap:40px; padding:56px 0 48px; align-items:center; }
+  @media(min-width:900px){ .hero{ grid-template-columns:1.15fr .85fr; gap:64px; } }
+  .kicker{ display:inline-flex; font-size:12px; font-weight:700; letter-spacing:.14em;
+           text-transform:uppercase; color:var(--navy); margin-bottom:14px; }
+  .hero h1{ font-size:clamp(32px,5.5vw,50px); margin-bottom:16px; }
+  .hero p.lede{ font-size:18px; max-width:var(--measure); margin-bottom:26px; }
+
+  .cta{ display:inline-flex; align-items:center; gap:11px; background:var(--navy); color:#fff;
+        text-decoration:none; font-weight:700; font-size:16px; padding:16px 26px; border-radius:12px;
+        box-shadow:0 10px 26px rgba(8,43,102,.22); }
+  .cta:hover{ background:#0a3576; }
+  .cta svg{ flex:none; }
+  .cta-sub{ display:block; margin-top:12px; font-size:13px; color:var(--faint); }
+
+  .soon{ display:inline-flex; align-items:center; gap:8px; margin-top:20px; padding:9px 15px;
+         border:1px dashed #cfd8e6; border-radius:999px; font-size:13px; color:var(--muted); }
+
+  /* Phone mock */
+  .phone{ justify-self:center; width:236px; border-radius:32px; border:9px solid #0d1f3c;
+          background:var(--navy); padding:34px 20px 40px; text-align:center;
+          box-shadow:0 22px 50px rgba(8,43,102,.25); }
+  .phone .mark{ width:78px; height:78px; margin:0 auto 16px; }
+  .phone .pname{ color:#fff; font-weight:800; letter-spacing:.09em; font-size:14px; }
+  .phone .ptag{ color:#9fb6da; font-size:11px; margin-top:5px; }
+
+  /* Steps */
+  .band{ background:var(--mist); border-top:1px solid var(--line); border-bottom:1px solid var(--line); padding:52px 0; }
+  .band h2{ font-size:26px; margin-bottom:8px; }
+  .band .sub{ color:var(--muted); margin-bottom:28px; max-width:var(--measure); }
+  .steps{ display:grid; grid-template-columns:1fr; gap:18px; counter-reset:s; }
+  @media(min-width:760px){ .steps{ grid-template-columns:repeat(4,1fr); } }
+  .step{ counter-increment:s; background:#fff; border:1px solid var(--line); border-radius:var(--r); padding:20px; }
+  .step::before{ content:counter(s); display:grid; place-items:center; width:30px; height:30px;
+                 border-radius:50%; background:var(--navy); color:#fff; font-family:var(--mono);
+                 font-size:13px; font-weight:700; margin-bottom:12px; }
+  .step h3{ font-size:15.5px; margin-bottom:6px; }
+  .step p{ font-size:14px; color:var(--muted); }
+  .step code{ font-family:var(--mono); background:var(--mist); border:1px solid var(--line);
+              border-radius:5px; padding:1px 5px; font-size:12.5px; color:var(--head); }
+
+  /* Notice + FAQ */
+  .cols{ display:grid; grid-template-columns:1fr; gap:34px; padding:52px 0 64px; }
+  @media(min-width:860px){ .cols{ grid-template-columns:1fr 1fr; gap:56px; } }
+  .note{ background:#fffaf0; border-left:3px solid var(--accent); border-radius:0 var(--r) var(--r) 0; padding:18px 20px; }
+  .note h3{ font-size:16px; margin-bottom:8px; }
+  .note p{ font-size:14.5px; margin-bottom:9px; }
+  .note p:last-child{ margin-bottom:0; }
+  .faq h2{ font-size:22px; margin-bottom:16px; }
+  details{ border-bottom:1px solid var(--line); padding:13px 0; }
+  summary{ cursor:pointer; font-weight:700; color:var(--head); font-size:15px; list-style:none; }
+  summary::-webkit-details-marker{ display:none; }
+  summary::after{ content:'+'; float:right; color:var(--faint); font-weight:700; }
+  details[open] summary::after{ content:'\\2212'; }
+  details p{ font-size:14.5px; color:var(--muted); padding-top:9px; max-width:var(--measure); }
+
+  footer{ background:var(--navy); color:#c9d6ec; padding:32px 0; font-size:14px; }
+  footer a{ color:#fff; }
+  .fbot{ display:flex; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap hrow">
+    <a class="brand" href="/">
+      <svg class="logo-mark" viewBox="0 0 256 256" aria-hidden="true"><path d="M68 64 128 30 188 64" fill="none" stroke="#082b66" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/><path d="M44 102v70l84 48 56-32" fill="none" stroke="#082b66" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/><path d="M212 102v70" fill="none" stroke="#f4b51c" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/><circle fill="#082b66" cx="68" cy="64" r="24"/><circle fill="#082b66" cx="128" cy="30" r="24"/><circle fill="#f4b51c" cx="188" cy="64" r="24"/><circle fill="#082b66" cx="44" cy="102" r="24"/><circle fill="#082b66" cx="44" cy="172" r="24"/><circle fill="#082b66" cx="128" cy="220" r="24"/><circle fill="#f4b51c" cx="212" cy="102" r="24"/><circle fill="#f4b51c" cx="212" cy="172" r="24"/></svg>
+      <span class="wm">COOPMS</span>
+    </a>
+    <a class="back" href="/">&larr; Back to site</a>
+  </div>
+</header>
+
+<div class="wrap hero">
+  <div>
+    <span class="kicker">Android app</span>
+    <h1>Your cooperative, in your pocket</h1>
+    <p class="lede">
+      Check your savings, follow a loan application, see what you have contributed, and pay
+      into your society from any bank app &mdash; without going to the office.
+    </p>
+
+    <a class="cta" href="/app/coopms.apk" download>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 3v12"/><path d="m7 12 5 5 5-5"/><path d="M4 21h16"/>
+      </svg>
+      Download for Android
+    </a>
+    <span class="cta-sub">Free. Works with every cooperative that uses CoopMS.</span>
+
+    <div class="soon">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+           stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+      Coming to Google Play and the App Store
+    </div>
+  </div>
+
+  <div class="phone" aria-hidden="true">
+    <svg class="mark" viewBox="0 0 256 256"><circle fill="#f4b51c" cx="128" cy="46" r="21"/><circle fill="#f4b51c" cx="199" cy="87" r="21"/><circle fill="#f4b51c" cx="199" cy="169" r="21"/><circle fill="#f4b51c" cx="128" cy="210" r="21"/><circle fill="#f4b51c" cx="57" cy="169" r="21"/><circle fill="#f4b51c" cx="57" cy="87" r="21"/><circle fill="#fff" cx="128" cy="128" r="33"/></svg>
+    <div class="pname">COOPMS</div>
+    <div class="ptag">Cooperative Management</div>
+  </div>
+</div>
+
+<div class="band">
+  <div class="wrap">
+    <h2>Installing it</h2>
+    <p class="sub">Four steps, about two minutes. You will need the short code your cooperative uses &mdash; ask your secretary if you do not know it.</p>
+    <div class="steps">
+      <div class="step">
+        <h3>Download</h3>
+        <p>Tap the button above on your Android phone. The file is about 60&nbsp;MB, so use Wi-Fi if you can.</p>
+      </div>
+      <div class="step">
+        <h3>Allow the install</h3>
+        <p>Android will ask whether to allow installing from your browser. Tap <strong>Settings</strong>, turn it on, then go back.</p>
+      </div>
+      <div class="step">
+        <h3>Enter your code</h3>
+        <p>On first launch, type your society's code &mdash; for example <code>ooucoop</code>. You only do this once.</p>
+      </div>
+      <div class="step">
+        <h3>Sign in</h3>
+        <p>Use the same email and password as the member portal. Forgotten it? Tap <strong>Forgot password</strong>.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="wrap cols">
+  <div class="note">
+    <h3>Why Android warns you</h3>
+    <p>
+      Because this app is downloaded from our website rather than the Play Store, Android shows a
+      warning about installing from an unknown source. That warning is about <em>where</em> the file
+      came from, not about the app.
+    </p>
+    <p>
+      Only ever download it from <strong>cooperativems.com</strong>. If someone sends you a CoopMS
+      file by WhatsApp or email, do not install it &mdash; come here instead.
+    </p>
+    <p>
+      Once we are on Google Play the warning disappears, and you will be able to move across without
+      losing anything.
+    </p>
+  </div>
+
+  <div class="faq">
+    <h2>Questions</h2>
+    <details>
+      <summary>Will it update itself?</summary>
+      <p>Yes, mostly. Improvements and fixes arrive on their own the next time you open the app &mdash;
+         you do not have to download anything again. Bigger changes occasionally need a fresh download,
+         and we will tell you inside the app when that happens.</p>
+    </details>
+    <details>
+      <summary>Is my money information safe?</summary>
+      <p>Your connection is encrypted, your bank details and identity numbers are encrypted in storage,
+         and card numbers are never held by us at all. Read the
+         <a href="/privacy.html">privacy policy</a> for the full picture.</p>
+    </details>
+    <details>
+      <summary>Do I need a separate app for my cooperative?</summary>
+      <p>No. One app serves every society using CoopMS. Your code decides which one you see, and you
+         can switch societies from the sign-in screen.</p>
+    </details>
+    <details>
+      <summary>What about iPhone?</summary>
+      <p>An iPhone version is coming. Until then, use the member portal in your phone's browser &mdash;
+         it works on any device and does everything the app does.</p>
+    </details>
+    <details>
+      <summary>I do not know my cooperative's code</summary>
+      <p>Ask your secretary or treasurer. It is usually a short version of the society's name, and it
+         is the same code used in your portal web address.</p>
+    </details>
+  </div>
+</div>
+
+<footer>
+  <div class="wrap fbot">
+    <div>&copy; <span id="yr"></span> CoopMS &mdash; Cooperative Management Software.</div>
+    <div><a href="/privacy.html">Privacy Policy</a> &nbsp;·&nbsp; <a href="/">cooperativems.com</a></div>
+  </div>
+</footer>
+
+<script>document.getElementById('yr').textContent = new Date().getFullYear();</script>
+</body>
+</html>
