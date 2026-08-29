@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<!--
+  DRAFT — have a Nigerian data-protection lawyer or your DPO review this before
+  it goes live, and fill in every [SQUARE-BRACKETED] placeholder first.
+  It describes what the software actually does as of the date below; if the
+  product changes what it collects, this page has to change with it.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Privacy Policy — CoopMS</title>
+<meta name="description" content="How CoopMS and the CoopMS mobile app collect, use, store and protect personal information belonging to cooperative society members.">
+<meta name="robots" content="index, follow">
+<link rel="icon" type="image/svg+xml" href="assets/brand/coopms-favicon.svg">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+  :root{
+    --ink:#082b66; --head:#082b66; --body:#3c4a60; --muted:#5f6d86; --faint:#8a97ad;
+    --paper:#fff; --mist:#f5f7fb; --mist2:#eef2f8; --line:#e4e9f2; --line2:#d7deeb;
+    --navy:#082b66; --accent:#f4b51c;
+    --mono:ui-monospace,'SF Mono','Cascadia Code','Roboto Mono',Menlo,Consolas,monospace;
+    --r:12px; --maxw:1160px; --measure:70ch;
+  }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html{ scroll-behavior:smooth; -webkit-text-size-adjust:100%; }
+  body{ font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+        color:var(--body); background:var(--paper); line-height:1.65; -webkit-font-smoothing:antialiased; }
+  a{ color:var(--navy); text-decoration:underline; text-underline-offset:2px; }
+  a:hover{ color:#0a3576; }
+  .wrap{ max-width:var(--maxw); margin:0 auto; padding:0 24px; }
+  h1,h2,h3{ color:var(--head); letter-spacing:-.02em; line-height:1.15; font-weight:800; }
+
+  /* Header */
+  header{ border-bottom:1px solid var(--line); background:#fff; position:sticky; top:0; z-index:10; }
+  .hrow{ display:flex; align-items:center; justify-content:space-between; height:66px; gap:16px; }
+  .brand{ display:inline-flex; align-items:center; gap:10px; text-decoration:none; }
+  .logo-mark{ width:30px; height:30px; flex:none; }
+  .wm{ font-weight:800; letter-spacing:.06em; color:var(--navy); font-size:15px; }
+  .back{ font-size:14px; font-weight:600; text-decoration:none; color:var(--muted); }
+  .back:hover{ color:var(--navy); }
+
+  /* Title block */
+  .title{ padding:52px 0 30px; border-bottom:1px solid var(--line); }
+  .kicker{ display:inline-flex; font-size:12px; font-weight:700; letter-spacing:.14em;
+           text-transform:uppercase; color:var(--navy); margin-bottom:12px; }
+  .title h1{ font-size:clamp(30px,5vw,44px); margin-bottom:14px; }
+  .lede{ max-width:var(--measure); font-size:17px; color:var(--body); }
+  .dates{ margin-top:18px; font-family:var(--mono); font-size:13px; color:var(--faint); }
+
+  /* Layout */
+  .cols{ display:grid; grid-template-columns:1fr; gap:36px; padding:38px 0 70px; align-items:start; }
+  @media(min-width:940px){ .cols{ grid-template-columns:230px minmax(0,1fr); gap:56px; }
+                           .toc{ position:sticky; top:90px; } }
+  .toc h4{ font-size:11px; font-weight:700; letter-spacing:.14em; text-transform:uppercase;
+           color:var(--faint); padding-bottom:10px; border-bottom:1px solid var(--line); margin-bottom:12px; }
+  .toc ol{ list-style:none; display:flex; flex-direction:column; gap:9px; counter-reset:toc; }
+  .toc a{ font-size:14px; color:var(--muted); text-decoration:none; display:block; }
+  .toc a:hover{ color:var(--navy); }
+
+  section{ margin-bottom:34px; scroll-margin-top:86px; }
+  section h2{ font-size:21px; margin-bottom:12px; }
+  section h3{ font-size:16px; font-weight:700; margin:20px 0 7px; }
+  section p{ max-width:var(--measure); margin-bottom:12px; }
+  section ul{ max-width:var(--measure); padding-left:20px; margin-bottom:12px; }
+  section li{ margin-bottom:7px; }
+  strong{ color:var(--head); font-weight:700; }
+
+  .note{ background:var(--mist); border-left:3px solid var(--accent); border-radius:0 var(--r) var(--r) 0;
+         padding:16px 18px; margin:18px 0; max-width:var(--measure); }
+  .note p:last-child{ margin-bottom:0; }
+
+  .table-wrap{ overflow-x:auto; margin:16px 0; border:1px solid var(--line); border-radius:var(--r); }
+  table{ border-collapse:collapse; width:100%; min-width:520px; font-size:14.5px; }
+  th,td{ text-align:left; padding:11px 14px; border-bottom:1px solid var(--line); vertical-align:top; }
+  thead th{ background:var(--mist); font-size:11px; letter-spacing:.1em; text-transform:uppercase;
+            color:var(--muted); font-weight:700; }
+  tbody tr:last-child td{ border-bottom:none; }
+  td:first-child{ font-weight:600; color:var(--head); white-space:nowrap; }
+
+  .fill{ background:#fff5d8; padding:1px 5px; border-radius:4px; font-family:var(--mono);
+         font-size:13px; color:#7a5a00; }
+
+  footer{ background:var(--navy); color:#c9d6ec; padding:34px 0; font-size:14px; }
+  footer a{ color:#fff; }
+  .fbot{ display:flex; justify-content:space-between; gap:16px; flex-wrap:wrap; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap hrow">
+    <a class="brand" href="/">
+      <svg class="logo-mark" viewBox="0 0 256 256" aria-hidden="true"><path d="M68 64 128 30 188 64" fill="none" stroke="#082b66" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/><path d="M44 102v70l84 48 56-32" fill="none" stroke="#082b66" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/><path d="M212 102v70" fill="none" stroke="#f4b51c" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/><circle fill="#082b66" cx="68" cy="64" r="24"/><circle fill="#082b66" cx="128" cy="30" r="24"/><circle fill="#f4b51c" cx="188" cy="64" r="24"/><circle fill="#082b66" cx="44" cy="102" r="24"/><circle fill="#082b66" cx="44" cy="172" r="24"/><circle fill="#082b66" cx="128" cy="220" r="24"/><circle fill="#f4b51c" cx="212" cy="102" r="24"/><circle fill="#f4b51c" cx="212" cy="172" r="24"/></svg>
+      <span class="wm">COOPMS</span>
+    </a>
+    <a class="back" href="/">&larr; Back to site</a>
+  </div>
+</header>
+
+<div class="wrap title">
+  <span class="kicker">Legal</span>
+  <h1>Privacy Policy</h1>
+  <p class="lede">
+    This policy explains what personal information the CoopMS platform and the CoopMS
+    mobile app collect about cooperative society members, why we collect it, who it is
+    shared with, and the rights you have over it under the Nigeria Data Protection Act 2023.
+  </p>
+  <div class="dates">
+    Effective <span class="fill">[DATE]</span> &nbsp;·&nbsp; Last updated <span class="fill">[DATE]</span>
+  </div>
+</div>
+
+<div class="wrap cols">
+
+  <nav class="toc" aria-label="Contents">
+    <h4>Contents</h4>
+    <ol>
+      <li><a href="#who">1. Who is responsible</a></li>
+      <li><a href="#what">2. What we collect</a></li>
+      <li><a href="#why">3. Why we collect it</a></li>
+      <li><a href="#app">4. The mobile app</a></li>
+      <li><a href="#share">5. Who we share with</a></li>
+      <li><a href="#where">6. Where it is stored</a></li>
+      <li><a href="#keep">7. How long we keep it</a></li>
+      <li><a href="#secure">8. How we protect it</a></li>
+      <li><a href="#rights">9. Your rights</a></li>
+      <li><a href="#delete">10. Deleting your data</a></li>
+      <li><a href="#children">11. Children</a></li>
+      <li><a href="#website">12. Our website</a></li>
+      <li><a href="#changes">13. Changes</a></li>
+      <li><a href="#contact">14. Contact us</a></li>
+    </ol>
+  </nav>
+
+  <main>
+
+    <section id="who">
+      <h2>1. Who is responsible for your information</h2>
+      <p>
+        CoopMS is software operated by <span class="fill">[LEGAL COMPANY NAME]</span>
+        (&ldquo;we&rdquo;, &ldquo;us&rdquo;), registered in Nigeria at
+        <span class="fill">[REGISTERED ADDRESS]</span>.
+      </p>
+      <p>
+        Two different organisations have a role in your information, and the difference
+        matters:
+      </p>
+      <ul>
+        <li>
+          <strong>Your cooperative society is the data controller.</strong> It decides what
+          information to collect from its members and what to do with it. It holds your
+          membership records because you are a member of it.
+        </li>
+        <li>
+          <strong>We are the data processor.</strong> We provide the software your society
+          uses, and we handle your information only on its instructions. We do not sell your
+          information, and we do not use it for advertising.
+        </li>
+      </ul>
+      <p>
+        Each society runs on its own separate database. Your information is never mixed with,
+        or visible to, another cooperative.
+      </p>
+      <div class="note">
+        <p>
+          If you want your record corrected or removed, contact your cooperative first &mdash;
+          they control it. We will help them act on your request.
+        </p>
+      </div>
+    </section>
+
+    <section id="what">
+      <h2>2. What we collect</h2>
+      <p>We collect only what a cooperative needs to run your membership and your money.</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th scope="col">Category</th><th scope="col">What this includes</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Identity</td>
+              <td>Name, member number, date of birth, occupation, and a photograph if your society uses ID cards.</td>
+            </tr>
+            <tr>
+              <td>Contact</td>
+              <td>Email address, phone number, and postal address.</td>
+            </tr>
+            <tr>
+              <td>Financial</td>
+              <td>Savings, share capital, loans and repayments, Target Advance contributions, and the bank account number your society pays you into.</td>
+            </tr>
+            <tr>
+              <td>Identifiers</td>
+              <td>Bank Verification Number (BVN) and National Identification Number (NIN), where your society requires them.</td>
+            </tr>
+            <tr>
+              <td>Other people</td>
+              <td>The name and phone number of your next of kin, nominee and emergency contact, which you provide about them.</td>
+            </tr>
+            <tr>
+              <td>Account</td>
+              <td>Your username, an encrypted form of your password, two-factor settings, and a record of your sign-ins.</td>
+            </tr>
+            <tr>
+              <td>Activity</td>
+              <td>A log of actions taken on your record &mdash; who changed what and when &mdash; which cooperatives are required to keep for audit.</td>
+            </tr>
+            <tr>
+              <td>Device</td>
+              <td>If you install the app: a notification token, and whether the device is Android or iPhone.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>What we never collect</h3>
+      <ul>
+        <li><strong>Your card number.</strong> Card payments are handled entirely by a licensed payment provider. We never see or store card numbers, expiry dates or CVVs.</li>
+        <li><strong>Your location.</strong> Neither the app nor the website tracks where you are.</li>
+        <li><strong>Your contacts, photos, messages or other apps.</strong> The app does not read them.</li>
+        <li><strong>Advertising or tracking data.</strong> There is no advertising in the app, and no third-party analytics inside it.</li>
+      </ul>
+    </section>
+
+    <section id="why">
+      <h2>3. Why we collect it, and on what legal basis</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th scope="col">Purpose</th><th scope="col">Lawful basis</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Running your membership, savings, loans and contributions</td>
+                <td>Performance of your contract with your cooperative</td></tr>
+            <tr><td>Verifying who you are and preventing fraud</td>
+                <td>Legal obligation, and the legitimate interest of the cooperative and its members</td></tr>
+            <tr><td>Keeping accurate books and an audit trail</td>
+                <td>Legal obligation under cooperative and financial record-keeping rules</td></tr>
+            <tr><td>Telling you about your account by app alert, email or text</td>
+                <td>Performance of contract; you may switch text messages off at any time</td></tr>
+            <tr><td>Keeping the service secure and available</td>
+                <td>Legitimate interest in protecting members&rsquo; money and data</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Where we rely on your consent &mdash; for example to keep your card details on file for a
+        savings plan &mdash; you may withdraw it at any time without affecting your membership.
+      </p>
+    </section>
+
+    <section id="app">
+      <h2>4. The mobile app</h2>
+      <p>
+        The CoopMS app is a window onto your own membership record. It shows you the same
+        information your cooperative already holds, and lets you update your details, apply for
+        a loan, and see what you have paid in.
+      </p>
+      <h3>What the app stores on your phone</h3>
+      <ul>
+        <li>A sign-in token, held in your device&rsquo;s encrypted secure storage and valid for 24 hours.</li>
+        <li>The code of the cooperative you chose, so you do not have to type it again.</li>
+      </ul>
+      <p>
+        Nothing else is kept on the device. Signing out removes both.
+      </p>
+      <h3>Notifications</h3>
+      <p>
+        If you allow notifications, we store a token that lets us send alerts to your phone. It
+        identifies the device, not you personally, and cannot be used to read anything on it.
+        Turning notifications off in your phone settings stops them.
+      </p>
+      <h3>Your personal account number</h3>
+      <p>
+        If your cooperative issues account numbers, the app shows yours. It is a real bank
+        account in your name at a partner bank, used only to receive money you send to your
+        cooperative. You choose in the app whether those transfers pay for savings, a loan, or a
+        Target Advance contribution.
+      </p>
+    </section>
+
+    <section id="share">
+      <h2>5. Who we share your information with</h2>
+      <p>
+        We share only what is necessary, only with providers who are contractually bound to
+        protect it, and never for their own marketing.
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th scope="col">Who</th><th scope="col">What they receive, and why</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Your cooperative</td>
+              <td>Everything in your membership record. They are the controller of it.</td>
+            </tr>
+            <tr>
+              <td>Payment providers</td>
+              <td>Your name, email and payment amount, so card payments and bank transfers can be processed and your personal account number issued. Licensed and regulated by the Central Bank of Nigeria.</td>
+            </tr>
+            <tr>
+              <td>Text message providers</td>
+              <td>Your phone number and the text of the alert, when your cooperative sends you one.</td>
+            </tr>
+            <tr>
+              <td>Email providers</td>
+              <td>Your email address and the message, for statements, receipts and password resets.</td>
+            </tr>
+            <tr>
+              <td>Notification service</td>
+              <td>Your device token and the alert text, to deliver app notifications.</td>
+            </tr>
+            <tr>
+              <td>Hosting provider</td>
+              <td>Stores the encrypted database on our behalf. Has no independent right to use it.</td>
+            </tr>
+            <tr>
+              <td>Regulators, auditors, courts</td>
+              <td>Only where we or your cooperative are legally required to disclose.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p><strong>We do not sell your personal information to anyone, for any purpose.</strong></p>
+    </section>
+
+    <section id="where">
+      <h2>6. Where your information is stored</h2>
+      <p>
+        Our servers are located in <span class="fill">[HOSTING COUNTRY — currently Germany]</span>,
+        which means your information is transferred outside Nigeria. We do this because it gives
+        the service better reliability and security than we could otherwise provide.
+      </p>
+      <p>
+        The Nigeria Data Protection Act allows such transfers where the receiving country offers
+        an adequate level of protection or where appropriate contractual safeguards are in place.
+        Our hosting provider is bound by data-protection terms that meet this requirement.
+      </p>
+    </section>
+
+    <section id="keep">
+      <h2>7. How long we keep it</h2>
+      <ul>
+        <li><strong>While you are a member</strong> &mdash; for as long as your membership lasts.</li>
+        <li><strong>After you leave</strong> &mdash; your financial records are kept for
+            <span class="fill">[RETENTION PERIOD, e.g. 6 years]</span>, because cooperative and tax
+            rules require the books to be auditable for that period.</li>
+        <li><strong>Sign-in and activity logs</strong> &mdash; <span class="fill">[e.g. 12 months]</span>.</li>
+        <li><strong>Device notification tokens</strong> &mdash; until you sign out or uninstall the app.</li>
+      </ul>
+      <p>After those periods, records are deleted or anonymised.</p>
+    </section>
+
+    <section id="secure">
+      <h2>8. How we protect it</h2>
+      <ul>
+        <li><strong>Encrypted in transit.</strong> Every connection to the app and the website uses HTTPS.</li>
+        <li><strong>Sensitive fields encrypted at rest.</strong> Bank account details, BVN and NIN are
+            encrypted in the database, so they are unreadable even to someone with direct access to it.</li>
+        <li><strong>Passwords are never stored.</strong> Only a one-way cryptographic hash is kept, which
+            cannot be turned back into your password.</li>
+        <li><strong>Two-factor authentication</strong> is available, and your cooperative can require it for officers.</li>
+        <li><strong>Separate databases.</strong> Each cooperative's data is physically separated from every other's.</li>
+        <li><strong>Access is logged.</strong> Every change to a member record records who made it and when.</li>
+        <li><strong>Regular backups</strong>, so your society's records survive a hardware failure.</li>
+      </ul>
+      <p>
+        No system is completely secure. If a breach occurs that is likely to put you at risk, we will
+        notify your cooperative and the Nigeria Data Protection Commission as the law requires, and
+        your cooperative will notify you.
+      </p>
+    </section>
+
+    <section id="rights">
+      <h2>9. Your rights</h2>
+      <p>Under the Nigeria Data Protection Act 2023 you have the right to:</p>
+      <ul>
+        <li><strong>Know</strong> what information is held about you and get a copy of it.</li>
+        <li><strong>Correct</strong> anything that is wrong or out of date.</li>
+        <li><strong>Ask for deletion</strong>, where there is no legal or contractual reason to keep it.</li>
+        <li><strong>Object</strong> to certain uses of your information, and withdraw consent you previously gave.</li>
+        <li><strong>Receive your data</strong> in a portable, machine-readable form.</li>
+        <li><strong>Complain</strong> to the Nigeria Data Protection Commission if you believe your rights have been breached.</li>
+      </ul>
+      <p>
+        Most of these you can exercise yourself: you can view and correct your own details in the app
+        or the member portal at any time. For anything else, contact your cooperative, or us at the
+        address below.
+      </p>
+      <p>
+        We will respond within <strong>30 days</strong>. There is no charge for a reasonable request.
+      </p>
+    </section>
+
+    <section id="delete">
+      <h2>10. Deleting your account and data</h2>
+      <p>To ask for your data to be deleted:</p>
+      <ul>
+        <li>Email <a href="mailto:privacy@cooperativems.com">privacy@cooperativems.com</a> from the
+            address on your membership record, or</li>
+        <li>Ask your cooperative's secretary to make the request on your behalf.</li>
+      </ul>
+      <p>
+        We will confirm within 30 days. Please note that your cooperative must keep your financial
+        records for the statutory period in section 7 even after you leave &mdash; those cannot be
+        deleted on request, because the law requires the books to balance. Everything not covered
+        by that obligation will be removed.
+      </p>
+      <p>
+        Uninstalling the app removes it from your phone but does not delete your membership record,
+        which is held by your cooperative.
+      </p>
+    </section>
+
+    <section id="children">
+      <h2>11. Children</h2>
+      <p>
+        CoopMS is for adult members of cooperative societies. We do not knowingly collect information
+        from anyone under 18. If a child's information reaches us in error, contact us and we will
+        remove it.
+      </p>
+    </section>
+
+    <section id="website">
+      <h2>12. Our website</h2>
+      <p>
+        This website uses Google Tag Manager to understand how visitors find and use our marketing
+        pages. That is separate from the app and the member portal, neither of which contains any
+        third-party analytics.
+      </p>
+      <p>
+        If you fill in our demo request form, we use the details you give to contact you about
+        CoopMS. We do not add you to marketing lists without asking.
+      </p>
+    </section>
+
+    <section id="changes">
+      <h2>13. Changes to this policy</h2>
+      <p>
+        If we change what we collect or how we use it, we will update this page and the date at the
+        top. Where a change materially affects you, we will tell you in the app or by email before
+        it takes effect.
+      </p>
+    </section>
+
+    <section id="contact">
+      <h2>14. Contact us</h2>
+      <p>For anything about your privacy or this policy:</p>
+      <ul>
+        <li><strong>Email:</strong> <a href="mailto:privacy@cooperativems.com">privacy@cooperativems.com</a></li>
+        <li><strong>General enquiries:</strong> <a href="mailto:hello@cooperativems.com">hello@cooperativems.com</a></li>
+        <li><strong>Data Protection Officer:</strong> <span class="fill">[NAME / EMAIL]</span></li>
+        <li><strong>Address:</strong> <span class="fill">[REGISTERED ADDRESS]</span></li>
+      </ul>
+      <p>
+        You may also complain to the <strong>Nigeria Data Protection Commission</strong> at
+        <a href="https://ndpc.gov.ng" rel="noopener">ndpc.gov.ng</a>.
+      </p>
+    </section>
+
+  </main>
+</div>
+
+<footer>
+  <div class="wrap fbot">
+    <div>&copy; <span id="yr"></span> CoopMS &mdash; Cooperative Management Software.</div>
+    <div><a href="/">Back to cooperativems.com</a></div>
+  </div>
+</footer>
+
+<script>document.getElementById('yr').textContent = new Date().getFullYear();</script>
+</body>
+</html>
