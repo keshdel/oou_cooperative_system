@@ -704,6 +704,69 @@ def mobile_loans():
     return jsonify({'success': True, 'loans': _get_loans(g.db, g.member['id'])})
 
 
+# ── Paying in: the member's own account number ─────────────────────────────────
+
+def _in_target_advance(db, member_id):
+    try:
+        from blueprints.ctas import ctas_enabled
+        if not ctas_enabled(db):
+            return False
+        return db.execute(
+            "SELECT 1 FROM ctas_subscriptions WHERE member_id = ? "
+            "AND status IN ('enrolled', 'scheduled', 'active_recovery') LIMIT 1",
+            (member_id,)).fetchone() is not None
+    except Exception:
+        return False
+
+
+@mobile_api.route('/api/mobile/v1/pay-in', methods=['GET', 'PATCH'])
+@member_required
+def mobile_pay_in():
+    """The member's personal account number, and what their transfers pay for.
+
+    GET returns ``enabled: false`` when the cooperative does not issue account
+    numbers, so the app simply hides the section rather than showing an error.
+    """
+    from virtual_accounts import (MEMBER_PREFERENCES, account_for_member,
+                                  member_preference, set_member_preference,
+                                  va_config, va_enabled)
+
+    if not va_enabled(g.db):
+        return jsonify({'success': True, 'enabled': False, 'account': None,
+                        'preference': '', 'choices': []})
+
+    member_id = g.member['id']
+
+    if request.method == 'PATCH':
+        choice = (request.get_json(silent=True) or {}).get('preference', '')
+        if choice == 'ctas' and not _in_target_advance(g.db, member_id):
+            return jsonify({'success': False,
+                            'error': 'You are not currently on a Target Advance cycle.'}), 400
+        if not set_member_preference(g.db, member_id, choice):
+            return jsonify({'success': False, 'error': 'That is not one of the options.'}), 400
+        g.db.commit()
+
+    row = account_for_member(g.db, member_id, va_config(g.db)['va_provider'])
+    account = None
+    if row and row['status'] == 'active':
+        account = {
+            'account_number': row['account_number'],
+            'account_name': row['account_name'],
+            'bank_name': row['bank_name'],
+        }
+
+    choices = [{'key': key, 'label': label} for key, label in MEMBER_PREFERENCES.items()
+               if key != 'ctas' or _in_target_advance(g.db, member_id)]
+
+    return jsonify({
+        'success': True,
+        'enabled': True,
+        'account': account,
+        'preference': member_preference(g.db, member_id),
+        'choices': choices,
+    })
+
+
 # ── CTAS (Target Advance) — optional module, member-facing ──────────────────────
 
 def _ctas_sub_json(s):

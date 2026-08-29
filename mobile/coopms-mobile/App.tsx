@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
 import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
 import React, { Component, type ErrorInfo, type ReactNode, useEffect, useMemo, useState } from 'react';
@@ -29,19 +30,21 @@ import {
   getLoanOptions,
   getNotifications,
   getProfile,
+  getPayIn,
   getSavings,
   loadToken,
   login,
   markAllNotificationsRead,
   previewLoanSchedule,
   registerDevice,
+  setPayInPreference,
   requestPasswordReset,
   resolveTenant,
   updateProfile,
   withdrawLoan
 } from './src/api';
 import { clearTenant, getApiBase, getCoopName, loadTenant, setTenant } from './src/config';
-import type { CtasPayload, DashboardPayload, GuarantorOption, Loan, LoanOptionsPayload, MobileNotification, SavingRow } from './src/types';
+import type { CtasPayload, DashboardPayload, GuarantorOption, Loan, LoanOptionsPayload, MobileNotification, PayInPayload, SavingRow } from './src/types';
 
 type Tab = 'home' | 'profile' | 'savings' | 'loans' | 'ctas' | 'notifications';
 
@@ -576,6 +579,83 @@ function ProfileScreen({ token, data, reload }: { token: string; data: Dashboard
   );
 }
 
+/** The member's own account number, plus what they want transfers to pay for.
+ *  Renders nothing when the cooperative does not issue account numbers, so the
+ *  savings screen is unchanged for societies that have not switched it on. */
+function PayInCard({ token }: { token: string }) {
+  const [data, setData] = useState<PayInPayload | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    getPayIn(token).then(setData).catch(() => undefined);
+  }, [token]);
+
+  if (!data || !data.enabled || !data.account) return null;
+  const account = data.account;
+
+  const copy = async () => {
+    await Clipboard.setStringAsync(account.account_number);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const choose = async (key: string) => {
+    if (saving || key === data.preference) return;
+    setSaving(true);
+    try {
+      setData(await setPayInPreference(token, key));
+    } catch (error) {
+      Alert.alert('Could not save', error instanceof Error ? error.message : 'Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <View style={styles.card}>
+      <Text style={styles.cardTitle}>Your Account Number</Text>
+      <Text style={styles.quickHelper}>
+        Transfer to this account from any bank app and it is credited to you automatically.
+        You do not need to send proof or quote a reference.
+      </Text>
+
+      <View style={styles.payInRow}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.payInNumber} selectable>{account.account_number}</Text>
+          <Text style={styles.rowSub}>{account.bank_name} - {account.account_name}</Text>
+        </View>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Copy account number"
+          style={({ pressed }) => [styles.copyButton, pressed && styles.pressed]}
+          onPress={copy}
+        >
+          <Ionicons name={copied ? 'checkmark' : 'copy-outline'} size={16} color={BLUE} />
+          <Text style={styles.copyButtonText}>{copied ? 'Copied' : 'Copy'}</Text>
+        </Pressable>
+      </View>
+
+      {data.choices.length > 0 ? (
+        <View style={styles.fieldBlock}>
+          <Text style={styles.fieldLabel}>What should your transfers pay for?</Text>
+          <View style={styles.optionWrap}>
+            {data.choices.map((choice) => (
+              <OptionChip
+                key={choice.key || 'coop-default'}
+                label={choice.label}
+                selected={data.preference === choice.key}
+                onPress={() => choose(choice.key)}
+              />
+            ))}
+          </View>
+          <Text style={styles.quickHelper}>Anything left over after that goes into your savings.</Text>
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 function SavingsScreen({ token }: { token: string }) {
   const [rows, setRows] = useState<SavingRow[]>([]);
   const [balance, setBalance] = useState(0);
@@ -590,6 +670,7 @@ function SavingsScreen({ token }: { token: string }) {
   return (
     <ScrollView contentContainerStyle={styles.screen}>
       <StatCard label="Savings Balance" value={money(balance)} />
+      <PayInCard token={token} />
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Savings Statement</Text>
         {rows.map((row) => (
@@ -1331,6 +1412,10 @@ const styles = StyleSheet.create({
   fieldLabel: { color: '#667085', fontWeight: '800', textTransform: 'capitalize' },
   optionWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8, marginBottom: 10 },
   optionStack: { gap: 8, marginTop: 8, marginBottom: 10 },
+  payInRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 10 },
+  payInNumber: { fontSize: 24, fontWeight: '900', color: INK, letterSpacing: 1 },
+  copyButton: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: BORDER, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 9, backgroundColor: '#fff' },
+  copyButtonText: { color: BLUE, fontWeight: '800', fontSize: 13 },
   optionChip: { borderWidth: 1, borderColor: '#D7DEE8', backgroundColor: '#fff', borderRadius: 999, paddingHorizontal: 12, paddingVertical: 9 },
   optionChipSelected: { borderColor: BLUE, backgroundColor: '#EEF4FF' },
   optionChipText: { color: '#667085', fontWeight: '800' },

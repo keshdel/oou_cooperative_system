@@ -160,3 +160,17 @@ export type CtasPayload = {
   subscriptions: CtasSubscription[];
   open_cycles: CtasCycle[];
 };
+
+export type PayInAccount = {
+  account_number: string;
+  account_name: string;
+  bank_name: string;
+};
+
+export type PayInPayload = {
+  success: boolean;
+  enabled: boolean;
+  account: PayInAccount | null;
+  preference: string;
+  choices: { key: string; label: string }[];
+};

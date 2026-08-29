@@ -659,6 +659,107 @@ class MemberPreferenceTests(_VaTestCase):
             # Send more than the loan owes and the difference is saved.
             self.assertEqual([p['target'] for p in va.build_plan(db, mid, 15000)],
                              ['loan', 'savings'])
+# ── The mobile app ────────────────────────────────────────────────────────────
+
+class MobilePayInTests(_VaTestCase):
+    """The member's account number and payment choice, as the app sees them."""
+
+    def setUp(self):
+        super().setUp()
+        self.client = self.app.test_client()
+
+    def tearDown(self):
+        with self.app.app_context():
+            db = get_db()
+            db.execute("DELETE FROM users WHERE username LIKE 'va-mobile%'")
+            db.commit()
+        super().tearDown()
+
+    def _member_with_login(self, db, number='VA/90', account_number='9900000900'):
+        mid = self._member(db, number, account_number)
+        email = f"{number.replace('/', '-').lower()}@example.test"
+        from werkzeug.security import generate_password_hash
+        db.execute("INSERT INTO users (username, email, password_hash, role, is_active) "
+                   "VALUES (?, ?, ?, 'member', 1)",
+                   (f'va-mobile-{number}', email, generate_password_hash('MemberPass123')))
+        db.commit()
+        return mid, f'va-mobile-{number}'
+
+    def _token(self, username):
+        from utils import clear_login_attempts
+        clear_login_attempts('mobile:127.0.0.1')
+        response = self.client.post('/api/mobile/login',
+                                    json={'username': username, 'password': 'MemberPass123'})
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        return response.get_json()['token']
+
+    def _auth(self, token):
+        return {'Authorization': f'Bearer {token}'}
+
+    def test_the_app_is_told_the_members_account_number(self):
+        with self.app.app_context():
+            db = get_db()
+            self._member_with_login(db)
+        token = self._token('va-mobile-VA/90')
+
+        payload = self.client.get('/api/mobile/v1/pay-in', headers=self._auth(token)).get_json()
+        self.assertTrue(payload['enabled'])
+        self.assertEqual(payload['account']['account_number'], '9900000900')
+        self.assertEqual(payload['account']['bank_name'], 'Wema Bank')
+
+    def test_the_section_is_hidden_when_the_coop_does_not_issue_numbers(self):
+        # enabled:false rather than an error, so the app just omits the card.
+        with self.app.app_context():
+            db = get_db()
+            self._member_with_login(db)
+            va.set_va_enabled(db, False)
+            db.commit()
+        token = self._token('va-mobile-VA/90')
+
+        payload = self.client.get('/api/mobile/v1/pay-in', headers=self._auth(token)).get_json()
+        self.assertTrue(payload['success'])
+        self.assertFalse(payload['enabled'])
+        self.assertIsNone(payload['account'])
+
+    def test_the_member_can_set_their_choice_from_the_app(self):
+        with self.app.app_context():
+            db = get_db()
+            mid, _ = self._member_with_login(db)
+        token = self._token('va-mobile-VA/90')
+
+        response = self.client.patch('/api/mobile/v1/pay-in', json={'preference': 'loan'},
+                                     headers=self._auth(token))
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.get_json()['preference'], 'loan')
+
+        with self.app.app_context():
+            self.assertEqual(va.member_preference(get_db(), mid), 'loan')
+
+    def test_target_advance_is_not_offered_to_a_member_who_is_not_on_a_cycle(self):
+        with self.app.app_context():
+            db = get_db()
+            self._member_with_login(db)
+        token = self._token('va-mobile-VA/90')
+
+        payload = self.client.get('/api/mobile/v1/pay-in', headers=self._auth(token)).get_json()
+        self.assertNotIn('ctas', [c['key'] for c in payload['choices']])
+
+        refused = self.client.patch('/api/mobile/v1/pay-in', json={'preference': 'ctas'},
+                                    headers=self._auth(token))
+        self.assertEqual(refused.status_code, 400)
+
+    def test_an_unknown_choice_is_refused(self):
+        with self.app.app_context():
+            db = get_db()
+            self._member_with_login(db)
+        token = self._token('va-mobile-VA/90')
+
+        response = self.client.patch('/api/mobile/v1/pay-in', json={'preference': 'crypto'},
+                                     headers=self._auth(token))
+        self.assertEqual(response.status_code, 400)
+
+    def test_it_needs_a_token(self):
+        self.assertIn(self.client.get('/api/mobile/v1/pay-in').status_code, (401, 403))
 
 if __name__ == '__main__':
     unittest.main()

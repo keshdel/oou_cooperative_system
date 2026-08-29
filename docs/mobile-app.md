@@ -1,4 +1,4 @@
-# CoopMS Mobile App Build Guide
+# CoopMS Mobile App
 
 The mobile app lives at:
 
@@ -6,28 +6,29 @@ The mobile app lives at:
 mobile/coopms-mobile
 ```
 
-It is an Expo/React Native app connected to the existing CoopMS Flask backend.
+It is an Expo / React Native app talking to the CoopMS Flask backend. One build
+serves every cooperative — there is no per-society build.
 
-## Current Scope
+## What the app does
 
-Implemented in the mobile app shell:
-
-- Secure login using `/api/mobile/login`
-- Dashboard
-- Member profile completion
-- Profile update
+- Multi-tenant sign-in: the member enters their society's code, the app resolves
+  the backend and brands the sign-in screen
+- Login, forgotten password, change password
+- Dashboard with savings, share capital, loan balance and profile completion
+- Profile view and update
 - Savings statement
-- Loan list
-- Loan detail
-- Loan schedule preview
-- Loan application submission
-- Pending loan withdrawal
-- Notifications
-- Device push-token registration foundation
-- Target Advance (CTAS) — view subscriptions/status and apply, shown only when the
-  optional CTAS module is enabled for the cooperative
+- **Personal account number** — the member's own NUBAN, with copy-to-clipboard,
+  and their choice of what transfers pay for (savings, loan, or Target Advance)
+- Loans: list, detail, schedule preview, application with guarantors, withdrawal
+- Target Advance (CTAS): subscriptions, status and application — shown only when
+  the cooperative has the module switched on
+- Notifications, and push-token registration so alerts reach the phone
 
-## Run Locally
+Sections tied to an optional feature hide themselves when that feature is off,
+so a cooperative that does not use Target Advance or account numbers simply does
+not see them.
+
+## Run it locally
 
 ```powershell
 cd C:\OOU_Accounting_System\mobile\coopms-mobile
@@ -35,42 +36,77 @@ npm install
 npm start
 ```
 
-Then scan the Expo QR code with Expo Go.
+Scan the QR code with Expo Go. Type-check with `npm run typecheck`.
 
-## Multi-Tenant Login
+Expo Go is for development only. Members get a real build — see below.
 
-The app is multi-tenant — one build serves every society. On first launch the
-member enters their cooperative's **code** (its subdomain, e.g. `smtcoop`). The
-app resolves it to `https://<code>.cooperativems.com`, confirms it via the
-public `GET /api/mobile/v1/tenant` endpoint (which returns the coop's name and
-logo to brand the sign-in screen), and stores the choice on the device. Every
-request then targets that backend. A **Change cooperative** link on the sign-in
-screen lets the member switch societies.
+## Multi-tenant sign-in
 
-A full domain or `https://…` URL is also accepted (for custom-domain tenants).
-No per-tenant build is required.
+On first launch the member enters their cooperative's **code** (its subdomain,
+e.g. `smtcoop`). The app asks HQ to resolve it, falls back to probing
+`https://<code>.cooperativems.com/api/mobile/v1/tenant` directly, and stores the
+choice on the device. Every request then targets that backend. A **Change
+cooperative** link on the sign-in screen switches societies.
 
-## Android Test Build
+A full domain or `https://…` URL is also accepted, for custom-domain tenants.
 
-After Expo dependencies are installed:
+## Building for members
 
-```powershell
-cd C:\OOU_Accounting_System\mobile\coopms-mobile
-npx expo run:android
-```
-
-For cloud/internal distribution later, add EAS:
+Builds run on Expo's servers (EAS), so no Android Studio or Mac is needed.
 
 ```powershell
-npx eas build:configure
-npx eas build --platform android --profile preview
+npm install --global eas-cli
+eas login
 ```
 
-## Next Technical Steps
+**Android, for testing on real phones** — produces an APK you can send to a
+handful of officers:
 
-1. Add password reset screen.
-2. Add document upload for loan requirements.
-3. Add guarantor approval screen.
-4. Add push notification sender on the Flask side.
-5. Add app lock/biometric unlock.
-6. Prepare Android preview build.
+```powershell
+eas build --platform android --profile preview
+```
+
+**Android, for Google Play** — produces the AAB that Play requires:
+
+```powershell
+eas build --platform android --profile production
+```
+
+**iOS** — needs an Apple Developer account ($99/year):
+
+```powershell
+eas build --platform ios --profile production
+```
+
+Then submit:
+
+```powershell
+eas submit --platform android --latest
+```
+
+`eas.json` sets `appVersionSource: remote` with `autoIncrement` on the production
+profile, so EAS manages the build number. Bump the user-visible `version` in
+`app.json` by hand when the release is worth naming.
+
+## Publishing checklist
+
+- App icon, adaptive icon and splash are in `assets/` and wired in `app.json`
+- Package/bundle id: `com.cooperativems.mobile` — changing it after release
+  creates a *different* app on the store, so it is fixed now
+- A privacy policy URL is required by both stores
+- Play data-safety form: the app collects name, email, phone and financial
+  account information, all encrypted in transit, and members can request deletion
+- `play-store-icon.png` (512×512) in `assets/` is the store listing icon
+
+## Over-the-air updates
+
+Once `expo-updates` is added, JavaScript-only changes can be pushed without a new
+store review. Native changes — a new native module, an icon, permissions — still
+need a rebuild. This is not configured yet.
+
+## Not built yet
+
+1. Document upload for loan requirements
+2. Guarantor approval screen (a member accepting a request to guarantee)
+3. App lock / biometric unlock
+4. Over-the-air updates (`expo-updates`)

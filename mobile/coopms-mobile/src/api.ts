@@ -1,6 +1,6 @@
 import * as SecureStore from 'expo-secure-store';
 import { HQ_API_BASE, codeToBaseUrl, getApiBase } from './config';
-import type { CtasPayload, DashboardPayload, Loan, LoanOptionsPayload, MobileNotification, SavingRow } from './types';
+import type { CtasPayload, DashboardPayload, Loan, LoanOptionsPayload, MobileNotification, PayInPayload, SavingRow } from './types';
 
 const TOKEN_KEY = 'coopms.mobile.token';
 
@@ -259,5 +259,20 @@ export async function registerDevice(token: string, pushToken: string, platform:
       platform,
       device_name: deviceName
     }
+  });
+}
+
+/** The member's own account number, and what they said transfers pay for.
+ *  Returns enabled:false when the cooperative does not issue account numbers,
+ *  so the screen hides the section instead of showing an error. */
+export async function getPayIn(token: string) {
+  return request<PayInPayload>('/api/mobile/v1/pay-in', { token });
+}
+
+export async function setPayInPreference(token: string, preference: string) {
+  return request<PayInPayload>('/api/mobile/v1/pay-in', {
+    method: 'PATCH',
+    token,
+    body: { preference }
   });
 }

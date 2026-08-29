@@ -2,11 +2,14 @@
   "expo": {
     "name": "CoopMS",
     "slug": "coopms-mobile",
-    "version": "0.1.0",
+    "version": "1.0.0",
     "orientation": "portrait",
     "scheme": "coopms",
     "userInterfaceStyle": "light",
+    "icon": "./assets/icon.png",
+    "primaryColor": "#0B3475",
     "splash": {
+      "image": "./assets/splash.png",
       "backgroundColor": "#083574",
       "resizeMode": "contain"
     },
@@ -15,13 +18,22 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.cooperativems.mobile"
+      "bundleIdentifier": "com.cooperativems.mobile",
+      "buildNumber": "1",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "com.cooperativems.mobile",
+      "versionCode": 1,
       "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0B3475"
       }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
     },
     "extra": {
       "apiBaseUrl": "https://ooucoop.cooperativems.com",
