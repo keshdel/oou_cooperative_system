@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   Pressable,
   SafeAreaView,
@@ -29,17 +30,17 @@ import {
   getLoanDetail,
   getLoanOptions,
   getNotifications,
-  getProfile,
   getPayIn,
+  getProfile,
   getSavings,
   loadToken,
   login,
   markAllNotificationsRead,
   previewLoanSchedule,
   registerDevice,
-  setPayInPreference,
   requestPasswordReset,
   resolveTenant,
+  setPayInPreference,
   updateProfile,
   withdrawLoan
 } from './src/api';
@@ -66,6 +67,9 @@ const BG = '#EEF3F8';
 const INK = '#102033';
 const BORDER = '#D9E2EE';
 const MUTED = '#607086';
+// Both app stores require a reachable privacy policy; Apple also expects a
+// link inside the app itself.
+const PRIVACY_URL = 'https://cooperativems.com/privacy.html';
 
 function money(value?: number) {
   return `NGN ${(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -575,6 +579,15 @@ function ProfileScreen({ token, data, reload }: { token: string; data: Dashboard
           <Text style={styles.secondaryButtonText}>{passwordBusy ? 'Saving...' : 'Change Password'}</Text>
         </Pressable>
       </View>
+
+      <Pressable
+        accessibilityRole="link"
+        style={({ pressed }) => [styles.privacyLink, pressed && styles.pressed]}
+        onPress={() => Linking.openURL(PRIVACY_URL)}
+      >
+        <Ionicons name="shield-checkmark-outline" size={15} color={MUTED} />
+        <Text style={styles.privacyLinkText}>Privacy Policy</Text>
+      </Pressable>
     </ScrollView>
   );
 }
@@ -1412,6 +1425,8 @@ const styles = StyleSheet.create({
   fieldLabel: { color: '#667085', fontWeight: '800', textTransform: 'capitalize' },
   optionWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8, marginBottom: 10 },
   optionStack: { gap: 8, marginTop: 8, marginBottom: 10 },
+  privacyLink: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 18 },
+  privacyLinkText: { color: MUTED, fontSize: 13, fontWeight: '600' },
   payInRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 10 },
   payInNumber: { fontSize: 24, fontWeight: '900', color: INK, letterSpacing: 1 },
   copyButton: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: BORDER, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 9, backgroundColor: '#fff' },
