@@ -4,7 +4,8 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 import time
 
-from flask import Blueprint, current_app, render_template, redirect, url_for, request, flash, session
+from flask import (Blueprint, current_app, flash, jsonify, redirect, render_template,
+                   request, session, url_for)
 from flask_login import login_user, login_required, logout_user
 from werkzeug.security import check_password_hash, generate_password_hash
 
@@ -121,6 +122,44 @@ def _issue_password_reset_link(db, user):
 @auth.route('/')
 def index():
     return render_template('index.html')
+
+
+@auth.route('/manifest.webmanifest')
+def web_manifest():
+    """Lets a member add the portal to their phone's home screen as an app.
+
+    This is how iPhone members get an app: Apple does not allow installing from
+    a website, so the portal has to be the app for them. Generated per request
+    rather than served as a static file so each society's home-screen icon
+    carries its own name.
+    """
+    db = get_db()
+    row = db.execute("SELECT value FROM settings WHERE key = 'coop_name'").fetchone()
+    name = (row['value'] if row else '') or 'CoopMS'
+    short = db.execute(
+        "SELECT value FROM settings WHERE key = 'coop_short_name'").fetchone()
+    short_name = (short['value'] if short else '') or name
+
+    icon = lambda f, size, purpose: {                      # noqa: E731
+        'src': url_for('static', filename=f'icons/{f}'),
+        'sizes': size, 'type': 'image/png', 'purpose': purpose,
+    }
+    return jsonify({
+        'name': f'{name} — Member Portal',
+        'short_name': short_name[:12],
+        'description': 'Your savings, loans and contributions.',
+        'start_url': '/dashboard',
+        'scope': '/',
+        'display': 'standalone',
+        'orientation': 'portrait',
+        'background_color': '#f4f6f9',
+        'theme_color': '#1a3a6c',
+        'icons': [
+            icon('icon-192.png', '192x192', 'any'),
+            icon('icon-512.png', '512x512', 'any'),
+            icon('icon-maskable-512.png', '512x512', 'maskable'),
+        ],
+    })
 
 
 @auth.route('/login', methods=['GET', 'POST'])
