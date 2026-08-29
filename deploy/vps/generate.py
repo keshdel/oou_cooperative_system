@@ -130,6 +130,10 @@ def render_caddyfile(clients):
         lines += [
             "    root * /srv/landing",
             "    encode gzip",
+            # Clean URLs: /app and /privacy resolve to app.html and privacy.html.
+            # These links go to members in text messages, where a ".html" is one
+            # more thing to mistype.
+            "    try_files {path} {path}.html {path}/index.html",
             "    file_server",
             "}",
             "",

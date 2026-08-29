@@ -139,12 +139,12 @@ what they are on.
 ## Distributing to members
 
 The download page is `deploy/vps/landing/app.html`, served at
-**https://cooperativems.com/app.html**. It links to `/app/coopms.apk`.
+**https://cooperativems.com/app**. It links to `/download/coopms.apk`.
 
 The APK is not in git — it is build output. After a release build, copy it up:
 
 ```powershell
-scp coopms.apk root@206.81.30.5:~/oou_cooperative_system/deploy/vps/landing/app/
+scp coopms.apk root@206.81.30.5:~/oou_cooperative_system/deploy/vps/landing/download/
 ```
 
 Then it is live. Members who already have the app do **not** need to download it

@@ -72,7 +72,7 @@ const BORDER = '#D9E2EE';
 const MUTED = '#607086';
 // Both app stores require a reachable privacy policy; Apple also expects a
 // link inside the app itself.
-const PRIVACY_URL = 'https://cooperativems.com/privacy.html';
+const PRIVACY_URL = 'https://cooperativems.com/privacy';
 
 /** What this phone is actually running. When a member reports a problem, this
  *  is the difference between guessing and knowing which build and which

@@ -7,12 +7,12 @@
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>https://cooperativems.com/privacy.html</loc>
+    <loc>https://cooperativems.com/privacy</loc>
     <changefreq>yearly</changefreq>
     <priority>0.3</priority>
   </url>
   <url>
-    <loc>https://cooperativems.com/app.html</loc>
+    <loc>https://cooperativems.com/app</loc>
     <changefreq>monthly</changefreq>
     <priority>0.8</priority>
   </url>

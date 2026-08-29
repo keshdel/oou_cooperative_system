@@ -67,5 +67,5 @@ functions/venv/
 
 # Release APK served from the landing site. Build output, not source — it is
 # copied to the server directly (see deploy/vps/landing/app/README.txt).
-deploy/vps/landing/app/*.apk
-deploy/vps/landing/app/*.aab
+deploy/vps/landing/download/*.apk
+deploy/vps/landing/download/*.aab
