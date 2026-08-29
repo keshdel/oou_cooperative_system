@@ -56,3 +56,11 @@ deploy/vps/COMMANDS.txt
 deploy/vps/.backup-remote
 
 deploy/vps/.landing-domain
+
+# ── Kept out of the EAS build archive ─────────────────────────────────────────
+# EAS Build honours only this root .gitignore, not nested ones, and it does not
+# stop at nested git repositories. Without these three lines it uploaded 40 MB
+# of virtualenv and agent worktree to build an 820 KB app.
+functions/venv/
+.claude/worktrees/
+.codex/

@@ -1,14 +1,10 @@
 # What NOT to send to EAS Build.
 #
-# The Expo app lives in mobile/coopms-mobile but sits inside the CoopMS Flask
-# repository, so EAS archives from the repository root and picks up the whole
-# server project — roughly 15 MB of it, none of which the app build uses.
-# Without this file the upload is twenty times larger than it needs to be, which
-# is a slow upload at best and a timeout at worst.
+# NOTE: this file alone did not work. EAS archived the whole repository anyway.
+# The root .gitignore is what actually excludes the heavy directories — see the
+# "Kept out of the EAS build archive" section there. This file is kept because
+# it is the documented mechanism and costs nothing, but do not rely on it.
 #
-# Paths that do not exist in the archive are simply ignored, so this file is
-# safe regardless of which directory EAS ends up archiving from.
-
 # ── The Flask server project ──────────────────────────────────────────────────
 /blueprints/
 /templates/
