@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}Training Centre{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-0">
+
+  <div class="d-flex flex-wrap justify-content-between align-items-end gap-2 mb-3">
+    <div>
+      <h1 class="h3 mb-1">Training Centre</h1>
+      <p class="text-muted mb-0">
+        The course for our officers — two half-days. You do not need to know accounting to follow it.
+      </p>
+    </div>
+    {% if deck_available %}
+    <a href="{{ url_for('training.slides') }}" class="btn btn-primary">
+      <i class="fas fa-display me-1"></i> Open the slides
+    </a>
+    {% endif %}
+  </div>
+
+  <!-- What the course covers, before anything else -->
+  <div class="card mb-4">
+    <div class="card-header bg-white py-3">
+      <h2 class="h5 mb-1">What we will cover</h2>
+      <p class="text-muted small mb-0">
+        Read this before the first class, so you know what is coming.
+      </p>
+    </div>
+    <div class="card-body">
+      <div class="row g-4">
+        {% for day in course %}
+        <div class="col-lg-6">
+          <div class="d-flex align-items-baseline gap-2 mb-1">
+            <span class="badge bg-primary">{{ day.day }}</span>
+            <span class="text-muted small">{{ day.length }}</span>
+          </div>
+          <h3 class="h6 fw-bold mb-1">{{ day.theme }}</h3>
+          <p class="text-muted small">{{ day.summary }}</p>
+          <ol class="ps-3 mb-0">
+            {% for title, detail in day.sessions %}
+            <li class="mb-2">
+              <span class="fw-semibold">{{ title }}</span>
+              <span class="d-block text-muted small">{{ detail }}</span>
+            </li>
+            {% endfor %}
+          </ol>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="row g-4">
+
+    <!-- Exercises -->
+    <div class="col-lg-7">
+      <div class="card h-100">
+        <div class="card-header bg-white py-3">
+          <h2 class="h5 mb-1">What we practise</h2>
+          <p class="text-muted small mb-0">
+            We do these in class on a practice copy — never on real member records.
+          </p>
+        </div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+              <tbody>
+                {% for ref, title, detail in exercises %}
+                <tr>
+                  <td class="text-muted font-monospace small text-nowrap ps-3">{{ ref }}</td>
+                  <td>
+                    <span class="fw-semibold">{{ title }}</span>
+                    <span class="d-block text-muted small">{{ detail }}</span>
+                  </td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Materials -->
+    <div class="col-lg-5">
+      <div class="card h-100">
+        <div class="card-header bg-white py-3">
+          <h2 class="h5 mb-0">Class materials</h2>
+        </div>
+        <div class="card-body d-flex flex-column gap-3">
+
+          {% if deck_available %}
+          <div>
+            <a href="{{ url_for('training.slides') }}" class="fw-semibold text-decoration-none">
+              <i class="fas fa-display me-1 text-primary"></i> Teaching slides
+            </a>
+            <p class="text-muted small mb-0">
+              The slides for both days. Use the arrow keys to move from slide to slide;
+              press <kbd>N</kbd> to show the teacher's notes.
+            </p>
+          </div>
+          {% endif %}
+
+          {% for slug, doc in documents.items() %}
+          {% if can('training.facilitate') %}
+          <div>
+            <a href="{{ url_for('training.document', slug=slug) }}" class="fw-semibold text-decoration-none">
+              <i class="fas fa-file-lines me-1 text-primary"></i> {{ doc.title }}
+            </a>
+            <p class="text-muted small mb-0">{{ doc.summary }}</p>
+          </div>
+          {% endif %}
+          {% endfor %}
+
+          <div>
+            <a href="{{ url_for('help_bp.knowledge_base') }}" class="fw-semibold text-decoration-none">
+              <i class="fas fa-book me-1 text-primary"></i> Knowledge Base
+            </a>
+            <p class="text-muted small mb-0">
+              Answers to everyday questions, screen by screen. Look here before calling anybody.
+            </p>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="alert alert-light border mt-4 mb-0 small">
+    <i class="fas fa-lock me-1 text-muted"></i>
+    These pages are private to our society — only people who have logged in can see them.
+    The practice tasks change real records, so ask the administrator for a practice
+    copy before you work through them.
+  </div>
+
+</div>
+{% endblock %}

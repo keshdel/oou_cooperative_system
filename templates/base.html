@@ -101,6 +101,10 @@
                        class="{% if request.blueprint == 'security' %}active{% endif %}">
                         <i class="fas fa-shield-halved"></i> Security &amp; 2FA
                     </a>
+                    <a href="{{ url_for('training.index') }}"
+                       class="{% if request.blueprint == 'training' %}active{% endif %}">
+                        <i class="fas fa-graduation-cap"></i> Training
+                    </a>
                     <a href="{{ url_for('help_bp.knowledge_base') }}"
                        class="{% if request.blueprint == 'help_bp' %}active{% endif %}">
                         <i class="fas fa-question-circle"></i> Help
@@ -242,6 +246,10 @@
                     <a href="{{ url_for('security.index') }}"
                        class="{% if request.blueprint == 'security' %}active{% endif %}">
                         <i class="fas fa-shield-halved"></i> Security &amp; 2FA
+                    </a>
+                    <a href="{{ url_for('training.index') }}"
+                       class="{% if request.blueprint == 'training' %}active{% endif %}">
+                        <i class="fas fa-graduation-cap"></i> Training
                     </a>
                     <a href="{{ url_for('help_bp.knowledge_base') }}"
                        class="{% if request.blueprint == 'help_bp' %}active{% endif %}">

@@ -372,6 +372,17 @@ PERMISSIONS = [
         'endpoints': ('feedback.admin', 'feedback.export_referrals'),
     },
 
+    # ── Training ─────────────────────────────────────────────────────────────
+    {
+        'key': 'training.facilitate',
+        'label': 'Open the facilitator material',
+        'group': 'Training',
+        'description': "The lesson plan and facilitator notes for the officer course. "
+                       "The course outline and the slides stay open to every member.",
+        'default_roles': ('admin', 'secretary', 'treasurer', 'exco'),
+        'endpoints': ('training.document',),
+    },
+
     # ── Data migration ───────────────────────────────────────────────────────
     {
         'key': 'migration.members',

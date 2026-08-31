@@ -1,0 +1,1170 @@
+<title>CoopMS Exco Course</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zilla+Slab:wght@400;600;700&family=Public+Sans:wght@300;400;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+
+<style>
+:root {
+  --paper:        #F1F4EE;
+  --raised:       #FAFBF7;
+  --ink:          #12181C;
+  --ink-soft:     #4C575A;
+  --ink-faint:    #7C8783;
+  --rule:         #D5DBD1;
+  --red:          #AF3328;
+  --teal:         #1C5D51;
+  --ochre:        #8C6716;
+  --shadow:       0 1px 2px rgba(18,24,28,.06), 0 8px 24px -12px rgba(18,24,28,.18);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper:    #0E1315;
+    --raised:   #161D20;
+    --ink:      #E8ECE6;
+    --ink-soft: #9DA8A2;
+    --ink-faint:#6E7A75;
+    --rule:     #283130;
+    --red:      #E0776C;
+    --teal:     #63BCA8;
+    --ochre:    #C99E4C;
+    --shadow:   0 1px 2px rgba(0,0,0,.4), 0 8px 28px -14px rgba(0,0,0,.7);
+  }
+}
+:root[data-theme="dark"] {
+  --paper:    #0E1315;
+  --raised:   #161D20;
+  --ink:      #E8ECE6;
+  --ink-soft: #9DA8A2;
+  --ink-faint:#6E7A75;
+  --rule:     #283130;
+  --red:      #E0776C;
+  --teal:     #63BCA8;
+  --ochre:    #C99E4C;
+  --shadow:   0 1px 2px rgba(0,0,0,.4), 0 8px 28px -14px rgba(0,0,0,.7);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: "Public Sans", ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Deck shell ─────────────────────────────────────────────────────── */
+
+.deck {
+  height: 100dvh;
+  overflow-y: scroll;
+  scroll-snap-type: y mandatory;
+  scroll-behavior: smooth;
+}
+@media (prefers-reduced-motion: reduce) {
+  .deck { scroll-behavior: auto; }
+}
+
+.slide {
+  min-height: 100dvh;
+  scroll-snap-align: start;
+  display: grid;
+  grid-template-columns: 6.5rem 1fr;
+  gap: 0;
+  border-bottom: 1px solid var(--rule);
+}
+@media (max-width: 720px) {
+  .slide { grid-template-columns: 3rem 1fr; }
+}
+
+/* the ruled margin of a ledger page */
+.spine {
+  border-right: 1px solid var(--rule);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  padding: clamp(1.2rem, 3vh, 2.4rem) .4rem;
+}
+.spine::after {
+  content: "";
+  position: absolute;
+  top: 0; bottom: 0; right: -1px;
+  width: 2px;
+  background: var(--red);
+  opacity: .5;
+}
+.spine-num {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: .78rem;
+  color: var(--ink-faint);
+  letter-spacing: .04em;
+}
+.spine-day {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: .7rem;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+}
+
+.body {
+  padding: clamp(1.6rem, 5vh, 4rem) clamp(1.2rem, 5vw, 4.5rem);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: clamp(.9rem, 2.2vh, 1.6rem);
+  max-width: 68rem;
+}
+
+/* ── Type ───────────────────────────────────────────────────────────── */
+
+.eyebrow {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: clamp(.68rem, 1.1vw, .8rem);
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: var(--red);
+  margin: 0;
+}
+h1 {
+  font-family: "Zilla Slab", Georgia, serif;
+  font-weight: 700;
+  font-size: clamp(2.4rem, 7vw, 5rem);
+  line-height: 1.02;
+  letter-spacing: -.015em;
+  text-wrap: balance;
+  margin: 0;
+}
+h2 {
+  font-family: "Zilla Slab", Georgia, serif;
+  font-weight: 600;
+  font-size: clamp(1.75rem, 4.2vw, 3.1rem);
+  line-height: 1.08;
+  letter-spacing: -.01em;
+  text-wrap: balance;
+  margin: 0;
+}
+h3 {
+  font-family: "Zilla Slab", Georgia, serif;
+  font-weight: 600;
+  font-size: clamp(1.05rem, 2vw, 1.35rem);
+  margin: 0;
+}
+p, li {
+  font-size: clamp(1rem, 1.55vw, 1.28rem);
+  line-height: 1.5;
+  color: var(--ink-soft);
+  margin: 0;
+  max-width: 60ch;
+}
+strong { color: var(--ink); font-weight: 600; }
+.lede { font-size: clamp(1.1rem, 2vw, 1.55rem); color: var(--ink); max-width: 46ch; }
+.kicker { font-family: "Zilla Slab", Georgia, serif; font-size: clamp(1.2rem, 2.4vw, 1.8rem); color: var(--ink); line-height: 1.25; max-width: 34ch; }
+
+ul, ol { margin: 0; padding-left: 1.3rem; display: flex; flex-direction: column; gap: .55rem; }
+li::marker { color: var(--ink-faint); }
+ul.clean { list-style: none; padding-left: 0; }
+
+.mono { font-family: "IBM Plex Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+
+/* ── Devices ────────────────────────────────────────────────────────── */
+
+.rule { height: 1px; background: var(--rule); border: 0; margin: .2rem 0; }
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: clamp(.7rem, 1.6vw, 1.1rem);
+}
+.card {
+  background: var(--raised);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  padding: clamp(.9rem, 1.8vw, 1.25rem);
+  display: flex;
+  flex-direction: column;
+  gap: .45rem;
+  box-shadow: var(--shadow);
+}
+.card p, .card li { font-size: clamp(.92rem, 1.25vw, 1.05rem); }
+.card--red   { border-top: 3px solid var(--red); }
+.card--teal  { border-top: 3px solid var(--teal); }
+.card--ochre { border-top: 3px solid var(--ochre); }
+
+.step-no {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: .75rem;
+  color: var(--red);
+  letter-spacing: .1em;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: clamp(.88rem, 1.25vw, 1.05rem);
+}
+.scroll-x { overflow-x: auto; }
+th {
+  text-align: left;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-weight: 500;
+  font-size: .72rem;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  border-bottom: 1px solid var(--rule);
+  padding: .5rem .8rem .5rem 0;
+  white-space: nowrap;
+}
+td {
+  padding: .58rem .8rem .58rem 0;
+  border-bottom: 1px solid var(--rule);
+  color: var(--ink-soft);
+  vertical-align: top;
+}
+td:first-child { color: var(--ink); }
+td.code { font-family: "IBM Plex Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; color: var(--red); white-space: nowrap; }
+
+.chain {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: .4rem;
+}
+.chain-step {
+  background: var(--raised);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--teal);
+  border-radius: 2px;
+  padding: .6rem .85rem;
+  min-width: 8.5rem;
+  flex: 1 1 8.5rem;
+}
+.chain-step b { display: block; font-family: "Zilla Slab", Georgia, serif; font-size: 1.02rem; color: var(--ink); }
+.chain-step span { font-size: .82rem; color: var(--ink-faint); }
+.chain-arrow { align-self: center; color: var(--ink-faint); font-family: "IBM Plex Mono", monospace; }
+
+.pill {
+  display: inline-block;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: .7rem;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  padding: .22rem .5rem;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+}
+.pill--red { color: var(--red); }
+.pill--teal { color: var(--teal); }
+.pill--ochre { color: var(--ochre); }
+
+.quote {
+  font-family: "Zilla Slab", Georgia, serif;
+  font-size: clamp(1.4rem, 3.4vw, 2.4rem);
+  line-height: 1.2;
+  color: var(--ink);
+  border-left: 3px solid var(--red);
+  padding-left: clamp(.9rem, 2vw, 1.5rem);
+  max-width: 30ch;
+  margin: 0;
+}
+
+.exercise {
+  background: var(--raised);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--ochre);
+  border-radius: 2px;
+  padding: clamp(.9rem, 2vw, 1.3rem);
+  display: flex;
+  flex-direction: column;
+  gap: .4rem;
+}
+
+/* facilitator notes */
+.notes {
+  display: none;
+  border-top: 1px dashed var(--rule);
+  padding-top: .8rem;
+  margin-top: .3rem;
+}
+body.show-notes .notes { display: block; }
+.notes p {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: clamp(.78rem, 1.05vw, .9rem);
+  line-height: 1.55;
+  color: var(--ink-faint);
+  max-width: 72ch;
+}
+.notes p::before { content: "Say / do — "; color: var(--red); }
+
+/* ── Chrome ─────────────────────────────────────────────────────────── */
+
+.progress {
+  position: fixed;
+  top: 0; left: 0;
+  height: 2px;
+  background: var(--red);
+  width: 0;
+  z-index: 20;
+}
+.hud {
+  position: fixed;
+  right: clamp(.6rem, 2vw, 1.4rem);
+  bottom: clamp(.6rem, 2vh, 1.4rem);
+  z-index: 20;
+  display: flex;
+  gap: .4rem;
+  align-items: center;
+}
+.hud button {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: .72rem;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  background: var(--raised);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  padding: .35rem .6rem;
+  cursor: pointer;
+  box-shadow: var(--shadow);
+}
+.hud button:hover { color: var(--ink); border-color: var(--ink-faint); }
+.hud button[aria-pressed="true"] { color: var(--red); border-color: var(--red); }
+.hud .counter {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: .72rem;
+  color: var(--ink-faint);
+  background: var(--raised);
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  padding: .35rem .6rem;
+  box-shadow: var(--shadow);
+}
+:focus-visible { outline: 2px solid var(--red); outline-offset: 2px; }
+</style>
+
+<div class="progress" id="progress"></div>
+
+<div class="deck" id="deck" tabindex="-1">
+
+  <!-- cover -->
+  <section class="slide">
+    <div class="spine"><span class="spine-day">CoopMS</span><span class="spine-num">01</span></div>
+    <div class="body">
+      <p class="eyebrow">Training for the executive committee</p>
+      <h1>Running our society on the computer</h1>
+      <p class="lede">Two half-days for the President, the Secretary, the Treasurer and every exco member. You do not need to know accounting. You only need to know your own work.</p>
+      <hr class="rule">
+      <p class="mono" style="font-size:.85rem;color:var(--ink-faint)">← → or space to move &nbsp;·&nbsp; N for facilitator notes</p>
+      <div class="notes"><p>Welcome people by office. Say straight away: no exams, no big grammar, and you can ask any question at any time. Nobody here is expected to be an accountant.</p></div>
+    </div>
+  </section>
+
+  <!-- contents -->
+  <section class="slide">
+    <div class="spine"><span class="spine-day">Contents</span><span class="spine-num">02</span></div>
+    <div class="body">
+      <p class="eyebrow">First, so you know what is coming</p>
+      <h2>What we will cover</h2>
+      <div class="cards">
+        <div class="card card--teal">
+          <span class="step-no">DAY ONE &nbsp;·&nbsp; THE WORK YOU DO</span>
+          <ol style="gap:.35rem">
+            <li>Why we moved from books to the computer</li>
+            <li>Logging in safely, and finding your way around</li>
+            <li>Adding members and getting them started</li>
+            <li>Taking savings, and fixing a mistake</li>
+            <li>Loans, from request to money in hand</li>
+            <li>How members hear from us</li>
+          </ol>
+        </div>
+        <div class="card card--red">
+          <span class="step-no">DAY TWO &nbsp;·&nbsp; WHAT HAPPENS TO THE MONEY</span>
+          <ol style="gap:.35rem">
+            <li>Small words that sound big — explained</li>
+            <li>What the computer writes when you press a button</li>
+            <li>How to correct a mistake the right way</li>
+            <li>End of month checks</li>
+            <li>Sharing profit at the end of the year</li>
+            <li>Keeping the society safe from trouble</li>
+            <li>Everyone tries three tasks alone</li>
+          </ol>
+        </div>
+      </div>
+      <p>We practise seven times along the way — always on a practice copy, never on real member money.</p>
+      <div class="notes"><p>Read both lists out slowly. People settle when they can see the whole road. Say where the break falls and what time you finish.</p></div>
+    </div>
+  </section>
+
+  <!-- day 1 opener -->
+  <section class="slide">
+    <div class="spine"><span class="spine-day">Day 1</span><span class="spine-num">03</span></div>
+    <div class="body">
+      <p class="eyebrow">Day one · about three and a half hours</p>
+      <h1>The work you do every week</h1>
+      <div class="scroll-x">
+        <table>
+          <thead><tr><th>Part</th><th>What we do</th><th>After it you can</th></tr></thead>
+          <tbody>
+            <tr><td class="code">1</td><td>Why we moved</td><td>Say what your office is allowed to do</td></tr>
+            <tr><td class="code">2</td><td>Logging in, looking around</td><td>Log in safely and find any page</td></tr>
+            <tr><td class="code">3</td><td>Members</td><td>Add a member and help them start</td></tr>
+            <tr><td class="code">4</td><td>Savings</td><td>Take savings, and fix a bad upload</td></tr>
+            <tr><td class="code">5</td><td>Loans</td><td>Do your own part, and see who is delaying</td></tr>
+            <tr><td class="code">6</td><td>Talking to members</td><td>Pick the right way to reach them</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="notes"><p>Break comes after part 4. Point at the clock and say the finishing time — people relax when they can see the end.</p></div>
+    </div>
+  </section>
+
+  <!-- 4 -->
+  <section class="slide">
+    <div class="spine"><span class="spine-day">Day 1</span><span class="spine-num">04</span></div>
+    <div class="body">
+      <p class="eyebrow">Part 1 · Why we moved</p>
+      <blockquote class="quote">A member says their savings is wrong. How do we know who is right?</blockquote>
+      <p>Before, the answer was in three places — the savings book, the loan file, and somebody's notebook. They only agreed after somebody sat down for hours.</p>
+      <div class="notes"><p>Ask the question and keep quiet. Let two or three officers answer. Their own answers describe the problem better than any slide.</p></div>
+    </div>
+  </section>
+
+  <!-- 5 -->
+  <section class="slide">
+    <div class="spine"><span class="spine-day">Day 1</span><span class="spine-num">05</span></div>
+    <div class="body">
+      <p class="eyebrow">Part 1</p>
+      <h2>Three things that are true now</h2>
+      <div class="cards">
+        <div class="card card--teal">
+          <span class="step-no">01</span>
+          <h3>One place for everything</h3>
+          <p>We all work in the same system. When you record something, the accounts are updated the same second. Nobody has to match books at month end.</p>
+        </div>
+        <div class="card card--red">
+          <span class="step-no">02</span>
+          <h3>Nothing is rubbed out</h3>
+          <p>You cannot delete. To correct a mistake, you cancel it — and the system asks you why. That protects you as much as it protects the member.</p>
+        </div>
+        <div class="card card--ochre">
+          <span class="step-no">03</span>
+          <h3>We decide who does what</h3>
+          <p>What the Treasurer can open, and what the Secretary can open, is our decision. We can change it any day.</p>
+        </div>
+      </div>
+      <div class="notes"><p>These three sentences hold the whole course together. Point back to them later by number: the bad upload is number two, Task Assignment is number three.</p></div>
+    </div>
+  </section>
+
+  <!-- 6 -->
+  <section class="slide">
+    <div class="spine"><span class="spine-day">Day 1</span><span class="spine-num">06</span></div>
+    <div class="body">
+      <p class="eyebrow">Part 1 · Who does what</p>
+      <h2>Each office has its own keys</h2>
+      <div class="scroll-x">
+        <table>
+          <thead><tr><th>Office</th><th>Can do, unless we change it</th></tr></thead>
+          <tbody>
+            <tr><td>President</td><td>Everything. The President can never be locked out — somebody must always be able to open the door again.</td></tr>
+            <tr><td>Secretary</td><td>Members, loan checks, meeting records, messages to members</td></tr>
+            <tr><td>Treasurer</td><td>Savings, repayments, the money records, the month-end checks</td></tr>
+            <tr><td>Exco member</td><td>Look at members, savings, loans and reports</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>One person can also be given one extra job, without changing their office. That is done in <strong>Settings → Task Assignment</strong>.</p>
+      <div class="notes"><p>Open Task Assignment on the screen so officers see their own name and their own jobs, instead of only hearing about it.</p></div>
+    </div>
+  </section>
+
+  <!-- 7 -->
+  <section class="slide">
+    <div class="spine"><span class="spine-day">Day 1</span><span class="spine-num">07</span></div>
+    <div class="body">
+      <p class="eyebrow">Part 2 · Logging in</p>
+      <h2>Your password is the key to the society's money</h2>
+      <ol>
+        <li>Log in, and change the password you were given.</li>
+        <li>Click your name → <strong>Security &amp; 2FA</strong> → point your phone at the picture on the screen → type the six numbers it shows.</li>
+        <li>If you sit idle too long, the system warns you and logs you out. That is on purpose.</li>
+      </ol>
+      <p>Now nobody can enter with your password alone. They would need your phone too.</p>
+      <p><strong>Never share your login.</strong> Every action carries your name, so if two people use one login, nobody can be held responsible.</p>
+      <div class="notes"><p>Everybody does this now, on their own laptop, with you walking round. Help anyone whose phone gives trouble — the officer who skips it today will never come back to it.</p></div>
+    </div>
+  </section>
+
+  <!-- 8 -->
+  <section class="slide">
+    <div class="spine"><span class="spine-day">Day 1</span><span class="spine-num">08</span></div>
+    <div class="body">
+      <p class="eyebrow">Part 2 · Finding your way</p>
+      <h2>The menu on the left is our work</h2>
+      <div class="cards">
+        <div class="card"><h3>People</h3><p class="mono" style="font-size:.9rem">Members · Communications · Events &amp; Minutes</p></div>
+        <div class="card"><h3>Money coming in</h3><p class="mono" style="font-size:.9rem">Savings · Account Numbers · Savings Requests</p></div>
+        <div class="card"><h3>Money going out</h3><p class="mono" style="font-size:.9rem">Loans · Investments · Target Advance</p></div>
+        <div class="card"><h3>The records</h3><p class="mono" style="font-size:.9rem">Reports · Accounting · Dividends</p></div>
+        <div class="card"><h3>Running the system</h3><p class="mono" style="font-size:.9rem">Settings · Task Assignment · Data Migration · Security</p></div>
+        <div class="card"><h3>When you are stuck</h3><p class="mono" style="font-size:.9rem">Training · Help</p></div>
+      </div>
+      <p>Your menu and your neighbour's will not look the same. That is correct — you each see your own work.</p>
+      <div class="notes"><p>Walk the dashboard first. For each figure say where it came from: nobody types those numbers, they add up from what officers recorded.</p></div>
+    </div>
+  </section>
+
+  <!-- 9 -->
+  <section class="slide">
+    <div class="spine"><span class="spine-day">Day 1</span><span class="spine-num">09</span></div>
+    <div class="body">
+      <p class="eyebrow">Part 3 · Members</p>
+      <h2>Three things to get right when you add a member</h2>
+      <div class="cards">
+        <div class="card card--teal"><h3>Email</h3><p>Without it, the member cannot get their invitation, cannot log in, and cannot be given their own account number.</p></div>
+        <div class="card card--teal"><h3>Phone number</h3><p>Without it, no text message can reach them.</p></div>
+        <div class="card card--teal"><h3>Bank, next of kin, nominee</h3><p>Nobody thinks about these until a member dies or leaves. Then they are the only thing that matters.</p></div>
+      </div>
+      <p>The member makes their own password from the invitation. <strong>We never know a member's password</strong> — so never offer to log in for them.</p>
+      <div class="notes"><p>Show adding a member, then the invitation (one member, and many at once), then the readiness bar. Explain readiness as "how much of the form is complete", not as a score on the member.</p></div>
+    </div>
+  </section>
+
+  <!-- 10 -->
+  <section class="slide">
+    <div class="spine"><span class="spine-day">Day 1</span><span class="spine-num">10</span></div>
+    <div class="body">
+      <p class="eyebrow">Part 3 · Common mistakes</p>
+      <h2>Three habits to drop today</h2>
+      <ul class="clean">
+        <li><span class="pill pill--red">Search first</span> &nbsp;Adding the same person twice because you could not find them the first time.</li>
+        <li><span class="pill pill--red">Their own email</span> &nbsp;Putting the society's email on a member's record "so we can help them". It blocks their login and their statement.</li>
+        <li><span class="pill pill--red">Say it out</span> &nbsp;Quietly correcting a name months later. Statements already given out will no longer match.</li>
+      </ul>
+      <p>Uploading many members at once? Use the form we provide and <strong>do not move the columns around</strong>. That is what spoils most uploads.</p>
+      <div class="notes"><p>Cover savings-change requests here too: a member asks from their phone to change their monthly savings, it arrives with a red count on the menu, and approving it only changes what is expected going forward.</p></div>
+    </div>
+  </section>
+
+  <!-- 11 -->
+  <section class="slide">
+    <div class="spine"><span class="spine-day">Day 1</span><span class="spine-num">11</span></div>
+    <div class="body">
+      <p class="eyebrow">Part 4 · Savings</p>
+      <h2>One payment, two records, at the same time</h2>
+      <p class="kicker">The member's savings goes up — and in the same second the society's records show cash received and the money we now owe that member.</p>
+      <p>You will never again have to make two books agree by hand. That is the whole reason we moved.</p>
+      <div class="notes"><p>Record one payment from a member's page, then say the sentence above and stop. Do not open the accounts yet — day two does that. You are planting the idea.</p></div>
+    </div>
+  </section>
+
+  <!-- 12 -->
+  <section class="slide">
+    <div class="spine"><span class="spine-day">Day 1</span><span class="spine-num">12</span></div>
+    <div class="body">
+      <p class="eyebrow">Part 4 · The monthly upload</p>
+      <h2>The whole month goes in together</h2>
+      <p>Instead of typing each member, we upload the month's list in one go. The upload gets one name, like <span class="mono">JULY-SALARY</span>.</p>
+      <p><strong>Because it went in together, it can come out together.</strong> That is why uploading beats typing.</p>
+      <div class="notes"><p>Show the form, the preview, and the name given to the batch. Keep it short — the next slide is where the real learning happens.</p></div>
+    </div>
+  </section>
+
+  <!-- 13 -->
+  <section class="slide">
+    <div class="spine"><span class="spine-day">Day 1</span><span class="spine-num">13</span></div>
+    <div class="body">
+      <p class="eyebrow">Part 4 · When it goes wrong</p>
+      <h2>The upload was wrong. What now?</h2>
+      <div class="scroll-x">
+        <table>
+          <thead><tr><th>Step</th><th>Do this</th><th>Why this order</th></tr></thead>
+          <tbody>
+            <tr><td class="code">1</td><td>Fix the setting that caused it</td><td>If not, the next upload repeats the same mistake</td></tr>
+            <tr><td class="code">2</td><td>Open the upload → cancel it, and say why</td><td>Your reason is kept, so nobody can wonder later</td></tr>
+            <tr><td class="code">3</td><td>Upload the corrected list, with a new name</td><td>The two uploads never get confused</td></tr>
+            <tr><td class="code">4</td><td>Open one member's statement</td><td>See it with your own eyes before telling anybody</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Cancelling does not rub anything out. It writes the opposite of each line, so balances go back to what they were, and doing it twice by mistake does no harm.</p>
+      <div class="notes"><p>Set the share-capital percentage wrong before the class. Run the upload, open a statement, then ask the room what they would do. Somebody will say "delete it" — let that sit, then explain: if we could delete, a member's money could change with nobody's name on it.</p></div>
+    </div>
+  </section>
+
+  <!-- 14 -->
+  <section class="slide">
+    <div class="spine"><span class="spine-day">Day 1</span><span class="spine-num">14</span></div>
+    <div class="body">
+      <p class="eyebrow">Let us practise</p>
+      <div class="exercise">
+        <span class="pill pill--ochre">Practice 2 · Treasurer leads · everybody does it</span>
+        <h3>The bad upload</h3>
+        <p>Upload the list we prepared. You will see the savings and share money split wrongly. Now put it right, in the correct order.</p>
+        <p><strong>Then say out loud:</strong> what would you tell the member who already saw the wrong statement?</p>
+      </div>
+      <div class="notes"><p>The answer you want: tell the member what changed and why. A record that shows both the mistake and the correction is our protection, not our shame.</p></div>
+    </div>
+  </section>
+
+  <!-- 15 -->
+  <section class="slide">
+    <div class="spine"><span class="spine-day">Day 1</span><span class="spine-num">15</span></div>
+    <div class="body">
+      <p class="eyebrow">Part 4 · The check that matters</p>
+      <h2>Do the members' savings add up to what we say we owe?</h2>
+      <p>Add every member's savings together. Then look at the one line in our accounts that says how much we owe members. <strong>The two must be the same number.</strong></p>
+      <p>The report that shows this is <strong>Reports → Member Savings Control</strong>. If the two ever differ, something is wrong — and month end will find it whether we looked or not.</p>
+      <div class="notes"><p>This is the most useful report an exco can learn to read. It comes back on day two as step three of the month-end list.</p></div>
+    </div>
+  </section>
+
+  <!-- 16 -->
+  <section class="slide">
+    <div class="spine"><span class="spine-day">Day 1</span><span class="spine-num">16</span></div>
+    <div class="body">
+      <p class="eyebrow">Part 4 · Members' own account numbers</p>
+      <h2>Money can arrive before anyone tells us</h2>
+      <div class="cards">
+        <div class="card card--teal"><span class="step-no">STEP 1 · IT LANDS</span><h3>We owe the member from that moment</h3><p>The system records the money at once and holds it for that member — even before anybody decides what it is for.</p></div>
+        <div class="card card--teal"><span class="step-no">STEP 2 · WE USE IT</span><h3>What it pays for is a separate decision</h3><p>Savings, loan, or Target Advance. And it can be changed later, because deciding is not the same as receiving.</p></div>
+      </div>
+      <p>Each member has a permanent account number in their own name. So we know who sent money without anybody sending a picture of a teller.</p>
+      <div class="notes"><p>Only if member account numbers are switched on. Show the daily list: money we cannot yet match to a member, money waiting to be used, and the tick that says both lists agree.</p></div>
+    </div>
+  </section>
+
+  <!-- 17 -->
+  <section class="slide">
+    <div class="spine"><span class="spine-day">Day 1</span><span class="spine-num">17</span></div>
+    <div class="body">
+      <p class="eyebrow">Part 4 · Two useful refusals</p>
+      <h2>Two things the system will not do</h2>
+      <div class="cards">
+        <div class="card card--red"><h3>It will not guess a member</h3><p>If it cannot tell who sent money, it holds it aside and waits for a person to say. Guessing would put one member's money in another member's account.</p></div>
+        <div class="card card--red"><h3>It will not pretend money never came</h3><p>The money really entered our bank. Only our decision about it can be changed — and then it goes back to waiting.</p></div>
+      </div>
+      <p>You also cannot use more than what arrived, so the holding pot can never go below zero.</p>
+      <div class="notes"><p>Expect: "what if a member sends more than they owe?" Whatever is left after the thing they named simply becomes their savings. They are saving the difference, not losing it.</p></div>
+    </div>
+  </section>
+
+  <!-- 18 -->
+  <section class="slide">
+    <div class="spine"><span class="spine-day">Day 1</span><span class="spine-num">18</span></div>
+    <div class="body">
+      <p class="eyebrow">Part 5 · Loans</p>
+      <h2>Our bye-laws, put inside the computer</h2>
+      <div class="chain">
+        <div class="chain-step"><b>Guarantors</b><span>each one agrees for himself</span></div>
+        <span class="chain-arrow">→</span>
+        <div class="chain-step"><b>Secretary</b><span>checks the papers</span></div>
+        <span class="chain-arrow">→</span>
+        <div class="chain-step"><b>Treasurer</b><span>checks the money side</span></div>
+        <span class="chain-arrow">→</span>
+        <div class="chain-step"><b>President</b><span>approves</span></div>
+        <span class="chain-arrow">→</span>
+        <div class="chain-step"><b>Paid out</b><span>and recorded at once</span></div>
+      </div>
+      <p><strong>Anybody in the line can refuse</strong> — and must give a reason, which is kept. And until every guarantor has agreed, the Secretary cannot start. Nobody can jump the line.</p>
+      <div class="notes"><p>Do this as a role play, not a demonstration. One loan, and each officer acts their own step on their own laptop. If an office is missing, act it yourself and say so.</p></div>
+    </div>
+  </section>
+
+  <!-- 19 -->
+  <section class="slide">
+    <div class="spine"><span class="spine-day">Day 1</span><span class="spine-num">19</span></div>
+    <div class="body">
+      <p class="eyebrow">Part 5 · The Secretary's checks</p>
+      <h2>What must be settled before the money moves</h2>
+      <div class="scroll-x">
+        <table>
+          <thead><tr><th>Check</th><th>Means</th></tr></thead>
+          <tbody>
+            <tr><td>Bank statement</td><td>We asked for it — and we received it</td></tr>
+            <tr><td>Credit check</td><td>We looked at the member's borrowing record</td></tr>
+            <tr><td>Repayment cover</td><td>Cheques, standing order, or whatever else will bring the money back</td></tr>
+            <tr><td>Salary confirmation</td><td>For staff members, that the office confirms the deduction</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Our own rules may say a check is not needed for a certain type of loan. That is fine — it is written down as a decision, not quietly skipped.</p>
+      <div class="notes"><p>Ask the Treasurer to open the member's savings and the loan report in another tab before approving. That habit is worth more than any single screen.</p></div>
+    </div>
+  </section>
+
+  <!-- 20 -->
+  <section class="slide">
+    <div class="spine"><span class="spine-day">Day 1</span><span class="spine-num">20</span></div>
+    <div class="body">
+      <p class="eyebrow">Let us practise</p>
+      <div class="exercise">
+        <span class="pill pill--ochre">Practice 3 · everybody, in your own office</span>
+        <h3>One loan, four officers</h3>
+        <p>Take one loan from guarantors right through to payment, each officer doing their own step. Then record the first repayment.</p>
+        <p><strong>End by opening the loan's history:</strong> every step, every name, the time, and what each person wrote.</p>
+      </div>
+      <p>Two things never to do on the real system: approve just to see what happens, and refuse without a real reason.</p>
+      <div class="notes"><p>Then open the loan report and read one overdue line aloud. Ask the room what they would actually do about that member on Monday morning.</p></div>
+    </div>
+  </section>
+
+  <!-- 21 -->
+  <section class="slide">
+    <div class="spine"><span class="spine-day">Day 1</span><span class="spine-num">21</span></div>
+    <div class="body">
+      <p class="eyebrow">Part 6 · Reaching members</p>
+      <h2>Use the free ways first</h2>
+      <div class="scroll-x">
+        <table>
+          <thead><tr><th>Way</th><th>Cost</th><th>Who it reaches</th></tr></thead>
+          <tbody>
+            <tr><td>Message inside the system</td><td class="code">free</td><td>Everybody who logs in</td></tr>
+            <tr><td>Phone alert (the app)</td><td class="code">free</td><td>Members who installed our app</td></tr>
+            <tr><td>Text message (SMS)</td><td class="code">we pay</td><td><strong>Only</strong> members without the app — never twice for one person</td></tr>
+            <tr><td>Email</td><td class="code">free</td><td>Members with an email address</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Every text is recorded, so we can see what our credit was used for. A member who does not want texts can switch them off and still get everything else.</p>
+      <div class="notes"><p>Do this part from a phone — that is where our members are. Then show the message centre. One rule to leave them with: always send to one test person before sending to everybody.</p></div>
+    </div>
+  </section>
+
+  <!-- 22 -->
+  <section class="slide">
+    <div class="spine"><span class="spine-day">Day 1</span><span class="spine-num">22</span></div>
+    <div class="body">
+      <p class="eyebrow">End of day one</p>
+      <h2>Before we meet again</h2>
+      <div class="exercise">
+        <span class="pill pill--ochre">Homework · on the real system</span>
+        <p>Find your own member record. Read your own savings statement. Open the loan list.</p>
+        <p><strong>Bring one question</strong> about anything you saw and could not explain.</p>
+      </div>
+      <p>Day two answers the question under all of this: what happens to the money when you press the button?</p>
+      <div class="notes"><p>Day two is built on this homework. Say so plainly, and check at the door next week.</p></div>
+    </div>
+  </section>
+
+  <!-- 23 -->
+  <section class="slide">
+    <div class="spine"><span class="spine-day">Day 2</span><span class="spine-num">23</span></div>
+    <div class="body">
+      <p class="eyebrow">Day two · about three and a half hours</p>
+      <h1>What happens to the money</h1>
+      <p class="lede">Nobody is going to turn you into an accountant today. You only need to read what the system already wrote, and know how to check it.</p>
+      <div class="scroll-x">
+        <table>
+          <thead><tr><th>Part</th><th>What we do</th><th>After it you can</th></tr></thead>
+          <tbody>
+            <tr><td class="code">7</td><td>Big words, small meanings</td><td>Follow the conversation without fear</td></tr>
+            <tr><td class="code">8</td><td>What the button wrote</td><td>Explain three everyday entries</td></tr>
+            <tr><td class="code">9</td><td>Correcting mistakes</td><td>Cancel an entry properly, with a reason</td></tr>
+            <tr><td class="code">10</td><td>End of month</td><td>Do the six checks and close the month</td></tr>
+            <tr><td class="code">11</td><td>Sharing the profit</td><td>Explain every share before we pay it</td></tr>
+            <tr><td class="code">12</td><td>Staying out of trouble</td><td>Show an auditor anything in one minute</td></tr>
+            <tr><td class="code">13</td><td>Everyone tries alone</td><td>Do your three tasks without help</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="notes"><p>Say the first line out loud. Some officers arrive afraid of the word "accounting" and stop listening in the first minute if you do not remove that fear.</p></div>
+    </div>
+  </section>
+
+  <!-- 24 · glossary -->
+  <section class="slide">
+    <div class="spine"><span class="spine-day">Day 2</span><span class="spine-num">24</span></div>
+    <div class="body">
+      <p class="eyebrow">Part 7 · Big words, small meanings</p>
+      <h2>Six words people use to confuse you</h2>
+      <div class="scroll-x">
+        <table>
+          <thead><tr><th>Word</th><th>What it really means</th></tr></thead>
+          <tbody>
+            <tr><td>Entry</td><td>One record of one thing that happened to money</td></tr>
+            <tr><td>Debit &amp; credit</td><td>The two sides of that record. One side says what we got; the other says where it came from. The two sides must be equal.</td></tr>
+            <tr><td>Ledger</td><td>All the entries for one thing, kept together — like one page per matter</td></tr>
+            <tr><td>Balance</td><td>What is left after adding and subtracting everything</td></tr>
+            <tr><td>Trial balance</td><td>A quick test: add all the left sides and all the right sides. They must match.</td></tr>
+            <tr><td>Reversal</td><td>Cancelling an entry by writing its opposite. Nothing is rubbed out.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>That is the whole language. Everything else today is these six words in different clothes.</p>
+      <div class="notes"><p>Go slowly here and use the room's own examples. Ask somebody to explain "debit and credit" back to you in their own words before you move on.</p></div>
+    </div>
+  </section>
+
+  <!-- 25 -->
+  <section class="slide">
+    <div class="spine"><span class="spine-day">Day 2</span><span class="spine-num">25</span></div>
+    <div class="body">
+      <p class="eyebrow">Part 7 · The one big idea</p>
+      <blockquote class="quote">Members' savings is money we are keeping for them. It is not our money.</blockquote>
+      <p>When savings come in, the society does not become richer. It simply owes more. An officer who understands only this already asks better questions than most.</p>
+      <div class="notes"><p>Board, not screen. Do not move on until at least one officer has said this back to you in their own words.</p></div>
+    </div>
+  </section>
+
+  <!-- 26 -->
+  <section class="slide">
+    <div class="spine"><span class="spine-day">Day 2</span><span class="spine-num">26</span></div>
+    <div class="body">
+      <p class="eyebrow">Part 8 · The names you will see</p>
+      <h2>The few lines you will actually meet</h2>
+      <div class="scroll-x">
+        <table>
+          <thead><tr><th>Number</th><th>Name on the screen</th><th>In plain words</th></tr></thead>
+          <tbody>
+            <tr><td class="code">1000</td><td>Cash and Bank</td><td>Money we are holding, in the bank or in hand</td></tr>
+            <tr><td class="code">1100</td><td>Loans Receivable</td><td>Money members are owing us</td></tr>
+            <tr><td class="code">2000</td><td>Member Deposits</td><td>Money we are owing members — their savings</td></tr>
+            <tr><td class="code">2010</td><td>Unallocated Receipts</td><td>Money that arrived, not yet used for anything</td></tr>
+            <tr><td class="code">2110</td><td>Insurance Payable</td><td>Insurance money we are only holding for the insurance company</td></tr>
+            <tr><td class="code">3200</td><td>Share Capital</td><td>The part of each payment that buys shares in the society</td></tr>
+            <tr><td class="code">4000</td><td>Loan Interest Income</td><td>What we earned from lending</td></tr>
+            <tr><td class="code">4100</td><td>Fee Income</td><td>Form fees, late fees</td></tr>
+            <tr><td class="code">5000</td><td>Operating Expenses</td><td>What we spent to run the society</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="notes"><p>Go down the list once, slowly. Do not read out the full chart of accounts — these are the lines that come up in exco meetings.</p></div>
+    </div>
+  </section>
+
+  <!-- 27 -->
+  <section class="slide">
+    <div class="spine"><span class="spine-day">Day 2</span><span class="spine-num">27</span></div>
+    <div class="body">
+      <p class="eyebrow">Part 8 · A member pays savings</p>
+      <h2>₦20,000 savings — what the system wrote</h2>
+      <div class="cards">
+        <div class="card card--teal">
+          <h3>Money we now hold</h3>
+          <p class="mono" style="font-size:1.05rem">Cash and Bank &nbsp;+₦20,000</p>
+        </div>
+        <div class="card card--red">
+          <h3>What we now owe</h3>
+          <p class="mono" style="font-size:1.05rem">Member's savings &nbsp;+₦18,000<br>Share capital &nbsp;+₦2,000</p>
+        </div>
+      </div>
+      <p>Both sides are ₦20,000. Nothing was earned — we are only holding more money for that member.</p>
+      <div class="notes"><p>Use whatever share percentage the society actually uses so the numbers look familiar. Then open a real entry on screen and match it line by line to this slide.</p></div>
+    </div>
+  </section>
+
+  <!-- 28 -->
+  <section class="slide">
+    <div class="spine"><span class="spine-day">Day 2</span><span class="spine-num">28</span></div>
+    <div class="body">
+      <p class="eyebrow">Part 8 · A loan is paid out</p>
+      <h2>₦500,000 loan — and only ₦490,000 leaves the bank</h2>
+      <div class="cards">
+        <div class="card card--teal">
+          <h3>The member owes</h3>
+          <p class="mono" style="font-size:1.05rem">₦500,000 &nbsp;— the full amount</p>
+        </div>
+        <div class="card card--red">
+          <h3>Where it went</h3>
+          <p class="mono" style="font-size:1.05rem">Paid to member &nbsp;₦490,000<br>Our form fee &nbsp;₦5,000<br>Insurance held &nbsp;₦5,000</p>
+        </div>
+      </div>
+      <p>The member owes the <strong>full</strong> ₦500,000, even though they received ₦490,000. The fee is ours. The insurance is <strong>not</strong> ours — we are only holding it for the insurance company.</p>
+      <div class="notes"><p>Use the society's real fee and insurance percentages. Ask the room: "how much does this member owe?" Wait for the wrong answer first — it teaches better than the right one.</p></div>
+    </div>
+  </section>
+
+  <!-- 29 -->
+  <section class="slide">
+    <div class="spine"><span class="spine-day">Day 2</span><span class="spine-num">29</span></div>
+    <div class="body">
+      <p class="eyebrow">Part 8 · A member repays</p>
+      <h2>₦50,000 repayment — but we only earned ₦10,000</h2>
+      <div class="cards">
+        <div class="card card--teal">
+          <h3>Money received</h3>
+          <p class="mono" style="font-size:1.05rem">Cash and Bank &nbsp;+₦50,000</p>
+        </div>
+        <div class="card card--red">
+          <h3>What it means</h3>
+          <p class="mono" style="font-size:1.05rem">Loan owed comes down &nbsp;₦40,000<br>We earned (interest) &nbsp;₦10,000</p>
+        </div>
+      </div>
+      <p>Only the ₦10,000 interest is income. The ₦40,000 is just our own money coming back home.</p>
+      <div class="notes"><p>This is the line most often confused in exco meetings, and it decides how much can honestly be shared at the end of the year. Practice 4 fits here: everybody opens the entry behind their own repayment from yesterday and reads both sides aloud.</p></div>
+    </div>
+  </section>
+
+  <!-- 30 -->
+  <section class="slide">
+    <div class="spine"><span class="spine-day">Day 2</span><span class="spine-num">30</span></div>
+    <div class="body">
+      <p class="eyebrow">Part 8 · Two costly mistakes</p>
+      <h2>Two errors that make us look richer than we are</h2>
+      <div class="cards">
+        <div class="card card--red">
+          <h3>Calling insurance our money</h3>
+          <p>It belongs to the insurance company. If we count it as profit, we share money that is not ours — and we still have to pay it.</p>
+        </div>
+        <div class="card card--red">
+          <h3>Calling the whole repayment profit</h3>
+          <p>Most of a repayment is our own money returning. Only the interest is profit.</p>
+        </div>
+      </div>
+      <p>Both mistakes end the same way: we promise members a dividend the society cannot pay.</p>
+      <div class="notes"><p>Ask whether this has ever happened here before. The room usually has a story, and the story teaches better than the slide.</p></div>
+    </div>
+  </section>
+
+  <!-- 31 -->
+  <section class="slide">
+    <div class="spine"><span class="spine-day">Day 2</span><span class="spine-num">31</span></div>
+    <div class="body">
+      <p class="eyebrow">Part 9 · Correcting mistakes</p>
+      <h2>What happens when you cancel an entry</h2>
+      <div class="cards">
+        <div class="card card--teal"><span class="step-no">01</span><h3>It asks you why</h3><p>You must type a reason, and it is kept with your name on it.</p></div>
+        <div class="card card--teal"><span class="step-no">02</span><h3>Both stay</h3><p>The first entry and the cancellation both remain. We add to history; we never rewrite it.</p></div>
+        <div class="card card--teal"><span class="step-no">03</span><h3>Everything moves together</h3><p>The member's record and the society's accounts are corrected at the same time, so they can never disagree.</p></div>
+      </div>
+      <p>Sometimes the system refuses to cancel. That means it has no safe way to undo that thing — the refusal is protecting us.</p>
+      <div class="notes"><p>Cancel one entry in front of them, then let everybody do practice 5 themselves. An officer who has done it once calmly will do it correctly under pressure.</p></div>
+    </div>
+  </section>
+
+  <!-- 32 -->
+  <section class="slide">
+    <div class="spine"><span class="spine-day">Day 2</span><span class="spine-num">32</span></div>
+    <div class="body">
+      <p class="eyebrow">Part 10 · End of month</p>
+      <h2>Six checks, in this order</h2>
+      <ol>
+        <li><strong>What is in each bank account</strong>, and how it moved.</li>
+        <li><strong>Our cash record against the bank statement.</strong> Any difference is either timing or an error — find out which.</li>
+        <li><strong>Members' savings against what we say we owe members.</strong> These must be the same.</li>
+        <li><strong>The loan list</strong> — who is behind, and who must be chased.</li>
+        <li><strong>The trial balance, then the statements.</strong> Both sides must match before we read anything.</li>
+        <li><strong>Close the month.</strong></li>
+      </ol>
+      <p>Do them in this order. Each one prepares the next.</p>
+      <div class="notes"><p>Read a step, everybody does it, compare answers, then move on. In practice 6 each table reports one thing that does not agree, and you work one of them out together.</p></div>
+    </div>
+  </section>
+
+  <!-- 33 -->
+  <section class="slide">
+    <div class="spine"><span class="spine-day">Day 2</span><span class="spine-num">33</span></div>
+    <div class="body">
+      <p class="eyebrow">Part 10 · Closing the month</p>
+      <h2>A report printed in March must still say the same thing in September</h2>
+      <p>When we close a month, nobody can add anything back into it. That is what makes a report we gave the committee trustworthy months later.</p>
+      <p>If something really must be corrected in a closed month, we correct it in the <strong>open</strong> month, so everybody can see what was done and when.</p>
+      <div class="notes"><p>Tell the President plainly: checks three and six are where their attention belongs, because those are the two the society will be questioned about.</p></div>
+    </div>
+  </section>
+
+  <!-- 34 -->
+  <section class="slide">
+    <div class="spine"><span class="spine-day">Day 2</span><span class="spine-num">34</span></div>
+    <div class="body">
+      <p class="eyebrow">Part 11 · Sharing the profit</p>
+      <h2>From profit to money in members' accounts</h2>
+      <div class="scroll-x">
+        <table>
+          <thead><tr><th>Step</th><th>What you do</th></tr></thead>
+          <tbody>
+            <tr><td class="code">1</td><td>Choose the period — from which date to which date</td></tr>
+            <tr><td class="code">2</td><td>Say how the profit is split: dividend, reserve, honorarium, anything else</td></tr>
+            <tr><td class="code">3</td><td>If part is to be shared by how much each member borrowed, put that percentage</td></tr>
+            <tr><td class="code">4</td><td>Press Compute, then read the list member by member</td></tr>
+            <tr><td class="code">5</td><td>The President declares it — every member's account is credited</td></tr>
+            <tr><td class="code">6</td><td>Save or print the paper for the committee file</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Step 3 in plain words: members who borrowed more brought us more interest, so part of the profit can follow that, not savings alone. Whether we do it, and by how much, is <strong>our decision</strong>, not the computer's.</p>
+      <div class="notes"><p>Practice 7 fits here: the President computes a declaration and explains each split to the room before declaring. If a split cannot be explained here, better to find out now than at the AGM.</p></div>
+    </div>
+  </section>
+
+  <!-- 35 -->
+  <section class="slide">
+    <div class="spine"><span class="spine-day">Day 2</span><span class="spine-num">35</span></div>
+    <div class="body">
+      <p class="eyebrow">Part 11 · Before anybody presses Declare</p>
+      <h2>Three rules</h2>
+      <div class="cards">
+        <div class="card card--red"><h3>Check first</h3><p>Do the month-end checks before computing anything. Profit that has not been checked is a promise we may not be able to keep.</p></div>
+        <div class="card card--red"><h3>The meeting decides</h3><p>The committee or the AGM approves it outside the system. The computer only records the decision; it does not make it.</p></div>
+        <div class="card card--red"><h3>Fix by correction, not by editing</h3><p>If a declaration is wrong, we correct it with a fresh entry. Nobody goes back to change what was already declared.</p></div>
+      </div>
+      <div class="notes"><p>If the society's own policy on the splits is unsettled, write it on the board for the exco meeting and move on. Do not let the class turn into a bye-laws argument.</p></div>
+    </div>
+  </section>
+
+  <!-- 36 -->
+  <section class="slide">
+    <div class="spine"><span class="spine-day">Day 2</span><span class="spine-num">36</span></div>
+    <div class="body">
+      <p class="eyebrow">Part 12 · When the auditor comes</p>
+      <h2>Can you show it in one minute?</h2>
+      <div class="scroll-x">
+        <table>
+          <thead><tr><th>They ask</th><th>You open</th></tr></thead>
+          <tbody>
+            <tr><td>"Show me everything for this period"</td><td>Reports → General Ledger Register, then export</td></tr>
+            <tr><td>"Explain this figure"</td><td>Accounting → the account → click into it</td></tr>
+            <tr><td>"Who approved this loan?"</td><td>The loan's history — each step, name, time and comment</td></tr>
+            <tr><td>"Why was this upload changed?"</td><td>The cancelled upload and the reason that was typed</td></tr>
+            <tr><td>"Did the member get informed?"</td><td>The message record and the text-message record</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="notes"><p>Open each one live, in order. The lesson is the speed, not the list.</p></div>
+    </div>
+  </section>
+
+  <!-- 37 -->
+  <section class="slide">
+    <div class="spine"><span class="spine-day">Day 2</span><span class="spine-num">37</span></div>
+    <div class="body">
+      <p class="eyebrow">Part 12 · Keeping everybody safe</p>
+      <h2>Five simple rules</h2>
+      <ul class="clean">
+        <li><span class="pill pill--teal">Separate</span> &nbsp;The person who records money and the person who approves it should not be the same person.</li>
+        <li><span class="pill pill--teal">Phone code</span> &nbsp;Every officer uses the six-digit phone code. No exception for big offices.</li>
+        <li><span class="pill pill--teal">One person, one login</span> &nbsp;Never share. Your name is on everything you do.</li>
+        <li><span class="pill pill--teal">Leavers</span> &nbsp;When an officer leaves office, close their account that same day.</li>
+        <li><span class="pill pill--teal">Practice copy</span> &nbsp;Never test anything on real member records.</li>
+      </ul>
+      <div class="notes"><p>Open the society's own Task Assignment and ask whether the present sharing of duties still makes sense. Remind them the President can never be locked out, so access can always be restored.</p></div>
+    </div>
+  </section>
+
+  <!-- 38 -->
+  <section class="slide">
+    <div class="spine"><span class="spine-day">Day 2</span><span class="spine-num">38</span></div>
+    <div class="body">
+      <p class="eyebrow">Part 13 · Everyone tries alone</p>
+      <h2>Three tasks each, without help</h2>
+      <div class="scroll-x">
+        <table>
+          <thead><tr><th>Officer</th><th>Task 1</th><th>Task 2</th><th>Task 3</th></tr></thead>
+          <tbody>
+            <tr><td>President</td><td>Approve a loan at the last step</td><td>Compute and declare a dividend</td><td>Close a month and explain why</td></tr>
+            <tr><td>Secretary</td><td>Add a member and send the invitation</td><td>Do the loan checks and pass it on</td><td>Record a meeting</td></tr>
+            <tr><td>Treasurer</td><td>Upload savings, then cancel it with a reason</td><td>Record a repayment and find its entry</td><td>Check members' savings against the accounts</td></tr>
+            <tr><td>Exco member</td><td>Read a member's savings statement</td><td>Read the loan report</td><td>Say who is delaying a pending loan</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Nobody fails here. If a task is hard, we sit together for thirty minutes on that one task within two weeks.</p>
+      <div class="notes"><p>Watch; do not help while they are doing it. Note where they hesitate and cover it in the closing.</p></div>
+    </div>
+  </section>
+
+  <!-- 39 · optional -->
+  <section class="slide">
+    <div class="spine"><span class="spine-day">Optional</span><span class="spine-num">39</span></div>
+    <div class="body">
+      <p class="eyebrow">Only if our society runs it</p>
+      <h2>Target Advance — the ajo, on the system</h2>
+      <p>Everybody pays the same amount each period. A ballot decides who collects, and in which period. After you collect, you keep paying till the round ends. Part of your payout is your own money; the society adds the rest and takes it back from what you still have to pay.</p>
+      <ul>
+        <li>A member cannot join until they accept the rules. An officer can record a paper acceptance, and that is kept.</li>
+        <li>Three different people check a member before joining. Splitting it that way is the whole point.</li>
+        <li>If there will not be enough money, the ballot is blocked until it is settled. That block is protecting us.</li>
+        <li>The money in the scheme is recorded like every other money we hold, and checked the same way.</li>
+      </ul>
+      <div class="notes"><p>Skip this if the module is off — it does not even show in the menu. Run it after part 11, or as a separate small class for the officers who will operate it.</p></div>
+    </div>
+  </section>
+
+  <!-- 40 · close -->
+  <section class="slide">
+    <div class="spine"><span class="spine-day">Close</span><span class="spine-num">40</span></div>
+    <div class="body">
+      <p class="eyebrow">Where we started, where we finished</p>
+      <h2>One place for everything.<br>Nothing rubbed out.<br>We decide who does what.</h2>
+      <hr class="rule">
+      <p><strong>This week:</strong> open the system and do one real piece of your own work in it. If you wait a month, you will have forgotten.</p>
+      <p class="mono" style="font-size:.9rem">Training and Help are in the menu · the practice copy stays open for one month</p>
+      <div class="notes"><p>Close with the same three sentences you opened with. Then fix the refresher date at the next exco meeting before anybody leaves the room.</p></div>
+    </div>
+  </section>
+
+</div>
+
+<div class="hud">
+  <span class="counter" id="counter">1 / 40</span>
+  <button id="notesBtn" type="button" aria-pressed="false" title="Facilitator notes (N)">Notes</button>
+</div>
+
+<script>
+(function () {
+  var deck = document.getElementById('deck');
+  var slides = Array.prototype.slice.call(deck.querySelectorAll('.slide'));
+  var counter = document.getElementById('counter');
+  var progress = document.getElementById('progress');
+  var notesBtn = document.getElementById('notesBtn');
+
+  function current() {
+    var top = deck.scrollTop;
+    var best = 0, bestDist = Infinity;
+    slides.forEach(function (s, i) {
+      var d = Math.abs(s.offsetTop - top);
+      if (d < bestDist) { bestDist = d; best = i; }
+    });
+    return best;
+  }
+
+  function sync() {
+    var i = current();
+    counter.textContent = (i + 1) + ' / ' + slides.length;
+    var max = deck.scrollHeight - deck.clientHeight;
+    progress.style.width = (max > 0 ? (deck.scrollTop / max) * 100 : 0) + '%';
+  }
+
+  function go(delta) {
+    var i = Math.min(slides.length - 1, Math.max(0, current() + delta));
+    deck.scrollTo({ top: slides[i].offsetTop, behavior: 'smooth' });
+  }
+
+  deck.addEventListener('scroll', sync, { passive: true });
+  sync();
+
+  function setNotes(on) {
+    document.body.classList.toggle('show-notes', on);
+    notesBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    try { localStorage.setItem('coopms-deck-notes', on ? '1' : '0'); } catch (e) {}
+  }
+  notesBtn.addEventListener('click', function () {
+    setNotes(!document.body.classList.contains('show-notes'));
+  });
+  try { setNotes(localStorage.getItem('coopms-deck-notes') === '1'); } catch (e) { setNotes(false); }
+
+  document.addEventListener('keydown', function (e) {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    var tag = (e.target && e.target.tagName) || '';
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown' || e.key === 'PageDown' || e.key === ' ') {
+      e.preventDefault(); go(1);
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp' || e.key === 'PageUp') {
+      e.preventDefault(); go(-1);
+    } else if (e.key === 'Home') {
+      e.preventDefault(); deck.scrollTo({ top: 0, behavior: 'smooth' });
+    } else if (e.key === 'End') {
+      e.preventDefault(); deck.scrollTo({ top: deck.scrollHeight, behavior: 'smooth' });
+    } else if (e.key === 'n' || e.key === 'N') {
+      setNotes(!document.body.classList.contains('show-notes'));
+    }
+  });
+})();
+</script>

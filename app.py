@@ -115,6 +115,7 @@ from blueprints.cards       import cards
 from blueprints.migration   import migration
 from blueprints.payments_bp import payments_bp
 from blueprints.help_bp     import help_bp
+from blueprints.training    import training
 from blueprints.accounting  import accounting
 from blueprints.governance  import governance
 from blueprints.communications import communications
@@ -139,6 +140,7 @@ app.register_blueprint(cards)
 app.register_blueprint(migration)
 app.register_blueprint(payments_bp)
 app.register_blueprint(help_bp)
+app.register_blueprint(training)
 app.register_blueprint(accounting)
 app.register_blueprint(governance)
 app.register_blueprint(communications)

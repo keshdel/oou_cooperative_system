@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+
+{% block extra_css %}
+<style>
+  .training-doc { max-width: 60rem; }
+  .training-doc h1 { display: none; }            /* the page header already carries it */
+  .training-doc h2 {
+    font-size: 1.35rem;
+    font-weight: 700;
+    margin: 2.25rem 0 .75rem;
+    padding-bottom: .4rem;
+    border-bottom: 1px solid rgba(0,0,0,.08);
+  }
+  .training-doc h3 { font-size: 1.08rem; font-weight: 700; margin: 1.5rem 0 .5rem; }
+  .training-doc p,
+  .training-doc li { line-height: 1.65; }
+  .training-doc ul,
+  .training-doc ol { padding-left: 1.25rem; }
+  .training-doc li { margin-bottom: .35rem; }
+  .training-doc blockquote {
+    border-left: 3px solid var(--bs-primary, #1a3a6c);
+    padding: .25rem 0 .25rem 1rem;
+    margin: 1rem 0;
+    color: #495057;
+  }
+  .training-doc table {
+    width: 100%;
+    margin: 1rem 0 1.5rem;
+    border-collapse: collapse;
+    font-size: .95rem;
+  }
+  .training-doc thead th {
+    text-align: left;
+    font-size: .78rem;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: #6c757d;
+    border-bottom: 2px solid rgba(0,0,0,.1);
+    padding: .5rem .75rem .5rem 0;
+  }
+  .training-doc tbody td {
+    border-bottom: 1px solid rgba(0,0,0,.06);
+    padding: .55rem .75rem .55rem 0;
+    vertical-align: top;
+  }
+  .training-doc hr { margin: 2rem 0; }
+  .training-doc code {
+    background: rgba(0,0,0,.05);
+    padding: .1rem .35rem;
+    border-radius: 3px;
+  }
+  .training-plain { white-space: pre-wrap; font-size: .9rem; line-height: 1.6; }
+  /* The tables are wide; let them scroll inside the page rather than the page sideways. */
+  .training-doc { overflow-x: auto; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-0">
+
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+      <li class="breadcrumb-item"><a href="{{ url_for('training.index') }}">Training Centre</a></li>
+      <li class="breadcrumb-item active" aria-current="page">{{ title }}</li>
+    </ol>
+  </nav>
+
+  <div class="d-flex flex-wrap justify-content-between align-items-end gap-2 mb-3">
+    <div>
+      <h1 class="h3 mb-1">{{ title }}</h1>
+      <p class="text-muted mb-0">{{ summary }}</p>
+    </div>
+    <div class="d-flex gap-2">
+      {% for other_slug, doc in documents.items() %}
+        {% if other_slug != slug %}
+        <a href="{{ url_for('training.document', slug=other_slug) }}" class="btn btn-outline-secondary btn-sm">
+          {{ doc.title }}
+        </a>
+        {% endif %}
+      {% endfor %}
+      <a href="{{ url_for('training.slides') }}" class="btn btn-outline-primary btn-sm">Slides</a>
+    </div>
+  </div>
+
+  {% if not rich %}
+  <div class="alert alert-warning small">
+    This copy is shown as plain text — the page that formats it needs the
+    <code>markdown</code> package, which arrives with the next deployment.
+    Nothing is missing from the content itself.
+  </div>
+  {% endif %}
+
+  <div class="card">
+    <div class="card-body">
+      <div class="training-doc">
+        {{ body|safe }}
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}

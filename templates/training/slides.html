@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Exco Course — Slides</title>
+  <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}">
+  <style>
+    /* The deck brings its own styling; this only adds the way back into the
+       system, floating clear of the slide content. */
+    .training-exit {
+      position: fixed;
+      top: .75rem;
+      left: .75rem;
+      z-index: 30;
+      font-family: "IBM Plex Mono", ui-monospace, monospace;
+      font-size: .72rem;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      text-decoration: none;
+      color: var(--ink-soft, #4C575A);
+      background: var(--raised, #FAFBF7);
+      border: 1px solid var(--rule, #D5DBD1);
+      border-radius: 2px;
+      padding: .35rem .6rem;
+    }
+    .training-exit:hover { color: var(--ink, #12181C); }
+    .training-exit:focus-visible { outline: 2px solid var(--red, #AF3328); outline-offset: 2px; }
+  </style>
+</head>
+<body>
+
+<a class="training-exit" href="{{ url_for('training.index') }}">&larr; Training Centre</a>
+
+{{ deck_html|safe }}
+
+</body>
+</html>
