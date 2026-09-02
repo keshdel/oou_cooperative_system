@@ -52,10 +52,17 @@ def member_details(member_id):
         "SELECT COALESCE(SUM(balance), 0) FROM loans WHERE member_id = ? AND status = 'active'",
         (member_id,)).fetchone()[0] or 0
 
+    # Offset accounts for a savings adjustment; Member Deposits is the side the
+    # adjustment already moves, so it is not offerable as the other side.
+    from ledger import get_accounts, MEMBER_DEPOSITS
+    adjust_accounts = [a for a in get_accounts(db, active_only=True)
+                       if a['code'] != MEMBER_DEPOSITS]
+
     return render_template('admin/member-detail.html',
                            member=member, savings=savings, loans=loans,
                            total_savings=total_savings, total_loans=total_loans,
                            outstanding_loan=outstanding_loan,
+                           adjust_accounts=adjust_accounts,
                            exit_reasons=EXIT_REASONS)
 
 

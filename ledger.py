@@ -837,6 +837,9 @@ def _reverse_va_loan(db, e, alloc_id):
 # LEDGER_ONLY_MODULES cannot be reversed from the journal.
 REVERSAL_HANDLERS = {
     'savings_deposit': _reverse_savings_deposit,
+    # An adjustment is a savings row like any other, so the deposit handler
+    # undoes it correctly -- including a negative one, which it flips back.
+    'savings_adjustment': _reverse_savings_deposit,
     'savings_payout':  _reverse_savings_payout,
     'loan_repayment':  _reverse_loan_repayment,
     'va_savings':      _reverse_va_savings,

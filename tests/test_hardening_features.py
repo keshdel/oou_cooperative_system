@@ -27,6 +27,7 @@ import app as app_module  # noqa: E402
 from database import get_db  # noqa: E402
 from crypto import decrypt_field, is_encrypted  # noqa: E402
 from ledger import backfill_from_transactions, ledger_reconciliation  # noqa: E402
+from utils import member_savings_balance  # noqa: E402
 from mobile_api import JWT_AUDIENCE  # noqa: E402
 from reports_engine import income_statement  # noqa: E402
 from security import generate_compliant_password, validate_password_strength  # noqa: E402
@@ -2135,6 +2136,93 @@ class HardeningFeatureTests(unittest.TestCase):
                 db.execute('DELETE FROM savings WHERE member_id = ? AND month = ?', (member_id, month))
                 db.execute('UPDATE members SET total_savings = ?, shares_value = ? WHERE id = ?',
                            (base_sav, base_shr, member_id))
+                db.commit()
+
+    def test_savings_adjustment_moves_both_the_member_and_the_ledger(self):
+        """Correcting a savings balance has to write two places at once. A
+        journal entry alone moves the books while the member's dashboard sits
+        unchanged, which is the trap this exists to close. Reducing works too,
+        the member's statement carries the reason, and the entry is reversible."""
+        self.login_admin()
+        member_id = self.create_member()
+        try:
+            with self.app.app_context():
+                db = get_db()
+                start = member_savings_balance(db, member_id)
+                # The cached column is asserted on its own movement, not against
+                # the row total: other tests insert savings rows directly and
+                # leave the cache behind, and reconciling that is not this
+                # feature's job.
+                cached_start = float(db.execute(
+                    'SELECT COALESCE(total_savings,0) AS t FROM members WHERE id = ?',
+                    (member_id,)).fetchone()['t'] or 0)
+                dep_start = db.execute(
+                    "SELECT COALESCE(SUM(credit-debit),0) FROM journal_lines WHERE account_code='2000'"
+                ).fetchone()[0] or 0
+
+            r = self.client.post('/savings/adjust', data={
+                'member_id': member_id, 'amount': '25000',
+                'contra_account': '3000', 'date': '2026-07-31',
+                'reason': 'Understated in the Tally opening balance'},
+                follow_redirects=False)
+            self.assertIn(r.status_code, (302, 303))
+
+            with self.app.app_context():
+                db = get_db()
+                # The member moved...
+                self.assertAlmostEqual(member_savings_balance(db, member_id), start + 25000, places=2)
+                cached = db.execute('SELECT total_savings FROM members WHERE id = ?',
+                                    (member_id,)).fetchone()['total_savings']
+                self.assertAlmostEqual(float(cached or 0) - cached_start, 25000, places=2)
+                # ...and so did the ledger, by the same amount.
+                dep_now = db.execute(
+                    "SELECT COALESCE(SUM(credit-debit),0) FROM journal_lines WHERE account_code='2000'"
+                ).fetchone()[0] or 0
+                self.assertAlmostEqual(float(dep_now) - float(dep_start), 25000, places=2)
+                surplus = db.execute(
+                    "SELECT COALESCE(SUM(debit-credit),0) FROM journal_lines l "
+                    "JOIN journal_entries e ON e.id = l.entry_id "
+                    "WHERE l.account_code='3000' AND e.source_module='savings_adjustment'"
+                ).fetchone()[0] or 0
+                self.assertAlmostEqual(float(surplus), 25000, places=2)
+                # The reason is on the row, so the statement can explain itself.
+                row = db.execute("SELECT * FROM savings WHERE member_id = ? AND payment_type='adjustment'",
+                                 (member_id,)).fetchone()
+                self.assertIn('Tally', row['notes'])
+
+            # A reduction is the same flow with a negative amount.
+            r2 = self.client.post('/savings/adjust', data={
+                'member_id': member_id, 'amount': '-5000',
+                'contra_account': '3000', 'reason': 'Overstated'}, follow_redirects=False)
+            self.assertIn(r2.status_code, (302, 303))
+            with self.app.app_context():
+                db = get_db()
+                self.assertAlmostEqual(member_savings_balance(db, member_id), start + 20000, places=2)
+
+            # It cannot push a member below zero, and needs a reason.
+            self.client.post('/savings/adjust', data={
+                'member_id': member_id, 'amount': '-99999999',
+                'reason': 'too much'}, follow_redirects=True)
+            self.client.post('/savings/adjust', data={
+                'member_id': member_id, 'amount': '1000', 'reason': '  '},
+                follow_redirects=True)
+            with self.app.app_context():
+                db = get_db()
+                self.assertAlmostEqual(member_savings_balance(db, member_id), start + 20000, places=2)
+        finally:
+            with self.app.app_context():
+                db = get_db()
+                ids = [r['id'] for r in db.execute(
+                    "SELECT id FROM savings WHERE member_id = ? AND payment_type='adjustment'",
+                    (member_id,)).fetchall()]
+                for sid in ids:
+                    for e in db.execute("SELECT id FROM journal_entries WHERE source_module='savings_adjustment' AND source_id = ?",
+                                        (sid,)).fetchall():
+                        db.execute('DELETE FROM journal_lines WHERE entry_id = ?', (e['id'],))
+                        db.execute('DELETE FROM journal_entries WHERE id = ?', (e['id'],))
+                db.execute("DELETE FROM savings WHERE member_id = ? AND payment_type='adjustment'",
+                           (member_id,))
+                db.execute('UPDATE members SET total_savings = 0 WHERE id = ?', (member_id,))
                 db.commit()
 
     def test_backfill_skips_records_covered_by_the_opening_balance(self):

@@ -13,7 +13,8 @@ from email_service import send_payment_confirmation_email
 from utils import (role_required, audit, notify_member, record_revenue, share_capital_split,
                    member_savings_balance)
 from ledger import (post_journal_safe, get_default_cash_account, reverse_journal_entry,
-                    PeriodLockedError, MEMBER_DEPOSITS, FEE_INCOME, SHARE_CAPITAL)
+                    PeriodLockedError, MEMBER_DEPOSITS, FEE_INCOME, SHARE_CAPITAL,
+                    get_accounts, account_exists, ACCUM_SURPLUS)
 
 savings = Blueprint('savings', __name__)
 
@@ -541,6 +542,110 @@ def _save_payout_evidence(f):
     f.save(disk)
     return True, rel
 
+
+
+@savings.route('/savings/adjust', methods=['POST'])
+@login_required
+@role_required('admin', 'treasurer')
+def adjust_saving():
+    """Correct a member's savings balance without pretending money moved.
+
+    A journal entry alone cannot do this: a member's balance is the sum of their
+    savings rows, and the ledger is a separate record, so posting to Member
+    Deposits moves the books while the member's dashboard stays exactly as it
+    was. This writes both halves together -- a correcting savings row the member
+    can see on their statement, and the matching journal entry -- so the two
+    can never drift apart.
+
+    Unlike a payout this does not require evidence and is not blocked by an
+    outstanding loan, because nothing is being paid to anybody. It is for fixing
+    a figure that was recorded wrongly, most often a migrated opening balance.
+    """
+    db = get_db()
+    member_id = request.form.get('member_id')
+    member = db.execute('SELECT * FROM members WHERE id = ?', (member_id,)).fetchone()
+    if not member:
+        flash('Member not found.', 'danger')
+        return redirect(url_for('members.members_list'))
+    back = redirect(url_for('members.member_details', member_id=member_id))
+
+    try:
+        amount = float(request.form.get('amount') or 0)
+    except ValueError:
+        flash('Enter a valid adjustment amount.', 'danger')
+        return back
+    amount = round(amount, 2)
+    if amount == 0:
+        flash('An adjustment cannot be zero. Use a negative amount to reduce the balance.', 'danger')
+        return back
+
+    reason = (request.form.get('reason') or '').strip()
+    if not reason:
+        flash('A reason for the adjustment is required.', 'danger')
+        return back
+
+    balance = member_savings_balance(db, member_id)
+    if balance + amount < -0.005:
+        flash(f'That adjustment would take {member["first_name"]} {member["last_name"]} to '
+              f'a negative balance (₦{balance:,.2f} + ₦{amount:,.2f}). Reduce the amount.', 'danger')
+        return back
+
+    # The other side of the correction. The app cannot know which account was
+    # wrong, so the officer chooses; Accumulated Surplus is the usual home for
+    # a prior-period correction.
+    contra = (request.form.get('contra_account') or ACCUM_SURPLUS).strip()
+    if not account_exists(db, contra):
+        flash(f'Account {contra} does not exist.', 'danger')
+        return back
+    if contra == MEMBER_DEPOSITS:
+        flash('The offset account cannot also be Member Deposits — that entry would do nothing.',
+              'danger')
+        return back
+
+    date = _parse_date(request.form.get('date', '')) or datetime.now()
+    receipt = f"ADJ/{datetime.now().strftime('%Y%m%d')}/{random.randint(1000, 9999)}"
+
+    try:
+        # Recorded as its own savings row, positive or negative, so the member's
+        # statement shows the correction and its reason rather than a balance
+        # that silently changed.
+        db.execute('''
+            INSERT INTO savings
+                (member_id, amount, month, payment_type, payment_method,
+                 receipt_number, notes, date, created_by)
+            VALUES (?, ?, ?, 'adjustment', 'adjustment', ?, ?, ?, ?)
+        ''', (member_id, amount, date.strftime('%Y-%m'), receipt, reason, date,
+              current_user.id))
+        sav_id = last_insert_id(db)
+
+        db.execute('UPDATE members SET total_savings = COALESCE(total_savings, 0) + ? WHERE id = ?',
+                   (amount, member_id))
+
+        # An increase raises what the cooperative owes the member; a decrease
+        # lowers it. The offset carries the opposite side either way.
+        if amount > 0:
+            lines = [{'account': contra, 'debit': amount, 'memo': reason},
+                     {'account': MEMBER_DEPOSITS, 'credit': amount,
+                      'memo': f'Adjustment for {member["member_number"]}'}]
+        else:
+            lines = [{'account': MEMBER_DEPOSITS, 'debit': -amount,
+                      'memo': f'Adjustment for {member["member_number"]}'},
+                     {'account': contra, 'credit': -amount, 'memo': reason}]
+        post_journal_safe(db, f'Savings adjustment — {member["first_name"]} {member["last_name"]}',
+                          lines, reference=receipt, source_module='savings_adjustment',
+                          source_id=sav_id, created_by=current_user.id, date=date)
+
+        db.commit()
+        audit(db, 'SAVINGS_ADJUSTMENT', 'savings',
+              f'Adjusted savings for {member["member_number"]} {member["first_name"]} '
+              f'{member["last_name"]} by ₦{amount:,.2f} ({reason}); receipt {receipt}')
+        flash(f'Savings adjusted by ₦{amount:,.2f} for {member["first_name"]} '
+              f'{member["last_name"]}. New balance: ₦{balance + amount:,.2f}. '
+              f'Reference: {receipt}', 'success')
+    except Exception as e:
+        db.rollback()
+        flash(f'Could not adjust savings: {e}', 'danger')
+    return back
 
 @savings.route('/savings/payout', methods=['POST'])
 @login_required
