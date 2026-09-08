@@ -3533,6 +3533,73 @@ class HardeningFeatureTests(unittest.TestCase):
                            (member_id,))
                 db.commit()
 
+    def test_adding_an_officer_invites_them_instead_of_setting_their_password(self):
+        """An officer sets their own password from an invitation, and nobody
+        else ever knows it. Every action is recorded against a name, and that is
+        only worth something if a name means one person — an admin who chose the
+        password could have done anything the officer is credited with.
+        """
+        self.login_admin()
+        try:
+            with self.app.app_context():
+                db = get_db()
+                db.execute("DELETE FROM users WHERE username IN ('newtreasurer', 'nomailofficer')")
+                db.commit()
+
+            r = self.client.post('/api/add_user', data={
+                'username': 'newtreasurer', 'full_name': 'New Treasurer',
+                'email': 'new.treasurer@example.com', 'role': 'treasurer',
+            }, follow_redirects=True)
+            self.assertEqual(r.status_code, 200)
+
+            with self.app.app_context():
+                db = get_db()
+                u = db.execute(
+                    'SELECT id, must_change_password FROM users WHERE username = ?',
+                    ('newtreasurer',)).fetchone()
+                self.assertIsNotNone(u, 'the officer was not created without a password')
+                # They must set their own before they can do anything.
+                self.assertEqual(u['must_change_password'], 1)
+                # An invitation is waiting, whether or not the email got through.
+                token = db.execute(
+                    'SELECT id FROM account_setup_tokens WHERE user_id = ? AND used_at IS NULL',
+                    (u['id'],)).fetchone()
+                self.assertIsNotNone(token, 'no setup link was issued')
+
+            # An officer with no email cannot be invited, so a password is handed
+            # over instead — and still has to be changed at first login.
+            r2 = self.client.post('/api/add_user', data={
+                'username': 'nomailofficer', 'full_name': 'No Mail Officer',
+                'email': '', 'role': 'exco', 'password': 'HandOver123!',
+            }, follow_redirects=True)
+            self.assertEqual(r2.status_code, 200)
+            with self.app.app_context():
+                db = get_db()
+                u2 = db.execute(
+                    'SELECT must_change_password FROM users WHERE username = ?',
+                    ('nomailofficer',)).fetchone()
+                self.assertIsNotNone(u2)
+                self.assertEqual(u2['must_change_password'], 1)
+
+            # Neither an email nor a password is refused, not half-created.
+            r3 = self.client.post('/api/add_user', data={
+                'username': 'nothingofficer', 'full_name': 'Nothing', 'role': 'exco',
+            }, follow_redirects=True)
+            self.assertEqual(r3.status_code, 200)
+            with self.app.app_context():
+                db = get_db()
+                self.assertIsNone(db.execute(
+                    "SELECT 1 FROM users WHERE username = 'nothingofficer'").fetchone())
+        finally:
+            with self.app.app_context():
+                db = get_db()
+                for name in ('newtreasurer', 'nomailofficer', 'nothingofficer'):
+                    row = db.execute('SELECT id FROM users WHERE username = ?', (name,)).fetchone()
+                    if row:
+                        db.execute('DELETE FROM account_setup_tokens WHERE user_id = ?', (row['id'],))
+                        db.execute('DELETE FROM users WHERE id = ?', (row['id'],))
+                db.commit()
+
     def test_financial_reporting_center_and_control_exports_render(self):
         self.login_admin()
         member_id = self.create_member()

@@ -235,8 +235,17 @@ A borrower of ₦500,000 with 1% insurance and 1% fee receives ₦490,000. The s
 **Settings → System Users**
 
 1. **Add User**.
-2. Name, email, and their office.
-3. Save. They get an invitation email.
+2. Username, full name, email, and their office.
+3. Save. **They get an invitation email** and set their own password from it.
+
+**You never choose an officer's password, and you never learn it.** That is deliberate.
+Every action is recorded against a name, and that is only worth something if a name means
+one person. If you knew their password, anything done under their name could have been done
+by you — bad for them, and bad for you.
+
+If the officer has **no email address**, the system cannot invite them. It will ask you for
+a password instead, hand it to you to pass on, and require them to change it the first time
+they log in.
 
 Rules worth keeping:
 

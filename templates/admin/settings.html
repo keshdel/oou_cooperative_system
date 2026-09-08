@@ -1967,12 +1967,24 @@
                     
                     <div class="mb-3">
                         <label class="form-label">Email</label>
-                        <input type="email" class="form-control" name="email" required>
+                        <input type="email" class="form-control" name="email">
+                        <div class="form-text">
+                            We email them an invitation and they set their own password.
+                            You never see it &mdash; that is what keeps the audit trail worth something.
+                        </div>
                     </div>
-                    
+
                     <div class="mb-3">
-                        <label class="form-label">Password</label>
-                        <input type="password" class="form-control" name="password" required>
+                        <label class="form-label">
+                            Password <span class="text-muted">(only if they have no email)</span>
+                        </label>
+                        <input type="password" class="form-control" name="password"
+                               autocomplete="new-password">
+                        <div class="form-text">
+                            Leave this blank. Fill it in only for an officer with no email address:
+                            you hand the password over in person and they must change it the first
+                            time they log in.
+                        </div>
                     </div>
                     
                     <div class="mb-3">

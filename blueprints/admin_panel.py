@@ -1,6 +1,7 @@
 import os
 import random
 import re
+import secrets
 from datetime import datetime, timedelta
 
 from flask import Blueprint, jsonify, render_template, redirect, url_for, request, flash
@@ -694,27 +695,72 @@ def add_user():
         full_name = request.form.get('full_name', username)
         email = request.form.get('email', '')
 
-        if not username or not password:
-            flash('Username and password are required', 'danger')
-            return redirect(url_for('admin_panel.settings'))
-
-        ok, errors = validate_password_strength(password, db)
-        if not ok:
-            flash(' '.join(errors), 'danger')
+        if not username:
+            flash('Username is required', 'danger')
             return redirect(url_for('admin_panel.settings') + '#users')
+
+        # An officer sets their own password from an invitation, and nobody else
+        # ever knows it. Every action is recorded against a name, and that is
+        # only worth something if a name means one person — an admin who chose
+        # the password could have done anything the officer is credited with.
+        #
+        # Without an email there is no way to invite them, so a password is
+        # handed over instead and must be changed at first login.
+        invite = bool(email)
+        if invite:
+            password = secrets.token_urlsafe(24)     # never shown to anybody
+        else:
+            if not password:
+                flash('Give this user an email address so they can be invited, or set a '
+                      'password to hand over in person.', 'danger')
+                return redirect(url_for('admin_panel.settings') + '#users')
+            ok, errors = validate_password_strength(password, db)
+            if not ok:
+                flash(' '.join(errors), 'danger')
+                return redirect(url_for('admin_panel.settings') + '#users')
 
         existing = db.execute('SELECT id FROM users WHERE username = ?', (username,)).fetchone()
         if existing:
             flash(f'Username "{username}" already exists', 'danger')
-            return redirect(url_for('admin_panel.settings'))
+            return redirect(url_for('admin_panel.settings') + '#users')
 
         password_hash = generate_password_hash(password)
         db.execute('''
-            INSERT INTO users (username, password_hash, role, full_name, email, created_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO users (username, password_hash, role, full_name, email, created_at,
+                               must_change_password)
+            VALUES (?, ?, ?, ?, ?, ?, 1)
         ''', (username, password_hash, role, full_name, email, datetime.now()))
+        new_id = last_insert_id(db)
+        audit(db, 'ADD_USER', 'users',
+              f'Created {role} account "{username}"'
+              + (' and invited them by email' if invite else ' with a handover password'))
+
+        if not invite:
+            db.commit()
+            flash(f'User "{username}" created. Give them this password in person — they '
+                  f'must change it the first time they log in.', 'success')
+            return redirect(url_for('admin_panel.settings') + '#users')
+
+        # The link is stored before the email is attempted, so a mail failure
+        # leaves a working invitation the officer can resend rather than a user
+        # nobody can get into.
+        setup_url = _issue_account_setup_link(
+            db, {'id': new_id, 'username': username, 'full_name': full_name, 'email': email})
         db.commit()
-        flash(f'User "{username}" created successfully!', 'success')
+        try:
+            send_member_onboarding_email(
+                email,
+                {'full_name': full_name or username, 'member_number': ''},
+                username,
+                setup_url,
+                url_for('portal.profile', _external=True),
+            )
+            flash(f'User "{username}" created and invited at {email}. They set their own '
+                  f'password from the link.', 'success')
+        except Exception as mail_error:
+            flash(f'User "{username}" was created, but the invitation email could not be '
+                  f'sent ({mail_error}). Use "Send setup link" on their row to try again.',
+                  'warning')
     except Exception as e:
         db.rollback()
         flash(f'Error creating user: {str(e)}', 'danger')
