@@ -172,12 +172,18 @@ def add_account():
     # Normal balance defaults from type if not specified
     if normal not in ('debit', 'credit'):
         normal = 'debit' if atype in ('asset', 'expense') else 'credit'
+    # Only something owned or owed can hold money; a detail account under a
+    # parent can, its parent then becomes a heading.
+    is_cash = 1 if (request.form.get('is_cash_account') and atype in ('asset', 'liability')) else 0
     try:
         db.execute(
-            'INSERT INTO accounts (code, name, type, normal_balance, parent_code, is_active) '
-            'VALUES (?, ?, ?, ?, ?, 1)', (code, name, atype, normal, parent))
+            'INSERT INTO accounts (code, name, type, normal_balance, parent_code, is_active, '
+            'is_cash_account) VALUES (?, ?, ?, ?, ?, 1, ?)',
+            (code, name, atype, normal, parent, is_cash))
         db.commit()
-        audit(db, 'ADD_ACCOUNT', 'accounting', f'Added account {code} — {name} ({atype})')
+        audit(db, 'ADD_ACCOUNT', 'accounting',
+              f'Added account {code} — {name} ({atype})'
+              + (' — money moves through it' if is_cash else ''))
         flash(f'Account {code} — {name} added.', 'success')
     except Exception as e:
         db.rollback()
@@ -246,6 +252,56 @@ def toggle_account(code):
           f'Account {code} {"reactivated" if new_val else "deactivated"}')
     flash(f'Account {code} {"reactivated" if new_val else "deactivated"}.', 'success')
     return redirect(url_for('accounting.chart_of_accounts'))
+
+
+@accounting.route('/accounts/<code>/cash-toggle', methods=['POST'])
+@login_required
+@role_required('admin')
+def toggle_cash_account(code):
+    """Mark whether money moves through this account.
+
+    Marked accounts are what a treasurer picks when recording a contribution,
+    repayment, payout or disbursement. Banks and cash in hand obviously belong;
+    so does a control account like a Cooperative Fund Account, where salary
+    deductions sit until the employer remits them and the receipt is
+    Dr Bank / Cr Fund.
+    """
+    db = get_db()
+    a = db.execute('SELECT name, type, is_cash_account FROM accounts WHERE code = ?',
+                   (code,)).fetchone()
+    if not a:
+        flash('Account not found.', 'danger')
+        return redirect(url_for('accounting.chart_of_accounts'))
+    turning_on = not a['is_cash_account']
+    # Money sits in something owned or owed. Letting an income or expense
+    # account be the cash side of a receipt would book the same amount twice.
+    if turning_on and a['type'] not in ('asset', 'liability'):
+        flash(f'{code} — {a["name"]} is a {a["type"]} account. Only asset or liability '
+              f'accounts can hold money.', 'danger')
+        return redirect(url_for('accounting.chart_of_accounts'))
+    if turning_on and code in {p['code'] for p in _header_codes(db)}:
+        flash(f'{code} — {a["name"]} has detail accounts under it, so it is a heading. '
+              f'Mark the accounts beneath it instead.', 'danger')
+        return redirect(url_for('accounting.chart_of_accounts'))
+
+    db.execute('UPDATE accounts SET is_cash_account = ? WHERE code = ?',
+               (1 if turning_on else 0, code))
+    db.commit()
+    audit(db, 'TOGGLE_CASH_ACCOUNT', 'accounting',
+          f'Account {code} {"marked as" if turning_on else "no longer"} an account money moves through')
+    flash(f'{code} — {a["name"]} '
+          f'{"can now be chosen when recording money in and out." if turning_on else "will no longer be offered."}',
+          'success')
+    return redirect(url_for('accounting.chart_of_accounts'))
+
+
+def _header_codes(db):
+    """Accounts that have active children, so are headings rather than places
+    money sits."""
+    return db.execute(
+        "SELECT DISTINCT parent_code AS code FROM accounts "
+        "WHERE is_active = 1 AND parent_code IS NOT NULL AND parent_code != ''"
+    ).fetchall()
 
 
 @accounting.route('/journal/new', methods=['GET', 'POST'])

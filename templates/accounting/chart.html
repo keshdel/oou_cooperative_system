@@ -92,6 +92,19 @@
             </select>
           </div>
           <div class="col-12">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" name="is_cash_account" id="addIsCashAccount" value="1">
+              <label class="form-check-label small" for="addIsCashAccount">
+                Money moves through this account
+              </label>
+            </div>
+            <div class="form-text small">
+              Tick for a bank, cash in hand, or a control account that holds money on its
+              way to one &mdash; these are what a treasurer picks when recording a
+              contribution, repayment, payout or disbursement.
+            </div>
+          </div>
+          <div class="col-12">
             <button class="btn btn-sm btn-primary"><i class="fas fa-plus"></i> Add Header</button>
           </div>
         </form>
@@ -153,6 +166,7 @@
               <th>Account</th>
               <th style="width:130px">Normal</th>
               <th style="width:160px">Role</th>
+              <th style="width:150px">Money moves here</th>
               <th style="width:120px">Status</th>
               {% if can('accounting.admin') %}<th style="width:130px"></th>{% endif %}
             </tr>
@@ -181,6 +195,22 @@
                 <span class="badge bg-secondary">Header</span>
                 {% else %}
                 <span class="badge bg-light text-dark">Posting</span>
+                {% endif %}
+              </td>
+              <td>
+                {% if a.is_cash_account %}
+                <span class="badge bg-primary">Yes</span>
+                {% else %}
+                <span class="text-muted small">&mdash;</span>
+                {% endif %}
+                {% if can('accounting.admin') and not a.children %}
+                <form method="post" action="{{ url_for('accounting.toggle_cash_account', code=a.code) }}" class="d-inline">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button class="btn btn-link btn-sm p-0 ms-1 align-baseline"
+                          title="{{ 'Stop offering this account when recording money in and out' if a.is_cash_account else 'Offer this account when recording money in and out' }}">
+                    {{ 'remove' if a.is_cash_account else 'mark' }}
+                  </button>
+                </form>
                 {% endif %}
               </td>
               <td>{% if a.is_active %}<span class="badge bg-success">Active</span>{% else %}<span class="badge bg-secondary">Inactive</span>{% endif %}</td>

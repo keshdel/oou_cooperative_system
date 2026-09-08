@@ -2418,8 +2418,8 @@ class HardeningFeatureTests(unittest.TestCase):
             db = get_db()
             db.execute("DELETE FROM accounts WHERE code = '1096'")
             db.execute('''
-                INSERT INTO accounts (code, name, type, normal_balance, parent_code, is_active)
-                VALUES ('1096', 'Test Reconciliation Bank', 'asset', 'debit', '1000', 1)
+                INSERT INTO accounts (code, name, type, normal_balance, parent_code, is_active, is_cash_account)
+                VALUES ('1096', 'Test Reconciliation Bank', 'asset', 'debit', '1000', 1, 1)
             ''')
             entry_ids = []
             entry_ids.append(post_journal(
@@ -2502,8 +2502,8 @@ class HardeningFeatureTests(unittest.TestCase):
             db = get_db()
             db.execute("DELETE FROM accounts WHERE code = '1095'")
             db.execute('''
-                INSERT INTO accounts (code, name, type, normal_balance, parent_code, is_active)
-                VALUES ('1095', 'Zenith Test Bank', 'asset', 'debit', '1000', 1)
+                INSERT INTO accounts (code, name, type, normal_balance, parent_code, is_active, is_cash_account)
+                VALUES ('1095', 'Zenith Test Bank', 'asset', 'debit', '1000', 1, 1)
             ''')
             entry_id = post_journal(
                 db,
@@ -2782,8 +2782,8 @@ class HardeningFeatureTests(unittest.TestCase):
             db.execute("DELETE FROM accounts WHERE code = '1098'")
             db.execute("DELETE FROM settings WHERE key = 'default_cash_account'")
             db.execute('''
-                INSERT INTO accounts (code, name, type, normal_balance, parent_code, is_active)
-                VALUES ('1098', 'Test Main Bank', 'asset', 'debit', '1000', 1)
+                INSERT INTO accounts (code, name, type, normal_balance, parent_code, is_active, is_cash_account)
+                VALUES ('1098', 'Test Main Bank', 'asset', 'debit', '1000', 1, 1)
             ''')
             db.execute(
                 "INSERT INTO settings (key, value, description) VALUES ('default_cash_account', '1098', 'test')"
@@ -2825,8 +2825,8 @@ class HardeningFeatureTests(unittest.TestCase):
             db.execute("DELETE FROM journal_lines WHERE account_code = '1097'")
             db.execute("DELETE FROM accounts WHERE code = '1097'")
             db.execute('''
-                INSERT INTO accounts (code, name, type, normal_balance, parent_code, is_active)
-                VALUES ('1097', 'Test Zenith Bank', 'asset', 'debit', '1000', 1)
+                INSERT INTO accounts (code, name, type, normal_balance, parent_code, is_active, is_cash_account)
+                VALUES ('1097', 'Test Zenith Bank', 'asset', 'debit', '1000', 1, 1)
             ''')
             db.commit()
 
@@ -2875,8 +2875,8 @@ class HardeningFeatureTests(unittest.TestCase):
             db.execute("DELETE FROM accounts WHERE code = '1096'")
             db.execute("DELETE FROM loans WHERE loan_number = 'LOAN/SEL/BANK/001'")
             db.execute('''
-                INSERT INTO accounts (code, name, type, normal_balance, parent_code, is_active)
-                VALUES ('1096', 'Test Access Bank', 'asset', 'debit', '1000', 1)
+                INSERT INTO accounts (code, name, type, normal_balance, parent_code, is_active, is_cash_account)
+                VALUES ('1096', 'Test Access Bank', 'asset', 'debit', '1000', 1, 1)
             ''')
             db.execute('''
                 INSERT INTO loans
@@ -3043,8 +3043,8 @@ class HardeningFeatureTests(unittest.TestCase):
             with self.app.app_context():
                 db = get_db()
                 db.execute('''
-                    INSERT INTO accounts (code, name, type, normal_balance, parent_code, is_active)
-                    VALUES ('1095', 'Test GTB Current', 'asset', 'debit', '1000', 1)
+                    INSERT INTO accounts (code, name, type, normal_balance, parent_code, is_active, is_cash_account)
+                    VALUES ('1095', 'Test GTB Current', 'asset', 'debit', '1000', 1, 1)
                 ''')
                 db.commit()
 
@@ -3081,8 +3081,8 @@ class HardeningFeatureTests(unittest.TestCase):
                 db = get_db()
                 for code, name in (('1094', 'Test Batch Bank'), ('1093', 'Test Row Bank')):
                     db.execute('''
-                        INSERT INTO accounts (code, name, type, normal_balance, parent_code, is_active)
-                        VALUES (?, ?, 'asset', 'debit', '1000', 1)
+                        INSERT INTO accounts (code, name, type, normal_balance, parent_code, is_active, is_cash_account)
+                        VALUES (?, ?, 'asset', 'debit', '1000', 1, 1)
                     ''', (code, name))
                 member = db.execute('SELECT member_number FROM members WHERE id = ?',
                                     (member_id,)).fetchone()
@@ -3156,8 +3156,8 @@ class HardeningFeatureTests(unittest.TestCase):
             with self.app.app_context():
                 db = get_db()
                 db.execute('''
-                    INSERT INTO accounts (code, name, type, normal_balance, parent_code, is_active)
-                    VALUES ('1092', 'Test Disbursing Bank', 'asset', 'debit', '1000', 1)
+                    INSERT INTO accounts (code, name, type, normal_balance, parent_code, is_active, is_cash_account)
+                    VALUES ('1092', 'Test Disbursing Bank', 'asset', 'debit', '1000', 1, 1)
                 ''')
                 # Sitting at final approval with due diligence already done.
                 db.execute('''
@@ -3237,6 +3237,88 @@ class HardeningFeatureTests(unittest.TestCase):
                     db.execute('DELETE FROM loans WHERE id = ?', (loan_id,))
                 db.execute("DELETE FROM revenue WHERE source = 'Loan LOAN/DISB/BANK/001'")
                 db.execute("DELETE FROM accounts WHERE code = '1092'")
+                db.commit()
+
+    def test_a_control_account_can_be_marked_as_one_money_moves_through(self):
+        """A Cooperative Fund Account holds salary deductions the employer has
+        withheld but not yet remitted, so contributions land there and the
+        remittance is later Dr Bank / Cr Fund. Nothing in its name says that, so
+        the treasurer marks it — the old name-matching rule could never have.
+        """
+        from ledger import get_cash_bank_accounts, resolve_cash_bank_account, UnknownCashAccountError
+        self.login_admin()
+        member_id = self.create_member()
+        try:
+            with self.app.app_context():
+                db = get_db()
+                db.execute('''
+                    INSERT INTO accounts (code, name, type, normal_balance, is_active, is_cash_account)
+                    VALUES ('1450', 'Test Cooperative Fund Account', 'asset', 'debit', 1, 0)
+                ''')
+                db.commit()
+                # Unmarked, it is invisible to every money-movement screen.
+                self.assertNotIn('1450', {a['code'] for a in get_cash_bank_accounts(db)})
+                with self.assertRaises(UnknownCashAccountError):
+                    resolve_cash_bank_account(db, '1450')
+
+            r = self.client.post('/accounting/accounts/1450/cash-toggle', follow_redirects=True)
+            self.assertEqual(r.status_code, 200)
+
+            with self.app.app_context():
+                db = get_db()
+                self.assertIn('1450', {a['code'] for a in get_cash_bank_accounts(db)})
+                self.assertEqual(resolve_cash_bank_account(db, '1450'), '1450')
+
+            # And a contribution can now be recorded against it.
+            self.client.post('/savings/add', data={
+                'member_id': member_id, 'amount': '9000', 'month': '2026-11',
+                'payment_type': 'voluntary', 'payment_method': 'salary_deduction',
+                'bank_account': '1450', 'notes': 'deduction held by employer',
+            }, follow_redirects=True)
+            with self.app.app_context():
+                db = get_db()
+                posted = db.execute('''
+                    SELECT COALESCE(SUM(jl.debit), 0) AS d
+                    FROM journal_lines jl
+                    JOIN journal_entries je ON je.id = jl.entry_id
+                    WHERE jl.account_code = '1450' AND je.source_module = 'savings_deposit'
+                ''').fetchone()['d']
+                self.assertAlmostEqual(float(posted), 9000.0, places=2)
+
+            # Unmarking withdraws it again.
+            self.client.post('/accounting/accounts/1450/cash-toggle', follow_redirects=True)
+            with self.app.app_context():
+                db = get_db()
+                self.assertNotIn('1450', {a['code'] for a in get_cash_bank_accounts(db)})
+
+            # Money cannot sit in income or expense, so those cannot be marked.
+            with self.app.app_context():
+                db = get_db()
+                db.execute('''
+                    INSERT INTO accounts (code, name, type, normal_balance, is_active, is_cash_account)
+                    VALUES ('4450', 'Test Some Income', 'income', 'credit', 1, 0)
+                ''')
+                db.commit()
+            bad = self.client.post('/accounting/accounts/4450/cash-toggle', follow_redirects=True)
+            self.assertIn(b'Only asset or liability accounts can hold money', bad.data)
+            with self.app.app_context():
+                db = get_db()
+                self.assertEqual(db.execute(
+                    "SELECT is_cash_account FROM accounts WHERE code = '4450'"
+                ).fetchone()['is_cash_account'], 0)
+        finally:
+            with self.app.app_context():
+                db = get_db()
+                for e in db.execute(
+                    "SELECT DISTINCT entry_id AS id FROM journal_lines WHERE account_code = '1450'"
+                ).fetchall():
+                    db.execute('DELETE FROM journal_lines WHERE entry_id = ?', (e['id'],))
+                    db.execute('DELETE FROM journal_entries WHERE id = ?', (e['id'],))
+                db.execute('DELETE FROM savings WHERE member_id = ? AND month = ?',
+                           (member_id, '2026-11'))
+                db.execute("DELETE FROM accounts WHERE code IN ('1450', '4450')")
+                db.execute('UPDATE members SET total_savings = 0, shares_value = 0 WHERE id = ?',
+                           (member_id,))
                 db.commit()
 
     def test_financial_reporting_center_and_control_exports_render(self):

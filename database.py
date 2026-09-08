@@ -1650,6 +1650,37 @@ def init_db():
         except Exception as e:
             print(f"Error seeding account {code}: {e}")
 
+    # Which accounts money actually moves through, so receipts and payments can
+    # be recorded against the right one. Guessing this from an account's name
+    # got it wrong both ways: it missed control accounts like a Cooperative Fund
+    # Account (salary deductions the employer holds before remitting), and it
+    # would have offered anything a coop happened to call a "Building Fund".
+    _add_col(db, 'accounts', 'is_cash_account', 'INTEGER DEFAULT 0')
+
+    # Backfill once, from the old name-matching rule, so existing installs keep
+    # exactly the accounts they had. Guarded by a settings flag rather than
+    # re-run on every boot: init_db runs on every container start, and without
+    # the guard an account the treasurer deliberately unticked would come back.
+    already = db.execute(
+        "SELECT value FROM settings WHERE key = 'accounts_cash_flag_backfilled'"
+    ).fetchone()
+    if not already:
+        db.execute('''
+            UPDATE accounts SET is_cash_account = 1
+            WHERE type = 'asset'
+              AND (code = '1000' OR parent_code = '1000'
+                   OR LOWER(name) LIKE '%bank%'
+                   OR LOWER(name) LIKE '%cash%'
+                   OR LOWER(name) LIKE '%wallet%')
+        ''')
+        # ON CONFLICT because init_db runs at import in every gunicorn worker:
+        # two starting together would otherwise race on this unique key.
+        db.execute('''
+            INSERT INTO settings (key, value, description) VALUES (?, ?, ?)
+            ON CONFLICT(key) DO NOTHING
+        ''', ('accounts_cash_flag_backfilled', '1',
+              'Set once when is_cash_account was seeded from the old name-matching rule'))
+
     # Lookup indexes for the most frequent auth, member, ledger, and payment paths.
     _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)')
     _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_members_email ON members(email)')

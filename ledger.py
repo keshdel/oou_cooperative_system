@@ -119,28 +119,23 @@ def get_default_cash_account(db):
 
 
 def get_cash_bank_accounts(db):
-    """Return active asset accounts suitable for cash/bank posting.
+    """The accounts money moves through — banks, cash in hand, and control
+    accounts that hold money on its way to a bank.
 
-    Includes the Cash & Bank header for legacy installs, detail accounts under
-    it, and asset accounts whose names clearly behave like bank/cash/wallet
-    accounts.
+    Marked per account (`is_cash_account`) rather than inferred from the name.
+    A cooperative's salary deductions sit in a control account until the
+    employer remits them; nothing in the words "Cooperative Fund Account" says
+    so, and a name rule would equally have offered a "Building Fund" that holds
+    no money at all. The treasurer says which accounts these are.
     """
     rows = db.execute('''
         SELECT code, name, type, normal_balance, parent_code, is_active
         FROM accounts
-        WHERE is_active = 1
-          AND type = 'asset'
-          AND (
-                code = '1000'
-             OR parent_code = '1000'
-             OR LOWER(name) LIKE ?
-             OR LOWER(name) LIKE ?
-             OR LOWER(name) LIKE ?
-          )
+        WHERE is_active = 1 AND is_cash_account = 1
         ORDER BY
-          CASE WHEN parent_code = '1000' THEN 0 WHEN code = '1000' THEN 1 ELSE 2 END,
+          CASE WHEN parent_code IS NOT NULL AND parent_code != '' THEN 0 ELSE 1 END,
           code
-    ''', ('%bank%', '%cash%', '%wallet%')).fetchall()
+    ''').fetchall()
     return [dict(r) for r in rows]
 
 
