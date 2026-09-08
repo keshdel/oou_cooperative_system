@@ -159,6 +159,12 @@
                         <i class="fas fa-piggy-bank"></i> Savings
                     </a>
                     {% endif %}
+                    {% if can('savings.manage') %}
+                    <a href="{{ url_for('member_receipts.member_payment') }}"
+                       class="{% if request.blueprint == 'member_receipts' %}active{% endif %}">
+                        <i class="fas fa-receipt"></i> Receive Payment
+                    </a>
+                    {% endif %}
                     {% if can('payments.virtual_accounts') and va_enabled %}
                     <a href="{{ url_for('virtual_accounts.index') }}"
                        class="{% if request.blueprint == 'virtual_accounts' %}active{% endif %}">

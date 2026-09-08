@@ -129,7 +129,8 @@ PERMISSIONS = [
         'description': 'Post contributions, upload salary batches and record payouts.',
         'default_roles': ('admin', 'treasurer'),
         'endpoints': ('savings.add_saving', 'savings.record_payout',
-                      'savings.salary_upload', 'savings.download_salary_template'),
+                      'savings.salary_upload', 'savings.download_salary_template',
+                      'member_receipts.member_payment', 'member_receipts.reverse_member_payment'),
     },
     {
         'key': 'payments.virtual_accounts',

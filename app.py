@@ -125,6 +125,7 @@ from blueprints.marketing    import marketing
 from blueprints.hq_billing   import hq_billing
 from blueprints.ctas         import ctas as ctas_bp
 from blueprints.virtual_accounts_bp import virtual_accounts_bp
+from blueprints.member_receipts import member_receipts
 from mobile_api             import mobile_api
 
 app.register_blueprint(auth)
@@ -150,6 +151,7 @@ app.register_blueprint(marketing)
 app.register_blueprint(hq_billing)
 app.register_blueprint(ctas_bp)
 app.register_blueprint(virtual_accounts_bp)
+app.register_blueprint(member_receipts)
 app.register_blueprint(mobile_api)
 
 csrf.exempt(mobile_api)

@@ -769,6 +769,7 @@ REVERSAL_GUIDANCE = {
     'payments':          'Correct it from the payment record.',
     'savings':           'This came from the historical backfill, which links to a '
                          'member rather than one savings row, so it cannot be undone here.',
+    'member_receipt':    'Reverse it from the member receipt screen.',
     'revenue':           'Delete or correct the revenue record itself.',
     'expenses':          'Delete or correct the expense record itself.',
     'honorarium':        'Correct it from the honorarium record.',
@@ -905,6 +906,43 @@ def _reverse_va_loan(db, e, alloc_id):
     return ((note or '') + f" ₦{amt:,.2f} is unallocated again and can be applied elsewhere.").strip()
 
 
+def _reverse_member_receipt(db, e, receipt_id):
+    """Undo a manual member receipt as one controlled workflow.
+
+    The original receipt posted a single bank debit plus allocations into
+    savings and/or loans. Reversal posts the opposite journal, reverses the
+    linked subledger rows, restores loan balances, and marks the receipt so it
+    cannot be reversed twice.
+    """
+    receipt = db.execute('SELECT * FROM member_receipts WHERE id = ?', (receipt_id,)).fetchone()
+    if not receipt:
+        return None
+    if 'reversed_at' in receipt.keys() and receipt['reversed_at']:
+        return None
+
+    notes = []
+    allocations = db.execute(
+        'SELECT * FROM member_receipt_allocations WHERE receipt_id = ? ORDER BY id',
+        (receipt_id,)
+    ).fetchall()
+    for alloc in allocations:
+        target = alloc['target']
+        if target == 'savings':
+            note = _reverse_savings_deposit(db, e, alloc['target_id'])
+            if note:
+                notes.append(note)
+        elif target == 'loan':
+            note = _reverse_loan_repayment(db, e, alloc['target_id'])
+            if note:
+                notes.append(note)
+
+    db.execute('UPDATE member_receipts SET reversed_at = ? WHERE id = ?',
+               (datetime.now(), receipt_id))
+    amount = float(receipt['amount'] or 0)
+    notes.append(f"Manual receipt {receipt['receipt_number']} reversed for ₦{amount:,.2f}.")
+    return ' '.join(notes)
+
+
 # source_module -> the function that undoes its operational record. A module
 # posting to the GL that appears in neither this registry nor
 # LEDGER_ONLY_MODULES cannot be reversed from the journal.
@@ -917,6 +955,7 @@ REVERSAL_HANDLERS = {
     'loan_repayment':  _reverse_loan_repayment,
     'va_savings':      _reverse_va_savings,
     'va_loan':         _reverse_va_loan,
+    'member_receipt':  _reverse_member_receipt,
 }
 
 

@@ -559,6 +559,47 @@ def init_db():
     _add_col(db, 'repayments', 'reversed_at', 'TIMESTAMP')
     _add_col(db, 'repayments', 'verified_at', 'TIMESTAMP')
 
+    # Manual member bank receipts: one bank inflow can be allocated across
+    # savings and one or more loan repayments while staying traceable as one
+    # receipt for bank reconciliation.
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS member_receipts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            receipt_number TEXT UNIQUE NOT NULL,
+            member_id INTEGER NOT NULL,
+            amount REAL NOT NULL,
+            allocated_savings REAL DEFAULT 0,
+            allocated_loans REAL DEFAULT 0,
+            bank_account TEXT NOT NULL,
+            payment_method TEXT DEFAULT 'transfer',
+            bank_reference TEXT,
+            notes TEXT,
+            date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            journal_entry_id INTEGER,
+            created_by INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            reversed_at TIMESTAMP,
+            FOREIGN KEY (member_id) REFERENCES members (id)
+        )
+    '''))
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS member_receipt_allocations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            receipt_id INTEGER NOT NULL,
+            target TEXT NOT NULL,
+            target_id INTEGER,
+            loan_id INTEGER,
+            amount REAL NOT NULL,
+            principal_paid REAL DEFAULT 0,
+            interest_paid REAL DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (receipt_id) REFERENCES member_receipts (id)
+        )
+    '''))
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_member_receipts_member ON member_receipts(member_id)')
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_member_receipts_date ON member_receipts(date)')
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_member_receipt_alloc_receipt ON member_receipt_allocations(receipt_id)')
+
     # Loan guarantors — members who back a loan and must consent
     db.execute(_adapt('''
         CREATE TABLE IF NOT EXISTS loan_guarantors (

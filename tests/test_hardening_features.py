@@ -2932,6 +2932,218 @@ class HardeningFeatureTests(unittest.TestCase):
             db.execute("DELETE FROM accounts WHERE code = '1096'")
             db.commit()
 
+    def test_member_receipt_allocates_one_bank_payment_to_savings_and_loan(self):
+        self.login_admin()
+        member_id = self.create_member()
+        with self.app.app_context():
+            db = get_db()
+            db.execute("DELETE FROM journal_lines WHERE account_code = '1095'")
+            db.execute("DELETE FROM accounts WHERE code = '1095'")
+            db.execute("DELETE FROM loans WHERE loan_number = 'LOAN/MR/ALLOC/001'")
+            db.execute("DELETE FROM settings WHERE key = 'default_cash_account'")
+            db.execute('''
+                INSERT INTO accounts (code, name, type, normal_balance, parent_code, is_active, is_cash_account)
+                VALUES ('1095', 'Test FCMB Bank', 'asset', 'debit', '1000', 1, 1)
+            ''')
+            db.execute(
+                "INSERT INTO settings (key, value, description) VALUES ('default_cash_account', '1095', 'test')"
+            )
+            db.execute('''
+                INSERT INTO loans
+                    (loan_number, member_id, amount, purpose, tenure, interest_rate,
+                     interest_method, total_repayment, balance, status, approval_stage,
+                     date_applied)
+                VALUES
+                    ('LOAN/MR/ALLOC/001', ?, 500000, 'Business', 12, 10,
+                     'flat', 550000, 220000, 'active', 'approved',
+                     '2026-08-01')
+            ''', (member_id,))
+            loan_id = db.execute(
+                "SELECT id FROM loans WHERE loan_number = 'LOAN/MR/ALLOC/001'"
+            ).fetchone()['id']
+            db.commit()
+
+        response = self.client.post('/receipts/member-payment', data={
+            'member_id': member_id,
+            'bank_account': '1095',
+            'amount': '360000',
+            'date': '2026-09-08',
+            'payment_method': 'transfer',
+            'bank_reference': 'FCMB/TEST/360',
+            'savings_amount': '250000',
+            f'loan_amount_{loan_id}': '110000',
+        }, follow_redirects=False)
+        self.assertIn(response.status_code, (302, 303))
+
+        with self.app.app_context():
+            db = get_db()
+            receipt = db.execute(
+                "SELECT * FROM member_receipts WHERE bank_reference = 'FCMB/TEST/360'"
+            ).fetchone()
+            self.assertIsNotNone(receipt)
+            self.assertAlmostEqual(float(receipt['amount']), 360000.0, places=2)
+            self.assertAlmostEqual(float(receipt['allocated_savings']), 250000.0, places=2)
+            self.assertAlmostEqual(float(receipt['allocated_loans']), 110000.0, places=2)
+
+            journal = db.execute(
+                "SELECT * FROM journal_entries WHERE source_module = 'member_receipt' "
+                "AND source_id = ?",
+                (receipt['id'],)
+            ).fetchone()
+            self.assertIsNotNone(journal)
+            bank_lines = db.execute(
+                "SELECT * FROM journal_lines WHERE entry_id = ? AND account_code = '1095'",
+                (journal['id'],)
+            ).fetchall()
+            self.assertEqual(len(bank_lines), 1)
+            self.assertAlmostEqual(float(bank_lines[0]['debit'] or 0), 360000.0, places=2)
+
+            saving = db.execute(
+                "SELECT * FROM savings WHERE receipt_number = ?",
+                (receipt['receipt_number'] + '-SAV',)
+            ).fetchone()
+            self.assertIsNotNone(saving)
+            self.assertAlmostEqual(float(saving['amount'] or 0), 250000.0, places=2)
+
+            repayment = db.execute(
+                "SELECT * FROM repayments WHERE repayment_number = ?",
+                (receipt['receipt_number'] + f'-L{loan_id}',)
+            ).fetchone()
+            self.assertIsNotNone(repayment)
+            self.assertAlmostEqual(float(repayment['amount'] or 0), 110000.0, places=2)
+            loan = db.execute("SELECT balance, status FROM loans WHERE id = ?", (loan_id,)).fetchone()
+            self.assertAlmostEqual(float(loan['balance'] or 0), 110000.0, places=2)
+            self.assertEqual(loan['status'], 'active')
+
+            db.execute('DELETE FROM member_receipt_allocations WHERE receipt_id = ?', (receipt['id'],))
+            db.execute('DELETE FROM member_receipts WHERE id = ?', (receipt['id'],))
+            db.execute('DELETE FROM repayments WHERE loan_id = ?', (loan_id,))
+            db.execute('DELETE FROM savings WHERE receipt_number = ?', (receipt['receipt_number'] + '-SAV',))
+            db.execute('DELETE FROM journal_lines WHERE entry_id = ?', (journal['id'],))
+            db.execute('DELETE FROM journal_entries WHERE id = ?', (journal['id'],))
+            db.execute('DELETE FROM loans WHERE id = ?', (loan_id,))
+            db.execute("DELETE FROM settings WHERE key = 'default_cash_account'")
+            db.execute("DELETE FROM accounts WHERE code = '1095'")
+            db.commit()
+
+    def test_member_receipt_reversal_unwinds_bank_savings_and_loan(self):
+        self.login_admin()
+        member_id = self.create_member()
+        with self.app.app_context():
+            db = get_db()
+            db.execute("DELETE FROM journal_lines WHERE account_code = '1094'")
+            db.execute("DELETE FROM accounts WHERE code = '1094'")
+            db.execute("DELETE FROM loans WHERE loan_number = 'LOAN/MR/REV/001'")
+            db.execute("DELETE FROM member_receipt_allocations WHERE receipt_id IN "
+                       "(SELECT id FROM member_receipts WHERE bank_reference = 'FCMB/TEST/REV360')")
+            db.execute("DELETE FROM member_receipts WHERE bank_reference = 'FCMB/TEST/REV360'")
+            db.execute("DELETE FROM settings WHERE key = 'default_cash_account'")
+            db.execute("UPDATE members SET total_savings = 0, shares_value = 0 WHERE id = ?", (member_id,))
+            db.execute('''
+                INSERT INTO accounts (code, name, type, normal_balance, parent_code, is_active, is_cash_account)
+                VALUES ('1094', 'Test Reversal Bank', 'asset', 'debit', '1000', 1, 1)
+            ''')
+            db.execute(
+                "INSERT INTO settings (key, value, description) VALUES ('default_cash_account', '1094', 'test')"
+            )
+            db.execute('''
+                INSERT INTO loans
+                    (loan_number, member_id, amount, purpose, tenure, interest_rate,
+                     interest_method, total_repayment, balance, status, approval_stage,
+                     date_applied)
+                VALUES
+                    ('LOAN/MR/REV/001', ?, 500000, 'Business', 12, 10,
+                     'flat', 550000, 110000, 'active', 'approved',
+                     '2026-08-01')
+            ''', (member_id,))
+            loan_id = db.execute(
+                "SELECT id FROM loans WHERE loan_number = 'LOAN/MR/REV/001'"
+            ).fetchone()['id']
+            db.commit()
+
+        response = self.client.post('/receipts/member-payment', data={
+            'member_id': member_id,
+            'bank_account': '1094',
+            'amount': '360000',
+            'date': '2026-09-08',
+            'payment_method': 'transfer',
+            'bank_reference': 'FCMB/TEST/REV360',
+            'savings_amount': '250000',
+            f'loan_amount_{loan_id}': '110000',
+        }, follow_redirects=False)
+        self.assertIn(response.status_code, (302, 303))
+
+        with self.app.app_context():
+            db = get_db()
+            receipt = db.execute(
+                "SELECT * FROM member_receipts WHERE bank_reference = 'FCMB/TEST/REV360'"
+            ).fetchone()
+            self.assertIsNotNone(receipt)
+            original_entry_id = receipt['journal_entry_id']
+            self.assertIsNotNone(original_entry_id)
+            self.assertAlmostEqual(float(db.execute(
+                "SELECT total_savings FROM members WHERE id = ?", (member_id,)
+            ).fetchone()['total_savings'] or 0), 250000.0, places=2)
+            self.assertEqual(db.execute(
+                "SELECT status FROM loans WHERE id = ?", (loan_id,)
+            ).fetchone()['status'], 'completed')
+
+        reverse = self.client.post(
+            f'/receipts/{receipt["id"]}/reverse',
+            data={'reason': 'Bank receipt was allocated to the wrong member.'},
+            follow_redirects=False,
+        )
+        self.assertIn(reverse.status_code, (302, 303))
+
+        with self.app.app_context():
+            db = get_db()
+            receipt = db.execute('SELECT * FROM member_receipts WHERE id = ?', (receipt['id'],)).fetchone()
+            self.assertIsNotNone(receipt['reversed_at'])
+            original = db.execute(
+                'SELECT reversed_at FROM journal_entries WHERE id = ?', (original_entry_id,)
+            ).fetchone()
+            self.assertIsNotNone(original['reversed_at'])
+            reversal = db.execute(
+                'SELECT * FROM journal_entries WHERE reversal_of = ?', (original_entry_id,)
+            ).fetchone()
+            self.assertIsNotNone(reversal)
+            bank_reversal = db.execute(
+                "SELECT * FROM journal_lines WHERE entry_id = ? AND account_code = '1094'",
+                (reversal['id'],)
+            ).fetchone()
+            self.assertIsNotNone(bank_reversal)
+            self.assertAlmostEqual(float(bank_reversal['credit'] or 0), 360000.0, places=2)
+
+            member = db.execute(
+                "SELECT total_savings FROM members WHERE id = ?", (member_id,)
+            ).fetchone()
+            self.assertAlmostEqual(float(member['total_savings'] or 0), 0.0, places=2)
+            loan = db.execute("SELECT balance, status FROM loans WHERE id = ?", (loan_id,)).fetchone()
+            self.assertAlmostEqual(float(loan['balance'] or 0), 110000.0, places=2)
+            self.assertEqual(loan['status'], 'active')
+            repayment = db.execute(
+                "SELECT reversed_at FROM repayments WHERE reference = ?",
+                (receipt['receipt_number'],)
+            ).fetchone()
+            self.assertIsNotNone(repayment['reversed_at'])
+            savings_rows = db.execute(
+                "SELECT amount, payment_type FROM savings WHERE member_id = ?",
+                (member_id,)
+            ).fetchall()
+            self.assertTrue(any(float(row['amount'] or 0) == -250000.0 and row['payment_type'] == 'reversal'
+                                for row in savings_rows))
+
+            db.execute('DELETE FROM member_receipt_allocations WHERE receipt_id = ?', (receipt['id'],))
+            db.execute('DELETE FROM member_receipts WHERE id = ?', (receipt['id'],))
+            db.execute('DELETE FROM repayments WHERE loan_id = ?', (loan_id,))
+            db.execute('DELETE FROM savings WHERE member_id = ?', (member_id,))
+            db.execute('DELETE FROM journal_lines WHERE entry_id IN (?, ?)', (original_entry_id, reversal['id']))
+            db.execute('DELETE FROM journal_entries WHERE id IN (?, ?)', (original_entry_id, reversal['id']))
+            db.execute('DELETE FROM loans WHERE id = ?', (loan_id,))
+            db.execute("DELETE FROM settings WHERE key = 'default_cash_account'")
+            db.execute("DELETE FROM accounts WHERE code = '1094'")
+            db.commit()
+
     def test_unknown_bank_account_is_refused_not_silently_redirected(self):
         """A code that is not a cash/bank account must be rejected outright.
 
