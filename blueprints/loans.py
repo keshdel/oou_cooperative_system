@@ -16,7 +16,9 @@ from email_service import (send_loan_approval_email, send_loan_rejection_email,
 from utils import (role_required, audit, notify_member, compute_loan_schedule,
                    PURPOSE_SETTING_KEY, METHOD_LABELS, record_revenue, split_repayment,
                    member_savings_balance, member_for_user)
-from ledger import (post_journal_safe, get_default_cash_account, LOANS_RECEIVABLE, FEE_INCOME,
+from ledger import (post_journal_safe, get_default_cash_account, get_postable_cash_accounts,
+                    resolve_cash_bank_account, UnknownCashAccountError,
+                    LOANS_RECEIVABLE, FEE_INCOME,
                     LOAN_INTEREST_INCOME, INSURANCE_PAYABLE)
 import loan_workflow as lw
 import loan_alerts as la
@@ -79,8 +81,14 @@ def _acting_on_own_loan(db, loan):
     return bool(me and loan and me['id'] == loan['member_id'])
 
 
-def _disburse_loan(db, loan):
+def _disburse_loan(db, loan, cash_account):
     """Final approval: book fees, disburse, post the GL entry, notify the member.
+
+    `cash_account` is the account the money actually leaves — the approver picks
+    it, because a cooperative holding several bank accounts does not pay every
+    loan out of the same one, and crediting the wrong account leaves both that
+    bank's reconciliation and the one that really paid wrong.
+
     Expects `loan` row; assumes caller commits."""
     insurance = round(loan['amount'] * 0.01, 2)
     application_fee = round(loan['amount'] * 0.01, 2)
@@ -98,7 +106,6 @@ def _disburse_loan(db, loan):
     record_revenue(db, 'Loan Application Fee', application_fee,
                    description=f"Application fee on loan {loan['loan_number']}",
                    source=f"Loan {loan['loan_number']}", received_by=current_user.id)
-    cash_account = get_default_cash_account(db)
     post_journal_safe(db, f"Loan disbursement — {loan['loan_number']}", [
         {'account': LOANS_RECEIVABLE, 'debit': loan['amount'], 'memo': loan['loan_number']},
         {'account': cash_account, 'credit': disbursed, 'memo': 'Net disbursed'},
@@ -120,9 +127,9 @@ def _disburse_loan(db, loan):
 def download_repayment_template():
     output = StringIO()
     writer = csv.writer(output)
-    writer.writerow(['loan_number', 'amount', 'payment_date', 'payment_method', 'receipt_number', 'notes'])
-    writer.writerow(['LOAN/20250428/0001', '25000', '2025-04-28', 'transfer', 'RCPT-001', 'First repayment'])
-    writer.writerow(['LOAN/20250428/0002', '50000', '2025-04-29', 'cash', '', 'Partial payment'])
+    writer.writerow(['loan_number', 'amount', 'payment_date', 'payment_method', 'bank_account', 'receipt_number', 'notes'])
+    writer.writerow(['LOAN/20250428/0001', '25000', '2025-04-28', 'transfer', '1000', 'RCPT-001', 'First repayment'])
+    writer.writerow(['LOAN/20250428/0002', '50000', '2025-04-29', 'cash', '1000', '', 'Partial payment'])
     response = make_response(output.getvalue())
     response.headers['Content-Type'] = 'text/csv'
     response.headers['Content-Disposition'] = 'attachment; filename=loan_repayment_template.csv'
@@ -161,12 +168,16 @@ def loans_list():
 
     # Loan requests waiting on the committee — the queue that must never go quiet.
     pipeline = la.pipeline_snapshot(db)
+    bank_accounts = get_postable_cash_accounts(db)
+    default_cash_account = get_default_cash_account(db)
 
     return render_template('admin/loans.html', loans=all_loans, active_loans=active_loans,
                            active_count=active_count, total_outstanding=total_outstanding,
                            booked_interest=booked_interest,
                            overdue_loans=ageing['loans'], ageing=ageing,
-                           pipeline=pipeline)
+                           pipeline=pipeline,
+                           bank_accounts=bank_accounts,
+                           default_cash_account=default_cash_account)
 
 
 @loans.route('/loans/apply', methods=['GET', 'POST'])
@@ -335,7 +346,13 @@ def loan_detail(loan_id):
     # First time an officer opens a pending request, start the response clock.
     if loan['status'] == 'pending':
         la.mark_first_response(db, loan_id, current_user.id, current_user.username, current_user.role)
+    # Only the final stage pays money out, so only it needs to choose a bank.
+    is_disbursing_stage = lw.NEXT_STAGE.get(stage) == lw.STAGE_APPROVED
+
     return render_template('admin/loan-detail.html',
+                           bank_accounts=get_postable_cash_accounts(db),
+                           default_cash_account=get_default_cash_account(db),
+                           is_disbursing_stage=is_disbursing_stage,
                            alert_events=la.loan_events(db, loan_id, limit=40),
                            loan=loan, guarantors=guarantors, history=history,
                            stage=stage, stage_label=lw.STAGE_LABELS.get(stage, stage),
@@ -518,6 +535,7 @@ def loan_act(loan_id):
 
         # ── approve ──
         nxt = lw.NEXT_STAGE.get(stage)
+        disbursing_account = None
         if nxt == lw.STAGE_APPROVED:
             complete, checks = _due_diligence_complete(loan)
             if not complete:
@@ -525,14 +543,24 @@ def loan_act(loan_id):
                 flash(f'Due diligence is incomplete. Complete before final approval/disbursement: {pending}.',
                       'danger')
                 return redirect(url_for('loans.loan_detail', loan_id=loan_id))
+            # Settled before the approval is recorded: this step pays money out,
+            # and a rejected account code must stop the approval rather than
+            # send the cash from whichever bank happens to be the default.
+            try:
+                disbursing_account = resolve_cash_bank_account(
+                    db, request.form.get('bank_account', '').strip())
+            except UnknownCashAccountError as e:
+                flash(str(e), 'danger')
+                return redirect(url_for('loans.loan_detail', loan_id=loan_id))
         lw.record_action(db, loan_id, stage, 'approved', current_user.id, current_user.username, comment)
         if nxt == lw.STAGE_APPROVED:
-            _disburse_loan(db, loan)
+            _disburse_loan(db, loan, disbursing_account)
             la.log_event(db, loan_id, 'decided', stage, 'workflow',
                          {'user_id': current_user.id, 'name': current_user.username,
                           'role': current_user.role},
                          'system', 'sent', 'Final approval — loan disbursed')
-            audit(db, 'LOAN_APPROVE_FINAL', 'loans', f"Loan {loan['loan_number']} approved & disbursed")
+            audit(db, 'LOAN_APPROVE_FINAL', 'loans',
+                  f"Loan {loan['loan_number']} approved & disbursed from account {disbursing_account}")
             db.commit()
             flash('Loan fully approved and disbursed. The member has been notified.', 'success')
         else:
@@ -586,11 +614,23 @@ def bulk_loan_repayments():
                     amount = float(row.get('amount', 0))
                     payment_date_str = row.get('payment_date', '').strip()
                     payment_method = row.get('payment_method', 'cash').strip().lower()
+                    bank_account = row.get('bank_account', '').strip() or request.form.get('bank_account', '').strip()
                     receipt_number = row.get('receipt_number', '').strip()
                     notes = row.get('notes', '').strip()
 
                     if not loan_number or amount <= 0:
                         errors.append(f"Row {row_num}: Invalid loan number or amount")
+                        continue
+
+                    # Resolved up front, before this row writes anything. The
+                    # loop shares one transaction and commits after every row,
+                    # with no savepoint per row, so a rejection raised later
+                    # would still commit the repayment and the balance change
+                    # while its journal entry never posted.
+                    try:
+                        cash_account = resolve_cash_bank_account(db, bank_account)
+                    except UnknownCashAccountError as e:
+                        errors.append(f"Row {row_num}: {e}")
                         continue
 
                     try:
@@ -637,9 +677,9 @@ def bulk_loan_repayments():
                         'UPDATE loans SET balance = ?, status = ?, completed_at = ? WHERE id = ?',
                         (new_balance, status, completed_at, loan['id'])
                     )
-                    cash_account = get_default_cash_account(db)
                     post_journal_safe(db, f"Loan repayment — {loan_number}", [
-                        {'account': cash_account, 'debit': settled_amount, 'memo': 'Repayment'},
+                        {'account': cash_account, 'debit': settled_amount,
+                         'memo': f'Repayment via {payment_method}'},
                         {'account': LOANS_RECEIVABLE, 'credit': principal_paid, 'memo': loan_number},
                         {'account': LOAN_INTEREST_INCOME, 'credit': interest_paid, 'memo': 'Interest earned'},
                     ], date=payment_date, reference=repayment_number, source_module='loan_repayment',
@@ -682,7 +722,10 @@ def bulk_loan_repayments():
 
         return redirect(url_for('loans.loans_list'))
 
-    return render_template('admin/bulk-repayments.html')
+    db = get_db()
+    return render_template('admin/bulk-repayments.html',
+                           bank_accounts=get_postable_cash_accounts(db),
+                           default_cash_account=get_default_cash_account(db))
 
 
 @loans.route('/loans/export')
@@ -735,9 +778,18 @@ def repay_loan(loan_id):
 
         amount = float(request.form.get('amount', 0))
         method = request.form.get('method', 'cash')
+        bank_account = request.form.get('bank_account', '').strip()
 
         if amount <= 0:
             flash('Payment amount must be greater than zero.', 'danger')
+            return redirect(url_for('loans.loans_list'))
+
+        # Settle the receiving account before the repayment is written, so a bad
+        # code is refused rather than redirected to a different bank.
+        try:
+            cash_account = resolve_cash_bank_account(db, bank_account)
+        except UnknownCashAccountError as e:
+            flash(str(e), 'danger')
             return redirect(url_for('loans.loans_list'))
 
         # Cap payment at outstanding balance (pre-liquidation)
@@ -768,9 +820,8 @@ def repay_loan(loan_id):
         )
 
         # Double-entry: cash in; principal reduces the receivable; interest is income.
-        cash_account = get_default_cash_account(db)
         post_journal_safe(db, f"Loan repayment — {loan['loan_number']}", [
-            {'account': cash_account, 'debit': settled, 'memo': 'Repayment'},
+            {'account': cash_account, 'debit': settled, 'memo': f'Repayment via {method}'},
             {'account': LOANS_RECEIVABLE, 'credit': principal_paid, 'memo': loan['loan_number']},
             {'account': LOAN_INTEREST_INCOME, 'credit': interest_paid, 'memo': 'Interest earned'},
         ], reference=repayment_number, source_module='loan_repayment',
@@ -801,7 +852,8 @@ def repay_loan(loan_id):
                           action_url='/my-loans')
 
         audit(db, 'LOAN_REPAYMENT', 'loans',
-              f"Recorded repayment ₦{settled:,.2f} for loan ID {loan_id} – balance now ₦{new_balance:,.2f}")
+              f"Recorded repayment ₦{settled:,.2f} for loan ID {loan_id} "
+              f"to bank account {cash_account} – balance now ₦{new_balance:,.2f}")
 
         if is_pre_liq:
             flash(f'Loan fully settled! ₦{settled:,.2f} recorded.', 'success')

@@ -118,6 +118,84 @@ def get_default_cash_account(db):
         return CASH
 
 
+def get_cash_bank_accounts(db):
+    """Return active asset accounts suitable for cash/bank posting.
+
+    Includes the Cash & Bank header for legacy installs, detail accounts under
+    it, and asset accounts whose names clearly behave like bank/cash/wallet
+    accounts.
+    """
+    rows = db.execute('''
+        SELECT code, name, type, normal_balance, parent_code, is_active
+        FROM accounts
+        WHERE is_active = 1
+          AND type = 'asset'
+          AND (
+                code = '1000'
+             OR parent_code = '1000'
+             OR LOWER(name) LIKE ?
+             OR LOWER(name) LIKE ?
+             OR LOWER(name) LIKE ?
+          )
+        ORDER BY
+          CASE WHEN parent_code = '1000' THEN 0 WHEN code = '1000' THEN 1 ELSE 2 END,
+          code
+    ''', ('%bank%', '%cash%', '%wallet%')).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_postable_cash_accounts(db):
+    """The cash/bank accounts an entry may actually be posted to.
+
+    A header that has detail accounts under it is left out. The bank report adds
+    a parent and its children into one total, so money posted on the parent gets
+    counted twice — once on its own row and again inside the children's total.
+    A cooperative that splits Cash & Bank into 1010 Cash, 1020 FCMB and 1030 UBA
+    means 1000 to be a heading, not a destination.
+
+    An account with nothing under it stays postable, which is how every install
+    starts and how simple ones remain.
+    """
+    headers = {r['parent_code'] for r in db.execute(
+        "SELECT DISTINCT parent_code FROM accounts "
+        "WHERE is_active = 1 AND parent_code IS NOT NULL AND parent_code != ''"
+    ).fetchall()}
+    return [a for a in get_cash_bank_accounts(db) if a['code'] not in headers]
+
+
+class UnknownCashAccountError(ValueError):
+    """A posting was aimed at an account that is not a cash/bank account.
+
+    Subclasses ValueError so existing `except ValueError` posting handlers keep
+    working.
+    """
+
+
+def resolve_cash_bank_account(db, requested_code=None):
+    """Validate a chosen cash/bank account, or fall back to the default when
+    nothing was chosen.
+
+    An empty choice means "use the default". A code that is not a cash/bank
+    account raises, and is never quietly swapped for the default: this function
+    decides which account the money is recorded as sitting in, so substituting a
+    different one would post the entry somewhere the officer did not pick and
+    leave that account's reconciliation wrong with nothing on screen to say so.
+    A treasurer typing 1400 into a bulk upload should be told 1400 is not a bank
+    account, not have the whole batch land in the default bank.
+    """
+    code = (requested_code or '').strip()
+    if not code:
+        return get_default_cash_account(db)
+    if code not in {a['code'] for a in get_postable_cash_accounts(db)}:
+        raise UnknownCashAccountError(
+            f"'{code}' is not an account money can be posted to. Pick one of the "
+            f"cash/bank accounts, or leave it blank to use the default. "
+            f"(An account with detail accounts under it is a heading — post to "
+            f"one of those instead.)"
+        )
+    return code
+
+
 def account_exists(db, code):
     return db.execute('SELECT 1 FROM accounts WHERE code = ?', (code,)).fetchone() is not None
 

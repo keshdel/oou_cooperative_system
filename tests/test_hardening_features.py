@@ -2817,6 +2817,428 @@ class HardeningFeatureTests(unittest.TestCase):
             db.execute("DELETE FROM accounts WHERE code = '1098'")
             db.commit()
 
+    def test_savings_post_to_selected_receiving_bank_account(self):
+        self.login_admin()
+        member_id = self.create_member()
+        with self.app.app_context():
+            db = get_db()
+            db.execute("DELETE FROM journal_lines WHERE account_code = '1097'")
+            db.execute("DELETE FROM accounts WHERE code = '1097'")
+            db.execute('''
+                INSERT INTO accounts (code, name, type, normal_balance, parent_code, is_active)
+                VALUES ('1097', 'Test Zenith Bank', 'asset', 'debit', '1000', 1)
+            ''')
+            db.commit()
+
+        response = self.client.post('/savings/add', data={
+            'member_id': member_id,
+            'amount': '5000',
+            'month': '2026-08',
+            'payment_type': 'voluntary',
+            'payment_method': 'bank_transfer',
+            'bank_account': '1097',
+            'notes': 'Selected bank posting test',
+        }, follow_redirects=False)
+        self.assertIn(response.status_code, (302, 303))
+
+        with self.app.app_context():
+            db = get_db()
+            line = db.execute('''
+                SELECT jl.*
+                FROM journal_lines jl
+                JOIN journal_entries je ON je.id = jl.entry_id
+                WHERE jl.account_code = '1097'
+                  AND je.source_module = 'savings_deposit'
+                ORDER BY jl.id DESC
+            ''').fetchone()
+            self.assertIsNotNone(line)
+            self.assertAlmostEqual(float(line['debit'] or 0), 5000.0, places=2)
+            self.assertIn('bank_transfer', line['memo'])
+
+            for entry in db.execute('''
+                SELECT DISTINCT je.id
+                FROM journal_entries je
+                JOIN journal_lines jl ON jl.entry_id = je.id
+                WHERE jl.account_code = '1097'
+            ''').fetchall():
+                db.execute('DELETE FROM journal_lines WHERE entry_id = ?', (entry['id'],))
+                db.execute('DELETE FROM journal_entries WHERE id = ?', (entry['id'],))
+            db.execute("DELETE FROM accounts WHERE code = '1097'")
+            db.commit()
+
+    def test_loan_prepayment_posts_to_selected_receiving_bank_account(self):
+        self.login_admin()
+        member_id = self.create_member()
+        with self.app.app_context():
+            db = get_db()
+            db.execute("DELETE FROM journal_lines WHERE account_code = '1096'")
+            db.execute("DELETE FROM accounts WHERE code = '1096'")
+            db.execute("DELETE FROM loans WHERE loan_number = 'LOAN/SEL/BANK/001'")
+            db.execute('''
+                INSERT INTO accounts (code, name, type, normal_balance, parent_code, is_active)
+                VALUES ('1096', 'Test Access Bank', 'asset', 'debit', '1000', 1)
+            ''')
+            db.execute('''
+                INSERT INTO loans
+                    (loan_number, member_id, amount, purpose, tenure, interest_rate,
+                     interest_method, total_repayment, balance, status, approval_stage,
+                     date_applied)
+                VALUES
+                    ('LOAN/SEL/BANK/001', ?, 100000, 'Emergency', 6, 20,
+                     'flat', 120000, 120000, 'active', 'approved',
+                     '2026-08-01')
+            ''', (member_id,))
+            loan_id = db.execute(
+                "SELECT id FROM loans WHERE loan_number = 'LOAN/SEL/BANK/001'"
+            ).fetchone()['id']
+            db.commit()
+
+        response = self.client.post(f'/loans/repay/{loan_id}', data={
+            'amount': '200000',
+            'method': 'transfer',
+            'bank_account': '1096',
+        }, follow_redirects=False)
+        self.assertIn(response.status_code, (302, 303))
+
+        with self.app.app_context():
+            db = get_db()
+            loan = db.execute(
+                "SELECT balance, status FROM loans WHERE id = ?", (loan_id,)
+            ).fetchone()
+            self.assertAlmostEqual(float(loan['balance'] or 0), 0.0, places=2)
+            self.assertEqual(loan['status'], 'completed')
+            line = db.execute('''
+                SELECT jl.*
+                FROM journal_lines jl
+                JOIN journal_entries je ON je.id = jl.entry_id
+                WHERE jl.account_code = '1096'
+                  AND je.source_module = 'loan_repayment'
+                ORDER BY jl.id DESC
+            ''').fetchone()
+            self.assertIsNotNone(line)
+            self.assertAlmostEqual(float(line['debit'] or 0), 120000.0, places=2)
+            self.assertIn('transfer', line['memo'])
+
+            for entry in db.execute('''
+                SELECT DISTINCT je.id
+                FROM journal_entries je
+                JOIN journal_lines jl ON jl.entry_id = je.id
+                WHERE jl.account_code = '1096'
+            ''').fetchall():
+                db.execute('DELETE FROM journal_lines WHERE entry_id = ?', (entry['id'],))
+                db.execute('DELETE FROM journal_entries WHERE id = ?', (entry['id'],))
+            db.execute("DELETE FROM repayments WHERE loan_id = ?", (loan_id,))
+            db.execute("DELETE FROM loans WHERE id = ?", (loan_id,))
+            db.execute("DELETE FROM accounts WHERE code = '1096'")
+            db.commit()
+
+    def test_unknown_bank_account_is_refused_not_silently_redirected(self):
+        """A code that is not a cash/bank account must be rejected outright.
+
+        Falling back to the default would post the money to a bank the officer
+        did not choose and leave that account's reconciliation wrong with
+        nothing on screen to say so -- the whole point of letting them pick.
+        """
+        from ledger import (resolve_cash_bank_account, UnknownCashAccountError,
+                            get_default_cash_account)
+        self.login_admin()
+        member_id = self.create_member()
+        with self.app.app_context():
+            db = get_db()
+            # 3000 Accumulated Surplus exists but is not a cash/bank account.
+            self.assertIsNotNone(db.execute(
+                "SELECT 1 FROM accounts WHERE code = '3000'").fetchone())
+            with self.assertRaises(UnknownCashAccountError):
+                resolve_cash_bank_account(db, '3000')
+            with self.assertRaises(UnknownCashAccountError):
+                resolve_cash_bank_account(db, '9999')          # no such account
+            # Blank still means "use the default".
+            self.assertEqual(resolve_cash_bank_account(db, ''),
+                             get_default_cash_account(db))
+            self.assertEqual(resolve_cash_bank_account(db, None),
+                             get_default_cash_account(db))
+            before = db.execute(
+                'SELECT COUNT(*) AS n FROM savings WHERE member_id = ?',
+                (member_id,)).fetchone()['n']
+
+        r = self.client.post('/savings/add', data={
+            'member_id': member_id, 'amount': '5000', 'month': '2026-09',
+            'payment_type': 'voluntary', 'payment_method': 'transfer',
+            'bank_account': '3000', 'notes': 'should be refused',
+        }, follow_redirects=True)
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b'not an account money can be posted to', r.data)
+
+        with self.app.app_context():
+            db = get_db()
+            # Refused before anything was written: no savings row, no entry.
+            after = db.execute(
+                'SELECT COUNT(*) AS n FROM savings WHERE member_id = ?',
+                (member_id,)).fetchone()['n']
+            self.assertEqual(after, before)
+            self.assertIsNone(db.execute(
+                "SELECT 1 FROM journal_lines WHERE account_code = '3000' "
+                "AND memo LIKE '%should be refused%'").fetchone())
+
+    def test_bulk_repayment_row_with_bad_bank_account_writes_nothing(self):
+        """The bulk loop shares one transaction and commits after the last row,
+        with no savepoint per row. So a bad account has to be caught before the
+        row writes anything, or the repayment and the balance change would be
+        committed while their journal entry never posted."""
+        self.login_admin()
+        member_id = self.create_member()
+        try:
+            with self.app.app_context():
+                db = get_db()
+                db.execute('''
+                    INSERT INTO loans
+                        (loan_number, member_id, amount, purpose, tenure, interest_rate,
+                         interest_method, total_repayment, balance, status, approval_stage,
+                         date_applied)
+                    VALUES ('LOAN/BADBANK/001', ?, 100000, 'Emergency', 6, 20,
+                            'flat', 120000, 120000, 'active', 'approved', '2026-08-01')
+                ''', (member_id,))
+                db.commit()
+
+            csv_body = ('loan_number,amount,payment_date,payment_method,bank_account,receipt_number,notes\n'
+                        'LOAN/BADBANK/001,20000,2026-09-01,transfer,1400,RCPT-BAD,should be refused\n')
+            r = self.client.post('/loans/bulk-repayments', data={
+                'bank_account': '1400',
+                'file': (BytesIO(csv_body.encode('utf-8')), 'reps.csv')},
+                content_type='multipart/form-data', follow_redirects=True)
+            self.assertEqual(r.status_code, 200)
+            self.assertIn(b'not an account money can be posted to', r.data)
+
+            with self.app.app_context():
+                db = get_db()
+                loan = db.execute(
+                    "SELECT balance, status FROM loans WHERE loan_number = 'LOAN/BADBANK/001'"
+                ).fetchone()
+                self.assertAlmostEqual(float(loan['balance']), 120000.0, places=2)
+                self.assertEqual(loan['status'], 'active')
+                self.assertIsNone(db.execute(
+                    "SELECT 1 FROM repayments WHERE receipt_number = 'RCPT-BAD'").fetchone())
+        finally:
+            with self.app.app_context():
+                db = get_db()
+                row = db.execute(
+                    "SELECT id FROM loans WHERE loan_number = 'LOAN/BADBANK/001'").fetchone()
+                if row:
+                    db.execute('DELETE FROM repayments WHERE loan_id = ?', (row['id'],))
+                    db.execute('DELETE FROM loans WHERE id = ?', (row['id'],))
+                db.commit()
+
+    def test_header_cash_account_is_not_postable_and_not_double_counted(self):
+        """1000 Cash & Bank is a heading once detail accounts sit under it.
+
+        The bank report lists a parent and its children, so money posted on the
+        parent would be counted twice in the cash position. It must not be
+        offered as a destination, must be refused if asked for, and must stay
+        out of the report's total.
+        """
+        from ledger import (get_cash_bank_accounts, get_postable_cash_accounts,
+                            resolve_cash_bank_account, UnknownCashAccountError)
+        self.login_admin()
+        try:
+            with self.app.app_context():
+                db = get_db()
+                db.execute('''
+                    INSERT INTO accounts (code, name, type, normal_balance, parent_code, is_active)
+                    VALUES ('1095', 'Test GTB Current', 'asset', 'debit', '1000', 1)
+                ''')
+                db.commit()
+
+                reportable = {a['code'] for a in get_cash_bank_accounts(db)}
+                postable = {a['code'] for a in get_postable_cash_accounts(db)}
+                # The report still needs the parent; the selector must not have it.
+                self.assertIn('1000', reportable)
+                self.assertNotIn('1000', postable)
+                self.assertIn('1095', postable)
+                with self.assertRaises(UnknownCashAccountError):
+                    resolve_cash_bank_account(db, '1000')
+                self.assertEqual(resolve_cash_bank_account(db, '1095'), '1095')
+
+            # The selector on the member page must not offer it either.
+            member_id = self.create_member()
+            page = self.client.get(f'/members/{member_id}')
+            self.assertEqual(page.status_code, 200)
+            self.assertIn(b'1095', page.data)
+            self.assertNotIn(b'>1000 - Cash &amp; Bank', page.data)
+        finally:
+            with self.app.app_context():
+                db = get_db()
+                db.execute("DELETE FROM accounts WHERE code = '1095'")
+                db.commit()
+
+    def test_salary_upload_posts_to_the_selected_receiving_account(self):
+        """The payroll batch is the largest recurring flow, so it has to honour
+        the chosen account too — and a row may name its own."""
+        self.login_admin()
+        member_id = self.create_member()
+        month = '2026-10'
+        try:
+            with self.app.app_context():
+                db = get_db()
+                for code, name in (('1094', 'Test Batch Bank'), ('1093', 'Test Row Bank')):
+                    db.execute('''
+                        INSERT INTO accounts (code, name, type, normal_balance, parent_code, is_active)
+                        VALUES (?, ?, 'asset', 'debit', '1000', 1)
+                    ''', (code, name))
+                member = db.execute('SELECT member_number FROM members WHERE id = ?',
+                                    (member_id,)).fetchone()
+                db.commit()
+            num = member['member_number']
+
+            csv_body = ('member_number,amount,month,date,bank_account,receipt_number,notes\n'
+                        f'{num},10000,{month},{month}-28,,SALBANK-1,batch account\n'
+                        f'{num},7000,{month},{month}-28,1093,SALBANK-2,row override\n')
+            r = self.client.post('/savings/salary-upload', data={
+                'month': month, 'batch_ref': 'SAL-SAV/BANKSEL/0001',
+                'bank_account': '1094',
+                'file': (BytesIO(csv_body.encode('utf-8')), 'payroll.csv')},
+                content_type='multipart/form-data', follow_redirects=True)
+            self.assertEqual(r.status_code, 200)
+
+            with self.app.app_context():
+                db = get_db()
+                batch = db.execute(
+                    "SELECT COALESCE(SUM(debit),0) AS d FROM journal_lines jl "
+                    "JOIN journal_entries je ON je.id = jl.entry_id "
+                    "WHERE jl.account_code = '1094' AND je.reference = 'SALBANK-1'"
+                ).fetchone()['d']
+                row = db.execute(
+                    "SELECT COALESCE(SUM(debit),0) AS d FROM journal_lines jl "
+                    "JOIN journal_entries je ON je.id = jl.entry_id "
+                    "WHERE jl.account_code = '1093' AND je.reference = 'SALBANK-2'"
+                ).fetchone()['d']
+                self.assertAlmostEqual(float(batch), 10000.0, places=2)
+                self.assertAlmostEqual(float(row), 7000.0, places=2)
+
+            # A row naming a non-bank account is skipped, not redirected.
+            bad = ('member_number,amount,month,date,bank_account,receipt_number\n'
+                   f'{num},4000,{month},{month}-28,3000,SALBANK-3\n')
+            r2 = self.client.post('/savings/salary-upload', data={
+                'month': month, 'batch_ref': 'SAL-SAV/BANKSEL/0002',
+                'bank_account': '1094',
+                'file': (BytesIO(bad.encode('utf-8')), 'payroll2.csv')},
+                content_type='multipart/form-data', follow_redirects=True)
+            self.assertEqual(r2.status_code, 200)
+            with self.app.app_context():
+                db = get_db()
+                self.assertIsNone(db.execute(
+                    "SELECT 1 FROM savings WHERE receipt_number = 'SALBANK-3'").fetchone())
+        finally:
+            with self.app.app_context():
+                db = get_db()
+                for ref in ('SALBANK-1', 'SALBANK-2', 'SALBANK-3'):
+                    for e in db.execute('SELECT id FROM journal_entries WHERE reference = ?',
+                                        (ref,)).fetchall():
+                        db.execute('DELETE FROM journal_lines WHERE entry_id = ?', (e['id'],))
+                        db.execute('DELETE FROM journal_entries WHERE id = ?', (e['id'],))
+                db.execute('DELETE FROM savings WHERE member_id = ? AND month = ?',
+                           (member_id, month))
+                db.execute("DELETE FROM accounts WHERE code IN ('1093','1094')")
+                db.execute('UPDATE members SET total_savings = 0, shares_value = 0 WHERE id = ?',
+                           (member_id,))
+                db.commit()
+
+    def test_disbursement_credits_the_chosen_bank_not_the_default(self):
+        """Final approval pays the money out, so the approver chooses the bank.
+
+        A cooperative running several accounts does not pay every loan from the
+        same one; crediting the default would leave that bank short in the books
+        and the bank that really paid untouched, so neither reconciles.
+        """
+        self.login_admin()
+        member_id = self.create_member()
+        loan_id = None
+        try:
+            with self.app.app_context():
+                db = get_db()
+                db.execute('''
+                    INSERT INTO accounts (code, name, type, normal_balance, parent_code, is_active)
+                    VALUES ('1092', 'Test Disbursing Bank', 'asset', 'debit', '1000', 1)
+                ''')
+                # Sitting at final approval with due diligence already done.
+                db.execute('''
+                    INSERT INTO loans
+                        (loan_number, member_id, amount, purpose, tenure, interest_rate,
+                         interest_method, total_repayment, balance, status, approval_stage,
+                         date_applied, loan_applicant_type, hr_affordability_status,
+                         payment_collateral_status)
+                    VALUES ('LOAN/DISB/BANK/001', ?, 100000, 'Emergency', 6, 20, 'flat',
+                            120000, 120000, 'pending', 'president', '2026-08-01',
+                            'staff', 'confirmed', 'verified')
+                ''', (member_id,))
+                loan_id = db.execute(
+                    "SELECT id FROM loans WHERE loan_number = 'LOAN/DISB/BANK/001'"
+                ).fetchone()['id']
+                db.commit()
+
+            # The approver is offered the choice on the page itself.
+            page = self.client.get(f'/loans/{loan_id}')
+            self.assertEqual(page.status_code, 200)
+            self.assertIn(b'Disburse From', page.data)
+            self.assertIn(b'1092', page.data)
+
+            # A non-bank account must stop the approval outright.
+            bad = self.client.post(f'/loans/{loan_id}/act',
+                                   data={'action': 'approve', 'bank_account': '3000'},
+                                   follow_redirects=True)
+            self.assertEqual(bad.status_code, 200)
+            with self.app.app_context():
+                db = get_db()
+                still = db.execute('SELECT status, approval_stage FROM loans WHERE id = ?',
+                                   (loan_id,)).fetchone()
+                self.assertEqual(still['status'], 'pending')
+                self.assertEqual(still['approval_stage'], 'president')
+
+            r = self.client.post(f'/loans/{loan_id}/act',
+                                 data={'action': 'approve', 'bank_account': '1092'},
+                                 follow_redirects=True)
+            self.assertEqual(r.status_code, 200)
+
+            with self.app.app_context():
+                db = get_db()
+                loan = db.execute('SELECT status FROM loans WHERE id = ?',
+                                  (loan_id,)).fetchone()
+                self.assertEqual(loan['status'], 'active')
+                # 100,000 less 1% insurance and 1% application fee.
+                credited = db.execute('''
+                    SELECT COALESCE(SUM(jl.credit), 0) AS c
+                    FROM journal_lines jl
+                    JOIN journal_entries je ON je.id = jl.entry_id
+                    WHERE jl.account_code = '1092'
+                      AND je.source_module = 'loan_disbursement'
+                ''').fetchone()['c']
+                self.assertAlmostEqual(float(credited), 98000.0, places=2)
+                # ...and nothing landed on the default account for this loan.
+                from ledger import get_default_cash_account
+                default_code = get_default_cash_account(db)
+                if default_code != '1092':
+                    on_default = db.execute('''
+                        SELECT COALESCE(SUM(jl.credit), 0) AS c
+                        FROM journal_lines jl
+                        JOIN journal_entries je ON je.id = jl.entry_id
+                        WHERE jl.account_code = ? AND je.reference = 'LOAN/DISB/BANK/001'
+                    ''', (default_code,)).fetchone()['c']
+                    self.assertAlmostEqual(float(on_default), 0.0, places=2)
+        finally:
+            with self.app.app_context():
+                db = get_db()
+                if loan_id:
+                    for e in db.execute(
+                        "SELECT id FROM journal_entries WHERE reference = 'LOAN/DISB/BANK/001'"
+                    ).fetchall():
+                        db.execute('DELETE FROM journal_lines WHERE entry_id = ?', (e['id'],))
+                        db.execute('DELETE FROM journal_entries WHERE id = ?', (e['id'],))
+                    db.execute('DELETE FROM loan_approvals WHERE loan_id = ?', (loan_id,))
+                    db.execute('DELETE FROM loan_request_events WHERE loan_id = ?', (loan_id,))
+                    db.execute('DELETE FROM loans WHERE id = ?', (loan_id,))
+                db.execute("DELETE FROM revenue WHERE source = 'Loan LOAN/DISB/BANK/001'")
+                db.execute("DELETE FROM accounts WHERE code = '1092'")
+                db.commit()
+
     def test_financial_reporting_center_and_control_exports_render(self):
         self.login_admin()
         member_id = self.create_member()

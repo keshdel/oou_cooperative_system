@@ -30,8 +30,13 @@ def members_list():
     members_with_loans = db.execute(
         "SELECT COUNT(DISTINCT member_id) FROM loans WHERE status = 'active'"
     ).fetchone()[0] or 0
+    from ledger import get_postable_cash_accounts, get_default_cash_account
+    bank_accounts = get_postable_cash_accounts(db)
+    default_cash_account = get_default_cash_account(db)
     return render_template('admin/members.html', members=all_members,
-                           members_with_loans=members_with_loans)
+                           members_with_loans=members_with_loans,
+                           bank_accounts=bank_accounts,
+                           default_cash_account=default_cash_account)
 
 
 @members.route('/members/<int:member_id>')
@@ -54,15 +59,20 @@ def member_details(member_id):
 
     # Offset accounts for a savings adjustment; Member Deposits is the side the
     # adjustment already moves, so it is not offerable as the other side.
-    from ledger import get_accounts, MEMBER_DEPOSITS
+    from ledger import (get_accounts, get_postable_cash_accounts,
+                        get_default_cash_account, MEMBER_DEPOSITS)
     adjust_accounts = [a for a in get_accounts(db, active_only=True)
                        if a['code'] != MEMBER_DEPOSITS]
+    bank_accounts = get_postable_cash_accounts(db)
+    default_cash_account = get_default_cash_account(db)
 
     return render_template('admin/member-detail.html',
                            member=member, savings=savings, loans=loans,
                            total_savings=total_savings, total_loans=total_loans,
                            outstanding_loan=outstanding_loan,
                            adjust_accounts=adjust_accounts,
+                           bank_accounts=bank_accounts,
+                           default_cash_account=default_cash_account,
                            exit_reasons=EXIT_REASONS)
 
 

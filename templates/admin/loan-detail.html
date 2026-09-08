@@ -209,6 +209,22 @@
                             <label class="form-label small mb-0">Comment (optional for approve, required for reject)</label>
                             <textarea name="comment" class="form-control form-control-sm" rows="2"></textarea>
                         </div>
+                        {% if is_disbursing_stage %}
+                        <div class="mb-2">
+                            <label class="form-label small mb-0 fw-bold">Disburse From (Bank / Cash Account)</label>
+                            <select name="bank_account" class="form-select form-select-sm">
+                                {% for account in bank_accounts %}
+                                <option value="{{ account.code }}" {% if account.code == default_cash_account %}selected{% endif %}>
+                                    {{ account.code }} - {{ account.name }}{% if account.code == default_cash_account %} (default){% endif %}
+                                </option>
+                                {% endfor %}
+                            </select>
+                            <div class="form-text small">
+                                Approving here pays the money out. Pick the account it actually leaves,
+                                so that bank reconciles.
+                            </div>
+                        </div>
+                        {% endif %}
                         <button type="submit" name="action" value="approve" class="btn btn-success"
                                 {% if stage == 'president' and not due_diligence_complete %}disabled{% endif %}
                                 onclick="return confirm('Approve this loan at the {{ stage_actor }} stage?');">

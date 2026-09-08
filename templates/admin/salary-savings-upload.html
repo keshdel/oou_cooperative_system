@@ -37,6 +37,17 @@
                     <div class="form-text">Stored on each row for audit tracing.</div>
                 </div>
                 <div class="col-md-4">
+                    <label class="form-label fw-semibold">Receiving Bank / Cash Account</label>
+                    <select class="form-select" name="bank_account" required>
+                        {% for account in bank_accounts %}
+                        <option value="{{ account.code }}" {% if account.code == default_cash_account %}selected{% endif %}>
+                            {{ account.code }} - {{ account.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                    <div class="form-text">Used for every row unless a row names its own <code>bank_account</code>.</div>
+                </div>
+                <div class="col-md-6">
                     <label class="form-label fw-semibold">CSV File</label>
                     <input type="file" class="form-control" name="file" accept=".csv" required>
                 </div>
@@ -77,6 +88,7 @@
                     <tr><td><code>email</code></td><td>One identifier required</td><td>Fallback member lookup.</td></tr>
                     <tr><td><code>phone</code></td><td>One identifier required</td><td>Fallback member lookup.</td></tr>
                     <tr><td><code>month</code></td><td>No</td><td>Overrides the savings month for that row.</td></tr>
+                    <tr><td><code>bank_account</code></td><td>No</td><td>Overrides the receiving account for that row.</td></tr>
                     <tr><td><code>date</code></td><td>No</td><td>Payment date. Defaults to upload date.</td></tr>
                     <tr><td><code>receipt_number</code></td><td>No</td><td>Generated when blank.</td></tr>
                     <tr><td><code>notes</code></td><td>No</td><td>Reference or comments.</td></tr>

@@ -211,6 +211,19 @@
                         </select>
                     </div>
                     <div class="mb-3">
+                        <label class="form-label fw-bold">Receiving Bank / Cash Account</label>
+                        <select class="form-select" name="bank_account" required>
+                            {% for account in bank_accounts %}
+                            <option value="{{ account.code }}" {% if account.code == default_cash_account %}selected{% endif %}>
+                                {{ account.code }} - {{ account.name }}{% if account.code == default_cash_account %} (default){% endif %}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">
+                            Choose the actual bank account the member paid into. This controls the bank reconciliation position.
+                        </div>
+                    </div>
+                    <div class="mb-3">
                         <label class="form-label">Notes <span class="text-muted">(optional)</span></label>
                         <input type="text" class="form-control" name="notes" placeholder="e.g. reference number or description">
                     </div>
@@ -280,6 +293,17 @@
                             <label class="form-label fw-bold">Date</label>
                             <input type="date" class="form-control" name="date">
                         </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Paid From (Bank / Cash Account)</label>
+                        <select class="form-select" name="bank_account" required>
+                            {% for account in bank_accounts %}
+                            <option value="{{ account.code }}" {% if account.code == default_cash_account %}selected{% endif %}>
+                                {{ account.code }} - {{ account.name }}{% if account.code == default_cash_account %} (default){% endif %}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">The account the money actually left, so its reconciliation stays right.</div>
                     </div>
                     <div class="mb-3">
                         <label class="form-label fw-bold">Reason <span class="text-danger">*</span></label>

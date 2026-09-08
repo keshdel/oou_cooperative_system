@@ -28,14 +28,27 @@
                         <ul class="mb-0">
                             <li>Format: CSV (UTF‑8, comma‑separated)</li>
                             <li><strong>Required columns:</strong> <code>loan_number, amount, payment_date</code></li>
-                            <li><strong>Optional columns:</strong> payment_method, receipt_number, notes</li>
+                            <li><strong>Optional columns:</strong> payment_method, bank_account, receipt_number, notes</li>
                             <li>Date format: <code>YYYY-MM-DD</code></li>
+                            <li>If <code>bank_account</code> is blank in the file, the default receiving account selected below is used.</li>
                             <li>The loan must already exist in the system.</li>
                             <li>Payment amount cannot exceed the loan's outstanding balance.</li>
                         </ul>
                     </div>
 
                     <form method="POST" enctype="multipart/form-data">
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Default Receiving Bank / Cash Account</label>
+                            <select class="form-select" name="bank_account" required>
+                                {% for account in bank_accounts %}
+                                <option value="{{ account.code }}" {% if account.code == default_cash_account %}selected{% endif %}>
+                                    {{ account.code }} - {{ account.name }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                            <small class="text-muted">Used for every uploaded repayment unless a row contains its own bank_account code.</small>
+                        </div>
+
                         <div class="mb-3">
                             <label class="form-label fw-bold">Select CSV File</label>
                             <input type="file" class="form-control" name="file" accept=".csv" required>
@@ -51,6 +64,7 @@
                                             <th>amount</th>
                                             <th>payment_date</th>
                                             <th>payment_method</th>
+                                            <th>bank_account</th>
                                             <th>receipt_number</th>
                                             <th>notes</th>
                                         </tr>
@@ -61,6 +75,7 @@
                                             <td>25000</td>
                                             <td>2025-04-28</td>
                                             <td>transfer</td>
+                                            <td>1000</td>
                                             <td>RCPT-001</td>
                                             <td>initial repayment</td>
                                         </tr>

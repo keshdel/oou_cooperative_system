@@ -12,7 +12,9 @@ from database import get_db, last_insert_id
 from email_service import send_payment_confirmation_email
 from utils import (role_required, audit, notify_member, record_revenue, share_capital_split,
                    member_savings_balance)
-from ledger import (post_journal_safe, get_default_cash_account, reverse_journal_entry,
+from ledger import (post_journal_safe, get_default_cash_account, resolve_cash_bank_account,
+                    reverse_journal_entry, UnknownCashAccountError,
+                    get_postable_cash_accounts,
                     PeriodLockedError, MEMBER_DEPOSITS, FEE_INCOME, SHARE_CAPITAL,
                     get_accounts, account_exists, ACCUM_SURPLUS)
 
@@ -258,12 +260,12 @@ def download_salary_template():
     writer = csv.writer(out)
     writer.writerow([
         'member_number', 'employee_id', 'email', 'phone', 'amount',
-        'month', 'date', 'receipt_number', 'notes',
+        'month', 'date', 'bank_account', 'receipt_number', 'notes',
     ])
     writer.writerow([
         'MEM/2025/0001', 'EMP001', 'member@example.com', '08012345678',
         '15000', datetime.now().strftime('%Y-%m'), datetime.now().strftime('%Y-%m-%d'),
-        '', 'July payroll deduction',
+        '', '', 'July payroll deduction',
     ])
     response = make_response(out.getvalue())
     response.headers['Content-Type'] = 'text/csv'
@@ -280,6 +282,7 @@ def salary_upload():
         month = request.form.get('month', '').strip()
         batch_ref = request.form.get('batch_ref', '').strip() or _batch_ref(month or datetime.now().strftime('%Y-%m'))
         apply_late_fee = bool(request.form.get('apply_late_fee'))
+        batch_bank_account = request.form.get('bank_account', '').strip()
 
         if not month:
             flash('Payroll month is required.', 'danger')
@@ -292,6 +295,15 @@ def salary_upload():
             return redirect(request.url)
 
         db = get_db()
+
+        # Settled before the file is opened: a whole payroll batch posting to
+        # the wrong bank is exactly the misposting the selector exists to stop.
+        try:
+            batch_cash_account = resolve_cash_bank_account(db, batch_bank_account)
+        except UnknownCashAccountError as e:
+            flash(str(e), 'danger')
+            return redirect(request.url)
+
         success = 0
         skipped = 0
         errors = []
@@ -337,6 +349,13 @@ def salary_upload():
                         skipped += 1
                         continue
 
+                    # A row may name its own account; resolved here, before the
+                    # row writes, so a bad code skips the row rather than
+                    # committing a deduction whose journal entry never posted.
+                    row_bank = (row.get('bank_account') or '').strip()
+                    cash_account = (resolve_cash_bank_account(db, row_bank)
+                                    if row_bank else batch_cash_account)
+
                     late_fee = 0.0
                     if apply_late_fee and payment_date.day > 10:
                         late_fee = round(amount * 0.10, 2)
@@ -371,9 +390,9 @@ def salary_upload():
                             notes=f'Receipt {receipt_number}; batch {batch_ref}',
                         )
 
-                    cash_account = get_default_cash_account(db)
                     lines = [
-                        {'account': cash_account, 'debit': amount + late_fee, 'memo': f'Salary savings {row_month}'},
+                        {'account': cash_account, 'debit': amount + late_fee,
+                         'memo': f'Salary savings {row_month}'},
                         {'account': MEMBER_DEPOSITS, 'credit': deposit_amount, 'memo': f"Member {member['id']}"},
                     ]
                     if share_amount:
@@ -412,9 +431,12 @@ def salary_upload():
             flash(f'Error processing salary deduction file: {e}', 'danger')
             return redirect(request.url)
 
+    db = get_db()
     return render_template('admin/salary-savings-upload.html',
                            default_month=datetime.now().strftime('%Y-%m'),
-                           default_batch=_batch_ref(datetime.now().strftime('%Y-%m')))
+                           default_batch=_batch_ref(datetime.now().strftime('%Y-%m')),
+                           bank_accounts=get_postable_cash_accounts(db),
+                           default_cash_account=get_default_cash_account(db))
 
 
 @savings.route('/savings/add', methods=['POST'])
@@ -426,6 +448,7 @@ def add_saving():
     month         = request.form['month']
     payment_type  = request.form.get('payment_type', 'monthly').strip() or 'monthly'
     payment_method = request.form.get('payment_method', 'cash').strip() or 'cash'
+    bank_account = request.form.get('bank_account', '').strip()
     notes         = request.form.get('notes', '').strip() or None
 
     if amount < 5000:
@@ -433,6 +456,16 @@ def add_saving():
         return redirect(url_for('members.member_details', member_id=member_id))
 
     db = get_db()
+
+    # Settle where the money is being recorded BEFORE anything is written, so a
+    # bad account code is rejected outright instead of surfacing as a rollback
+    # part-way through recording the contribution.
+    try:
+        cash_account = resolve_cash_bank_account(db, bank_account)
+    except UnknownCashAccountError as e:
+        flash(str(e), 'danger')
+        return redirect(url_for('members.member_details', member_id=member_id))
+
     try:
         today = datetime.now()
         # Late fee applies only to monthly/salary savings recorded after the 10th.
@@ -477,9 +510,9 @@ def add_saving():
                            notes=f'Receipt {receipt_number}')
 
         # Double-entry: cash in; deposit liability + share capital up; fee is income.
-        cash_account = get_default_cash_account(db)
         _lines = [
-            {'account': cash_account, 'debit': amount + late_fee, 'memo': f'Savings {month}'},
+            {'account': cash_account, 'debit': amount + late_fee,
+             'memo': f'Savings {month} via {payment_method}'},
             {'account': MEMBER_DEPOSITS, 'credit': deposit_amount, 'memo': f'Member {member_id}'},
         ]
         if share_amount:
@@ -508,7 +541,7 @@ def add_saving():
 
         audit(db, 'ADD_SAVING', 'savings',
               f"Recorded ₦{amount:,.2f} {payment_type} contribution for member ID {member_id}, "
-              f"receipt {receipt_number}{share_note}")
+              f"receipt {receipt_number}; bank account {cash_account}{share_note}")
         flash(f'Contribution of ₦{amount:,.2f} recorded{share_note}. Receipt: {receipt_number}', 'success')
 
     except Exception as e:
@@ -688,6 +721,14 @@ def record_payout():
         flash('A reason for the payout is required.', 'danger')
         return back
 
+    # Which account the money actually left. Settled before anything is written,
+    # and before the evidence file is saved to disk.
+    try:
+        cash_account = resolve_cash_bank_account(db, request.form.get('bank_account', '').strip())
+    except UnknownCashAccountError as e:
+        flash(str(e), 'danger')
+        return back
+
     evidence = request.files.get('evidence')
     if not evidence or not evidence.filename:
         flash('Payout evidence (PDF or image) is required.', 'danger')
@@ -715,7 +756,6 @@ def record_payout():
                    (amount, member_id))
 
         # Double-entry: the deposit liability falls and cash goes out.
-        cash_account = get_default_cash_account(db)
         post_journal_safe(db, f'Savings payout — {member["first_name"]} {member["last_name"]}',
                           [{'account': MEMBER_DEPOSITS, 'debit': amount, 'memo': reason},
                            {'account': cash_account, 'credit': amount,

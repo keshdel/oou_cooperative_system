@@ -16,7 +16,8 @@ from ledger import (get_accounts, trial_balance, backfill_from_transactions,
                     ledger_reconciliation, account_ledger, journal_entry_detail,
                     get_lock_date, reverse_journal_entry, PeriodLockedError,
                     UnsupportedReversalError, reversal_support,
-                    get_default_cash_account)
+                    get_default_cash_account, get_cash_bank_accounts,
+                    get_postable_cash_accounts)
 
 accounting = Blueprint('accounting', __name__, url_prefix='/accounting')
 
@@ -31,23 +32,7 @@ def _year_start():
 
 def _bank_account_rows(db):
     """Return active cash/bank GL accounts used for bank-position reporting."""
-    rows = db.execute('''
-        SELECT code, name, type, normal_balance, parent_code, is_active
-        FROM accounts
-        WHERE is_active = 1
-          AND type = 'asset'
-          AND (
-                code = '1000'
-             OR parent_code = '1000'
-             OR LOWER(name) LIKE ?
-             OR LOWER(name) LIKE ?
-             OR LOWER(name) LIKE ?
-          )
-        ORDER BY
-          CASE WHEN parent_code = '1000' THEN 0 WHEN code = '1000' THEN 1 ELSE 2 END,
-          code
-    ''', ('%bank%', '%cash%', '%wallet%')).fetchall()
-    return [dict(r) for r in rows]
+    return get_cash_bank_accounts(db)
 
 
 def _bank_positions(db, from_date, to_date):
@@ -60,14 +45,20 @@ def _bank_positions(db, from_date, to_date):
         'closing_balance': 0.0,
         'entries': 0,
     }
+    # A header with detail accounts under it is shown, so a stray balance on it
+    # stays visible, but it is kept OUT of the totals: its children are listed
+    # too, and adding both counts the same money twice.
+    postable = {a['code'] for a in get_postable_cash_accounts(db)}
     for account in _bank_account_rows(db):
         data = account_ledger(db, account['code'], from_date, to_date)
         if not data:
             continue
+        is_header = account['code'] not in postable
         row = {
             'code': account['code'],
             'name': account['name'],
             'parent_code': account.get('parent_code'),
+            'is_header': is_header,
             'is_default': account['code'] == default_cash_account,
             'opening_balance': data['opening_balance'],
             'cash_in': data['total_debit'],
@@ -76,6 +67,8 @@ def _bank_positions(db, from_date, to_date):
             'entries': data['count'],
         }
         positions.append(row)
+        if is_header:
+            continue
         totals['opening_balance'] += row['opening_balance']
         totals['cash_in'] += row['cash_in']
         totals['cash_out'] += row['cash_out']
@@ -204,6 +197,14 @@ def set_default_cash_account():
     ).fetchone()
     if not account:
         flash('Choose an active asset account for cash/bank posting.', 'danger')
+        return redirect(url_for('accounting.chart_of_accounts'))
+    # A blank choice anywhere else falls back to this account, so it must be one
+    # money can actually sit in. A heading with detail accounts under it would
+    # get counted twice in the cash position.
+    if code not in {a['code'] for a in get_postable_cash_accounts(db)}:
+        flash(f'{code} - {account["name"]} has detail accounts under it, so it is a '
+              f'heading rather than a place money sits. Choose one of the accounts '
+              f'beneath it instead.', 'danger')
         return redirect(url_for('accounting.chart_of_accounts'))
     try:
         existing = db.execute(

@@ -233,6 +233,18 @@
                             <option value="deduction">Salary Deduction</option>
                         </select>
                     </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Receiving Bank / Cash Account</label>
+                        <select class="form-select" name="bank_account" required>
+                            {% for account in bank_accounts %}
+                            <option value="{{ account.code }}" {% if account.code == default_cash_account %}selected{% endif %}>
+                                {{ account.code }} - {{ account.name }}{% if account.code == default_cash_account %} (default){% endif %}
+                            </option>
+                            {% endfor %}
+                        </select>
+                        <small class="text-muted">Select the actual account paid into for bank reconciliation.</small>
+                    </div>
                     
                     <div class="alert alert-info" id="lateFeeAlert">
                         <i class="fas fa-info-circle"></i>
