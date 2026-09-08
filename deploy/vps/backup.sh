@@ -1,7 +1,27 @@
 #!/usr/bin/env bash
-# Back up every client database to ./backups/, keeping the last 14 days.
-# Run nightly via cron (see README). Each client is dumped separately so you
-# can restore one without touching the others.
+# Back up every client database, keep the last 14 days locally, and — when
+# off-site storage is configured — copy each dump somewhere the server cannot
+# reach on its own.
+#
+# Why off-site matters: a backup that lives on the machine it protects is not a
+# backup. One deleted droplet, one ransomware run, one billing lapse, and the
+# societies' records go with the server.
+#
+# Run nightly via cron (see README). Each client is dumped separately so one can
+# be restored without touching the others.
+#
+# Off-site is optional and off until configured. In deploy/vps/.env:
+#
+#   OFFSITE_BUCKET=coopms-backups          # required to switch it on
+#   OFFSITE_ENDPOINT=https://fra1.digitaloceanspaces.com
+#   OFFSITE_REGION=fra1
+#   OFFSITE_PREFIX=vps1                    # optional folder inside the bucket
+#   AWS_ACCESS_KEY_ID=...                  # the Spaces/S3 key
+#   AWS_SECRET_ACCESS_KEY=...
+#   BACKUP_PASSPHRASE=...                  # optional; encrypts before upload
+#
+# The bucket must be private. These dumps contain members' names, savings and
+# loan histories.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -10,45 +30,144 @@ cd "$(dirname "$0")"
 
 STAMP=$(date +%Y%m%d-%H%M%S)
 OUT="backups"
+RETAIN_DAYS="${BACKUP_RETAIN_DAYS:-14}"
 mkdir -p "$OUT"
+
+OFFSITE_BUCKET="${OFFSITE_BUCKET:-}"
+OFFSITE_ENDPOINT="${OFFSITE_ENDPOINT:-}"
+OFFSITE_REGION="${OFFSITE_REGION:-us-east-1}"
+OFFSITE_PREFIX="${OFFSITE_PREFIX:-}"
+BACKUP_PASSPHRASE="${BACKUP_PASSPHRASE:-}"
+AWSCLI_IMAGE="${AWSCLI_IMAGE:-amazon/aws-cli:2.17.0}"
+
+failures=0
+uploaded=0
+dumped=0
+
+offsite_enabled() { [[ -n "$OFFSITE_BUCKET" ]]; }
+
+# Upload one file and prove it arrived. A backup job that keeps exiting 0 while
+# silently uploading nothing is the failure mode this guards against.
+upload() {
+  local file="$1" key
+  key="${OFFSITE_PREFIX:+$OFFSITE_PREFIX/}$(basename "$file")"
+
+  local endpoint_arg=()
+  [[ -n "$OFFSITE_ENDPOINT" ]] && endpoint_arg=(--endpoint-url "$OFFSITE_ENDPOINT")
+
+  if ! docker run --rm \
+        -v "$PWD/$OUT:/backups:ro" \
+        -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY \
+        -e "AWS_DEFAULT_REGION=$OFFSITE_REGION" \
+        "$AWSCLI_IMAGE" "${endpoint_arg[@]}" \
+        s3 cp "/backups/$(basename "$file")" "s3://$OFFSITE_BUCKET/$key" >/dev/null; then
+    echo "  !! upload FAILED: $key" >&2
+    return 1
+  fi
+
+  if ! docker run --rm \
+        -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY \
+        -e "AWS_DEFAULT_REGION=$OFFSITE_REGION" \
+        "$AWSCLI_IMAGE" "${endpoint_arg[@]}" \
+        s3api head-object --bucket "$OFFSITE_BUCKET" --key "$key" >/dev/null; then
+    echo "  !! uploaded but NOT FOUND afterwards: $key" >&2
+    return 1
+  fi
+
+  echo "  off-site: s3://$OFFSITE_BUCKET/$key"
+  return 0
+}
+
+if offsite_enabled; then
+  if [[ -z "${AWS_ACCESS_KEY_ID:-}" || -z "${AWS_SECRET_ACCESS_KEY:-}" ]]; then
+    echo "OFFSITE_BUCKET is set but AWS_ACCESS_KEY_ID/AWS_SECRET_ACCESS_KEY are not." >&2
+    exit 1
+  fi
+else
+  echo "NOTE: off-site copying is off. Backups exist only on this server."
+  echo "      Set OFFSITE_BUCKET in .env to change that — see the top of this script."
+fi
 
 # List coop_* databases and dump each.
 DBS=$(docker compose exec -T postgres psql -U postgres -tAc \
   "SELECT datname FROM pg_database WHERE datname LIKE 'coop_%'")
 
+# Finding nothing is a failure, not a quiet success. Postgres answering while
+# no database matches means the databases were renamed, restored under another
+# prefix, or this is pointing at the wrong stack — and a nightly job that keeps
+# exiting 0 having backed up nothing is the worst way to discover that.
+if [[ -z "${DBS//[[:space:]]/}" ]]; then
+  echo "No coop_* databases found — nothing was backed up. Check the postgres" >&2
+  echo "container and the database names before trusting this schedule again." >&2
+  exit 1
+fi
+
 for DB in $DBS; do
   DB=$(echo "$DB" | tr -d '[:space:]')
   [[ -z "$DB" ]] && continue
   FILE="${OUT}/${DB}-${STAMP}.sql.gz"
-  docker compose exec -T postgres pg_dump -U postgres "$DB" | gzip > "$FILE"
+
+  if ! docker compose exec -T postgres pg_dump -U postgres "$DB" | gzip > "$FILE"; then
+    echo "  !! dump FAILED: $DB" >&2
+    rm -f "$FILE"
+    failures=$((failures + 1))
+    continue
+  fi
+
+  # A truncated dump is worse than none, because it looks like a backup.
+  if ! gzip -t "$FILE" 2>/dev/null; then
+    echo "  !! dump is not a readable archive, discarding: $FILE" >&2
+    rm -f "$FILE"
+    failures=$((failures + 1))
+    continue
+  fi
+
+  # A passphrase means these dumps must not leave the server readable. If the
+  # encryption step fails the plaintext stays here — where the live database it
+  # was taken from already sits — but it is NOT uploaded. Sending it off-site
+  # anyway would put every member's name, savings and loan history into the
+  # bucket in clear text, and the run's non-zero exit comes far too late to
+  # recall it.
+  may_upload=1
+  if [[ -n "$BACKUP_PASSPHRASE" ]]; then
+    if openssl enc -aes-256-cbc -pbkdf2 -salt \
+         -pass env:BACKUP_PASSPHRASE -in "$FILE" -out "${FILE}.enc"; then
+      rm -f "$FILE"
+      FILE="${FILE}.enc"
+    else
+      rm -f "${FILE}.enc"        # a partial file openssl may have left behind
+      echo "  !! encryption FAILED for $FILE — kept on this server only, NOT uploaded" >&2
+      failures=$((failures + 1))
+      may_upload=0
+    fi
+  fi
+
+  dumped=$((dumped + 1))
   echo "backed up ${DB} -> ${FILE}"
+
+  if offsite_enabled && (( may_upload )); then
+    if upload "$FILE"; then
+      uploaded=$((uploaded + 1))
+    else
+      failures=$((failures + 1))
+    fi
+  fi
 done
 
-# Keep 14 days of backups.
-find "$OUT" -name '*.sql.gz' -type f -mtime +14 -delete
-echo "Old backups older than 14 days pruned."
+# Keep N days of local backups. Off-site retention belongs in the bucket's own
+# lifecycle rule, so a compromised server cannot delete its own history.
+find "$OUT" -type f \( -name '*.sql.gz' -o -name '*.sql.gz.enc' \) \
+     -mtime "+${RETAIN_DAYS}" -delete 2>/dev/null || true
+echo "Local backups older than ${RETAIN_DAYS} days pruned."
 
-# Optional offsite copy. If an rclone remote is configured (in ./.backup-remote
-# or the OFFSITE_REMOTE env var) and rclone is installed, copy the backups there.
-# 'copy' is additive — it never deletes offsite files, so an offsite copy
-# survives even if the local box is wiped. Credentials live in rclone's own
-# config, never here.
-OFFSITE="${OFFSITE_REMOTE:-}"
-if [ -z "$OFFSITE" ] && [ -f .backup-remote ]; then
-  OFFSITE="$(tr -d '[:space:]' < .backup-remote)"
-fi
-if [ -n "$OFFSITE" ]; then
-  if command -v rclone >/dev/null 2>&1; then
-    if rclone copy "$OUT" "$OFFSITE" --transfers 4; then
-      echo "Offsite copy sent to $OFFSITE"
-    else
-      echo "WARNING: offsite copy to $OFFSITE failed" >&2
-    fi
-  else
-    echo "WARNING: OFFSITE remote set but rclone is not installed" >&2
-  fi
+echo "Summary: ${dumped} database(s) dumped, ${uploaded} copied off-site, ${failures} failure(s)."
+
+if (( failures > 0 )); then
+  echo "Backup run finished WITH FAILURES — read the lines marked !! above." >&2
+  exit 1
 fi
 
-# To restore a database:
-#   gunzip -c backups/coop_client1-YYYYMMDD-HHMMSS.sql.gz | \
-#     docker compose exec -T postgres psql -U postgres -d coop_client1
+if offsite_enabled && (( uploaded < dumped )); then
+  echo "Not every dump reached off-site storage." >&2
+  exit 1
+fi

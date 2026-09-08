@@ -140,6 +140,16 @@ gunzip -c backups/coop_client1-YYYYMMDD-HHMMSS.sql.gz | \
   docker compose exec -T postgres psql -U postgres -d coop_client1
 ```
 
+If `BACKUP_PASSPHRASE` is set the files end in `.sql.gz.enc` and have to be
+decrypted first. It needs the same passphrase — which is exactly why that
+passphrase belongs somewhere other than this server:
+```bash
+BACKUP_PASSPHRASE='...' openssl enc -d -aes-256-cbc -pbkdf2 \
+  -pass env:BACKUP_PASSPHRASE \
+  -in backups/coop_client1-YYYYMMDD-HHMMSS.sql.gz.enc | \
+  gunzip -c | docker compose exec -T postgres psql -U postgres -d coop_client1
+```
+
 **Remove a client**
 ```bash
 ./remove-client.sh client1            # stop the app, keep the data
