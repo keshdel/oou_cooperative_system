@@ -74,14 +74,31 @@
 **Part 10 — The life of the society**
 40. Meetings, minutes and attendance
 41. Messages to members
-42. Target Advance
 
-**Part 11 — Reports**
-43. Which report answers which question
+**Part 11 — Target Advance** *(skip it if your society does not run the scheme)*
+42. What Target Advance is
+43. What the committee must decide first
+44. Switching it on
+45. Plans — the shape of a scheme
+46. Opening a cycle
+47. Will the money actually be there?
+48. Members joining, and the four approvals
+49. Cover — what we could get back
+50. Guarantors, and paying to go earlier
+51. The ballot — who collects when
+52. Paying a member their turn
+53. Collecting every period
+54. When somebody misses a payment
+55. When somebody leaves
+56. Watching the whole scheme
+57. What the accounts say
 
-**Part 12 — When something is wrong**
-44. Common problems
-45. The rules that keep us safe
+**Part 12 — Reports**
+58. Which report answers which question
+
+**Part 13 — When something is wrong**
+59. Common problems
+60. The rules that keep us safe
 
 **Quick cards** — one page per office
 
@@ -725,25 +742,401 @@ Everything sent is kept, with who sent it and who received it.
 
 **Text messages cost money per message. Members using the phone app get alerts free.** For a long notice to everybody, email first.
 
-## 42. Target Advance
+---
 
-*Only if the society runs this scheme. If you do not, skip it.*
+# Part 11 — Target Advance
 
-Everybody in a group contributes the same amount each period, and a ballot decides who collects when.
+*Only if your society runs this scheme. If you do not, skip the whole part — nothing
+else in the book depends on it.*
 
-**Accounting → CTAS.** It is switched off until the President switches it on.
+*This part assumes you know nothing about it. Read it in order.*
 
-The parts: **plans** (the shape of a cycle), **cycles** (a running group), **subscriptions** (members who joined), the **ballot** (who collects when), and **exceptions** (somebody who stopped paying).
+## 42. What Target Advance is
 
-Three separate checks before somebody joins: are they eligible, can they afford it, and who stands for them. Different officers do different ones, on purpose.
+You already know this scheme. It is **ajo**, or **esusu**, or the contribution club at
+your workplace — written down properly, run by the society, and recorded in the books.
 
-If your society runs this scheme, ask for the separate session on it. It is too big for a paragraph.
+Here is the whole idea in one paragraph.
+
+> Twelve members agree to save ₦20,000 every month for twelve months. Each month the
+> group collects ₦240,000. Each month **one member takes the whole ₦240,000**. A ballot
+> decides the order. By the end, every member has paid in ₦240,000 and every member has
+> taken ₦240,000 out. Nobody has paid interest, and nobody has lent anybody anything.
+
+That is it. The rest of this part is how to run it without anybody being cheated.
+
+**Why a society runs it.** A member who needs ₦240,000 for school fees does not have to
+take a loan and pay interest. They collect their turn. The society charges a small
+administration fee for the work, not interest.
+
+**The one hard part.** The member who collects in month one has only paid in ₦20,000.
+The other ₦220,000 came from everybody else. If that member then stops paying, the
+society is short — and it is the society, not the group, that has to make it good. Every
+safeguard in this part exists because of that one sentence.
+
+**Two words you will meet**
+
+- **Cycle** — one running group, from start to finish. The twelve members above are one cycle.
+- **Period** — one round of contributions. Usually a month, but you can run weekly or fortnightly.
+
+## 43. What the committee must decide first
+
+Do not switch anything on until these are agreed and written in the minutes. The system
+will ask you for all of them.
+
+| Question | Why it matters |
+| --- | --- |
+| How much each period, and for how many periods? | These two give the target. ₦20,000 × 12 = ₦240,000. |
+| How often — weekly, fortnightly, monthly? | Usually monthly, following the payroll. |
+| How many members in a cycle? | The number of periods and the number of members should match, so each period has exactly one collector. |
+| What is our administration fee? | The society's charge for running it. Not interest. |
+| How do we decide a member can afford it? | See §48. |
+| How much of what somebody owes must we be able to get back? | See §49. This is the safeguard that matters most. |
+| Where does the money come from if the pool is short? | See §47. |
+| Can a member pay to collect earlier? | See §50. Many societies say no. That is a fine answer. |
+
+**Take your time on the last three.** A cycle that runs out of money halfway is worse than
+a cycle you never started.
+
+## 44. Switching it on
+
+Target Advance is **off** until somebody switches it on. A society that never uses it
+never sees the menu and never gets the extra accounts.
+
+The President switches it on. Once it is on:
+
+- **Target Advance** appears in the menu for officers, and for members on their own screen
+- Five new accounts are added to the chart of accounts (see §56)
+
+## 45. Plans — the shape of a scheme
+
+A **plan** is a template. Write it once, use it for every cycle that follows.
+
+**Target Advance → Plans → New plan**
+
+| Field | What to put |
+| --- | --- |
+| Name | What members will call it. "Standard 12-month". |
+| Contribution each period | ₦20,000 |
+| Number of periods | 12 |
+| Frequency | Monthly |
+| Target | Worked out for you: ₦240,000 |
+| Capacity | How many members. Normally the same as the periods. |
+| Administration fee | Your charge. |
+| Affordability method | §48 |
+| Cover required | §49 |
+| Grace days | How many days late before a contribution counts as late. Seven is usual. |
+
+## 46. Opening a cycle
+
+A **cycle** is one real group of members, running on real dates.
+
+**Target Advance → Cycles → New cycle**
+
+1. Pick the plan. Everything fills in from it.
+2. **Start date** — the first period's due date. Every other due date is worked out from this.
+3. **Earliest collecting period** — the first period anybody may collect. Leave it at 1: in a
+   pool somebody must collect in period one.
+4. **Ballot date** — when you will draw the order.
+5. Save. The cycle is a **draft**.
+6. When the committee has approved it, move it to **Open**. Members can now join.
+
+**A cycle's life, in order:**
+
+```
+Draft → Open → Closed → Ready for ballot → Balloted → Active → Completed
+```
+
+- **Open** — members joining
+- **Closed** — joining finished, nobody else may enter
+- **Ready for ballot** — the money has been checked (§47) and the list is locked
+- **Balloted** — the order has been drawn
+- **Active** — contributions coming in, payouts going out
+- **Completed** — everybody has collected and everybody has finished paying
+
+The cycle page has four tabs: **Members**, **Contributions**, **Payouts** and **Setup**.
+At the top is an **attention bar** telling you what is waiting for you today. Read it first
+every time.
+
+## 47. Will the money actually be there?
+
+This is the check most schemes skip, and it is the one that sinks them.
+
+**Cycle page → Setup tab → Liquidity**
+
+The system works out, period by period: money coming in from every member, money going
+out to whoever collects, and what is left. It shows the worst case — everyone collecting
+as early as possible.
+
+Enter what the society can put behind the scheme:
+
+- **Reserve** — society money set aside for this cycle
+- **Support** — money you can call on if needed
+- **Buffer** — how much you want left over. One target is the sensible default.
+
+You get a colour. **Green** — the money is there every period. **Amber** — it works but
+the cushion is thin. **Red** — a period is short.
+
+**A cycle that is short cannot be moved to Ready for ballot** unless an officer ticks the
+override, and that override is recorded with their name against it.
+
+**Do not tick it because the screen is in your way.** If it is red, either put more behind
+the cycle, take fewer members, or lower the target. That is the whole decision.
+
+## 48. Members joining, and the four approvals
+
+**How a member joins.** From their own screen: **Target Advance → Apply**. They choose the
+cycle, see the contribution and the target, read the terms, **tick them and type their name
+as a signature**. Or an officer joins them at the office and records that they accepted on
+paper.
+
+**Nobody is enrolled without accepting the terms.** The system refuses. The terms cover
+what they must pay, how it is collected, what happens if they leave, and that the society
+will check what they can afford and hold their personal details.
+
+**Then four separate approvals, in order:**
+
+| Step | Who, normally | What they are asking |
+| --- | --- | --- |
+| Confirm eligibility | Secretary | Are they a member in good standing, with no other cycle running? |
+| Finance review | Treasurer | Can they afford this every period? |
+| Committee approval | President | Do we accept them? |
+| Enrol | Treasurer | Put them in. |
+
+**These are four different duties on purpose.** One officer should not be able to walk an
+application through from start to finish alone. A small society can give one person all
+four — but that should be a decision somebody made, not an accident.
+
+Acting on your own application warns you and records it.
+
+**Moving everybody at once.** When twenty people sit at the same step, the **Bulk advance**
+button moves them together. It still applies every check to every member and tells you who
+was skipped and why.
+
+**How affordability is judged** — set on the plan, one of three:
+
+- **From savings** *(the usual one)* — the target must be within a multiple of what they
+  have saved. Set the multiple to 3, and a member with ₦40,000 saved may target ₦120,000.
+- **From salary** — the contribution must be within a share of their monthly pay. Only
+  useful if you hold salary figures.
+- **By hand** — the committee decides each one. Slow, but honest for a society whose
+  members are traders rather than salary earners.
+
+## 49. Cover — what we could get back
+
+**This is the most important section in this part.**
+
+Remember the problem: the member who collects first has paid in ₦20,000 and walks away
+with ₦240,000. If they stop paying, who covers the ₦220,000?
+
+**Cover** is what the society could actually recover from that member today — their
+savings, their share capital, and anything guaranteed for them by another member (§50).
+
+Now the useful part. **How much they could owe depends on when they collect.**
+
+| They collect in | They have paid in | They still owe |
+| --- | --- | --- |
+| Period 1 | ₦20,000 | ₦220,000 |
+| Period 6 | ₦120,000 | ₦120,000 |
+| Period 12 | ₦240,000 | nothing |
+
+So a member with thin cover is **not refused a place**. They are simply put **later in the
+queue**, where the society is not exposed. A member with ₦5,000 to their name can still
+join — they collect near the end, by which time they have paid for it themselves.
+
+**Cycle page → Setup tab → Security cover.** Set the share of the exposure you insist on
+being able to recover. It starts at **0, which means off**. Turn it on and the system
+works out each member's earliest safe position and holds them back to it in the ballot.
+
+**A member cannot pay their way past this.** A priority request (§50) below somebody's
+safe position is refused. If cover could be bought around, it would not be cover.
+
+## 50. Guarantors, and paying to go earlier
+
+**Guarantors — how a member improves their position**
+
+A member with little saved can ask another member to stand behind them.
+
+1. The applicant asks, from their own screen: **My Target Advance → Guarantors**.
+2. The guarantor sees the request under **My guarantees**, and accepts by **typing their name**.
+3. A pledge counts only once accepted.
+
+A member cannot pledge more than they hold, and **what they have already pledged to
+somebody else is taken off what they can pledge to you**. Otherwise the same naira would
+be backing three people.
+
+Real effect: a member with ₦5,250 of their own was held back to position 12. With an
+₦80,000 guarantee accepted, they moved to position 4.
+
+**Priority — paying to collect earlier**
+
+If your society allows it, a member may ask for a particular position and pay a fee for it.
+
+- The member requests a position and accepts the fee.
+- **An officer grants or declines it.** It is not simply bought — it is governed.
+- If several members want the same position, the ballot settles it.
+- Whoever does not get it **pays nothing** and goes back into the normal draw.
+- The fee is taken at payout, and recorded as its own kind of income.
+
+Many societies switch this off. If members think positions are for sale, the scheme loses
+the thing that makes it work — that everybody believes the draw was fair.
+
+## 51. The ballot — who collects when
+
+When joining has closed, the money has been checked, and everybody is enrolled:
+
+**Cycle page → Payouts tab → Run ballot**
+
+The draw is random, but it is **recorded and repeatable** — run from a stored seed, so it
+can be shown to have been done once and not fiddled with afterwards. It gives every member
+a different period, respects the cover floors from §49, and places granted priority
+requests first.
+
+Then publish it. Every member is told which period they collect in, on their own screen and
+by notification.
+
+**Run the ballot in front of the committee.** It costs nothing and it removes every
+argument about whether the draw was fair.
+
+## 52. Paying a member their turn
+
+**Cycle page → Payouts tab.** The member due this period is shown. Check the money is
+there, then pay them.
+
+Take our ₦240,000 cycle with a ₦5,000 fee. The member collecting in **period 1** has paid
+in ₦20,000. Here is what the society records:
+
+| | Debit | Credit |
+| --- | --- | --- |
+| Their own contributions so far, released from the pool | 20,000 | |
+| The part the society is advancing | 220,000 | |
+| Cash to the member | | 235,000 |
+| Our administration fee | | 5,000 |
+
+The member gets **₦235,000** — the target less the fee.
+
+The member collecting in **period 12** has already paid in the whole ₦240,000. The society
+advances nothing at all; the money is simply released from the pool. That is the same
+picture as §49, seen from the accounts.
+
+After collecting, the member keeps contributing every period — but now their payments are
+repaying what the society advanced, not building the pool.
+
+## 53. Collecting every period
+
+**Everybody contributes every period from period one** — including members who have
+already collected. That is what makes the pool work.
+
+Three ways to collect. Use whichever suits your society; you can mix them.
+
+**a) The payroll file** — most societies
+
+1. **Cycle page → Contributions tab → Export**. A file of who owes what this period.
+2. Send it to the employer.
+3. When the deductions are confirmed, **Import** the file back.
+
+Each row is recorded, and the member's schedule is ticked off. Importing the same period
+twice does not double anything.
+
+**b) Card on file (auto-debit)**
+
+A member can allow the society to collect their contribution from their card each period.
+
+- The member sets it up on their own screen and gives consent with a typed signature.
+- **The society never sees the card number.** It is typed on the bank's own page. We keep
+  only a token, and that token is encrypted.
+- A failed collection is retried a few times, then stops and tells everybody.
+- The member can cancel at any time.
+
+**c) By hand** — record it like any other receipt.
+
+**Watching who has paid.** The Contributions tab shows every member's schedule: **pending →
+due → grace → late**, and paid or part-paid. "Outstanding contributions" is the list to
+work from.
+
+## 54. When somebody misses a payment
+
+A missed or short contribution is picked up automatically. The member's arrears go up, a
+case is opened, and the member is told.
+
+**Target Advance → Exceptions** is the list of everything open.
+
+Deal with it early. A member one period behind is a conversation. A member five periods
+behind, who has already collected, is a loss.
+
+If they overpay later, the arrears come down on their own.
+
+## 55. When somebody leaves
+
+A member resigns, or leaves the employer, still owing.
+
+**Their subscription → Settle exit.** The system recovers what it can, in this order, and
+shows you the result before anything is posted:
+
+```
+1. Their savings
+2. Their share capital
+3. Anything else you enter — dividends due, terminal benefits
+4. Their guarantors
+5. Whatever is left is written off
+```
+
+**Guarantors come fourth, deliberately.** It is another member's money. Everything
+belonging to the leaver is used first.
+
+**Calling a guarantee is not automatic and not casual.** You enter what to call from each
+guarantor, capped at their pledge and at what they actually hold. It needs its own duty —
+normally the President alone — and it needs a **committee reference**: the minute or
+resolution that authorised it. That reference is recorded and quoted to the guarantor when
+they are told.
+
+Guarantors who were not called are released.
+
+**Write-offs need committee approval.** They are the society's loss, and they show in the
+accounts as one.
+
+## 56. Watching the whole scheme
+
+**Target Advance → Overview** — the scheme on one page.
+
+- **Membership** — who is in, at which step
+- **Contributions** — expected against received, the collection rate, who is late
+- **Payouts** — collected so far, and coming
+- **Risk** — total advanced and not yet recovered, members in arrears, open cases, write-offs
+- **Liquidity** — what the pool holds, what is scheduled, any shortfall, colour-coded per cycle
+- **Profitability** — fees earned less write-offs, straight from the accounts
+
+Where something is not tracked yet, the page says so rather than showing a zero. A zero
+you cannot trust is worse than an honest blank.
+
+## 57. What the accounts say
+
+Switching the scheme on adds five accounts.
+
+| Code | Account | What it holds |
+| --- | --- | --- |
+| 1150 | CTAS Advances Receivable | Money the society has advanced and not yet got back |
+| 2050 | CTAS Contribution Pool | Members' contributions held, not yet paid out |
+| 4150 | CTAS Admin Fee Income | Our fee for running it |
+| 4160 | CTAS Priority Fee Income | Fees for early positions, kept separate |
+| 5150 | CTAS Write-offs | What could not be recovered |
+
+**Two figures to read every month.**
+
+**1150** is the society's exposure — what members have taken and not yet repaid. It should
+rise early in a cycle and fall to nothing by the end. If it is not falling, somebody has
+stopped paying.
+
+**2050** is members' money you are holding. It is a liability, not income. It is not yours.
+
+Everything the scheme does is a normal entry in the same books, found the same four ways
+as anything else (§33).
 
 ---
 
-# Part 11 — Reports
+# Part 12 — Reports
 
-## 43. Which report answers which question
+## 58. Which report answers which question
 
 | The question | The report |
 | --- | --- |
@@ -760,9 +1153,9 @@ Every one can be exported and printed for a meeting.
 
 ---
 
-# Part 12 — When something is wrong
+# Part 13 — When something is wrong
 
-## 44. Common problems
+## 59. Common problems
 
 **"I recorded savings but the member's balance did not change."**
 You probably wrote a journal entry. A journal moves the accounts only. Use Adjust Savings (§21).
@@ -788,7 +1181,7 @@ It has not been ticked as one money moves through. Chart of Accounts → tick **
 **"A member says they never got their statement."**
 Check the email on their record. Then Settings → Mail → Send test.
 
-## 45. The rules that keep us safe
+## 60. The rules that keep us safe
 
 Nine rules. If you remember nothing else, remember these.
 
@@ -848,6 +1241,27 @@ You choose the account on every screen where money moves. That one field decides
 | Ask what changed since last month | Sit in an approval with the real figures |
 
 You are not there to press buttons. You are there to ask the question nobody else asked.
+
+## If your society runs Target Advance
+
+Who does what, when a member applies:
+
+| Step | Normally | §
+| --- | --- | --- |
+| Confirm eligibility | Secretary | 48 |
+| Finance review | Treasurer | 48 |
+| Committee approval | President | 48 |
+| Enrol | Treasurer | 48 |
+| Run the ballot | Treasurer, in front of the committee | 51 |
+| Pay a member their turn | Treasurer | 52 |
+| Call a guarantee | President, with a committee reference | 55 |
+| Approve a write-off | Committee | 55 |
+
+Every period: collect from everybody (§53), chase whoever is late (§54), and read
+account **1150** — what members have taken and not yet repaid. It should be falling.
+
+Before any cycle starts: check the money will be there (§47). A cycle that runs short
+halfway is worse than one you never started.
 
 ---
 
