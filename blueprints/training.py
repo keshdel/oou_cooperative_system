@@ -37,6 +37,12 @@ DECK_FILE = 'exco-training-deck.html'
 # The written material, by URL slug. Anything not listed here cannot be reached,
 # so no request can walk out of the training folder.
 DOCUMENTS = {
+    'handbook': {
+        'file':    'exco-handbook.md',
+        'title':   'The Exco Handbook',
+        'summary': "The officer's own book. Every job, step by step, from setting up the "
+                   "society to closing the month. Find the job you are doing and follow it.",
+    },
     'lesson-plan': {
         'file':    'exco-training-lesson-plan.md',
         'title':   'Lesson plan',
