@@ -3379,7 +3379,7 @@ class HardeningFeatureTests(unittest.TestCase):
                          date_applied, loan_applicant_type, hr_affordability_status,
                          payment_collateral_status)
                     VALUES ('LOAN/DISB/BANK/001', ?, 100000, 'Emergency', 6, 20, 'flat',
-                            120000, 120000, 'pending', 'president', '2026-08-01',
+                            120000, 0, 'pending', 'president', '2026-08-01',
                             'staff', 'confirmed', 'verified')
                 ''', (member_id,))
                 loan_id = db.execute(
@@ -3412,9 +3412,12 @@ class HardeningFeatureTests(unittest.TestCase):
 
             with self.app.app_context():
                 db = get_db()
-                loan = db.execute('SELECT status FROM loans WHERE id = ?',
+                loan = db.execute('SELECT status, balance FROM loans WHERE id = ?',
                                   (loan_id,)).fetchone()
                 self.assertEqual(loan['status'], 'active')
+                # The debt is created at disbursement, not at application: the
+                # request carried a zero balance until the money actually went.
+                self.assertAlmostEqual(float(loan['balance'] or 0), 120000.0, places=2)
                 # 100,000 less 1% insurance and 1% application fee.
                 credited = db.execute('''
                     SELECT COALESCE(SUM(jl.credit), 0) AS c
@@ -3598,6 +3601,97 @@ class HardeningFeatureTests(unittest.TestCase):
                     if row:
                         db.execute('DELETE FROM account_setup_tokens WHERE user_id = ?', (row['id'],))
                         db.execute('DELETE FROM users WHERE id = ?', (row['id'],))
+                db.commit()
+
+    def test_a_pending_request_is_not_a_debt_and_can_be_cancelled(self):
+        """A loan request must not read as money owed until it is paid out, and
+        an officer must be able to take it out of the queue.
+
+        Cancelling is not rejecting: rejecting records a decision the committee
+        made at a stage, cancelling withdraws the request. Recording one as the
+        other misreads the member's record for as long as it is kept.
+        """
+        self.login_admin()
+        member_id = self.create_member()
+        loan_id = None
+        try:
+            with self.app.app_context():
+                db = get_db()
+                db.execute("DELETE FROM loans WHERE loan_number = 'LOAN/CANCEL/001'")
+                db.execute('''
+                    INSERT INTO loans
+                        (loan_number, member_id, amount, purpose, tenure, interest_rate,
+                         interest_method, total_repayment, balance, status, approval_stage,
+                         date_applied)
+                    VALUES ('LOAN/CANCEL/001', ?, 100000, 'Emergency', 6, 20, 'flat',
+                            120000, 0, 'pending', 'secretary', '2026-09-01')
+                ''', (member_id,))
+                loan_id = db.execute(
+                    "SELECT id FROM loans WHERE loan_number = 'LOAN/CANCEL/001'").fetchone()['id']
+                db.execute(
+                    "INSERT INTO loan_guarantors (loan_id, member_id, status) VALUES (?, ?, 'pending')",
+                    (loan_id, member_id))
+                db.commit()
+
+                # A request carries no balance, so nothing it does can read as
+                # owed on the member's account.
+                owed = db.execute(
+                    "SELECT COALESCE(SUM(balance), 0) AS b FROM loans WHERE member_id = ?",
+                    (member_id,)).fetchone()['b']
+                self.assertAlmostEqual(float(owed), 0.0, places=2)
+
+            # A reason is required — a blank one changes nothing.
+            self.client.post(f'/loans/{loan_id}/cancel', data={'reason': '   '},
+                             follow_redirects=True)
+            with self.app.app_context():
+                db = get_db()
+                self.assertEqual(db.execute(
+                    'SELECT status FROM loans WHERE id = ?', (loan_id,)).fetchone()['status'],
+                    'pending')
+
+            r = self.client.post(f'/loans/{loan_id}/cancel',
+                                 data={'reason': 'Entered twice by mistake'},
+                                 follow_redirects=True)
+            self.assertEqual(r.status_code, 200)
+
+            with self.app.app_context():
+                db = get_db()
+                loan = db.execute(
+                    'SELECT status, approval_stage, withdrawal_reason, balance '
+                    'FROM loans WHERE id = ?', (loan_id,)).fetchone()
+                self.assertEqual(loan['status'], 'withdrawn')
+                self.assertEqual(loan['approval_stage'], 'withdrawn')
+                self.assertIn('Entered twice', loan['withdrawal_reason'])
+                self.assertAlmostEqual(float(loan['balance'] or 0), 0.0, places=2)
+                # Guarantors are released — they stood for a request that is gone.
+                self.assertIsNone(db.execute(
+                    "SELECT 1 FROM loan_guarantors WHERE loan_id = ? AND status = 'pending'",
+                    (loan_id,)).fetchone())
+                # Nothing was posted to the books.
+                self.assertIsNone(db.execute(
+                    "SELECT 1 FROM journal_entries WHERE reference = 'LOAN/CANCEL/001'").fetchone())
+
+            # A loan that has been paid out is not cancellable — it is corrected.
+            with self.app.app_context():
+                db = get_db()
+                db.execute("UPDATE loans SET status = 'active', balance = 120000 WHERE id = ?",
+                           (loan_id,))
+                db.commit()
+            self.client.post(f'/loans/{loan_id}/cancel', data={'reason': 'too late'},
+                             follow_redirects=True)
+            with self.app.app_context():
+                db = get_db()
+                self.assertEqual(db.execute(
+                    'SELECT status FROM loans WHERE id = ?', (loan_id,)).fetchone()['status'],
+                    'active')
+        finally:
+            with self.app.app_context():
+                db = get_db()
+                if loan_id:
+                    db.execute('DELETE FROM loan_guarantors WHERE loan_id = ?', (loan_id,))
+                    db.execute('DELETE FROM loan_approvals WHERE loan_id = ?', (loan_id,))
+                    db.execute('DELETE FROM loan_request_events WHERE loan_id = ?', (loan_id,))
+                    db.execute('DELETE FROM loans WHERE id = ?', (loan_id,))
                 db.commit()
 
     def test_financial_reporting_center_and_control_exports_render(self):

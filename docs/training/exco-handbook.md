@@ -484,6 +484,24 @@ An application can be raised by the member on their own screen, or by an officer
 
 **Nobody may approve their own loan**, whatever office they hold. The system refuses it.
 
+**A request is not a loan.** Until the President approves and the money goes, the member
+owes nothing. Nothing is posted to the books, nothing appears on their account, and it does
+not count against what they may borrow. It is a request sitting in a queue.
+
+**Taking a request out of the queue.** Two ways, and they are not the same thing:
+
+- **The member withdraws it themselves**, from their own screen. They changed their mind.
+- **An officer cancels it** — Loans → open the loan → *Cancel this request*, with a reason.
+  Use this when it was entered twice, the details were wrong, or the member asked you to.
+
+Either way, guarantors who were asked to stand are released, the member is told, and nothing
+is posted.
+
+**Cancelling is not rejecting.** Rejecting records a decision your committee made at a
+stage — you considered it and said no, and that belongs in the member's history as a
+decision. Cancelling says the request should not have been in the queue at all. Record one
+as the other and the member's record misreads it for as long as it is kept.
+
 ## 26. The checks before the money goes
 
 **Loans → open the loan → Due diligence**

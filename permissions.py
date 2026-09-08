@@ -172,6 +172,17 @@ PERMISSIONS = [
         'endpoints': ('loans.loan_act', 'loans.update_due_diligence', 'loans.resend_loan_alert'),
     },
     {
+        'key': 'loans.cancel',
+        'label': 'Cancel a pending loan request',
+        'group': 'Loans',
+        'description': "Take a request out of the queue on the applicant's behalf - entered "
+                       "twice, wrong details, or the member asked. Different from rejecting "
+                       "it, which is a decision at a stage. The applicant can always "
+                       "withdraw their own.",
+        'default_roles': ('admin', 'treasurer', 'secretary', 'exco'),
+        'endpoints': ('loans.cancel_loan_application',),
+    },
+    {
         'key': 'loans.repayments',
         'label': 'Record loan repayments',
         'group': 'Loans',

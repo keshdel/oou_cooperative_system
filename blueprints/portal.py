@@ -930,7 +930,7 @@ def apply_loan_member():
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, 1, 1, ?, ?, 1, ?,
                         ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (loan_number, member['id'], amount, purpose, tenure, rate,
-                  method, total_repayment, total_repayment, initial_stage,
+                  method, total_repayment, 0, initial_stage,
                   0 if is_staff_member else 1,
                   'not_required' if is_staff_member else 'pending',
                   'not_required' if is_staff_member else 'requested',
