@@ -954,6 +954,64 @@ class HardeningFeatureTests(unittest.TestCase):
             active = db.execute('SELECT * FROM loans WHERE id = ?', (active_loan_id,)).fetchone()
             self.assertEqual(active['status'], 'active')
 
+    def test_member_can_request_monthly_savings_change_from_savings_page(self):
+        suffix = int(time.time() * 1000)
+        email = f'savings.change.{suffix}@example.com'
+        member_number = f'OOU/TEST/SC{suffix}'
+        with self.app.app_context():
+            db = get_db()
+            db.execute('''
+                INSERT INTO members
+                    (member_number, employee_id, first_name, last_name, email,
+                     phone, status, monthly_savings, total_savings, date_joined)
+                VALUES (?, ?, 'Sade', 'Savings', ?, '08000000089',
+                        'active', 15000, 250000, '2024-01-01')
+            ''', (member_number, f'EMP-SC{suffix}', email))
+            db.commit()
+            member_id = db.execute(
+                'SELECT id FROM members WHERE member_number = ?', (member_number,)
+            ).fetchone()['id']
+
+        self.create_member_user(member_id, email=email)
+        self.login_member(email=email)
+
+        page = self.client.get('/my-savings')
+        self.assertEqual(page.status_code, 200)
+        self.assertIn(b'Request Update', page.data)
+        self.assertIn(b'Update salary deduction', page.data)
+
+        response = self.client.post(
+            '/change-savings-request',
+            data={'new_amount': '25000', 'reason': 'Salary deduction increase'},
+            follow_redirects=False,
+        )
+        self.assertIn(response.status_code, (302, 303))
+
+        duplicate = self.client.post(
+            '/change-savings-request',
+            data={'new_amount': '30000', 'reason': 'Second request'},
+            follow_redirects=True,
+        )
+        self.assertEqual(duplicate.status_code, 200)
+
+        with self.app.app_context():
+            db = get_db()
+            rows = db.execute(
+                'SELECT * FROM savings_change_requests WHERE member_id = ?',
+                (member_id,),
+            ).fetchall()
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]['status'], 'pending')
+            self.assertAlmostEqual(float(rows[0]['current_amount']), 15000.0)
+            self.assertAlmostEqual(float(rows[0]['requested_amount']), 25000.0)
+            self.assertEqual(rows[0]['reason'], 'Salary deduction increase')
+            audit_row = db.execute(
+                "SELECT 1 FROM audit_log WHERE action = 'SAVINGS_CHANGE_REQUEST' "
+                "AND description LIKE ?",
+                (f'%{member_id}%',),
+            ).fetchone()
+            self.assertIsNotNone(audit_row)
+
     def test_non_staff_loan_application_still_requires_bank_and_credit_acknowledgements(self):
         member_id, email = self.create_non_staff_member()
         self.create_member_user(member_id, email=email)

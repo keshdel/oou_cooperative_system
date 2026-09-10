@@ -429,11 +429,20 @@ def my_savings():
     except Exception:
         pass
 
+    pending_savings_change = db.execute('''
+        SELECT id, current_amount, requested_amount, reason, requested_at
+        FROM savings_change_requests
+        WHERE member_id = ? AND status = 'pending'
+        ORDER BY requested_at DESC, id DESC
+        LIMIT 1
+    ''', (member['id'],)).fetchone()
+
     return render_template('member/my-savings.html',
                            member=_member_extras(member, db),
                            virtual_account=virtual_account,
                            payment_choices=payment_choices,
                            payment_preference=payment_preference,
+                           pending_savings_change=pending_savings_change,
                            savings=savings_paged,
                            total_savings=total_savings,
                            year_savings=year_savings,
@@ -1039,6 +1048,7 @@ def change_savings_request():
 
             audit(db, 'SAVINGS_CHANGE_REQUEST', 'members',
                   f"Member {member['id']} requested savings change to ₦{new_amount_val:,.2f}")
+            db.commit()
             flash('Your request has been submitted and will be reviewed by the cooperative office.', 'success')
             return redirect(url_for('portal.member_portal'))
 

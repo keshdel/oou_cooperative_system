@@ -182,6 +182,46 @@
     </div>
   </div>
 
+  <div class="card mb-4 no-print border-0 shadow-sm">
+    <div class="card-body">
+      <div class="row align-items-center g-3">
+        <div class="col-lg-8">
+          <div class="d-flex align-items-start gap-3">
+            <span class="metric-icon flex-shrink-0" style="background:rgba(37,99,235,.12);color:#2563eb;">
+              <i class="fas fa-edit" aria-hidden="true"></i>
+            </span>
+            <div>
+              <h5 class="mb-1">Update salary deduction / monthly savings</h5>
+              <p class="text-muted mb-0">
+                Request a change to the amount deducted for your monthly savings.
+                The cooperative office will review it before payroll or collection records are updated.
+              </p>
+              {% if pending_savings_change %}
+              <div class="alert alert-warning py-2 px-3 mt-3 mb-0">
+                <strong>Pending request:</strong>
+                ₦{{ "{:,.2f}".format(pending_savings_change.current_amount or 0) }}
+                to ₦{{ "{:,.2f}".format(pending_savings_change.requested_amount or 0) }}
+                submitted {{ pending_savings_change.requested_at|string|truncate(16, True, '') }}.
+              </div>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+        <div class="col-lg-4 text-lg-end">
+          <a href="{{ url_for('portal.change_savings_request') }}"
+             class="btn btn-primary {% if pending_savings_change %}disabled{% endif %}"
+             {% if pending_savings_change %}aria-disabled="true"{% endif %}>
+            <i class="fas fa-paper-plane me-1" aria-hidden="true"></i>
+            Request Update
+          </a>
+          {% if pending_savings_change %}
+          <div class="form-text">A new request can be made after this one is reviewed.</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Chart -->
   <div class="row mb-4 no-print">
     <div class="col-12">
