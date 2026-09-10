@@ -189,7 +189,8 @@ PERMISSIONS = [
         'description': 'Post repayments, run bulk repayment uploads and export the loan book.',
         'default_roles': ('admin', 'treasurer'),
         'endpoints': ('loans.repay_loan', 'loans.bulk_loan_repayments',
-                      'loans.export_loans', 'loans.download_repayment_template'),
+                      'loans.export_loans', 'loans.export_loan_statements',
+                      'loans.download_repayment_template'),
     },
 
     # ── Investments ──────────────────────────────────────────────────────────

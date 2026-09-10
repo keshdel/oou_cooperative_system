@@ -2990,6 +2990,64 @@ class HardeningFeatureTests(unittest.TestCase):
             db.execute("DELETE FROM accounts WHERE code = '1096'")
             db.commit()
 
+    def test_admin_can_export_all_loan_statements_for_reconciliation(self):
+        self.login_admin()
+        member_id = self.create_member()
+        with self.app.app_context():
+            db = get_db()
+            db.execute("DELETE FROM repayments WHERE loan_id IN "
+                       "(SELECT id FROM loans WHERE loan_number = 'LOAN/STMT/001')")
+            db.execute("DELETE FROM journal_lines WHERE entry_id IN "
+                       "(SELECT id FROM journal_entries WHERE reference = 'REP/STMT/001')")
+            db.execute("DELETE FROM journal_entries WHERE reference = 'REP/STMT/001'")
+            db.execute("DELETE FROM loans WHERE loan_number = 'LOAN/STMT/001'")
+            db.execute('''
+                INSERT INTO loans
+                    (loan_number, member_id, amount, purpose, tenure, interest_rate,
+                     interest_method, total_repayment, balance, status, approval_stage,
+                     disbursement_date, date_applied)
+                VALUES
+                    ('LOAN/STMT/001', ?, 100000, 'Business', 6, 20,
+                     'flat', 120000, 90000, 'active', 'approved',
+                     '2026-08-01', '2026-07-25')
+            ''', (member_id,))
+            loan_id = db.execute(
+                "SELECT id FROM loans WHERE loan_number = 'LOAN/STMT/001'"
+            ).fetchone()['id']
+            db.execute('''
+                INSERT INTO repayments
+                    (repayment_number, loan_id, amount, principal_paid, interest_paid,
+                     payment_method, reference, receipt_number, notes, date)
+                VALUES
+                    ('REP/STMT/001', ?, 30000, 25000, 5000, 'transfer',
+                     'BANK/STMT/001', 'RCPT/STMT/001', 'first payment', '2026-08-31')
+            ''', (loan_id,))
+            db.commit()
+
+        detail = self.client.get(f'/loans/{loan_id}')
+        self.assertEqual(detail.status_code, 200)
+        self.assertIn(b'Loan Statement &amp; Corrections', detail.data)
+        self.assertIn(b'REP/STMT/001', detail.data)
+
+        response = self.client.get('/loans/export-statements')
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn('loan_statements_export.csv',
+                      response.headers.get('Content-Disposition', ''))
+        self.assertIn('member_number,member_name,member_email,loan_number', body)
+        self.assertIn('LOAN/STMT/001', body)
+        self.assertIn('APPLICATION', body)
+        self.assertIn('LOAN_OPENED', body)
+        self.assertIn('REPAYMENT', body)
+        self.assertIn('REP/STMT/001', body)
+        self.assertIn('90000.00', body)
+
+        with self.app.app_context():
+            db = get_db()
+            db.execute("DELETE FROM repayments WHERE loan_id = ?", (loan_id,))
+            db.execute("DELETE FROM loans WHERE id = ?", (loan_id,))
+            db.commit()
+
     def test_member_receipt_allocates_one_bank_payment_to_savings_and_loan(self):
         self.login_admin()
         member_id = self.create_member()

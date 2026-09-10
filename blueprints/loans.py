@@ -344,6 +344,14 @@ def loan_detail(loan_id):
         WHERE lg.loan_id = ? ORDER BY lg.id
     ''', (loan_id,)).fetchall()
     history = db.execute('SELECT * FROM loan_approvals WHERE loan_id = ? ORDER BY id', (loan_id,)).fetchall()
+    repayments = db.execute('''
+        SELECT r.*, je.id AS journal_entry_id, je.entry_number
+        FROM repayments r
+        LEFT JOIN journal_entries je
+          ON je.source_module = 'loan_repayment' AND je.source_id = r.id
+        WHERE r.loan_id = ?
+        ORDER BY r.date DESC, r.id DESC
+    ''', (loan_id,)).fetchall()
     accepted, required = lw.guarantor_progress(db, loan_id)
     stage = loan['approval_stage'] or 'secretary'
     can_act = lw.can_act(current_user.role, stage) and loan['status'] == 'pending'
@@ -360,6 +368,7 @@ def loan_detail(loan_id):
                            is_disbursing_stage=is_disbursing_stage,
                            alert_events=la.loan_events(db, loan_id, limit=40),
                            loan=loan, guarantors=guarantors, history=history,
+                           repayments=repayments,
                            stage=stage, stage_label=lw.STAGE_LABELS.get(stage, stage),
                            accepted=accepted, required=required, can_act=can_act,
                            due_diligence_complete=due_diligence_complete,
@@ -830,6 +839,107 @@ def export_loans():
     response = make_response(output.getvalue())
     response.headers['Content-Type'] = 'text/csv'
     response.headers['Content-Disposition'] = 'attachment; filename=loans_export.csv'
+    return response
+
+
+@loans.route('/loans/export-statements')
+@login_required
+@role_required('admin', 'treasurer')
+def export_loan_statements():
+    """Export every loan as a statement-style movement file for audit matching.
+
+    The ordinary loan export is a summary. This report is intentionally flat:
+    one row per loan application/opening/repayment movement, with raw numeric
+    values that can be compared against an external loan register in Excel.
+    """
+    db = get_db()
+    loans_rows = db.execute('''
+        SELECT l.*, m.member_number,
+               m.first_name || ' ' || m.last_name AS member_name,
+               m.email AS member_email
+        FROM loans l
+        JOIN members m ON l.member_id = m.id
+        ORDER BY m.member_number, l.date_applied, l.id
+    ''').fetchall()
+
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        'member_number', 'member_name', 'member_email', 'loan_number',
+        'loan_status', 'movement_date', 'movement_type', 'movement_reference',
+        'description', 'debit_increase', 'credit_decrease', 'principal_paid',
+        'interest_paid', 'penalty_paid', 'running_loan_balance',
+        'loan_principal', 'total_repayable', 'current_system_balance',
+        'payment_method', 'receipt_number', 'bank_reference', 'journal_entry',
+        'source_module', 'source_id', 'reversed_at', 'notes'
+    ])
+
+    for loan in loans_rows:
+        running_balance = 0.0
+        total_repayable = float(loan['total_repayment'] or loan['amount'] or 0)
+        principal = float(loan['amount'] or 0)
+
+        writer.writerow([
+            loan['member_number'], loan['member_name'], loan['member_email'],
+            loan['loan_number'], loan['status'],
+            (str(loan['date_applied'])[:10] if loan['date_applied'] else ''),
+            'APPLICATION', loan['loan_number'], loan['purpose'] or '',
+            '', '', '', '', '', '',
+            f'{principal:.2f}', f'{total_repayable:.2f}',
+            f"{float(loan['balance'] or 0):.2f}", '', '', '', '',
+            'loans', loan['id'], '', loan['notes'] or ''
+        ])
+
+        if loan['disbursement_date'] or loan['status'] in ('active', 'completed'):
+            running_balance = total_repayable
+            writer.writerow([
+                loan['member_number'], loan['member_name'], loan['member_email'],
+                loan['loan_number'], loan['status'],
+                (str(loan['disbursement_date'])[:10] if loan['disbursement_date'] else ''),
+                'LOAN_OPENED', loan['loan_number'],
+                'Loan approved/disbursed and member loan account opened',
+                f'{total_repayable:.2f}', '', '', '', '',
+                f'{running_balance:.2f}', f'{principal:.2f}',
+                f'{total_repayable:.2f}', f"{float(loan['balance'] or 0):.2f}",
+                '', '', '', '', 'loan_disbursement', loan['id'], '',
+                loan['notes'] or ''
+            ])
+
+        repayments = db.execute('''
+            SELECT r.*, je.id AS journal_entry_id, je.entry_number
+            FROM repayments r
+            LEFT JOIN journal_entries je
+              ON je.source_module = 'loan_repayment' AND je.source_id = r.id
+            WHERE r.loan_id = ?
+            ORDER BY r.date, r.id
+        ''', (loan['id'],)).fetchall()
+
+        for rep in repayments:
+            amount = float(rep['amount'] or 0)
+            effective_credit = 0.0 if rep['reversed_at'] else amount
+            running_balance = max(0.0, running_balance - effective_credit)
+            writer.writerow([
+                loan['member_number'], loan['member_name'], loan['member_email'],
+                loan['loan_number'], loan['status'],
+                (str(rep['date'])[:10] if rep['date'] else ''),
+                'REPAYMENT', rep['repayment_number'] or rep['reference'] or rep['receipt_number'] or '',
+                'Loan repayment' + (' (reversed)' if rep['reversed_at'] else ''),
+                '', f'{amount:.2f}',
+                f"{float(rep['principal_paid'] or 0):.2f}",
+                f"{float(rep['interest_paid'] or 0):.2f}",
+                f"{float(rep['penalty_paid'] or 0):.2f}",
+                f'{running_balance:.2f}', f'{principal:.2f}',
+                f'{total_repayable:.2f}', f"{float(loan['balance'] or 0):.2f}",
+                rep['payment_method'] or '', rep['receipt_number'] or '',
+                rep['reference'] or rep['transaction_id'] or '',
+                rep['entry_number'] or '', 'loan_repayment', rep['id'],
+                (str(rep['reversed_at'])[:19] if rep['reversed_at'] else ''),
+                rep['notes'] or ''
+            ])
+
+    response = make_response(output.getvalue())
+    response.headers['Content-Type'] = 'text/csv'
+    response.headers['Content-Disposition'] = 'attachment; filename=loan_statements_export.csv'
     return response
 
 

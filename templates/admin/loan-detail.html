@@ -196,6 +196,99 @@
                     {% endif %}
                 </div>
             </div>
+
+            <div class="card mb-3">
+                <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+                    <h6 class="mb-0">Loan Statement &amp; Corrections</h6>
+                    <a href="{{ url_for('loans.export_loan_statements') }}" class="btn btn-outline-secondary btn-sm">
+                        <i class="fas fa-file-csv" aria-hidden="true"></i> Export All Statements
+                    </a>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info py-2 small mb-3">
+                        Wrong repayments should be corrected by opening the linked journal entry,
+                        reversing it with a reason, and then recording the correct repayment or
+                        combined receipt. This keeps the loan balance, bank account and audit trail aligned.
+                    </div>
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-4">
+                            <div class="small text-muted">Loan principal</div>
+                            <div class="fw-semibold">₦{{ "{:,.2f}".format(loan.amount or 0) }}</div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="small text-muted">Total repayable</div>
+                            <div class="fw-semibold">₦{{ "{:,.2f}".format(loan.total_repayment or 0) }}</div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="small text-muted">Current balance</div>
+                            <div class="fw-semibold">₦{{ "{:,.2f}".format(loan.balance or 0) }}</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-sm align-middle mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Date</th>
+                                <th>Reference</th>
+                                <th class="text-end">Amount</th>
+                                <th class="text-end">Principal</th>
+                                <th class="text-end">Interest</th>
+                                <th>Method</th>
+                                <th>Journal</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% if loan.disbursement_date or loan.status in ['active', 'completed'] %}
+                            <tr>
+                                <td>{{ loan.disbursement_date|string|truncate(10, True, '') if loan.disbursement_date else '-' }}</td>
+                                <td>{{ loan.loan_number }}</td>
+                                <td class="text-end">₦{{ "{:,.2f}".format(loan.total_repayment or loan.amount or 0) }}</td>
+                                <td class="text-end">₦{{ "{:,.2f}".format(loan.amount or 0) }}</td>
+                                <td class="text-end">-</td>
+                                <td>Disbursement</td>
+                                <td><span class="text-muted small">Loan opened</span></td>
+                                <td><span class="badge bg-success">Posted</span></td>
+                            </tr>
+                            {% endif %}
+                            {% for r in repayments %}
+                            <tr class="{% if r.reversed_at %}table-secondary text-muted{% endif %}">
+                                <td>{{ r.date|string|truncate(10, True, '') if r.date else '-' }}</td>
+                                <td>
+                                    {{ r.repayment_number or r.reference or r.receipt_number or ('REP-' ~ r.id) }}
+                                    {% if r.notes %}<div class="small text-muted">{{ r.notes }}</div>{% endif %}
+                                </td>
+                                <td class="text-end">₦{{ "{:,.2f}".format(r.amount or 0) }}</td>
+                                <td class="text-end">₦{{ "{:,.2f}".format(r.principal_paid or 0) }}</td>
+                                <td class="text-end">₦{{ "{:,.2f}".format(r.interest_paid or 0) }}</td>
+                                <td>{{ (r.payment_method or '-')|replace('_', ' ')|title }}</td>
+                                <td>
+                                    {% if r.journal_entry_id %}
+                                    <a href="{{ url_for('accounting.journal_entry_view', entry_id=r.journal_entry_id) }}">
+                                        {{ r.entry_number or 'Open journal' }}
+                                    </a>
+                                    {% else %}
+                                    <span class="text-muted small">No journal link</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if r.reversed_at %}
+                                    <span class="badge bg-secondary">Reversed</span>
+                                    {% else %}
+                                    <span class="badge bg-success">Posted</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="8" class="text-center text-muted py-3">No repayments recorded.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
 
         <div class="col-lg-5">
