@@ -3048,6 +3048,93 @@ class HardeningFeatureTests(unittest.TestCase):
             db.execute("DELETE FROM loans WHERE id = ?", (loan_id,))
             db.commit()
 
+    def test_admin_can_import_approved_loan_balance_corrections(self):
+        self.login_admin()
+        member_id = self.create_member()
+        with self.app.app_context():
+            db = get_db()
+            db.execute("DELETE FROM loan_adjustments WHERE loan_id IN "
+                       "(SELECT id FROM loans WHERE loan_number = 'LOAN/CORR/001')")
+            db.execute("DELETE FROM journal_lines WHERE entry_id IN "
+                       "(SELECT id FROM journal_entries WHERE reference LIKE 'LOAN-CORR-OOU/TEST/0001-%')")
+            db.execute("DELETE FROM journal_entries WHERE reference LIKE 'LOAN-CORR-OOU/TEST/0001-%'")
+            db.execute("DELETE FROM loans WHERE loan_number = 'LOAN/CORR/001'")
+            db.execute('''
+                INSERT INTO loans
+                    (loan_number, member_id, amount, purpose, tenure, interest_rate,
+                     interest_method, total_repayment, balance, status, approval_stage,
+                     disbursement_date, date_applied)
+                VALUES
+                    ('LOAN/CORR/001', ?, 100000, 'Regular', 6, 20,
+                     'flat', 120000, 90000, 'active', 'approved',
+                     '2026-08-01', '2026-07-25')
+            ''', (member_id,))
+            db.commit()
+
+        csv_body = (
+            'review_status,correction_type,member_number,member_name,correct_active_balance,'
+            'current_coopms_balance,correction_amount,adjustment_needed_correct_less_live,'
+            'correct_active_loans,current_coopms_active_loans,correct_loan_numbers,'
+            'current_coopms_loan_numbers,suggested_action,officer_note\n'
+            'approved_for_correction,reduce_balance_or_close,OOU/TEST/0001,Ada Audit,60000,'
+            '90000,30000,-30000,1,1,SMT-CORRECT-001,LOAN/CORR/001,'
+            'reduce CoopMS loan balance after approval,Reviewed by treasurer\n'
+        )
+        response = self.client.post(
+            '/loans/corrections',
+            data={'file': (BytesIO(csv_body.encode('utf-8')), 'approved_corrections.csv')},
+            content_type='multipart/form-data',
+            follow_redirects=False,
+        )
+        self.assertIn(response.status_code, (302, 303))
+
+        with self.app.app_context():
+            db = get_db()
+            loan = db.execute("SELECT id, balance, status FROM loans WHERE loan_number = 'LOAN/CORR/001'").fetchone()
+            self.assertAlmostEqual(float(loan['balance']), 60000.0, places=2)
+            self.assertEqual(loan['status'], 'active')
+            adjustment = db.execute(
+                "SELECT * FROM loan_adjustments WHERE loan_id = ?", (loan['id'],)
+            ).fetchone()
+            self.assertIsNotNone(adjustment)
+            self.assertEqual(adjustment['direction'], 'decrease')
+            self.assertAlmostEqual(float(adjustment['amount']), 30000.0, places=2)
+            journal = db.execute(
+                "SELECT * FROM journal_entries WHERE source_module = 'loan_adjustment' "
+                "AND source_id = ?", (adjustment['id'],)
+            ).fetchone()
+            self.assertIsNotNone(journal)
+            totals = db.execute(
+                "SELECT COALESCE(SUM(debit),0) AS debit, COALESCE(SUM(credit),0) AS credit "
+                "FROM journal_lines WHERE entry_id = ?", (journal['id'],)
+            ).fetchone()
+            self.assertAlmostEqual(float(totals['debit']), float(totals['credit']), places=2)
+
+        export = self.client.get('/loans/export-statements')
+        self.assertEqual(export.status_code, 200)
+        body = export.get_data(as_text=True)
+        self.assertIn('ADJUSTMENT', body)
+        self.assertIn('LOAN/CORR/001', body)
+
+        with self.app.app_context():
+            db = get_db()
+            loan = db.execute("SELECT id FROM loans WHERE loan_number = 'LOAN/CORR/001'").fetchone()
+            if loan:
+                adj_ids = [r['id'] for r in db.execute(
+                    "SELECT id FROM loan_adjustments WHERE loan_id = ?", (loan['id'],)
+                ).fetchall()]
+                for adj_id in adj_ids:
+                    journal_ids = [r['id'] for r in db.execute(
+                        "SELECT id FROM journal_entries WHERE source_module = 'loan_adjustment' AND source_id = ?",
+                        (adj_id,)
+                    ).fetchall()]
+                    for journal_id in journal_ids:
+                        db.execute('DELETE FROM journal_lines WHERE entry_id = ?', (journal_id,))
+                        db.execute('DELETE FROM journal_entries WHERE id = ?', (journal_id,))
+                db.execute("DELETE FROM loan_adjustments WHERE loan_id = ?", (loan['id'],))
+                db.execute("DELETE FROM loans WHERE id = ?", (loan['id'],))
+                db.commit()
+
     def test_member_receipt_allocates_one_bank_payment_to_savings_and_loan(self):
         self.login_admin()
         member_id = self.create_member()

@@ -559,6 +559,35 @@ def init_db():
     _add_col(db, 'repayments', 'reversed_at', 'TIMESTAMP')
     _add_col(db, 'repayments', 'verified_at', 'TIMESTAMP')
 
+    # Controlled loan balance corrections used during migration/reconciliation.
+    # These are not cash repayments: they move the loan subledger and GL
+    # receivable together against accumulated surplus, with an audit reason.
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS loan_adjustments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            adjustment_number TEXT UNIQUE,
+            loan_id INTEGER NOT NULL,
+            member_id INTEGER NOT NULL,
+            amount REAL NOT NULL,
+            direction TEXT NOT NULL,
+            previous_balance REAL NOT NULL,
+            new_balance REAL NOT NULL,
+            reason TEXT NOT NULL,
+            reference TEXT,
+            source_file TEXT,
+            journal_entry_id INTEGER,
+            created_by INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            reversed_at TIMESTAMP,
+            FOREIGN KEY (loan_id) REFERENCES loans (id),
+            FOREIGN KEY (member_id) REFERENCES members (id)
+        )
+    '''))
+    _add_col(db, 'loan_adjustments', 'reversed_at', 'TIMESTAMP')
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_loan_adjustments_loan ON loan_adjustments(loan_id)')
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_loan_adjustments_member ON loan_adjustments(member_id)')
+    _exec_ignore(db, "CREATE UNIQUE INDEX IF NOT EXISTS uq_loan_adjustments_reference ON loan_adjustments(reference) WHERE reference IS NOT NULL AND reference != ''")
+
     # Manual member bank receipts: one bank inflow can be allocated across
     # savings and one or more loan repayments while staying traceable as one
     # receipt for bank reconciliation.

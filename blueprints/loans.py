@@ -16,9 +16,9 @@ from email_service import (send_loan_approval_email, send_loan_rejection_email,
 from utils import (role_required, audit, notify_member, compute_loan_schedule,
                    PURPOSE_SETTING_KEY, METHOD_LABELS, record_revenue, split_repayment,
                    member_savings_balance, member_for_user)
-from ledger import (post_journal_safe, get_default_cash_account, get_postable_cash_accounts,
+from ledger import (post_journal, post_journal_safe, get_default_cash_account, get_postable_cash_accounts,
                     resolve_cash_bank_account, UnknownCashAccountError,
-                    LOANS_RECEIVABLE, FEE_INCOME,
+                    LOANS_RECEIVABLE, ACCUM_SURPLUS, FEE_INCOME,
                     LOAN_INTEREST_INCOME, INSURANCE_PAYABLE)
 import loan_workflow as lw
 import loan_alerts as la
@@ -27,6 +27,15 @@ from loan_pdf import build_loan_application_pdf
 from delinquency import portfolio_delinquency
 
 loans = Blueprint('loans', __name__)
+
+
+LOAN_CORRECTION_COLUMNS = {
+    'review_status', 'correction_type', 'member_number', 'member_name',
+    'correct_active_balance', 'current_coopms_balance', 'correction_amount',
+    'adjustment_needed_correct_less_live', 'correct_active_loans',
+    'current_coopms_active_loans', 'correct_loan_numbers',
+    'current_coopms_loan_numbers', 'suggested_action',
+}
 
 
 def _loan_applicant_type(loan):
@@ -183,6 +192,198 @@ def loans_list():
                            pipeline=pipeline,
                            bank_accounts=bank_accounts,
                            default_cash_account=default_cash_account)
+
+
+def _money(raw):
+    try:
+        return round(float(str(raw or '0').replace(',', '').strip()), 2)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _active_loans_for_member(db, member_number):
+    return db.execute('''
+        SELECT l.*, m.member_number, m.first_name || ' ' || m.last_name AS member_name
+        FROM loans l
+        JOIN members m ON m.id = l.member_id
+        WHERE m.member_number = ? AND l.status = 'active' AND COALESCE(l.balance, 0) > 0
+        ORDER BY COALESCE(l.disbursement_date, l.date_applied) DESC, l.id DESC
+    ''', (member_number,)).fetchall()
+
+
+def _find_active_loan(db, loan_number):
+    return db.execute('''
+        SELECT l.*, m.member_number, m.first_name || ' ' || m.last_name AS member_name
+        FROM loans l
+        JOIN members m ON m.id = l.member_id
+        WHERE l.loan_number = ? AND l.status = 'active' AND COALESCE(l.balance, 0) > 0
+    ''', (loan_number,)).fetchone()
+
+
+def _post_loan_balance_adjustment(db, loan, amount, direction, reason, reference, source_file):
+    if amount <= 0:
+        raise ValueError('Correction amount must be greater than zero.')
+    if direction not in ('increase', 'decrease'):
+        raise ValueError('Correction direction must be increase or decrease.')
+    if reference and db.execute(
+        'SELECT 1 FROM loan_adjustments WHERE reference = ?', (reference,)
+    ).fetchone():
+        return None
+
+    previous = _money(loan['balance'])
+    if direction == 'decrease':
+        amount = min(amount, previous)
+        new_balance = round(previous - amount, 2)
+        lines = [
+            {'account': ACCUM_SURPLUS, 'debit': amount, 'memo': reason[:120]},
+            {'account': LOANS_RECEIVABLE, 'credit': amount, 'memo': loan['loan_number']},
+        ]
+    else:
+        new_balance = round(previous + amount, 2)
+        lines = [
+            {'account': LOANS_RECEIVABLE, 'debit': amount, 'memo': loan['loan_number']},
+            {'account': ACCUM_SURPLUS, 'credit': amount, 'memo': reason[:120]},
+        ]
+
+    adjustment_number = f"LADJ/{datetime.now().strftime('%Y%m%d%H%M%S')}/{loan['id']}"
+    db.execute('''
+        INSERT INTO loan_adjustments
+            (adjustment_number, loan_id, member_id, amount, direction,
+             previous_balance, new_balance, reason, reference, source_file, created_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (adjustment_number, loan['id'], loan['member_id'], amount, direction,
+          previous, new_balance, reason, reference, source_file, current_user.id))
+    adjustment_id = last_insert_id(db)
+    journal_id = post_journal(
+        db,
+        f"Loan balance correction - {loan['loan_number']}",
+        lines,
+        date=datetime.now(),
+        reference=reference or adjustment_number,
+        source_module='loan_adjustment',
+        source_id=adjustment_id,
+        created_by=current_user.id,
+    )
+    new_status = 'completed' if new_balance <= 0 else 'active'
+    completed_at = datetime.now() if new_status == 'completed' else None
+    db.execute(
+        'UPDATE loans SET balance = ?, status = ?, completed_at = ? WHERE id = ?',
+        (new_balance, new_status, completed_at, loan['id'])
+    )
+    db.execute(
+        'UPDATE loan_adjustments SET journal_entry_id = ? WHERE id = ?',
+        (journal_id, adjustment_id)
+    )
+    return {
+        'adjustment_number': adjustment_number,
+        'loan_number': loan['loan_number'],
+        'member_number': loan['member_number'],
+        'amount': amount,
+        'direction': direction,
+        'previous_balance': previous,
+        'new_balance': new_balance,
+    }
+
+
+@loans.route('/loans/corrections', methods=['GET', 'POST'])
+@login_required
+@role_required('admin', 'treasurer')
+def loan_corrections():
+    if request.method == 'POST':
+        uploaded = request.files.get('file')
+        if not uploaded or not uploaded.filename:
+            flash('Choose the approved loan correction CSV first.', 'danger')
+            return redirect(url_for('loans.loan_corrections'))
+        if not uploaded.filename.lower().endswith('.csv'):
+            flash('Loan corrections must be uploaded as a CSV file.', 'danger')
+            return redirect(url_for('loans.loan_corrections'))
+
+        db = get_db()
+        posted, skipped, errors = [], 0, []
+        try:
+            reader = csv.DictReader(TextIOWrapper(uploaded.stream, encoding='utf-8-sig'))
+            missing = LOAN_CORRECTION_COLUMNS - set(reader.fieldnames or [])
+            if missing:
+                flash(f'Missing columns: {", ".join(sorted(missing))}', 'danger')
+                return redirect(url_for('loans.loan_corrections'))
+
+            for row_num, row in enumerate(reader, start=2):
+                try:
+                    if (row.get('review_status') or '').strip().lower() != 'approved_for_correction':
+                        skipped += 1
+                        continue
+                    correction = _money(row.get('adjustment_needed_correct_less_live'))
+                    if abs(correction) < 0.01:
+                        skipped += 1
+                        continue
+                    direction = 'increase' if correction > 0 else 'decrease'
+                    remaining = abs(correction)
+                    member_number = (row.get('member_number') or '').strip()
+                    live_numbers = [
+                        n.strip() for n in (row.get('current_coopms_loan_numbers') or '').split(';')
+                        if n.strip()
+                    ]
+                    target_loans = []
+                    for loan_number in live_numbers:
+                        loan = _find_active_loan(db, loan_number)
+                        if loan:
+                            target_loans.append(loan)
+                    if not target_loans and member_number:
+                        target_loans = list(_active_loans_for_member(db, member_number))
+                    if not target_loans:
+                        errors.append(
+                            f"Row {row_num}: no active CoopMS loan found for member {member_number}; "
+                            "create/import missing loans separately."
+                        )
+                        continue
+
+                    reason = (
+                        f"Approved SMT loan reconciliation. Correct balance "
+                        f"{row.get('correct_active_balance')}; previous CoopMS balance "
+                        f"{row.get('current_coopms_balance')}. {row.get('suggested_action') or ''}"
+                    ).strip()
+                    for loan in target_loans:
+                        if remaining <= 0.005:
+                            break
+                        amount = remaining
+                        if direction == 'decrease':
+                            amount = min(remaining, _money(loan['balance']))
+                        reference = (
+                            f"LOAN-CORR-{member_number or loan['member_number']}-"
+                            f"{loan['id']}-{datetime.now().strftime('%Y%m%d')}"
+                        )
+                        result = _post_loan_balance_adjustment(
+                            db, loan, amount, direction, reason, reference, uploaded.filename
+                        )
+                        if result:
+                            posted.append(result)
+                        else:
+                            skipped += 1
+                        remaining = round(remaining - amount, 2)
+                    if remaining > 0.005:
+                        errors.append(
+                            f"Row {row_num}: ₦{remaining:,.2f} could not be applied; "
+                            "available live loan balance was lower than the requested reduction."
+                        )
+                except Exception as exc:
+                    errors.append(f"Row {row_num}: {exc}")
+
+            if errors:
+                db.rollback()
+                flash('No corrections were posted because the file has errors. Fix the rows and upload again.', 'danger')
+                for err in errors[:10]:
+                    flash(err, 'warning')
+            else:
+                audit(db, 'LOAN_CORRECTION_IMPORT', 'loans',
+                      f"Posted {len(posted)} loan corrections from {uploaded.filename}; {skipped} skipped")
+                db.commit()
+                flash(f'Posted {len(posted)} loan correction entries. {skipped} rows skipped.', 'success')
+                return redirect(url_for('loans.loans_list'))
+        except Exception as exc:
+            db.rollback()
+            flash(f'Could not process correction file: {exc}', 'danger')
+
+    return render_template('admin/loan-corrections.html')
 
 
 @loans.route('/loans/apply', methods=['GET', 'POST'])
@@ -935,6 +1136,40 @@ def export_loan_statements():
                 rep['entry_number'] or '', 'loan_repayment', rep['id'],
                 (str(rep['reversed_at'])[:19] if rep['reversed_at'] else ''),
                 rep['notes'] or ''
+            ])
+
+        adjustments = db.execute('''
+            SELECT a.*, je.entry_number
+            FROM loan_adjustments a
+            LEFT JOIN journal_entries je ON je.id = a.journal_entry_id
+            WHERE a.loan_id = ?
+            ORDER BY a.created_at, a.id
+        ''', (loan['id'],)).fetchall()
+        for adj in adjustments:
+            amount = float(adj['amount'] or 0)
+            effective_amount = 0.0 if adj['reversed_at'] else amount
+            if adj['direction'] == 'increase':
+                running_balance += effective_amount
+                debit = amount
+                credit = ''
+            else:
+                running_balance = max(0.0, running_balance - effective_amount)
+                debit = ''
+                credit = amount
+            writer.writerow([
+                loan['member_number'], loan['member_name'], loan['member_email'],
+                loan['loan_number'], loan['status'],
+                (str(adj['created_at'])[:10] if adj['created_at'] else ''),
+                'ADJUSTMENT', adj['adjustment_number'] or adj['reference'] or '',
+                (adj['reason'] or 'Loan balance correction') + (' (reversed)' if adj['reversed_at'] else ''),
+                f'{debit:.2f}' if debit != '' else '',
+                f'{credit:.2f}' if credit != '' else '',
+                '', '', '', f'{running_balance:.2f}', f'{principal:.2f}',
+                f'{total_repayable:.2f}', f"{float(loan['balance'] or 0):.2f}",
+                '', '', adj['reference'] or '', adj['entry_number'] or '',
+                'loan_adjustment', adj['id'],
+                (str(adj['reversed_at'])[:19] if adj['reversed_at'] else ''),
+                adj['reason'] or ''
             ])
 
     response = make_response(output.getvalue())

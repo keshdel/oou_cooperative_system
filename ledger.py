@@ -865,6 +865,38 @@ def _reverse_loan_repayment(db, e, sid):
     return f"Loan {loan['loan_number'] or loan['id']} balance restored by ₦{float(rep['amount'] or 0):,.2f}."
 
 
+def _reverse_loan_adjustment(db, e, sid):
+    """Undo a controlled loan balance correction."""
+    adj = db.execute('SELECT * FROM loan_adjustments WHERE id = ?', (sid,)).fetchone()
+    if not adj:
+        return None
+    if 'reversed_at' in adj.keys() and adj['reversed_at']:
+        return None
+    loan = db.execute('SELECT * FROM loans WHERE id = ?', (adj['loan_id'],)).fetchone()
+    if not loan:
+        return None
+
+    amount = round(float(adj['amount'] or 0), 2)
+    balance = round(float(loan['balance'] or 0), 2)
+    if adj['direction'] == 'decrease':
+        restored = round(balance + amount, 2)
+    else:
+        if balance < amount:
+            raise ValueError(
+                f"Cannot reverse this loan adjustment because loan {loan['loan_number'] or loan['id']} "
+                f"now has only ₦{balance:,.2f} outstanding."
+            )
+        restored = round(balance - amount, 2)
+
+    status = 'completed' if restored <= 0 else 'active'
+    completed_at = datetime.now() if status == 'completed' else None
+    db.execute('UPDATE loans SET balance = ?, status = ?, completed_at = ? WHERE id = ?',
+               (max(restored, 0), status, completed_at, loan['id']))
+    db.execute('UPDATE loan_adjustments SET reversed_at = ? WHERE id = ?',
+               (datetime.now(), adj['id']))
+    return f"Loan {loan['loan_number'] or loan['id']} correction reversed by ₦{amount:,.2f}."
+
+
 def _unapply_receipt(db, alloc):
     """Put an allocated amount back into its receipt, so the money returns to
     the unallocated pool and can be applied somewhere else."""
@@ -953,6 +985,7 @@ REVERSAL_HANDLERS = {
     'savings_adjustment': _reverse_savings_deposit,
     'savings_payout':  _reverse_savings_payout,
     'loan_repayment':  _reverse_loan_repayment,
+    'loan_adjustment': _reverse_loan_adjustment,
     'va_savings':      _reverse_va_savings,
     'va_loan':         _reverse_va_loan,
     'member_receipt':  _reverse_member_receipt,
