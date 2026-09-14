@@ -16,7 +16,7 @@ from crypto import decrypt_member_sensitive_fields, encrypt_field, mask_member_s
 from security import validate_password_strength
 from utils import (audit, notify_member, notify, compute_loan_schedule, METHOD_LABELS,
                    member_for_user, member_savings_balance, member_share_capital,
-                   validate_image)
+                   validate_image, member_has_minimum_membership)
 import loan_workflow as lw
 import loan_alerts as la
 from loan_pdf import build_loan_application_pdf
@@ -871,17 +871,12 @@ def apply_loan_member():
             return redirect(url_for('portal.apply_loan_member'))
 
         try:
-            # 6-month membership check
-            if member['date_joined']:
-                try:
-                    dj = datetime.fromisoformat(member['date_joined'].replace('Z', '+00:00').split('+')[0])
-                except ValueError:
-                    dj = datetime.strptime(member['date_joined'], '%Y-%m-%d %H:%M:%S')
-                if (datetime.now() - dj).days < 180:
-                    flash('You must be a member for at least 6 months to apply for a loan.', 'danger')
-                    return redirect(url_for('portal.apply_loan_member'))
-            else:
+            eligible_age, joined_at, _days_as_member = member_has_minimum_membership(member, 6)
+            if not joined_at:
                 flash('Your join date is missing. Please contact admin.', 'danger')
+                return redirect(url_for('portal.apply_loan_member'))
+            if not eligible_age:
+                flash('You must be a member for at least 6 months to apply for a loan.', 'danger')
                 return redirect(url_for('portal.apply_loan_member'))
 
             # Eligibility uses the savings ledger (source of truth).

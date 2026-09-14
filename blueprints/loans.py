@@ -15,7 +15,8 @@ from email_service import (send_loan_approval_email, send_loan_rejection_email,
                            send_guarantor_request_email)
 from utils import (role_required, audit, notify_member, compute_loan_schedule,
                    PURPOSE_SETTING_KEY, METHOD_LABELS, record_revenue, split_repayment,
-                   member_savings_balance, member_for_user)
+                   member_savings_balance, member_for_user,
+                   member_has_minimum_membership)
 from ledger import (post_journal, post_journal_safe, get_default_cash_account, get_postable_cash_accounts,
                     resolve_cash_bank_account, UnknownCashAccountError,
                     LOANS_RECEIVABLE, ACCUM_SURPLUS, FEE_INCOME,
@@ -430,17 +431,12 @@ def apply_loan():
                 flash('Member not found.', 'danger')
                 return redirect(url_for('loans.apply_loan'))
 
-            if member['date_joined']:
-                try:
-                    date_joined = datetime.fromisoformat(member['date_joined'].replace('Z', '+00:00'))
-                except ValueError:
-                    date_joined = datetime.strptime(member['date_joined'], '%Y-%m-%d %H:%M:%S')
-                months_as_member = (datetime.now() - date_joined).days / 30
-                if months_as_member < 6:
-                    flash('Member must be registered for at least 6 months.', 'danger')
-                    return redirect(url_for('members.member_details', member_id=member_id))
-            else:
+            eligible_age, joined_at, _days_as_member = member_has_minimum_membership(member, 6)
+            if not joined_at:
                 flash('Member join date is missing. Please contact admin.', 'danger')
+                return redirect(url_for('members.member_details', member_id=member_id))
+            if not eligible_age:
+                flash('Member must be registered for at least 6 months.', 'danger')
                 return redirect(url_for('members.member_details', member_id=member_id))
 
             # Eligibility uses the savings ledger (source of truth), not the

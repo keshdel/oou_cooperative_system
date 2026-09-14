@@ -13,7 +13,8 @@ from werkzeug.utils import secure_filename
 from database import get_db, last_insert_id
 from email_service import send_member_onboarding_email, send_welcome_email, send_email
 from security import generate_account_setup_token
-from utils import role_required, validate_image, audit, notify_member, member_prefix, coop_name
+from utils import (role_required, validate_image, audit, notify_member,
+                   member_prefix, coop_name, parse_member_joined)
 
 members = Blueprint('members', __name__)
 
@@ -472,15 +473,20 @@ def bulk_upload_members():
                     address        = row.get('address', '').strip()
                     occupation     = row.get('occupation', '').strip()
                     monthly_savings = float(row.get('monthly_savings', 5000))
+                    joined_raw      = row.get('date_joined', '').strip()
+                    date_joined     = parse_member_joined(joined_raw) if joined_raw else datetime.now()
+                    if joined_raw and not date_joined:
+                        errors.append(f"Row {row_num}: Invalid date_joined. Use YYYY-MM-DD.")
+                        continue
                     member_number  = f"{member_prefix(db)}/{datetime.now().year}/{row_num:04d}"
 
                     db.execute('''
                         INSERT INTO members (
                             member_number, first_name, last_name, email, phone,
                             address, occupation, monthly_savings, status, date_joined
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ''', (member_number, first_name, last_name, email, phone,
-                          address, occupation, monthly_savings, 'active', datetime.now()))
+                          address, occupation, monthly_savings, 'active', date_joined))
 
                     member_id     = last_insert_id(db)
                     current_month = datetime.now().strftime('%Y-%m')
@@ -513,9 +519,9 @@ def bulk_upload_members():
 def download_template():
     output = StringIO()
     writer = csv.writer(output)
-    writer.writerow(['first_name', 'last_name', 'email', 'phone', 'address', 'occupation', 'monthly_savings'])
-    writer.writerow(['John', 'Doe', 'john@example.com', '08012345678', 'Lagos', 'Teacher', '5000'])
-    writer.writerow(['Jane', 'Smith', 'jane@example.com', '08087654321', 'Ibadan', 'Engineer', '10000'])
+    writer.writerow(['first_name', 'last_name', 'email', 'phone', 'address', 'occupation', 'monthly_savings', 'date_joined'])
+    writer.writerow(['John', 'Doe', 'john@example.com', '08012345678', 'Lagos', 'Teacher', '5000', '2024-01-15'])
+    writer.writerow(['Jane', 'Smith', 'jane@example.com', '08087654321', 'Ibadan', 'Engineer', '10000', '2024-02-01'])
     response = make_response(output.getvalue())
     response.headers['Content-Type'] = 'text/csv'
     response.headers['Content-Disposition'] = 'attachment; filename=member_template.csv'

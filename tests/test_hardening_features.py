@@ -173,6 +173,70 @@ class HardeningFeatureTests(unittest.TestCase):
         )
         self.assertIn(response.status_code, (302, 303))
 
+    def test_migrated_member_join_date_is_used_for_loan_eligibility(self):
+        suffix = int(time.time() * 1000)
+        member_number = f'OOU/MIG/{suffix}'
+        with self.app.app_context():
+            db = get_db()
+            db.execute('''
+                INSERT INTO members
+                    (member_number, employee_id, first_name, last_name, email,
+                     phone, status, monthly_savings, total_savings, date_joined)
+                VALUES (?, ?, 'Migrated', 'Member', ?, '08000000222',
+                        'active', 15000, 0, '15/01/2024')
+            ''', (member_number, f'EMP-MIG-{suffix}', f'migrated.{suffix}@example.com'))
+            member_id = db.execute(
+                'SELECT id FROM members WHERE member_number = ?', (member_number,)
+            ).fetchone()['id']
+            db.commit()
+
+        self.fund_member_savings(member_id)
+        self.login_admin()
+        response = self.client.post(
+            '/loans/apply',
+            data={
+                'member_id': str(member_id),
+                'amount': '50000',
+                'purpose': 'Regular',
+                'tenure': '6',
+            },
+            follow_redirects=False,
+        )
+        self.assertIn(response.status_code, (302, 303))
+
+        with self.app.app_context():
+            db = get_db()
+            loan = db.execute(
+                'SELECT * FROM loans WHERE member_id = ? ORDER BY id DESC',
+                (member_id,),
+            ).fetchone()
+            self.assertIsNotNone(loan)
+            self.assertEqual(loan['status'], 'pending')
+
+    def test_bulk_member_upload_accepts_historical_join_date(self):
+        suffix = int(time.time() * 1000)
+        self.login_admin()
+        body = (
+            'first_name,last_name,email,phone,address,occupation,monthly_savings,date_joined\n'
+            f'Bulk,Joined,bulk.joined.{suffix}@example.com,08000000333,Lagos,Teacher,10000,2024-02-01\n'
+        )
+        response = self.client.post(
+            '/members/bulk-upload',
+            data={'file': (BytesIO(body.encode('utf-8')), 'members.csv')},
+            content_type='multipart/form-data',
+            follow_redirects=False,
+        )
+        self.assertIn(response.status_code, (302, 303))
+
+        with self.app.app_context():
+            db = get_db()
+            member = db.execute(
+                'SELECT * FROM members WHERE email = ?',
+                (f'bulk.joined.{suffix}@example.com',),
+            ).fetchone()
+            self.assertIsNotNone(member)
+            self.assertTrue(str(member['date_joined']).startswith('2024-02-01'))
+
     def test_support_routes_are_disabled_by_default(self):
         for path in ('/setup', '/debug-auth', '/emergency-reset'):
             response = self.client.get(path)

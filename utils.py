@@ -94,6 +94,38 @@ def current_member_id(db):
     return member['id'] if member else None
 
 
+def parse_member_joined(value):
+    """Return a member join date from common DB/CSV formats, or None."""
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        return value
+    raw = str(value).strip()
+    if not raw:
+        return None
+    raw = raw.replace('Z', '+00:00').split('+')[0]
+    raw = raw.split('.')[0]
+    for fmt in ('%Y-%m-%d', '%Y-%m-%d %H:%M:%S', '%d/%m/%Y', '%m/%d/%Y'):
+        try:
+            return datetime.strptime(raw[:19], fmt)
+        except ValueError:
+            pass
+    try:
+        return datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+
+
+def member_has_minimum_membership(member, min_months=6, as_of=None):
+    """Check loan membership-age eligibility using the stored date_joined."""
+    joined = parse_member_joined(member['date_joined'] if member and 'date_joined' in member.keys() else None)
+    if not joined:
+        return False, None, 0
+    today = as_of or datetime.now()
+    days = max(0, (today - joined).days)
+    return days >= min_months * 30, joined, days
+
+
 def can_access_member(db, member_id: int) -> bool:
     """Staff can access any member; members can access only their own profile."""
     if is_staff_user():

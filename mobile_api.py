@@ -31,6 +31,7 @@ from utils import (
     is_rate_limited,
     lockout_seconds_remaining,
     member_for_user,
+    member_has_minimum_membership,
     member_savings_balance,
     member_share_capital,
     notify,
@@ -962,16 +963,11 @@ def mobile_apply_loan():
         return jsonify({'success': False, 'error': 'You cannot select yourself as guarantor.'}), 400
 
     try:
-        if member['date_joined']:
-            joined_raw = str(member['date_joined'])
-            try:
-                date_joined = datetime.fromisoformat(joined_raw.replace('Z', '+00:00').split('+')[0])
-            except ValueError:
-                date_joined = datetime.strptime(joined_raw, '%Y-%m-%d %H:%M:%S')
-            if (datetime.now() - date_joined).days < 180:
-                return jsonify({'success': False, 'error': 'You must be a member for at least 6 months to apply.'}), 400
-        else:
+        eligible_age, joined_at, _days_as_member = member_has_minimum_membership(member, 6)
+        if not joined_at:
             return jsonify({'success': False, 'error': 'Your join date is missing. Contact admin.'}), 400
+        if not eligible_age:
+            return jsonify({'success': False, 'error': 'You must be a member for at least 6 months to apply.'}), 400
 
         savings_balance = member_savings_balance(db, member['id'])
         if savings_balance < 50000:
