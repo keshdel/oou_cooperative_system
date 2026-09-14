@@ -69,6 +69,40 @@ class HardeningFeatureTests(unittest.TestCase):
             self.assertEqual(row['module'], 'auth')
             self.assertIn('inactivity', row['description'].lower())
 
+    def test_edit_member_join_date_is_saved_validated_and_audited(self):
+        self.login_admin()
+        mid = self.create_member()
+        with self.app.app_context():
+            db = get_db()
+            db.execute('UPDATE members SET date_joined = ? WHERE id = ?',
+                       ('2026-09-01', mid))
+            db.commit()
+        page = self.client.get(f'/members/edit/{mid}')
+        self.assertEqual(page.status_code, 200)
+        self.assertIn(b'name="date_joined"', page.data)
+        base = dict(first_name='Ada', last_name='Audit', phone='08000000001')
+        response = self.client.post(f'/members/edit/{mid}',
+                                    data={**base, 'date_joined': '2020-01-15'})
+        self.assertEqual(response.status_code, 302)
+        with self.app.app_context():
+            from utils import member_has_minimum_membership
+            db = get_db()
+            member = db.execute('SELECT * FROM members WHERE id = ?', (mid,)).fetchone()
+            self.assertEqual(str(member['date_joined'])[:10], '2020-01-15')
+            self.assertTrue(member_has_minimum_membership(member))
+            record = db.execute("SELECT description FROM audit_log WHERE action = 'CHANGE_MEMBER_JOIN_DATE' ORDER BY id DESC").fetchone()
+            self.assertIn('2026-09-01', record['description'])
+            self.assertIn('2020-01-15', record['description'])
+        for bad_date in ('', 'invalid', '2024-02-30', '2999-01-01'):
+            self.client.post(f'/members/edit/{mid}', data={**base, 'date_joined': bad_date})
+            with self.app.app_context():
+                saved = get_db().execute('SELECT date_joined FROM members WHERE id = ?', (mid,)).fetchone()
+                self.assertEqual(str(saved['date_joined'])[:10], '2020-01-15')
+        self.client.post(f'/members/edit/{mid}', data=base)
+        with self.app.app_context():
+            saved = get_db().execute('SELECT date_joined FROM members WHERE id = ?', (mid,)).fetchone()
+            self.assertEqual(str(saved['date_joined'])[:10], '2020-01-15')
+
     def test_authenticated_pages_have_security_headers(self):
         self.login_admin()
         response = self.client.get('/dashboard')

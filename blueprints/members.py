@@ -271,9 +271,25 @@ def add_member():
 @role_required('admin', 'secretary')
 def edit_member(member_id):
     db = get_db()
+    member = db.execute('SELECT * FROM members WHERE id = ?', (member_id,)).fetchone()
+    if not member:
+        flash('Member not found', 'danger')
+        return redirect(url_for('members.members_list'))
 
     if request.method == 'POST':
         try:
+            joined_value = member['date_joined']
+            if 'date_joined' in request.form:
+                joined_raw = request.form.get('date_joined', '').strip()
+                try:
+                    joined_date = datetime.strptime(joined_raw, '%Y-%m-%d')
+                except ValueError:
+                    flash('Enter a valid joining date in YYYY-MM-DD format.', 'danger')
+                    return redirect(url_for('members.edit_member', member_id=member_id))
+                if joined_date.date() > datetime.now().date():
+                    flash('Joining date cannot be in the future.', 'danger')
+                    return redirect(url_for('members.edit_member', member_id=member_id))
+                joined_value = joined_date.strftime('%Y-%m-%d')
             # Only touch the member number when one is actually supplied — a blank
             # field must never wipe the existing number.
             member_number = request.form.get('member_number', '').strip()
@@ -293,7 +309,7 @@ def edit_member(member_id):
                     first_name = ?, last_name = ?, email = ?, phone = ?,
                     address = ?, occupation = ?, date_of_birth = ?,
                     nominee_name = ?, nominee_relationship = ?, monthly_savings = ?,
-                    status = ?
+                    status = ?, date_joined = ?
                 WHERE id = ?
             ''', (
                 request.form['first_name'],
@@ -308,8 +324,15 @@ def edit_member(member_id):
                 request.form.get('nominee_relationship', ''),
                 float(request.form.get('monthly_savings') or 5000),
                 request.form.get('status', 'active'),
+                joined_value,
                 member_id
             ))
+            old_joined = str(member['date_joined'] or '')[:10]
+            new_joined = str(joined_value or '')[:10]
+            if old_joined != new_joined:
+                audit(db, 'CHANGE_MEMBER_JOIN_DATE', 'members',
+                      f'Member ID {member_id}: joining date changed from '
+                      f'{old_joined or "unset"} to {new_joined}')
             db.commit()
 
             if 'photo' in request.files:
@@ -338,7 +361,10 @@ def edit_member(member_id):
     if not member:
         flash('Member not found', 'danger')
         return redirect(url_for('members.members_list'))
-    return render_template('admin/edit-member.html', member=member)
+    joined = parse_member_joined(member['date_joined'])
+    return render_template('admin/edit-member.html', member=member,
+                           joined_date_value=joined.strftime('%Y-%m-%d') if joined else '',
+                           today_date=datetime.now().strftime('%Y-%m-%d'))
 
 
 @members.route('/members/delete/<int:member_id>', methods=['POST'])
