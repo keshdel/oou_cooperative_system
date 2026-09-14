@@ -42,6 +42,72 @@ hq_billing = Blueprint('hq_billing', __name__)
 
 SERVICE_ITEM_TYPES = ('support', 'migration', 'customization', 'training', 'other')
 
+# The one-off onboarding charge. Its own line type, separate from the service
+# fees, because it is the only line affiliate commission is earned on — a
+# commission base must be something the system can point at, not a description
+# that happens to start with "Setup".
+SETUP_ITEM_TYPE = 'setup'
+
+
+# ── Setup fee pricing ────────────────────────────────────────────────────────
+
+def setup_bands(db, active_only=True):
+    """The member-count price ladder, smallest band first."""
+    sql = 'SELECT * FROM hq_setup_bands'
+    if active_only:
+        sql += ' WHERE active = 1'
+    sql += ' ORDER BY min_members, id'
+    return db.execute(sql).fetchall()
+
+
+def band_for_members(db, member_count):
+    """The band covering this member count, or None if the ladder has no rung
+    for it (an open-ended top band is max_members NULL)."""
+    try:
+        count = int(member_count or 0)
+    except (TypeError, ValueError):
+        count = 0
+    for band in setup_bands(db):
+        low = int(band['min_members'] or 0)
+        high = band['max_members']
+        if count >= low and (high is None or count <= int(high)):
+            return band
+    return None
+
+
+def setup_fee_for_client(db, client):
+    """(amount, source) — a fee negotiated for this client wins over the ladder."""
+    negotiated = float(client['setup_fee'] or 0) if 'setup_fee' in client.keys() else 0.0
+    if negotiated > 0:
+        return round(negotiated, 2), 'client'
+    band = band_for_members(db, client['user_count'])
+    if band:
+        return round(float(band['amount'] or 0), 2), 'band'
+    return 0.0, 'unpriced'
+
+
+def _setup_total(db, client_id, statuses):
+    """Setup-fee money on this client's invoices, limited to the given statuses."""
+    marks = ','.join('?' for _ in statuses)
+    row = db.execute(
+        f"SELECT COALESCE(SUM(it.amount), 0) FROM hq_invoice_items it "
+        f"JOIN hq_invoices i ON i.id = it.invoice_id "
+        f"WHERE i.client_id = ? AND it.item_type = ? AND i.status IN ({marks})",
+        [client_id, SETUP_ITEM_TYPE, *statuses]).fetchone()
+    return round(float(row[0] or 0), 2)
+
+
+def setup_charged(db, client_id):
+    """Setup fee billed and not voided — used to stop charging it twice."""
+    return _setup_total(db, client_id, ('draft', 'sent', 'paid'))
+
+
+def setup_paid(db, client_id):
+    """Setup fee actually collected. This is the affiliate commission base:
+    commission follows cash received, so a part-paid setup fee earns only its
+    part and the balance is still there to be chased."""
+    return _setup_total(db, client_id, ('paid',))
+
 
 # ── Gate ────────────────────────────────────────────────────────────────────
 
@@ -259,15 +325,20 @@ def edit_client(client_id):
         rate = float(request.form.get('rate_per_user') or 5000)
     except ValueError:
         rate = 5000.0
+    try:
+        # A fee agreed with this client specifically; 0 falls back to the ladder.
+        setup_fee = max(0.0, float(request.form.get('setup_fee') or 0))
+    except ValueError:
+        setup_fee = 0.0
     db.execute('''UPDATE hq_clients SET name = ?, code = ?, billing_email = ?, phone = ?,
-                    user_count = ?, rate_per_user = ?, billing_cycle = ?, period_start = ?,
-                    period_end = ?, status = ?, notes = ?, updated_at = ?
+                    user_count = ?, rate_per_user = ?, setup_fee = ?, billing_cycle = ?,
+                    period_start = ?, period_end = ?, status = ?, notes = ?, updated_at = ?
                   WHERE id = ?''',
                ((request.form.get('name') or '').strip(),
                 (request.form.get('code') or '').strip(),
                 (request.form.get('billing_email') or '').strip(),
                 (request.form.get('phone') or '').strip(),
-                user_count, rate,
+                user_count, rate, setup_fee,
                 (request.form.get('billing_cycle') or 'annual').strip(),
                 (request.form.get('period_start') or '').strip() or None,
                 (request.form.get('period_end') or '').strip() or None,
@@ -294,6 +365,63 @@ def billing_settings():
     audit(db, 'HQ_BILLING_SETTINGS', 'hq_billing', 'Updated invoice branding')
     db.commit()
     flash('Billing settings saved. The logo comes from Settings → your logo.', 'success')
+    return redirect(url_for('hq_billing.invoices'))
+
+
+@hq_billing.route('/hq/setup-bands', methods=['POST'])
+@hq_admin_required
+def save_setup_bands():
+    """Replace the setup-fee ladder. Bands are entered as parallel arrays; a
+    blank upper bound means "and above", which every ladder needs at the top or
+    the largest cooperatives come out unpriced."""
+    db = get_db()
+    mins = request.form.getlist('band_min')
+    maxes = request.form.getlist('band_max')
+    amounts = request.form.getlist('band_amount')
+    labels = request.form.getlist('band_label')
+
+    rows = []
+    for i, raw_min in enumerate(mins):
+        try:
+            amount = float(amounts[i]) if i < len(amounts) and amounts[i] != '' else 0.0
+        except (TypeError, ValueError):
+            continue
+        if amount <= 0:
+            continue                      # a blank row is how you delete a band
+        try:
+            low = max(0, int(raw_min or 0))
+        except (TypeError, ValueError):
+            low = 0
+        high = None
+        raw_max = maxes[i] if i < len(maxes) else ''
+        if str(raw_max).strip():
+            try:
+                high = int(raw_max)
+            except (TypeError, ValueError):
+                high = None
+        if high is not None and high < low:
+            flash(f'Band starting at {low} members ends below where it starts — not saved.', 'danger')
+            return redirect(url_for('hq_billing.invoices'))
+        rows.append((low, high, round(amount, 2),
+                     (labels[i].strip() if i < len(labels) else '') or None))
+
+    rows.sort(key=lambda r: r[0])
+    # Overlapping bands would make the price depend on row order, so refuse them.
+    for prev, nxt in zip(rows, rows[1:]):
+        prev_high = prev[1]
+        if prev_high is None or nxt[0] <= prev_high:
+            flash('Bands overlap or an open-ended band is not last. Give every band except '
+                  'the largest an upper bound, and do not let them overlap.', 'danger')
+            return redirect(url_for('hq_billing.invoices'))
+
+    db.execute('DELETE FROM hq_setup_bands')
+    for low, high, amount, label in rows:
+        db.execute('INSERT INTO hq_setup_bands (min_members, max_members, amount, label) '
+                   'VALUES (?, ?, ?, ?)', (low, high, amount, label))
+    audit(db, 'HQ_SETUP_BANDS', 'hq_billing', f'Setup fee ladder saved ({len(rows)} band(s))')
+    db.commit()
+    flash(f'Setup fee ladder saved — {len(rows)} band(s).' if rows
+          else 'Setup fee ladder cleared.', 'success')
     return redirect(url_for('hq_billing.invoices'))
 
 
@@ -416,15 +544,25 @@ def invoices():
         FROM hq_invoices
     ''').fetchone()
     clients_ = db.execute("SELECT * FROM hq_clients WHERE status = 'active' ORDER BY name").fetchall()
+    # Suggested setup fee per client, plus what each has already been charged and
+    # paid, so the invoice form can prefill and warn without another round trip.
+    setup_info = {}
+    for c in clients_:
+        amount, source = setup_fee_for_client(db, c)
+        setup_info[c['id']] = {'suggested': amount, 'source': source,
+                               'charged': setup_charged(db, c['id']),
+                               'paid': setup_paid(db, c['id'])}
     return render_template('hq/invoices.html', invoices=rows, totals=totals,
                            clients=clients_, active_status=status, brand=_billing_brand(db),
-                           default_due=(date.today() + timedelta(days=14)).isoformat())
+                           default_due=(date.today() + timedelta(days=14)).isoformat(),
+                           setup_bands=setup_bands(db, active_only=False), setup_info=setup_info)
 
 
 def _create_invoice(db, client, period_label, due_date, notes,
-                    sub_mode, sub_qty, sub_unit, service_lines):
+                    sub_mode, sub_qty, sub_unit, service_lines, setup_amount=0.0):
     """Build one invoice + its line items. Returns (invoice_id, total).
-    sub_mode: 'none' | 'full' | 'topup'. service_lines: list of (type, desc, amount)."""
+    sub_mode: 'none' | 'full' | 'topup'. service_lines: list of (type, desc, amount).
+    setup_amount: the one-off onboarding charge, 0 for none."""
     invoice_number = _next_invoice_number(db)
     token = secrets.token_urlsafe(16)
     db.execute('''INSERT INTO hq_invoices
@@ -449,6 +587,15 @@ def _create_invoice(db, client, period_label, due_date, notes,
         db.execute('UPDATE hq_clients SET billed_user_count = ?, updated_at = ? WHERE id = ?',
                    (client['billed_user_count'] + sub_qty if sub_mode == 'topup' else sub_qty,
                     datetime.now(), client['id']))
+
+    if setup_amount and setup_amount > 0:
+        count = int(client['user_count'] or 0)
+        db.execute('''INSERT INTO hq_invoice_items
+                        (invoice_id, item_type, description, quantity, unit_price, amount)
+                      VALUES (?, ?, ?, 1, ?, ?)''',
+                   (invoice_id, SETUP_ITEM_TYPE,
+                    f"One-off setup and onboarding — {count} member(s)",
+                    setup_amount, setup_amount))
 
     for (itype, desc, amount) in service_lines:
         db.execute('''INSERT INTO hq_invoice_items
@@ -509,12 +656,29 @@ def new_invoice():
         itype = itype if itype in SERVICE_ITEM_TYPES else 'other'
         service_lines.append((itype, desc.strip(), round(amt, 2)))
 
-    if sub_qty <= 0 and not service_lines:
-        flash('Nothing to invoice — add a subscription/top-up or at least one service fee.', 'warning')
+    # One-off setup fee. Charging it twice is almost always a mistake, so an
+    # existing unvoided charge blocks a second one unless it is deliberate —
+    # a deposit-then-balance split is the legitimate case.
+    try:
+        setup_amount = round(max(0.0, float(request.form.get('setup_amount') or 0)), 2)
+    except ValueError:
+        setup_amount = 0.0
+    if setup_amount > 0:
+        already = setup_charged(db, client['id'])
+        if already > 0 and not request.form.get('setup_again'):
+            flash(f"{client['name']} has already been charged NGN {_money(already)} in setup fees. "
+                  f"Tick “charge setup again” if this is a further instalment of an agreed fee.",
+                  'warning')
+            return redirect(url_for('hq_billing.invoices'))
+
+    if sub_qty <= 0 and not service_lines and setup_amount <= 0:
+        flash('Nothing to invoice — add a subscription/top-up, a setup fee, or a service fee.',
+              'warning')
         return redirect(url_for('hq_billing.invoices'))
 
     invoice_id, total = _create_invoice(db, client, period_label, due_date, notes,
-                                        sub_mode, sub_qty, sub_unit, service_lines)
+                                        sub_mode, sub_qty, sub_unit, service_lines,
+                                        setup_amount=setup_amount)
     audit(db, 'HQ_INVOICE_CREATE', 'hq_billing',
           f"Invoice for {client['name']}: NGN {_money(total)}")
     db.commit()

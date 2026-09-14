@@ -10,6 +10,7 @@
         </div>
         <div class="col-md-5 text-end">
             <button class="btn btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#brandForm" title="Invoice branding"><i class="fas fa-gear"></i></button>
+            <button class="btn btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#bandForm" title="Setup fee by cooperative size"><i class="fas fa-ruler"></i> Setup fees</button>
             <a href="{{ url_for('hq_billing.clients') }}" class="btn btn-outline-secondary"><i class="fas fa-building"></i> Clients</a>
             <button class="btn btn-outline-primary" data-bs-toggle="collapse" data-bs-target="#bulkForm"><i class="fas fa-layer-group"></i> Invoice all</button>
             <button class="btn btn-primary" data-bs-toggle="collapse" data-bs-target="#newForm"><i class="fas fa-plus"></i> New invoice</button>
@@ -43,6 +44,35 @@
         </form>
     </div></div></div>
 
+    <!-- Setup fee ladder -->
+    <div class="collapse mb-3" id="bandForm"><div class="card"><div class="card-body">
+        <h6 class="mb-1">Setup fee by cooperative size</h6>
+        <p class="text-muted small">The one-off onboarding charge, standardised by member count.
+            Leave the last band's upper bound blank to mean “and above”. Clear a band's amount to
+            delete it. A client can still be given a negotiated fee of their own, which wins over
+            this ladder.</p>
+        <form method="post" action="{{ url_for('hq_billing.save_setup_bands') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div id="bandRows">
+                {% for b in setup_bands %}
+                <div class="row g-2 mb-2 align-items-end">
+                    <div class="col-md-2"><label class="form-label small mb-1">From (members)</label>
+                        <input class="form-control form-control-sm" type="number" min="0" name="band_min" value="{{ b.min_members }}"></div>
+                    <div class="col-md-2"><label class="form-label small mb-1">To (blank = above)</label>
+                        <input class="form-control form-control-sm" type="number" min="0" name="band_max" value="{{ b.max_members if b.max_members is not none }}"></div>
+                    <div class="col-md-3"><label class="form-label small mb-1">Setup fee (₦)</label>
+                        <input class="form-control form-control-sm" type="number" step="0.01" min="0" name="band_amount" value="{{ b.amount }}"></div>
+                    <div class="col-md-5"><label class="form-label small mb-1">Label (optional)</label>
+                        <input class="form-control form-control-sm" name="band_label" value="{{ b.label or '' }}"></div>
+                </div>
+                {% endfor %}
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-secondary" onclick="addBandRow()">
+                <i class="fas fa-plus"></i> Add band</button>
+            <button class="btn btn-sm btn-primary">Save ladder</button>
+        </form>
+    </div></div></div>
+
     <!-- Bulk subscription -->
     <div class="collapse mb-3" id="bulkForm"><div class="card border-primary"><div class="card-body">
         <form method="post" action="{{ url_for('hq_billing.bulk_subscription') }}" class="row g-2 align-items-end"
@@ -64,7 +94,10 @@
                 <select class="form-select" name="client_id" required>
                     <option value="">Choose…</option>
                     {% for c in clients %}
-                    <option value="{{ c.id }}" data-users="{{ c.user_count }}" data-billed="{{ c.billed_user_count }}" data-rate="{{ c.rate_per_user }}">
+                    <option value="{{ c.id }}" data-users="{{ c.user_count }}" data-billed="{{ c.billed_user_count }}" data-rate="{{ c.rate_per_user }}"
+                            data-setup="{{ setup_info[c.id].suggested }}"
+                            data-setup-source="{{ setup_info[c.id].source }}"
+                            data-setup-charged="{{ setup_info[c.id].charged }}">
                         {{ c.name }} ({{ c.user_count }} users, {{ c.user_count - c.billed_user_count }} unbilled)
                     </option>
                     {% endfor %}
@@ -85,6 +118,22 @@
                 <input class="form-control" type="number" min="0" name="sub_qty" id="subQty"></div>
             <div class="col-md-4"><label class="form-label">Rate / member (₦)</label>
                 <input class="form-control" type="number" step="0.01" name="sub_unit" id="subUnit"></div>
+
+            <div class="col-12"><hr class="my-1"><strong>Setup fee</strong>
+                <span class="text-muted small">— one-off, priced by member count. This is the only
+                    line affiliate commission is earned on.</span></div>
+            <div class="col-md-4"><label class="form-label">Amount (₦)</label>
+                <input class="form-control" type="number" step="0.01" min="0"
+                       name="setup_amount" id="setupAmount" placeholder="0.00"></div>
+            <div class="col-md-8 d-flex align-items-end">
+                <div class="small" id="setupHint"><span class="text-muted">Choose a client to see the
+                    suggested fee for their size.</span></div></div>
+            <div class="col-12" id="setupAgainWrap" style="display:none">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="setup_again" id="setupAgain" value="1">
+                    <label class="form-check-label small" for="setupAgain">
+                        Charge setup again — this is a further instalment of an agreed fee</label>
+                </div></div>
 
             <div class="col-12 d-flex justify-content-between align-items-center">
                 <strong>Service fees</strong>
@@ -158,5 +207,54 @@ function syncSub() {
 }
 sel && sel.addEventListener('change', syncSub);
 mode && mode.addEventListener('change', syncSub);
+
+function addBandRow() {
+    const wrap = document.getElementById('bandRows');
+    const row = document.createElement('div');
+    row.className = 'row g-2 mb-2 align-items-end';
+    row.innerHTML =
+      '<div class="col-md-2"><label class="form-label small mb-1">From (members)</label>' +
+        '<input class="form-control form-control-sm" type="number" min="0" name="band_min" value="0"></div>' +
+      '<div class="col-md-2"><label class="form-label small mb-1">To (blank = above)</label>' +
+        '<input class="form-control form-control-sm" type="number" min="0" name="band_max"></div>' +
+      '<div class="col-md-3"><label class="form-label small mb-1">Setup fee (₦)</label>' +
+        '<input class="form-control form-control-sm" type="number" step="0.01" min="0" name="band_amount"></div>' +
+      '<div class="col-md-4"><label class="form-label small mb-1">Label (optional)</label>' +
+        '<input class="form-control form-control-sm" name="band_label"></div>' +
+      '<div class="col-md-1"><button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest(\'.row\').remove()">&times;</button></div>';
+    wrap.appendChild(row);
+}
+
+// Suggest the setup fee for the chosen client, and say plainly when one has
+// already been charged — double-charging setup is the easy mistake here.
+function syncSetup() {
+    const o = sel.options[sel.selectedIndex];
+    const amountEl = document.getElementById('setupAmount');
+    const hint = document.getElementById('setupHint');
+    const againWrap = document.getElementById('setupAgainWrap');
+    if (!o || !o.value) { hint.innerHTML = '<span class="text-muted">Choose a client to see the suggested fee for their size.</span>'; return; }
+    const suggested = +o.dataset.setup || 0;
+    const source = o.dataset.setupSource;
+    const charged = +o.dataset.setupCharged || 0;
+    const money = n => '₦' + n.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+    let msg;
+    if (source === 'unpriced') {
+        msg = '<span class="text-danger">No setup band covers ' + (o.dataset.users || 0) +
+              ' members — set a ladder under “Setup fees”, or type an amount.</span>';
+    } else {
+        msg = 'Suggested ' + money(suggested) +
+              (source === 'client' ? ' <span class="text-muted">(negotiated for this client)</span>'
+                                   : ' <span class="text-muted">(band for ' + (o.dataset.users||0) + ' members)</span>');
+    }
+    if (charged > 0) {
+        msg += '<div class="text-warning mt-1">Already charged ' + money(charged) + ' in setup fees.</div>';
+    }
+    hint.innerHTML = msg;
+    againWrap.style.display = charged > 0 ? '' : 'none';
+    // Only prefill an untouched box, and never for a client already charged.
+    if (!amountEl.value && charged === 0 && suggested > 0) amountEl.value = suggested.toFixed(2);
+}
+sel && sel.addEventListener('change', syncSetup);
 </script>
 {% endblock %}

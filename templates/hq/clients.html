@@ -118,6 +118,10 @@
                             <input class="form-control form-control-sm" type="number" min="0" name="user_count" value="{{ c.user_count }}"></div>
                         <div class="col-md-2"><label class="form-label small">Rate / user</label>
                             <input class="form-control form-control-sm" type="number" step="0.01" name="rate_per_user" value="{{ c.rate_per_user }}"></div>
+                        <div class="col-md-2"><label class="form-label small">Setup fee</label>
+                            <input class="form-control form-control-sm" type="number" step="0.01" min="0"
+                                   name="setup_fee" value="{{ c.setup_fee or 0 }}"
+                                   title="A fee agreed with this client. Leave 0 to use the ladder for their size."></div>
                         <div class="col-md-2"><label class="form-label small">Cycle</label>
                             <select class="form-select form-select-sm" name="billing_cycle">
                                 <option value="annual" {{ 'selected' if c.billing_cycle == 'annual' }}>Annual</option>

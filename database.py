@@ -1002,6 +1002,25 @@ def init_db():
     '''))
     _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_hq_invoice_items_invoice ON hq_invoice_items(invoice_id)')
 
+    # One-off setup fee, priced by how many members the cooperative has. Kept as
+    # its own line type (not a service fee) because it is the only line the
+    # affiliate commission is calculated on, so it has to be identifiable
+    # without reading a description string.
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS hq_setup_bands (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            min_members INTEGER NOT NULL DEFAULT 0,
+            max_members INTEGER,
+            amount REAL NOT NULL DEFAULT 0,
+            label TEXT,
+            active INTEGER DEFAULT 1,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    '''))
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_hq_setup_bands_min ON hq_setup_bands(min_members)')
+    # A negotiated fee for one client; 0/NULL means use the band for their size.
+    _add_col(db, 'hq_clients', 'setup_fee', 'REAL DEFAULT 0')
+
     # ── CTAS: Cooperative Target Advance Scheme (ajo/esusu with balloted payout
     # order + payroll recovery). Reuses members + the double-entry GL. ──
     db.execute(_adapt('''

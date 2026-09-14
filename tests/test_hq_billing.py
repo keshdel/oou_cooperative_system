@@ -43,6 +43,131 @@ class HqBillingTests(unittest.TestCase):
         with self.app.app_context():
             return get_db().execute('SELECT id FROM hq_clients WHERE name = ?', (name,)).fetchone()['id']
 
+    def _set_bands(self, *bands):
+        """bands: (min, max_or_blank, amount) tuples."""
+        return self.client.post('/hq/setup-bands', data={
+            'band_min': [str(b[0]) for b in bands],
+            'band_max': ['' if b[1] is None else str(b[1]) for b in bands],
+            'band_amount': [str(b[2]) for b in bands],
+            'band_label': ['' for _ in bands],
+        }, follow_redirects=True)
+
+    def test_setup_fee_is_priced_by_member_count_band(self):
+        from blueprints.hq_billing import band_for_members, setup_fee_for_client
+        self.login_admin()
+        self._set_bands((0, 200, 150000), (201, 500, 300000), (501, None, 500000))
+        cid = self._add_client('Bands', 350, 5000)
+        with self.app.app_context():
+            db = get_db()
+            self.assertAlmostEqual(float(band_for_members(db, 10)['amount']), 150000.0, places=2)
+            self.assertAlmostEqual(float(band_for_members(db, 200)['amount']), 150000.0, places=2)
+            self.assertAlmostEqual(float(band_for_members(db, 201)['amount']), 300000.0, places=2)
+            # The open-ended top band covers any size above its floor.
+            self.assertAlmostEqual(float(band_for_members(db, 99999)['amount']), 500000.0, places=2)
+            client = db.execute('SELECT * FROM hq_clients WHERE id = ?', (cid,)).fetchone()
+            amount, source = setup_fee_for_client(db, client)
+            self.assertAlmostEqual(amount, 300000.0, places=2)     # 350 members
+            self.assertEqual(source, 'band')
+
+    def test_a_negotiated_client_fee_beats_the_band(self):
+        from blueprints.hq_billing import setup_fee_for_client
+        self.login_admin()
+        self._set_bands((0, 500, 300000))
+        cid = self._add_client('Negotiated', 100, 5000)
+        self.client.post(f'/hq/clients/{cid}/edit', data={
+            'name': 'Negotiated', 'user_count': '100', 'rate_per_user': '5000',
+            'setup_fee': '180000', 'billing_cycle': 'annual', 'status': 'active'})
+        with self.app.app_context():
+            db = get_db()
+            client = db.execute('SELECT * FROM hq_clients WHERE id = ?', (cid,)).fetchone()
+            amount, source = setup_fee_for_client(db, client)
+            self.assertAlmostEqual(amount, 180000.0, places=2)
+            self.assertEqual(source, 'client')
+
+    def test_overlapping_or_unbounded_middle_bands_are_refused(self):
+        """A ladder that would make the price depend on row order is rejected,
+        and the existing ladder is left exactly as it was."""
+        self.login_admin()
+        self._set_bands((0, 100, 90000))          # a known-good starting ladder
+
+        def ladder():
+            with self.app.app_context():
+                return [(r['min_members'], r['max_members'], float(r['amount']))
+                        for r in get_db().execute(
+                            'SELECT * FROM hq_setup_bands ORDER BY min_members').fetchall()]
+
+        before = ladder()
+        self.assertEqual(before, [(0, 100, 90000.0)])
+
+        self._set_bands((0, 200, 150000), (100, 300, 200000))   # both cover 150 members
+        self.assertEqual(ladder(), before, 'overlapping bands must not be saved')
+
+        self._set_bands((0, None, 150000), (201, 500, 300000))  # open-ended band not last
+        self.assertEqual(ladder(), before, 'an open-ended band must be the largest')
+
+    def test_setup_fee_invoices_as_its_own_line_and_is_the_commission_base(self):
+        from blueprints.hq_billing import setup_charged, setup_paid
+        self.login_admin()
+        self._set_bands((0, 500, 300000))
+        cid = self._add_client('Setup', 120, 5000)
+        self.client.post('/hq/invoices/new', data={
+            'client_id': cid, 'period_label': '2026', 'sub_mode': 'none',
+            'setup_amount': '300000'}, follow_redirects=True)
+        with self.app.app_context():
+            db = get_db()
+            inv = db.execute('SELECT * FROM hq_invoices WHERE client_id = ? ORDER BY id DESC',
+                             (cid,)).fetchone()
+            item = db.execute("SELECT * FROM hq_invoice_items WHERE invoice_id = ? "
+                              "AND item_type = 'setup'", (inv['id'],)).fetchone()
+            self.assertIsNotNone(item, 'setup fee must be its own line type, not a service fee')
+            self.assertAlmostEqual(float(item['amount']), 300000.0, places=2)
+            self.assertAlmostEqual(setup_charged(db, cid), 300000.0, places=2)
+            # Billed but not yet collected earns no commission.
+            self.assertAlmostEqual(setup_paid(db, cid), 0.0, places=2)
+        self.client.post(f'/hq/invoices/{inv["id"]}/mark-paid',
+                         data={'paid_method': 'transfer'}, follow_redirects=True)
+        with self.app.app_context():
+            self.assertAlmostEqual(setup_paid(get_db(), cid), 300000.0, places=2)
+
+    def test_setup_fee_is_not_charged_twice_by_accident(self):
+        from blueprints.hq_billing import setup_charged
+        self.login_admin()
+        cid = self._add_client('Once', 100, 5000)
+        self.client.post('/hq/invoices/new', data={
+            'client_id': cid, 'sub_mode': 'none', 'setup_amount': '150000'}, follow_redirects=True)
+        # A second attempt is refused unless it is a deliberate instalment.
+        self.client.post('/hq/invoices/new', data={
+            'client_id': cid, 'sub_mode': 'none', 'setup_amount': '150000'}, follow_redirects=True)
+        with self.app.app_context():
+            self.assertAlmostEqual(setup_charged(get_db(), cid), 150000.0, places=2)
+        # Deposit-then-balance is legitimate, so the override goes through.
+        self.client.post('/hq/invoices/new', data={
+            'client_id': cid, 'sub_mode': 'none', 'setup_amount': '150000',
+            'setup_again': '1'}, follow_redirects=True)
+        with self.app.app_context():
+            self.assertAlmostEqual(setup_charged(get_db(), cid), 300000.0, places=2)
+
+    def test_part_paid_setup_earns_only_what_was_collected(self):
+        """Commission follows cash: a paid deposit counts, the unpaid balance
+        stays a receivable for the affiliate to chase."""
+        from blueprints.hq_billing import setup_paid
+        self.login_admin()
+        cid = self._add_client('Instalments', 100, 5000)
+        self.client.post('/hq/invoices/new', data={
+            'client_id': cid, 'sub_mode': 'none', 'setup_amount': '100000'}, follow_redirects=True)
+        self.client.post('/hq/invoices/new', data={
+            'client_id': cid, 'sub_mode': 'none', 'setup_amount': '200000',
+            'setup_again': '1'}, follow_redirects=True)
+        with self.app.app_context():
+            db = get_db()
+            first = db.execute('SELECT id FROM hq_invoices WHERE client_id = ? ORDER BY id',
+                               (cid,)).fetchone()['id']
+        self.client.post(f'/hq/invoices/{first}/mark-paid',
+                         data={'paid_method': 'transfer'}, follow_redirects=True)
+        with self.app.app_context():
+            # 100,000 collected of 300,000 billed -> 20% pool on 100,000 only.
+            self.assertAlmostEqual(setup_paid(get_db(), cid), 100000.0, places=2)
+
     def test_billing_is_404_off_the_hq_instance(self):
         os.environ.pop('MARKETING_HQ', None)
         self.login_admin()
