@@ -673,6 +673,13 @@ def capture_lead():
         'score_reason', 'created_at', 'updated_at'
     ]))
     lead_id = last_insert_id(db)
+    # Referral attribution: either the code typed on the form, or a ?ref= the
+    # landing page carried through. Recorded even when it resolves to nobody so
+    # a mistyped code can be corrected rather than lost.
+    from blueprints.affiliates import attach_code_to_lead
+    referral_code = _clean(payload.get('affiliate_code') or payload.get('ref'), 40)
+    if referral_code:
+        attach_code_to_lead(db, lead_id, referral_code)
     db.execute('''
         INSERT INTO marketing_lead_events
             (lead_id, event_type, description, data)

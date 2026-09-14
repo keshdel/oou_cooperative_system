@@ -123,6 +123,7 @@ from blueprints.security     import security_bp
 from blueprints.feedback     import feedback_bp
 from blueprints.marketing    import marketing
 from blueprints.hq_billing   import hq_billing
+from blueprints.affiliates  import affiliates_bp
 from blueprints.ctas         import ctas as ctas_bp
 from blueprints.virtual_accounts_bp import virtual_accounts_bp
 from blueprints.member_receipts import member_receipts
@@ -149,6 +150,7 @@ app.register_blueprint(security_bp)
 app.register_blueprint(feedback_bp)
 app.register_blueprint(marketing)
 app.register_blueprint(hq_billing)
+app.register_blueprint(affiliates_bp)
 app.register_blueprint(ctas_bp)
 app.register_blueprint(virtual_accounts_bp)
 app.register_blueprint(member_receipts)

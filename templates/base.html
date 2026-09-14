@@ -248,6 +248,10 @@
                        class="{% if request.blueprint == 'hq_billing' %}active{% endif %}">
                         <i class="fas fa-file-invoice-dollar"></i> Billing
                     </a>
+                    <a href="{{ url_for('affiliates.register') }}"
+                       class="{% if request.blueprint == 'affiliates' %}active{% endif %}">
+                        <i class="fas fa-user-tie"></i> Affiliates
+                    </a>
                     {% endif %}
                     <a href="{{ url_for('security.index') }}"
                        class="{% if request.blueprint == 'security' %}active{% endif %}">

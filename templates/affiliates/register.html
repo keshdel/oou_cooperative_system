@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% block title %}Affiliates - {{ coop_name }}{% endblock %}
+{% block content %}
+<style>.perm-table thead th { background-color:#e9eef5; color:#1f2937; }</style>
+<div class="container-fluid">
+    <div class="row mb-3">
+        <div class="col-md-7">
+            <h2><i class="fas fa-user-tie"></i> Affiliates</h2>
+            <p class="text-muted mb-0">The partner channel that introduces cooperatives.
+                Approving issues a code and sends the appointment letter; an affiliate joins the
+                programme only when they accept its terms.</p>
+        </div>
+        <div class="col-md-5 text-end">
+            <a href="{{ url_for('affiliates.attribution') }}" class="btn btn-outline-primary">
+                <i class="fas fa-chart-line"></i> Attribution</a>
+            <a href="{{ url_for('affiliates.apply') }}" class="btn btn-outline-secondary" target="_blank">
+                <i class="fas fa-external-link-alt"></i> Application form</a>
+        </div>
+    </div>
+
+    <div class="mb-3">
+        {% for s in ['', 'applied', 'approved', 'active', 'suspended', 'declined'] %}
+        <a href="{{ url_for('affiliates.register', status=s) }}"
+           class="btn btn-sm {{ 'btn-primary' if active_status == s else 'btn-outline-secondary' }}">
+            {{ s|title if s else 'All' }}
+            {% if s and counts.get(s) %}<span class="badge bg-light text-dark">{{ counts[s] }}</span>{% endif %}
+        </a>
+        {% endfor %}
+    </div>
+
+    <div class="card"><div class="table-responsive">
+        <table class="table perm-table align-middle mb-0">
+            <thead><tr>
+                <th>Affiliate</th><th>Code</th><th>Tier</th><th>Team lead</th>
+                <th>Introduced by</th><th class="text-end">Recruits</th><th>Status</th><th></th>
+            </tr></thead>
+            <tbody>
+            {% for a in affiliates %}
+            <tr>
+                <td><strong>{{ a.full_name }}</strong>
+                    <div class="small text-muted">{{ a.email }}{% if a.phone %} · {{ a.phone }}{% endif %}</div></td>
+                <td class="font-monospace">{{ a.code or '—' }}</td>
+                <td>{% if a.tier == 'lead' %}<span class="badge bg-dark">Team lead</span>
+                    {% else %}<span class="badge bg-light text-dark">Member</span>{% endif %}</td>
+                <td>{{ a.lead_name or '—' }}</td>
+                <td>{{ a.recruiter_name or '—' }}</td>
+                <td class="text-end">{{ recruits.get(a.id, 0) }}
+                    {% if a.id in promotable %}
+                    <span class="badge bg-success" title="Has introduced {{ threshold }}+ affiliates">ready</span>
+                    {% endif %}</td>
+                <td>
+                    <span class="badge bg-{{ {'active':'success','approved':'info','applied':'secondary',
+                                              'declined':'dark','suspended':'warning'}.get(a.status,'secondary') }}">
+                        {{ a.status|title }}</span>
+                    {% if a.status == 'approved' %}<div class="small text-muted">awaiting acceptance</div>{% endif %}
+                </td>
+                <td class="text-end">
+                    <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse"
+                            data-bs-target="#act{{ a.id }}">Manage</button>
+                </td>
+            </tr>
+            <tr class="collapse" id="act{{ a.id }}"><td colspan="8" class="bg-light">
+                <div class="row g-3">
+                    {% if a.status in ('applied', 'declined') %}
+                    <div class="col-md-6">
+                        <form method="post" action="{{ url_for('affiliates.review', aff_id=a.id) }}" class="row g-2 align-items-end">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="action" value="approve">
+                            <div class="col-md-4"><label class="form-label small mb-1">Appoint as</label>
+                                <select class="form-select form-select-sm" name="tier">
+                                    <option value="member">Team member</option>
+                                    <option value="lead">Team lead</option>
+                                </select></div>
+                            <div class="col-md-5"><label class="form-label small mb-1">Under team lead</label>
+                                <select class="form-select form-select-sm" name="parent_id">
+                                    <option value="">— none —</option>
+                                    {% for l in leads %}
+                                    <option value="{{ l.id }}" {{ 'selected' if a.parent_id == l.id }}>{{ l.full_name }}</option>
+                                    {% endfor %}
+                                </select></div>
+                            <div class="col-md-3">
+                                <button class="btn btn-sm btn-success w-100">Approve &amp; send letter</button></div>
+                        </form>
+                    </div>
+                    <div class="col-md-6">
+                        <form method="post" action="{{ url_for('affiliates.review', aff_id=a.id) }}" class="row g-2 align-items-end">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="action" value="decline">
+                            <div class="col-md-8"><label class="form-label small mb-1">Reason (recorded)</label>
+                                <input class="form-control form-control-sm" name="reason"></div>
+                            <div class="col-md-4"><button class="btn btn-sm btn-outline-danger w-100">Decline</button></div>
+                        </form>
+                    </div>
+                    {% endif %}
+
+                    {% if a.status == 'approved' %}
+                    <div class="col-12">
+                        <div class="small text-muted mb-1">Acceptance link — send again, or pass it on
+                            directly if email is not reaching them:</div>
+                        <code class="small">{{ base_url }}{{ url_for('affiliates.accept_appointment', token=a.accept_token) }}</code>
+                        <form method="post" action="{{ url_for('affiliates.resend_appointment', aff_id=a.id) }}" class="d-inline ms-2">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button class="btn btn-sm btn-outline-secondary">Re-send letter</button>
+                        </form>
+                    </div>
+                    {% endif %}
+
+                    {% if a.status in ('active', 'suspended') %}
+                    <div class="col-md-5">
+                        <form method="post" action="{{ url_for('affiliates.set_team', aff_id=a.id) }}" class="row g-2 align-items-end">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="action" value="move">
+                            <div class="col-8"><label class="form-label small mb-1">Team lead</label>
+                                <select class="form-select form-select-sm" name="parent_id">
+                                    <option value="">— none —</option>
+                                    {% for l in leads %}{% if l.id != a.id %}
+                                    <option value="{{ l.id }}" {{ 'selected' if a.parent_id == l.id }}>{{ l.full_name }}</option>
+                                    {% endif %}{% endfor %}
+                                </select></div>
+                            <div class="col-4"><button class="btn btn-sm btn-outline-primary w-100">Move</button></div>
+                        </form>
+                    </div>
+                    {% if a.tier == 'member' %}
+                    <div class="col-md-4">
+                        <form method="post" action="{{ url_for('affiliates.set_team', aff_id=a.id) }}"
+                              onsubmit="return confirm('Promote {{ a.full_name }} to team lead? They leave their current lead and the {{ recruits.get(a.id, 0) }} affiliate(s) they introduced move into their team.');">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="action" value="promote">
+                            <label class="form-label small mb-1 d-block">Promotion
+                                <span class="text-muted">({{ recruits.get(a.id, 0) }}/{{ threshold }} recruits)</span></label>
+                            <button class="btn btn-sm {{ 'btn-success' if a.id in promotable else 'btn-outline-secondary' }}">
+                                Promote to team lead</button>
+                            {% if a.id not in promotable %}
+                            <div class="form-check small mt-1">
+                                <input class="form-check-input" type="checkbox" name="force" value="1" id="f{{ a.id }}">
+                                <label class="form-check-label" for="f{{ a.id }}">Override threshold</label>
+                            </div>
+                            {% endif %}
+                        </form>
+                    </div>
+                    {% endif %}
+                    <div class="col-md-3">
+                        <form method="post" action="{{ url_for('affiliates.set_team', aff_id=a.id) }}">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="action" value="{{ 'restore' if a.status == 'suspended' else 'suspend' }}">
+                            <label class="form-label small mb-1 d-block">Standing</label>
+                            <button class="btn btn-sm {{ 'btn-outline-success' if a.status == 'suspended' else 'btn-outline-warning' }}">
+                                {{ 'Restore' if a.status == 'suspended' else 'Suspend' }}</button>
+                        </form>
+                    </div>
+                    {% endif %}
+
+                    {% if a.notes %}
+                    <div class="col-12"><div class="small text-muted">{{ a.notes }}</div></div>
+                    {% endif %}
+                    {% if a.declined_reason %}
+                    <div class="col-12"><div class="small text-danger">Declined: {{ a.declined_reason }}</div></div>
+                    {% endif %}
+                </div>
+            </td></tr>
+            {% else %}
+            <tr><td colspan="8" class="text-center text-muted py-4">
+                No affiliates yet. Share the application form to start recruiting.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div></div>
+</div>
+{% endblock %}

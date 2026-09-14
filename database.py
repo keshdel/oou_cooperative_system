@@ -1021,6 +1021,51 @@ def init_db():
     # A negotiated fee for one client; 0/NULL means use the band for their size.
     _add_col(db, 'hq_clients', 'setup_fee', 'REAL DEFAULT 0')
 
+    # ── Affiliate channel ─────────────────────────────────────────────────────
+    # Two tiers: a team member closes cooperatives, a team lead recruits and
+    # supports members. `parent_id` is the lead a member currently sits under
+    # and moves when they are promoted; `recruited_by` records who actually
+    # introduced them and never changes, which is what the promotion threshold
+    # is counted on.
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS affiliates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT UNIQUE,
+            full_name TEXT NOT NULL,
+            email TEXT NOT NULL,
+            phone TEXT,
+            tier TEXT DEFAULT 'member',
+            parent_id INTEGER,
+            recruited_by INTEGER,
+            status TEXT DEFAULT 'applied',
+            bank_name TEXT,
+            account_number TEXT,
+            account_name TEXT,
+            notes TEXT,
+            applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            reviewed_at TIMESTAMP,
+            reviewed_by INTEGER,
+            approved_at TIMESTAMP,
+            accept_token TEXT,
+            accepted_at TIMESTAMP,
+            accepted_ip TEXT,
+            declined_reason TEXT,
+            promoted_at TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (parent_id) REFERENCES affiliates (id),
+            FOREIGN KEY (recruited_by) REFERENCES affiliates (id)
+        )
+    '''))
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_affiliates_status ON affiliates(status)')
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_affiliates_parent ON affiliates(parent_id)')
+    _exec_ignore(db, "CREATE UNIQUE INDEX IF NOT EXISTS uq_affiliates_email ON affiliates(email) WHERE email IS NOT NULL AND email != ''")
+
+    # Attribution is snapshotted on the client when it is linked, so later edits
+    # to the lead cannot silently move a commission.
+    _add_col(db, 'hq_clients', 'lead_id', 'INTEGER')
+    _add_col(db, 'hq_clients', 'affiliate_id', 'INTEGER')
+    _add_col(db, 'hq_clients', 'attributed_at', 'TIMESTAMP')
+
     # ── CTAS: Cooperative Target Advance Scheme (ajo/esusu with balloted payout
     # order + payroll recovery). Reuses members + the double-entry GL. ──
     db.execute(_adapt('''
@@ -1430,6 +1475,14 @@ def init_db():
         )
     '''))
     _add_col(db, 'marketing_leads', 'lead_score', 'INTEGER DEFAULT 0')
+    # Who introduced a lead. The code is kept exactly as it arrived as well as
+    # the affiliate it resolved to, so a mistyped or unknown code can be seen
+    # and fixed rather than silently dropped.
+    _add_col(db, 'marketing_leads', 'affiliate_code', 'TEXT')
+    _add_col(db, 'marketing_leads', 'affiliate_id', 'INTEGER')
+    # The billing client this lead became — the missing link between the CRM and
+    # billing, and what ties "who introduced this coop" to "this coop paid".
+    _add_col(db, 'marketing_leads', 'client_id', 'INTEGER')
     _add_col(db, 'marketing_leads', 'lead_temperature', "TEXT DEFAULT 'cold'")
     _add_col(db, 'marketing_leads', 'score_reason', 'TEXT')
     _add_col(db, 'marketing_leads', 'confirmation_sent_at', 'TIMESTAMP')

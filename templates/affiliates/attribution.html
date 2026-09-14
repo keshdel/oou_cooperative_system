@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}Affiliate attribution - {{ coop_name }}{% endblock %}
+{% block content %}
+<style>.perm-table thead th { background-color:#e9eef5; color:#1f2937; }</style>
+<div class="container-fluid">
+    <div class="row mb-3">
+        <div class="col-md-8">
+            <h2><i class="fas fa-chart-line"></i> Attribution</h2>
+            <p class="text-muted mb-0">Who introduced which cooperative, and how much of their
+                setup fee has actually been collected. No commission is accrued or owed from this
+                screen — it reports only.</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="{{ url_for('affiliates.register') }}" class="btn btn-outline-secondary">
+                <i class="fas fa-user-tie"></i> Affiliates</a>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-md-3"><div class="card h-100"><div class="card-body">
+            <div class="small text-muted">Leads introduced</div>
+            <div class="h4 mb-0">{{ totals.leads }}</div></div></div></div>
+        <div class="col-md-3"><div class="card h-100"><div class="card-body">
+            <div class="small text-muted">Became clients</div>
+            <div class="h4 mb-0">{{ totals.clients }}</div></div></div></div>
+        <div class="col-md-3"><div class="card h-100"><div class="card-body">
+            <div class="small text-muted">Setup fees collected</div>
+            <div class="h4 mb-0 text-success">₦{{ "{:,.2f}".format(totals.paid) }}</div></div></div></div>
+        <div class="col-md-3"><div class="card h-100"><div class="card-body">
+            <div class="small text-muted">Still to collect</div>
+            <div class="h4 mb-0 text-warning">₦{{ "{:,.2f}".format(totals.outstanding) }}</div></div></div></div>
+    </div>
+
+    {% if unresolved %}
+    <div class="card border-warning mb-4"><div class="card-body">
+        <h6 class="mb-1">Codes that match no active affiliate</h6>
+        <p class="text-muted small">Recorded as typed so they can be corrected. Until a code
+            resolves, the introduction is not credited to anyone.</p>
+        <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+            <thead><tr><th>Cooperative</th><th>Contact</th><th>Code given</th><th>Received</th><th>Correct it</th></tr></thead>
+            <tbody>
+            {% for l in unresolved %}
+            <tr>
+                <td>{{ l.society_name }}</td>
+                <td class="small text-muted">{{ l.full_name }}</td>
+                <td><code>{{ l.affiliate_code }}</code></td>
+                <td class="small text-muted">{{ l.created_at|fmtdt('%d/%m/%Y') }}</td>
+                <td>
+                    <form method="post" action="{{ url_for('affiliates.fix_lead_code', lead_id=l.id) }}" class="d-flex gap-1">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input class="form-control form-control-sm" name="affiliate_code"
+                               style="max-width:11rem" placeholder="Correct code" value="{{ l.affiliate_code }}">
+                        <button class="btn btn-sm btn-outline-primary">Save</button>
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        </div>
+    </div></div>
+    {% endif %}
+
+    <div class="card mb-4"><div class="table-responsive">
+        <table class="table perm-table align-middle mb-0">
+            <thead><tr>
+                <th>Affiliate</th><th>Code</th><th>Team lead</th>
+                <th class="text-end">Leads</th><th class="text-end">Clients</th>
+                <th class="text-end">Setup billed</th><th class="text-end">Setup collected</th>
+                <th class="text-end">Outstanding</th>
+            </tr></thead>
+            <tbody>
+            {% for r in rows %}
+            <tr>
+                <td><strong>{{ r.affiliate.full_name }}</strong>
+                    {% if r.affiliate.tier == 'lead' %}<span class="badge bg-dark ms-1">Lead</span>{% endif %}
+                    {% if r.affiliate.status == 'suspended' %}<span class="badge bg-warning text-dark ms-1">Suspended</span>{% endif %}
+                </td>
+                <td class="font-monospace">{{ r.affiliate.code }}</td>
+                <td class="small text-muted">{{ r.affiliate.lead_name or '—' }}</td>
+                <td class="text-end">{{ r.leads }}</td>
+                <td class="text-end">{{ r.client_count }}</td>
+                <td class="text-end">₦{{ "{:,.2f}".format(r.setup_charged) }}</td>
+                <td class="text-end text-success">₦{{ "{:,.2f}".format(r.setup_paid) }}</td>
+                <td class="text-end {{ 'text-warning' if r.outstanding > 0 }}">₦{{ "{:,.2f}".format(r.outstanding) }}</td>
+            </tr>
+            {% if r.clients %}
+            <tr><td colspan="8" class="bg-light small">
+                {% for c in r.clients %}
+                <span class="me-3">{{ c.name }}</span>
+                {% endfor %}
+            </td></tr>
+            {% endif %}
+            {% else %}
+            <tr><td colspan="8" class="text-center text-muted py-4">
+                No active affiliates with introductions yet.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div></div>
+
+    {% if unlinked %}
+    <div class="card"><div class="card-body">
+        <h6 class="mb-1">Clients not yet linked to an enquiry</h6>
+        <p class="text-muted small">Linking a client to the enquiry it came from is what carries
+            the affiliate's introduction through to billing. An unlinked client can never be
+            credited to anyone.</p>
+        {% for c in unlinked %}
+        <form method="post" action="{{ url_for('affiliates.link_client', client_id=c.id) }}"
+              class="row g-2 align-items-end mb-2">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="col-md-4"><strong>{{ c.name }}</strong>
+                <div class="small text-muted">{{ c.user_count }} member(s)</div></div>
+            <div class="col-md-6">
+                <input class="form-control form-control-sm" type="number" name="lead_id"
+                       placeholder="Enquiry (lead) number — see the leads inbox"></div>
+            <div class="col-md-2"><button class="btn btn-sm btn-outline-primary w-100">Link</button></div>
+        </form>
+        {% endfor %}
+    </div></div>
+    {% endif %}
+</div>
+{% endblock %}

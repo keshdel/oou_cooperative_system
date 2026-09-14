@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Affiliate appointment{% endblock %}
+{% block content %}
+<div class="container" style="max-width:640px">
+    {% if closed %}
+    <div class="alert alert-warning">
+        <h5 class="mb-1">This appointment is no longer open</h5>
+        Its status is “{{ affiliate.status }}”. Please contact the CoopMS team.
+    </div>
+    {% else %}
+    <div class="card"><div class="card-body text-center py-5">
+        <div class="display-6 mb-2">Welcome aboard</div>
+        <p class="text-muted mb-4">
+            {{ 'You accepted this appointment on ' ~ (affiliate.accepted_at|fmtdt('%d %B %Y')) ~ '.'
+               if already else 'Your appointment is accepted and you are now in the programme.' }}
+        </p>
+        <p class="mb-1 text-muted small">Your affiliate code</p>
+        <div class="h3 font-monospace">{{ affiliate.code }}</div>
+        <p class="text-muted small mt-3 mb-0">
+            Quote this code on every cooperative enquiry and onboarding form so each
+            introduction is credited to you.</p>
+    </div></div>
+    {% endif %}
+</div>
+{% endblock %}

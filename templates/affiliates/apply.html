@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Become a CoopMS affiliate{% endblock %}
+{% block content %}
+<div class="container" style="max-width:720px">
+    <h2 class="mb-1">Become a CoopMS affiliate</h2>
+    <p class="text-muted">Introduce cooperative societies to CoopMS and earn a share of the
+        setup fee on every society that signs and pays.</p>
+
+    <div class="alert alert-light border small">
+        <strong>How it works.</strong> You apply here, our compliance team reviews your
+        application and interviews you, and successful applicants receive an appointment letter
+        with their affiliate code and terms of reference. You join the programme once you accept
+        those terms. You are never asked to pay anything to join, and nothing is paid for
+        recruiting other affiliates — earnings come only from cooperatives that buy the product.
+    </div>
+
+    <div class="card"><div class="card-body">
+        <form method="post" class="row g-3">
+            <div class="col-md-6"><label class="form-label">Full name *</label>
+                <input class="form-control" name="full_name" required></div>
+            <div class="col-md-6"><label class="form-label">Email *</label>
+                <input class="form-control" type="email" name="email" required></div>
+            <div class="col-md-6"><label class="form-label">Phone</label>
+                <input class="form-control" name="phone"></div>
+            <div class="col-md-6"><label class="form-label">Referred by (affiliate code)</label>
+                <input class="form-control" name="referrer_code" placeholder="e.g. CML-AO1234"
+                       value="{{ request.args.get('ref', '') }}">
+                <div class="form-text">If an existing affiliate introduced you, put their code here.</div></div>
+            <div class="col-12"><label class="form-label">Tell us about yourself</label>
+                <textarea class="form-control" name="about" rows="4"
+                    placeholder="Your work, and the cooperative societies you already know."></textarea></div>
+            <div class="col-12"><button class="btn btn-primary">Submit application</button></div>
+        </form>
+    </div></div>
+</div>
+{% endblock %}
