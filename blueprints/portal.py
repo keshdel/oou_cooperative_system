@@ -16,7 +16,7 @@ from crypto import decrypt_member_sensitive_fields, encrypt_field, mask_member_s
 from security import validate_password_strength
 from utils import (audit, notify_member, notify, compute_loan_schedule, METHOD_LABELS,
                    member_for_user, member_savings_balance, member_share_capital,
-                   validate_image, member_has_minimum_membership)
+                   validate_image, member_has_minimum_membership, has_unpaid_loan_of_type)
 import loan_workflow as lw
 import loan_alerts as la
 from loan_pdf import build_loan_application_pdf
@@ -835,11 +835,15 @@ def apply_loan_member():
 
     if request.method == 'POST':
         amount  = float(request.form.get('amount', 0))
-        purpose = request.form.get('purpose')
+        purpose = request.form.get('purpose', '').strip()
         tenure  = int(request.form.get('tenure', 0))
 
         if amount <= 0 or not purpose or tenure <= 0:
             flash('All fields are required and must be valid.', 'danger')
+            return redirect(url_for('portal.apply_loan_member'))
+
+        if purpose not in rates:
+            flash('Select a valid loan type.', 'danger')
             return redirect(url_for('portal.apply_loan_member'))
 
         signature = request.form.get('signature_name', '').strip()
@@ -885,11 +889,8 @@ def apply_loan_member():
                 flash(f'Minimum savings of ₦50,000 required (yours: ₦{savings_balance:,.2f}).', 'danger')
                 return redirect(url_for('portal.apply_loan_member'))
 
-            existing = db.execute(
-                "SELECT id FROM loans WHERE member_id = ? AND status = 'active'", (member['id'],)
-            ).fetchone()
-            if existing:
-                flash('You already have an active loan. Please complete it before applying for a new one.', 'danger')
+            if has_unpaid_loan_of_type(db, member['id'], purpose):
+                flash(f'You have an unpaid {purpose} loan. Repay it fully before applying for another {purpose} loan. Other loan types can be submitted for approval.', 'danger')
                 return redirect(url_for('portal.my_loans'))
 
             max_loan = savings_balance * 2

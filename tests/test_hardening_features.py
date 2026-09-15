@@ -886,6 +886,70 @@ class HardeningFeatureTests(unittest.TestCase):
         reused = self.client.get(f'/setup-password/{token}', follow_redirects=False)
         self.assertIn(reused.status_code, (302, 303))
 
+    def test_loan_type_restriction_across_application_channels(self):
+        guarantors = [self.create_guarantor_member(f'TYPE-G{i}', f'type-g{i}@example.com', 'Guarantor')
+                      for i in (1, 2)]
+        for channel in ('admin', 'portal', 'mobile'):
+            with self.subTest(channel=channel):
+                email = f'type-{channel}@example.com'
+                mid = self.create_guarantor_member(f'TYPE-{channel}', email, 'Applicant')
+                self.create_member_user(mid, email)
+                self.fund_member_savings(mid)
+                with self.app.app_context():
+                    db = get_db()
+                    db.execute("""INSERT INTO loans
+                        (loan_number, member_id, amount, purpose, tenure, interest_rate,
+                         total_repayment, balance, status, date_applied)
+                        VALUES (?, ?, 50000, ' regular ', 6, 11, 52000, 52000, 'active', '2024-01-01')""",
+                        (f'TYPE-EXISTING-{channel}', mid))
+                    db.commit()
+                self.client = self.app.test_client()
+                headers = {}
+                if channel == 'admin':
+                    self.login_admin()
+                elif channel == 'portal':
+                    self.login_member(email)
+                else:
+                    clear_login_attempts('mobile:127.0.0.1')
+                    login = self.client.post('/api/mobile/login', json={'username': email, 'password': 'MemberPass1!'})
+                    self.assertEqual(login.status_code, 200)
+                    headers = {'Authorization': f"Bearer {login.get_json()['token']}"}
+                payload = dict(member_id=str(mid), amount='50000', tenure='6',
+                               payment_collateral_type='standing_order', signature_name='Applicant Guarantor',
+                               accept_terms='1', data_processing_consent='1', repayment_schedule_accepted='1',
+                               hr_affordability_consent='1', guarantors=[str(g) for g in guarantors],
+                               guarantor_ids=guarantors)
+                def submit(purpose):
+                    data = {**payload, 'purpose': purpose}
+                    if channel == 'mobile':
+                        return self.client.post('/api/mobile/v1/loans/apply', json=data, headers=headers)
+                    path = '/loans/apply' if channel == 'admin' else '/apply-loan-member'
+                    return self.client.post(path, data=data)
+
+                for purpose in ('Regular', 'Unrecognised product'):
+                    submit(purpose)
+                    with self.app.app_context():
+                        self.assertEqual(get_db().execute('SELECT COUNT(*) FROM loans WHERE member_id = ?', (mid,)).fetchone()[0], 1)
+                for purpose in ('Asset Purchase', 'School Fees'):
+                    result = submit(purpose)
+                    self.assertEqual(result.status_code, 201 if channel == 'mobile' else 302)
+                    with self.app.app_context():
+                        loan = get_db().execute('SELECT * FROM loans WHERE member_id = ? AND purpose = ?', (mid, purpose)).fetchone()
+                        self.assertIsNotNone(loan)
+                        self.assertEqual(loan['status'], 'pending')
+                        self.assertEqual(float(loan['balance']), 0)
+                        self.assertTrue(loan['approval_stage'])
+                        self.assertFalse(loan['disbursement_date'])
+                with self.app.app_context():
+                    db = get_db()
+                    db.execute('UPDATE loans SET balance = 0 WHERE loan_number = ?', (f'TYPE-EXISTING-{channel}',))
+                    db.commit()
+                submit('Regular')
+                with self.app.app_context():
+                    loan = get_db().execute("SELECT * FROM loans WHERE member_id = ? AND purpose = 'Regular'", (mid,)).fetchone()
+                    self.assertIsNotNone(loan)
+                    self.assertEqual(loan['status'], 'pending')
+
     def test_member_loan_application_requires_due_diligence_acknowledgements(self):
         member_id = self.create_member()
         self.create_member_user(member_id)

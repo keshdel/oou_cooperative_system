@@ -16,7 +16,7 @@ from email_service import (send_loan_approval_email, send_loan_rejection_email,
 from utils import (role_required, audit, notify_member, compute_loan_schedule,
                    PURPOSE_SETTING_KEY, METHOD_LABELS, record_revenue, split_repayment,
                    member_savings_balance, member_for_user,
-                   member_has_minimum_membership)
+                   member_has_minimum_membership, has_unpaid_loan_of_type)
 from ledger import (post_journal, post_journal_safe, get_default_cash_account, get_postable_cash_accounts,
                     resolve_cash_bank_account, UnknownCashAccountError,
                     LOANS_RECEIVABLE, ACCUM_SURPLUS, FEE_INCOME,
@@ -418,11 +418,15 @@ def apply_loan():
     if request.method == 'POST':
         member_id = request.form.get('member_id')
         amount    = float(request.form.get('amount', 0))
-        purpose   = request.form.get('purpose')
+        purpose   = request.form.get('purpose', '').strip()
         tenure    = int(request.form.get('tenure', 0))
 
         if not member_id or amount <= 0 or not purpose or tenure <= 0:
             flash('All fields are required and must be valid.', 'danger')
+            return redirect(url_for('loans.apply_loan'))
+
+        if purpose not in interest_rates:
+            flash('Select a valid loan type.', 'danger')
             return redirect(url_for('loans.apply_loan'))
 
         try:
@@ -446,11 +450,8 @@ def apply_loan():
                 flash(f'Minimum savings of ₦50,000 required (current: ₦{savings_balance:,.2f}).', 'danger')
                 return redirect(url_for('members.member_details', member_id=member_id))
 
-            outstanding = db.execute(
-                "SELECT id FROM loans WHERE member_id = ? AND status = 'active'", (member_id,)
-            ).fetchone()
-            if outstanding:
-                flash('Member already has an active loan. Please complete it before applying for a new one.', 'danger')
+            if has_unpaid_loan_of_type(db, member_id, purpose):
+                flash(f'Member has an unpaid {purpose} loan. Repay it fully before applying for another {purpose} loan. Other loan types can be submitted for approval.', 'danger')
                 return redirect(url_for('members.member_details', member_id=member_id))
 
             max_loan = savings_balance * 2

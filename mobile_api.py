@@ -32,6 +32,7 @@ from utils import (
     lockout_seconds_remaining,
     member_for_user,
     member_has_minimum_membership,
+    has_unpaid_loan_of_type,
     member_savings_balance,
     member_share_capital,
     notify,
@@ -972,10 +973,8 @@ def mobile_apply_loan():
         savings_balance = member_savings_balance(db, member['id'])
         if savings_balance < 50000:
             return jsonify({'success': False, 'error': 'Minimum savings of NGN 50,000 required.'}), 400
-        if db.execute(
-            "SELECT id FROM loans WHERE member_id = ? AND status = 'active'", (member['id'],)
-        ).fetchone():
-            return jsonify({'success': False, 'error': 'You already have an active loan.'}), 409
+        if has_unpaid_loan_of_type(db, member['id'], purpose):
+            return jsonify({'success': False, 'error': f'You have an unpaid {purpose} loan. Repay it fully before applying for another {purpose} loan. Other loan types can be submitted for approval.'}), 409
         max_loan = savings_balance * 2
         if amount > max_loan:
             return jsonify({'success': False, 'error': f'Maximum loan amount is NGN {max_loan:,.2f}.'}), 400

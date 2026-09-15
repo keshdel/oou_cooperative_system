@@ -62,6 +62,15 @@ def role_required(*roles):
 STAFF_ROLES = {'admin', 'treasurer', 'secretary', 'exco'}
 
 
+def has_unpaid_loan_of_type(db, member_id, purpose):
+    """An unpaid active loan blocks another application for the same product."""
+    return db.execute(
+        """SELECT id FROM loans WHERE member_id = ? AND status = 'active'
+           AND balance > 0 AND LOWER(TRIM(purpose)) = LOWER(TRIM(?)) LIMIT 1""",
+        (member_id, purpose),
+    ).fetchone() is not None
+
+
 def is_staff_user() -> bool:
     return getattr(current_user, 'role', None) in STAFF_ROLES
 
