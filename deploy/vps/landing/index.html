@@ -256,6 +256,31 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
   .fbrand{ display:flex; align-items:center; gap:10px; color:#fff; font-weight:800; font-size:19px; margin-bottom:12px; }
   .fbrand span{ color:var(--accent-x); }
   .fbot{ border-top:1px solid rgba(255,255,255,.1); padding-top:22px; display:flex; justify-content:space-between; flex-wrap:wrap; gap:10px; font-size:13px; }
+  /* Motion enhances the page without controlling content visibility. */
+  :root{ --motion-ease:cubic-bezier(.22,1,.36,1); }
+  section[id]{ scroll-margin-top:88px; }
+  .btn{ transition:background-color .2s ease,box-shadow .2s ease,transform .2s var(--motion-ease); }
+  .btn .ic{ transition:transform .2s var(--motion-ease); }
+  .btn:active{ transform:translateY(1px); }
+  a:focus-visible,button:focus-visible,summary:focus-visible{ outline:3px solid var(--accent); outline-offset:5px; }
+  .nav-c a{ position:relative; }
+  .nav-c a::after{ content:""; position:absolute; bottom:-8px; left:0; right:0; height:2px; background:var(--accent); transform:scaleX(0); transform-origin:left; transition:transform .22s var(--motion-ease); }
+  .nav-c a:hover::after,.nav-c a:focus-visible::after{ transform:scaleX(1); }
+  .plan{ transition:transform .25s var(--motion-ease),box-shadow .25s ease; }
+  .pane.active{ animation:coopms-pane .38s var(--motion-ease); }
+  details[open] p{ animation:coopms-pane .25s var(--motion-ease); }
+  .nav-c.open{ animation:coopms-pane .22s var(--motion-ease); }
+  @keyframes coopms-pane{ from{ opacity:.35; transform:translateY(8px); } to{ opacity:1; transform:translateY(0); } }
+  @media(hover:hover) and (pointer:fine){
+    .btn-primary:hover{ transform:translateY(-2px); box-shadow:0 9px 20px rgba(244,181,28,.3); }
+    .btn:hover .ic{ transform:translateX(3px); }
+    .plan:hover{ transform:translateY(-4px); box-shadow:var(--sh); }
+  }
+  @media(prefers-reduced-motion:reduce){
+    html{ scroll-behavior:auto; }
+    *,*::before,*::after{ animation:none !important; transition:none !important; }
+    .btn:hover,.btn:active,.btn:hover .ic,.plan:hover{ transform:none; }
+  }
 </style>
 </head>
 <body>
@@ -823,6 +848,53 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
   </div>
 </footer>
 
+<script>
+  // All elements are visible by default, including without JavaScript.
+  (function(){
+    const preference = window.matchMedia('(prefers-reduced-motion: reduce)');
+    if(preference.matches || !Element.prototype.animate || !window.IntersectionObserver) return;
+    const running = new Set();
+    function enter(element, delay){
+      if(preference.matches) return;
+      const animation = element.animate([
+        {opacity:0, transform:'translateY(18px)'},
+        {opacity:1, transform:'translateY(0)'}
+      ], {duration:560, delay:delay, easing:'cubic-bezier(.22,1,.36,1)', fill:'backwards'});
+      running.add(animation);
+      animation.onfinish = function(){ running.delete(animation); };
+      animation.oncancel = function(){ running.delete(animation); };
+    }
+    // Animate the opening only when visiting the top, not a direct form link.
+    if(!location.hash || location.hash === '#top'){
+      document.querySelectorAll('.hero .wrap > div:first-child > *, .hero-visual').forEach(function(el, i){
+        enter(el, Math.min(i * 65, 260));
+      });
+    }
+    const observer = new IntersectionObserver(function(entries){
+      let index = 0;
+      entries.forEach(function(entry){
+        if(!entry.isIntersecting) return;
+        observer.unobserve(entry.target);
+        // Never hide content that already has keyboard focus.
+        if(!entry.target.contains(document.activeElement)) enter(entry.target, Math.min(index++ * 55, 165));
+      });
+    }, {threshold:0.08});
+    document.querySelectorAll('.sec-head,.proof .p,.vcard,.scard,.step,.plan,.campaign-card').forEach(function(el){
+      observer.observe(el);
+    });
+    document.addEventListener('focusin', function(){
+      running.forEach(function(animation){
+        if(animation.effect.target.contains(document.activeElement)) animation.cancel();
+      });
+    });
+    preference.addEventListener('change', function(event){
+      if(event.matches){
+        observer.disconnect();
+        running.forEach(function(animation){ animation.cancel(); });
+      }
+    });
+  })();
+</script>
 <script>
   document.getElementById('yr').textContent = new Date().getFullYear();
   // Product tour tabs
