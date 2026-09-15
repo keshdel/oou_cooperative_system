@@ -57,6 +57,11 @@
                     {% if a.status == 'approved' %}<div class="small text-muted">awaiting acceptance</div>{% endif %}
                 </td>
                 <td class="text-end">
+                    {% if a.status in ('active', 'suspended') %}
+                    <a href="{{ url_for('affiliates.statement_as_admin', aff_id=a.id) }}"
+                       class="btn btn-sm btn-outline-secondary" title="See what this affiliate sees">
+                        Statement</a>
+                    {% endif %}
                     <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="collapse"
                             data-bs-target="#act{{ a.id }}">Manage</button>
                 </td>

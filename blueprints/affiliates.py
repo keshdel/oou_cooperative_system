@@ -278,6 +278,10 @@ def _send_appointment(db, aff):
            Accept the appointment</a></p>
       <p style="color:#475569;font-size:13px">You join the programme only once you accept.
          If the button does not work, open this link:<br>{link}</p>
+      <p style="color:#475569;font-size:13px">Once you have accepted, you can see your
+         introductions and earnings any time at
+         <a href="{_base_url()}{url_for('affiliates.request_statement')}">your affiliate
+         statement</a> — no password needed, we email you a link.</p>
     """
     try:
         send_email(aff['email'], 'Your CoopMS affiliate appointment', html)
@@ -813,3 +817,217 @@ def save_rates():
     flash(f'Rates saved — member {member:g}%, team lead {lead:g}%, '
           f'{pool:g}% of each setup fee in total. Existing commission is unchanged.', 'success')
     return redirect(url_for('affiliates.commissions'))
+
+
+# ── Affiliate statement ──────────────────────────────────────────────────────
+# Read-only, and reached by a short-lived emailed link rather than an account,
+# because affiliates are external contractors and this instance also runs
+# billing and tenant suspension.
+
+PORTAL_TOKEN_MINUTES = 45
+_STATEMENT_REQUESTS = {}       # ip -> [timestamps], to blunt enumeration attempts
+
+
+def _statement_rate_limited(ip):
+    import time
+    now, window, cap = time.time(), 15 * 60, 6
+    hits = [t for t in _STATEMENT_REQUESTS.get(ip, []) if now - t < window]
+    if len(hits) >= cap:
+        _STATEMENT_REQUESTS[ip] = hits
+        return True
+    hits.append(now)
+    _STATEMENT_REQUESTS[ip] = hits
+    return False
+
+
+def issue_portal_token(db, affiliate_id, ip=''):
+    from datetime import timedelta
+    token = secrets.token_urlsafe(32)
+    db.execute('INSERT INTO affiliate_portal_tokens (affiliate_id, token, expires_at, created_ip) '
+               'VALUES (?, ?, ?, ?)',
+               (affiliate_id, token,
+                datetime.now() + timedelta(minutes=PORTAL_TOKEN_MINUTES), (ip or '')[:60]))
+    return token
+
+
+def _affiliate_for_token(db, token):
+    row = db.execute('SELECT * FROM affiliate_portal_tokens WHERE token = ?', (token,)).fetchone()
+    if not row:
+        return None, 'unknown'
+    expires = row['expires_at']
+    if not hasattr(expires, 'year'):
+        try:
+            expires = datetime.fromisoformat(str(expires).replace('T', ' ').split('.')[0])
+        except ValueError:
+            return None, 'unknown'
+    if expires < datetime.now():
+        return None, 'expired'
+    aff = db.execute('SELECT * FROM affiliates WHERE id = ?', (row['affiliate_id'],)).fetchone()
+    if not aff or aff['status'] not in (STATUS_ACTIVE, STATUS_SUSPENDED):
+        return None, 'closed'
+    db.execute('UPDATE affiliate_portal_tokens SET last_used_at = ? WHERE id = ?',
+               (datetime.now(), row['id']))
+    return aff, 'ok'
+
+
+def _direct_rate_for(db, affiliate):
+    """What this affiliate earns on a cooperative they introduced themselves."""
+    rates = commission_rates(db)
+    return rates['pool'] if affiliate['tier'] == TIER_LEAD else rates['member']
+
+
+def statement_context(db, affiliate):
+    """Everything an affiliate should see about their own introductions.
+
+    Earned and pipeline are kept strictly apart: earned is money the cooperative
+    has paid, pipeline is what a still-unpaid setup fee would produce. Showing
+    them as one number is how commission disputes start.
+    """
+    rates = commission_rates(db)
+    my_rate = _direct_rate_for(db, affiliate)
+
+    # Cooperatives this affiliate introduced.
+    own = []
+    pipeline_total = earned_total = 0.0
+    for client in db.execute('SELECT * FROM hq_clients WHERE affiliate_id = ? ORDER BY name',
+                             (affiliate['id'],)).fetchall():
+        billed = setup_charged(db, client['id'])
+        paid = setup_paid(db, client['id'])
+        outstanding = round(billed - paid, 2)
+        earned = round(float(db.execute(
+            'SELECT COALESCE(SUM(amount), 0) FROM affiliate_commissions '
+            "WHERE affiliate_id = ? AND client_id = ? AND role = 'direct'",
+            (affiliate['id'], client['id'])).fetchone()[0] or 0), 2)
+        potential = round(max(0.0, outstanding) * my_rate / 100.0, 2)
+        earned_total += earned
+        pipeline_total += potential
+        own.append({'client': client, 'billed': billed, 'paid': paid,
+                    'outstanding': outstanding, 'earned': earned, 'potential': potential})
+
+    # For a team lead: the same again across their team, at the override rate.
+    team = []
+    team_earned = team_pipeline = 0.0
+    if affiliate['tier'] == TIER_LEAD:
+        for member in team_of(db, affiliate['id']):
+            m_billed = m_paid = 0.0
+            for client in db.execute('SELECT * FROM hq_clients WHERE affiliate_id = ?',
+                                     (member['id'],)).fetchall():
+                m_billed += setup_charged(db, client['id'])
+                m_paid += setup_paid(db, client['id'])
+            m_earned = round(float(db.execute(
+                'SELECT COALESCE(SUM(amount), 0) FROM affiliate_commissions '
+                "WHERE affiliate_id = ? AND source_affiliate_id = ? AND role = 'override'",
+                (affiliate['id'], member['id'])).fetchone()[0] or 0), 2)
+            m_potential = round(max(0.0, m_billed - m_paid) * rates['lead'] / 100.0, 2)
+            team_earned += m_earned
+            team_pipeline += m_potential
+            team.append({'member': member, 'billed': round(m_billed, 2),
+                         'paid': round(m_paid, 2), 'earned': m_earned,
+                         'potential': m_potential})
+
+    entries = db.execute('''
+        SELECT c.*, cl.name AS client_name, i.invoice_number, s.full_name AS source_name
+        FROM affiliate_commissions c
+        LEFT JOIN hq_clients cl ON cl.id = c.client_id
+        LEFT JOIN hq_invoices i ON i.id = c.invoice_id
+        LEFT JOIN affiliates s ON s.id = c.source_affiliate_id
+        WHERE c.affiliate_id = ? ORDER BY c.created_at DESC, c.id DESC''',
+        (affiliate['id'],)).fetchall()
+
+    return {
+        'affiliate': affiliate,
+        'rates': rates,
+        'my_rate': my_rate,
+        'own': own,
+        'team': team,
+        'entries': entries,
+        'balance': affiliate_balance(db, affiliate['id']),
+        'earned_own': round(earned_total, 2),
+        'earned_team': round(team_earned, 2),
+        'pipeline': round(pipeline_total + team_pipeline, 2),
+        'clawed_back': round(abs(float(db.execute(
+            "SELECT COALESCE(SUM(amount), 0) FROM affiliate_commissions "
+            "WHERE affiliate_id = ? AND status = 'clawback'",
+            (affiliate['id'],)).fetchone()[0] or 0)), 2),
+    }
+
+
+def _send_statement_link(db, aff, token):
+    link = f"{_base_url()}{url_for('affiliates.statement', token=token)}"
+    html = f"""
+      <p>Hello {aff['full_name']},</p>
+      <p>Here is the link to your CoopMS affiliate statement. It works for the next
+         {PORTAL_TOKEN_MINUTES} minutes; request another whenever you need one.</p>
+      <p style="margin:22px 0">
+        <a href="{link}" style="background:#082b66;color:#fff;padding:12px 20px;
+           border-radius:6px;text-decoration:none;display:inline-block">View my statement</a></p>
+      <p style="color:#475569;font-size:13px">If the button does not work, open this link:<br>{link}</p>
+      <p style="color:#475569;font-size:13px">If you did not ask for this, you can ignore it —
+         the link only shows your own introductions and earnings.</p>
+    """
+    try:
+        send_email(aff['email'], 'Your CoopMS affiliate statement', html)
+        return True
+    except Exception as exc:                      # pragma: no cover - network
+        current_app.logger.warning('Statement link email failed for %s: %s', aff['email'], exc)
+        return False
+
+
+@affiliates_bp.route('/affiliates/statement', methods=['GET', 'POST'])
+@public_route
+@csrf.exempt
+def request_statement():
+    """Ask for a link to your own statement."""
+    if request.method == 'GET':
+        return render_template('affiliates/statement-request.html',
+                               minutes=PORTAL_TOKEN_MINUTES)
+
+    db = get_db()
+    ip = (request.headers.get('X-Forwarded-For') or request.remote_addr or '').split(',')[0].strip()
+    # The same reply either way, so this page cannot be used to find out who is
+    # an affiliate.
+    done = render_template('affiliates/statement-request.html',
+                           minutes=PORTAL_TOKEN_MINUTES, sent=True)
+    if _statement_rate_limited(ip):
+        flash('Too many requests from this connection. Please try again shortly.', 'warning')
+        return render_template('affiliates/statement-request.html',
+                               minutes=PORTAL_TOKEN_MINUTES), 429
+
+    email = (request.form.get('email') or '').strip().lower()
+    if not email or '@' not in email:
+        flash('Enter the email address on your affiliate appointment.', 'danger')
+        return render_template('affiliates/statement-request.html',
+                               minutes=PORTAL_TOKEN_MINUTES), 400
+    aff = db.execute("SELECT * FROM affiliates WHERE LOWER(email) = ? AND status IN "
+                     "('active', 'suspended')", (email,)).fetchone()
+    if aff:
+        token = issue_portal_token(db, aff['id'], ip)
+        db.commit()
+        _send_statement_link(db, aff, token)
+    return done
+
+
+@affiliates_bp.route('/affiliates/statement/<token>')
+@public_route
+def statement(token):
+    db = get_db()
+    aff, why = _affiliate_for_token(db, token)
+    if not aff:
+        db.commit()
+        return render_template('affiliates/statement-expired.html', why=why), 410 if why == 'expired' else 404
+    ctx = statement_context(db, aff)
+    db.commit()
+    return render_template('affiliates/statement.html', **ctx)
+
+
+@affiliates_bp.route('/hq/affiliates/<int:aff_id>/statement')
+@hq_admin_required
+def statement_as_admin(aff_id):
+    """The same statement an affiliate sees — for answering their questions
+    without asking them to forward their link."""
+    db = get_db()
+    aff = db.execute('SELECT * FROM affiliates WHERE id = ?', (aff_id,)).fetchone()
+    if not aff:
+        abort(404)
+    return render_template('affiliates/statement.html', admin_view=True,
+                           **statement_context(db, aff))

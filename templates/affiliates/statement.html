@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+{% block title %}Affiliate statement — {{ affiliate.full_name }}{% endblock %}
+{% block content %}
+<div class="container" style="max-width:1000px">
+    {% if admin_view %}
+    <div class="alert alert-secondary py-2 small">
+        You are viewing this affiliate's own statement as an operator.
+        <a href="{{ url_for('affiliates.register') }}">Back to affiliates</a>
+    </div>
+    {% endif %}
+
+    <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-3">
+        <div>
+            <h2 class="mb-1">{{ affiliate.full_name }}</h2>
+            <p class="text-muted mb-0">
+                <span class="font-monospace">{{ affiliate.code }}</span>
+                {% if affiliate.tier == 'lead' %}<span class="badge bg-dark ms-1">Team lead</span>
+                {% else %}<span class="badge bg-light text-dark ms-1">Team member</span>{% endif %}
+                {% if affiliate.status == 'suspended' %}
+                <span class="badge bg-warning text-dark ms-1">Suspended</span>{% endif %}
+            </p>
+        </div>
+        <div class="text-muted small text-end">
+            You earn <strong>{{ "%g"|format(my_rate) }}%</strong> of the setup fee on cooperatives
+            you introduce.
+            {% if affiliate.tier == 'lead' %}<br>Plus {{ "%g"|format(rates.lead) }}% on your team's.
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-md-4"><div class="card h-100 border-success"><div class="card-body">
+            <div class="small text-muted">Earned so far</div>
+            <div class="h3 mb-0 text-success">₦{{ "{:,.2f}".format(balance) }}</div>
+            <div class="small text-muted mt-1">On setup fees already paid</div>
+        </div></div></div>
+        <div class="col-md-4"><div class="card h-100"><div class="card-body">
+            <div class="small text-muted">Still to come</div>
+            <div class="h3 mb-0">₦{{ "{:,.2f}".format(pipeline) }}</div>
+            <div class="small text-warning mt-1">
+                <strong>Not yet earned.</strong> This is what you would earn if every setup fee
+                already billed is paid in full.</div>
+        </div></div></div>
+        <div class="col-md-4"><div class="card h-100"><div class="card-body">
+            <div class="small text-muted">Introductions</div>
+            <div class="h3 mb-0">{{ own|length }}</div>
+            <div class="small text-muted mt-1">
+                {% if clawed_back %}₦{{ "{:,.2f}".format(clawed_back) }} reversed{% else %}
+                Cooperatives credited to you{% endif %}</div>
+        </div></div></div>
+    </div>
+
+    <div class="alert alert-light border small">
+        You are paid on money the cooperative has actually paid, not on what has been invoiced.
+        Where a setup fee is part paid, you earn that part now and the rest as it is collected —
+        so chasing the balance is worth your time.
+    </div>
+
+    <h5 class="mb-2">Cooperatives you introduced</h5>
+    <div class="card mb-4"><div class="table-responsive">
+        <table class="table align-middle mb-0">
+            <thead class="table-light"><tr>
+                <th>Cooperative</th><th class="text-end">Setup billed</th>
+                <th class="text-end">Paid</th><th class="text-end">Outstanding</th>
+                <th class="text-end">Earned</th><th class="text-end">Still to come</th>
+            </tr></thead>
+            <tbody>
+            {% for r in own %}
+            <tr>
+                <td>{{ r.client.name }}</td>
+                <td class="text-end">₦{{ "{:,.2f}".format(r.billed) }}</td>
+                <td class="text-end text-success">₦{{ "{:,.2f}".format(r.paid) }}</td>
+                <td class="text-end {{ 'text-warning fw-semibold' if r.outstanding > 0 }}">
+                    ₦{{ "{:,.2f}".format(r.outstanding) }}</td>
+                <td class="text-end fw-semibold">₦{{ "{:,.2f}".format(r.earned) }}</td>
+                <td class="text-end text-muted">₦{{ "{:,.2f}".format(r.potential) }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="6" class="text-center text-muted py-4">
+                No cooperatives credited to you yet. Quote your code
+                <span class="font-monospace">{{ affiliate.code }}</span> on every enquiry and
+                onboarding form.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div></div>
+
+    {% if affiliate.tier == 'lead' %}
+    <h5 class="mb-2">Your team</h5>
+    <div class="card mb-4"><div class="table-responsive">
+        <table class="table align-middle mb-0">
+            <thead class="table-light"><tr>
+                <th>Member</th><th class="text-end">Setup billed</th><th class="text-end">Paid</th>
+                <th class="text-end">Your override earned</th><th class="text-end">Still to come</th>
+            </tr></thead>
+            <tbody>
+            {% for t in team %}
+            <tr>
+                <td>{{ t.member.full_name }}
+                    <span class="font-monospace small text-muted">{{ t.member.code }}</span></td>
+                <td class="text-end">₦{{ "{:,.2f}".format(t.billed) }}</td>
+                <td class="text-end text-success">₦{{ "{:,.2f}".format(t.paid) }}</td>
+                <td class="text-end fw-semibold">₦{{ "{:,.2f}".format(t.earned) }}</td>
+                <td class="text-end text-muted">₦{{ "{:,.2f}".format(t.potential) }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5" class="text-center text-muted py-4">
+                No members in your team yet.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div></div>
+    {% endif %}
+
+    <h5 class="mb-2">Every entry</h5>
+    <div class="card mb-4"><div class="table-responsive">
+        <table class="table align-middle mb-0">
+            <thead class="table-light"><tr>
+                <th>Date</th><th>Cooperative</th><th>What</th>
+                <th class="text-end">Setup paid</th><th class="text-end">Rate</th>
+                <th class="text-end">Amount</th></tr></thead>
+            <tbody>
+            {% for e in entries %}
+            <tr class="{{ 'text-muted' if (e.amount or 0) < 0 }}">
+                <td class="small">{{ e.created_at|fmtdt('%d/%m/%Y') }}</td>
+                <td>{{ e.client_name or '—' }}</td>
+                <td class="small">
+                    {% if e.reversal_of %}Reversed
+                    {% elif e.role == 'override' %}Team override{% if e.source_name %}
+                        on {{ e.source_name }}{% endif %}
+                    {% else %}Your introduction{% endif %}
+                    {% if e.note %}<div class="text-muted">{{ e.note }}</div>{% endif %}
+                </td>
+                <td class="text-end">₦{{ "{:,.2f}".format(e.basis_amount or 0) }}</td>
+                <td class="text-end">{{ "%g"|format(e.rate or 0) }}%</td>
+                <td class="text-end fw-semibold {{ 'text-danger' if (e.amount or 0) < 0 }}">
+                    ₦{{ "{:,.2f}".format(e.amount or 0) }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="6" class="text-center text-muted py-4">Nothing yet.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div></div>
+
+    <div class="alert alert-secondary small mb-4">
+        <strong>Payments.</strong> Earnings accumulate and are paid once they pass the payout
+        threshold, less withholding tax and any other statutory deduction. Payout runs are not
+        live in the system yet — the CoopMS team will confirm each payment with you.
+    </div>
+</div>
+{% endblock %}

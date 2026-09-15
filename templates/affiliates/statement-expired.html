@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Statement link{% endblock %}
+{% block content %}
+<div class="container" style="max-width:560px">
+    <div class="card"><div class="card-body text-center py-5">
+        {% if why == 'expired' %}
+        <div class="h5 mb-2">That link has expired</div>
+        <p class="text-muted">Statement links are short-lived for your security.</p>
+        {% elif why == 'closed' %}
+        <div class="h5 mb-2">This appointment is no longer open</div>
+        <p class="text-muted">Please contact the CoopMS team.</p>
+        {% else %}
+        <div class="h5 mb-2">We could not find that link</div>
+        <p class="text-muted">It may have been mistyped or already replaced by a newer one.</p>
+        {% endif %}
+        <a href="{{ url_for('affiliates.request_statement') }}" class="btn btn-primary mt-2">
+            Send me a new link</a>
+    </div></div>
+</div>
+{% endblock %}

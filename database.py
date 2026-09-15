@@ -1093,6 +1093,26 @@ def init_db():
                      'ON affiliate_commissions(invoice_id, affiliate_id, role) '
                      "WHERE status = 'earned'")
 
+    # Magic-link access to an affiliate's own statement. Affiliates are external
+    # contractors who sign in rarely, and HQ also runs billing and tenant
+    # suspension — so they get a short-lived emailed link rather than an account
+    # on that instance. Reusable within its window because mail scanners follow
+    # links, which would burn a single-use token before the affiliate clicked it.
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS affiliate_portal_tokens (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            affiliate_id INTEGER NOT NULL,
+            token TEXT UNIQUE NOT NULL,
+            expires_at TIMESTAMP NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            created_ip TEXT,
+            last_used_at TIMESTAMP,
+            FOREIGN KEY (affiliate_id) REFERENCES affiliates (id)
+        )
+    '''))
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_aff_portal_tokens_aff '
+                     'ON affiliate_portal_tokens(affiliate_id)')
+
     # Attribution is snapshotted on the client when it is linked, so later edits
     # to the lead cannot silently move a commission.
     _add_col(db, 'hq_clients', 'lead_id', 'INTEGER')

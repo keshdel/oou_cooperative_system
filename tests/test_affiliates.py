@@ -484,6 +484,112 @@ class AffiliateTests(unittest.TestCase):
         # The earlier earning is untouched.
         self.assertAlmostEqual(float(self._commissions(first)[0]['amount']), 45000.0, places=2)
 
+    # ── statement portal ─────────────────────────────────────────────────────
+
+    def _token_for(self, aff):
+        with self.app.app_context():
+            db = get_db()
+            from blueprints.affiliates import issue_portal_token
+            t = issue_portal_token(db, aff['id'])
+            db.commit()
+        return t
+
+    def test_requesting_a_link_never_reveals_who_is_an_affiliate(self):
+        self.login_admin()
+        aff = self._onboard('Quiet One', 'quiet@example.test')
+        real = self.client.post('/affiliates/statement', data={'email': aff['email']})
+        fake = self.client.post('/affiliates/statement', data={'email': 'nobody@example.test'})
+        self.assertEqual(real.status_code, fake.status_code)
+        self.assertEqual(real.data, fake.data, 'the reply must not differ for a real address')
+        self.assertIn(b'Check your email', real.data)
+        # A link was still only created for the real one.
+        with self.app.app_context():
+            n = get_db().execute('SELECT COUNT(*) FROM affiliate_portal_tokens '
+                                 'WHERE affiliate_id = ?', (aff['id'],)).fetchone()[0]
+        self.assertEqual(n, 1)
+
+    def test_a_statement_link_shows_only_that_affiliates_own_figures(self):
+        self.login_admin()
+        mine = self._onboard('Mine Only', 'mineonly@example.test')
+        other = self._onboard('Someone Else', 'someoneelse@example.test')
+        self._client_with_setup('My Coop', mine, setup=300000)
+        self._client_with_setup('Their Coop', other, setup=300000)
+
+        r = self.client.get(f'/affiliates/statement/{self._token_for(mine)}')
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b'My Coop', r.data)
+        self.assertNotIn(b'Their Coop', r.data,
+                         "one affiliate must not see another's clients")
+        self.assertIn(mine['code'].encode(), r.data)
+
+    def test_earned_and_still_to_come_are_shown_separately(self):
+        self.login_admin()
+        aff = self._onboard('Pipeline Watcher', 'pipeline@example.test')
+        # One paid setup fee, one billed but unpaid.
+        self._client_with_setup('Paid Coop', aff, setup=300000)
+        self._client_with_setup('Unpaid Coop', aff, setup=200000, pay=False)
+        with self.app.app_context():
+            from blueprints.affiliates import statement_context
+            db = get_db()
+            a = db.execute('SELECT * FROM affiliates WHERE id = ?', (aff['id'],)).fetchone()
+            ctx = statement_context(db, a)
+        self.assertAlmostEqual(ctx['balance'], 45000.0, places=2)      # 15% of 300,000 collected
+        self.assertAlmostEqual(ctx['pipeline'], 30000.0, places=2)     # 15% of 200,000 not yet paid
+        r = self.client.get(f'/affiliates/statement/{self._token_for(aff)}')
+        self.assertIn(b'Not yet earned', r.data, 'the pipeline must be labelled as unearned')
+
+    def test_a_lead_sees_their_override_across_the_team(self):
+        self.login_admin()
+        boss = self._onboard('Portal Lead', 'portallead@example.test', tier='lead')
+        member = self._onboard('Portal Member', 'portalmember@example.test', parent_id=boss['id'])
+        self._client_with_setup('Team Coop', member, setup=300000)
+        with self.app.app_context():
+            from blueprints.affiliates import statement_context
+            db = get_db()
+            b = db.execute('SELECT * FROM affiliates WHERE id = ?', (boss['id'],)).fetchone()
+            ctx = statement_context(db, b)
+        self.assertEqual(len(ctx['team']), 1)
+        self.assertAlmostEqual(ctx['team'][0]['earned'], 15000.0, places=2)
+        self.assertAlmostEqual(ctx['balance'], 15000.0, places=2)
+        r = self.client.get(f'/affiliates/statement/{self._token_for(boss)}')
+        self.assertIn(b'Portal Member', r.data)
+
+    def test_an_expired_link_is_refused_and_offers_a_new_one(self):
+        from datetime import datetime, timedelta
+        self.login_admin()
+        aff = self._onboard('Expired Link', 'expired@example.test')
+        token = self._token_for(aff)
+        with self.app.app_context():
+            db = get_db()
+            db.execute('UPDATE affiliate_portal_tokens SET expires_at = ? WHERE token = ?',
+                       (datetime.now() - timedelta(minutes=1), token))
+            db.commit()
+        r = self.client.get(f'/affiliates/statement/{token}')
+        self.assertEqual(r.status_code, 410)
+        self.assertIn(b'expired', r.data.lower())
+        self.assertEqual(self.client.get('/affiliates/statement/made-up-token').status_code, 404)
+
+    def test_a_link_stops_working_once_the_appointment_is_closed(self):
+        self.login_admin()
+        aff = self._onboard('Gone Away', 'goneaway@example.test')
+        token = self._token_for(aff)
+        self.assertEqual(self.client.get(f'/affiliates/statement/{token}').status_code, 200)
+        # Declining ends the appointment; the live link must stop working.
+        with self.app.app_context():
+            db = get_db()
+            db.execute("UPDATE affiliates SET status = 'declined' WHERE id = ?", (aff['id'],))
+            db.commit()
+        self.assertEqual(self.client.get(f'/affiliates/statement/{token}').status_code, 404)
+
+    def test_the_statement_is_reachable_for_the_operator_too(self):
+        self.login_admin()
+        aff = self._onboard('Support Call', 'support@example.test')
+        self._client_with_setup('Support Coop', aff, setup=300000)
+        r = self.client.get(f"/hq/affiliates/{aff['id']}/statement")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(b'Support Coop', r.data)
+        self.assertIn(b'as an operator', r.data)
+
 
 if __name__ == '__main__':
     unittest.main()

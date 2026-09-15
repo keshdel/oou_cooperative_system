@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Affiliate statement{% endblock %}
+{% block content %}
+<div class="container" style="max-width:560px">
+    <h2 class="mb-1">Your affiliate statement</h2>
+    <p class="text-muted">See the cooperatives you introduced, what has been collected, and what
+        you have earned.</p>
+
+    {% if sent %}
+    <div class="card"><div class="card-body text-center py-5">
+        <div class="h5 mb-2">Check your email</div>
+        <p class="text-muted mb-0">If that address belongs to an affiliate in the programme, a
+            link to the statement is on its way. It works for the next {{ minutes }} minutes.</p>
+    </div></div>
+    {% else %}
+    <div class="card"><div class="card-body">
+        <form method="post" class="row g-3">
+            <div class="col-12"><label class="form-label">The email on your appointment *</label>
+                <input class="form-control" type="email" name="email" required autofocus></div>
+            <div class="col-12"><button class="btn btn-primary">Email me a link</button></div>
+            <div class="col-12"><div class="form-text">
+                We send a link rather than asking for a password. It lasts {{ minutes }} minutes,
+                and you can request another whenever you need one.</div></div>
+        </form>
+    </div></div>
+    {% endif %}
+</div>
+{% endblock %}
