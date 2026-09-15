@@ -257,6 +257,19 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
   .fbrand span{ color:var(--accent-x); }
   .fbot{ border-top:1px solid rgba(255,255,255,.1); padding-top:22px; display:flex; justify-content:space-between; flex-wrap:wrap; gap:10px; font-size:13px; }
   /* Motion enhances the page without controlling content visibility. */
+  .executive-stories{ padding:40px 0; background:var(--mist); }
+  .executive-photos{ position:relative; aspect-ratio:3/2; overflow:hidden; background:var(--mist2); }
+  .executive-photos img{ position:absolute; inset:0; width:100%; height:100%; object-fit:contain; opacity:0; transition:opacity 1.1s ease-in-out; }
+  .executive-photos img.is-current{ opacity:1; }
+  .photo-toolbar{ display:flex; align-items:center; justify-content:space-between; gap:16px; padding-top:14px; }
+  .photo-toolbar p{ color:var(--muted); font-size:12px; }
+  .photo-controls{ display:flex; align-items:center; gap:8px; flex-shrink:0; }
+  .photo-controls[hidden]{ display:none; }
+  .photo-controls button{ display:inline-flex; align-items:center; justify-content:center; width:44px; height:44px; border:1px solid var(--line2); border-radius:6px; background:white; color:var(--navy); font-size:18px; cursor:pointer; }
+  .photo-controls button:hover{ background:var(--mist2); }
+  .photo-controls .previous .ic{ transform:rotate(180deg); }
+  .photo-count{ min-width:38px; text-align:center; font-size:13px; color:var(--muted); font-variant-numeric:tabular-nums; }
+  @media(max-width:640px){ .executive-stories{ padding:24px 0; } .photo-toolbar{ flex-wrap:wrap; } }
   :root{ --motion-ease:cubic-bezier(.22,1,.36,1); }
   section[id]{ scroll-margin-top:88px; }
   .btn{ transition:background-color .2s ease,box-shadow .2s ease,transform .2s var(--motion-ease); }
@@ -373,6 +386,25 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
             <tfoot><tr><td>Total</td><td class="r num">104,101,362</td><td class="r num">104,101,362</td></tr></tfoot>
           </table>
         </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Proof strip -->
+<section class="executive-stories" aria-label="CoopMS on mobile">
+  <div class="wrap" id="executiveSlideshow" role="region" aria-roledescription="carousel" aria-label="CoopMS executive photo gallery">
+    <div class="executive-photos">
+      <img class="is-current" src="assets/photos/coopms-executives-boardroom.png" width="1536" height="1024" loading="lazy" decoding="async" alt="Three relaxed executives reviewing CoopMS on their phones at a meeting table." aria-hidden="false">
+      <img src="assets/photos/coopms-executives-lounge.png" width="1536" height="1024" loading="lazy" decoding="async" alt="Two smiling executives reviewing CoopMS together in an office lounge." aria-hidden="true">
+    </div>
+    <div class="photo-toolbar">
+      <p>AI-generated imagery. Illustrative app screens.</p>
+      <div class="photo-controls" hidden>
+        <button type="button" class="previous" aria-label="Previous photo" title="Previous photo"><svg class="ic" aria-hidden="true"><use href="#i-arrow"/></svg></button>
+        <span class="photo-count" aria-live="off">1 / 2</span>
+        <button type="button" class="photo-toggle" aria-label="Pause slideshow" title="Pause slideshow"><span aria-hidden="true">&#10074;&#10074;</span></button>
+        <button type="button" class="next" aria-label="Next photo" title="Next photo"><svg class="ic" aria-hidden="true"><use href="#i-arrow"/></svg></button>
       </div>
     </div>
   </div>
@@ -895,6 +927,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     });
   })();
 </script>
+<script src="assets/executive-slideshow.js"></script>
 <script>
   document.getElementById('yr').textContent = new Date().getFullYear();
   // Product tour tabs
