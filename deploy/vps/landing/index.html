@@ -267,8 +267,8 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
   .nav-c a::after{ content:""; position:absolute; bottom:-8px; left:0; right:0; height:2px; background:var(--accent); transform:scaleX(0); transform-origin:left; transition:transform .22s var(--motion-ease); }
   .nav-c a:hover::after,.nav-c a:focus-visible::after{ transform:scaleX(1); }
   .plan{ transition:transform .25s var(--motion-ease),box-shadow .25s ease; }
-  .pane.active{ animation:coopms-pane .38s var(--motion-ease); }
-  details[open] p{ animation:coopms-pane .25s var(--motion-ease); }
+  .pane.active{ animation:coopms-pane .65s var(--motion-ease); }
+  details[open] p{ animation:coopms-pane .4s var(--motion-ease); }
   .nav-c.open{ animation:coopms-pane .22s var(--motion-ease); }
   @keyframes coopms-pane{ from{ opacity:.35; transform:translateY(8px); } to{ opacity:1; transform:translateY(0); } }
   @media(hover:hover) and (pointer:fine){
@@ -857,9 +857,9 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     function enter(element, delay){
       if(preference.matches) return;
       const animation = element.animate([
-        {opacity:0, transform:'translateY(18px)'},
+        {opacity:0, transform:'translateY(34px)'},
         {opacity:1, transform:'translateY(0)'}
-      ], {duration:560, delay:delay, easing:'cubic-bezier(.22,1,.36,1)', fill:'backwards'});
+      ], {duration:950, delay:delay, easing:'cubic-bezier(.2,.7,.2,1)', fill:'backwards'});
       running.add(animation);
       animation.onfinish = function(){ running.delete(animation); };
       animation.oncancel = function(){ running.delete(animation); };
@@ -867,7 +867,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     // Animate the opening only when visiting the top, not a direct form link.
     if(!location.hash || location.hash === '#top'){
       document.querySelectorAll('.hero .wrap > div:first-child > *, .hero-visual').forEach(function(el, i){
-        enter(el, Math.min(i * 65, 260));
+        enter(el, 120 + Math.min(i * 130, 520));
       });
     }
     const observer = new IntersectionObserver(function(entries){
@@ -876,9 +876,9 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
         if(!entry.isIntersecting) return;
         observer.unobserve(entry.target);
         // Never hide content that already has keyboard focus.
-        if(!entry.target.contains(document.activeElement)) enter(entry.target, Math.min(index++ * 55, 165));
+        if(!entry.target.contains(document.activeElement)) enter(entry.target, Math.min(index++ * 120, 360));
       });
-    }, {threshold:0.08});
+    }, {threshold:0.12, rootMargin:'0px 0px -64px 0px'});
     document.querySelectorAll('.sec-head,.proof .p,.vcard,.scard,.step,.plan,.campaign-card').forEach(function(el){
       observer.observe(el);
     });
