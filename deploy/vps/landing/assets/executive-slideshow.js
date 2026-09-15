@@ -52,8 +52,8 @@
   gallery.querySelector('.previous').addEventListener('click', function(){ paused = true; show(current - 1); });
   gallery.querySelector('.next').addEventListener('click', function(){ paused = true; show(current + 1); });
   toggle.addEventListener('click', function(){ paused = !paused; schedule(); });
-  gallery.addEventListener('mouseenter', function(){ hovered = true; schedule(); });
-  gallery.addEventListener('mouseleave', function(){ hovered = false; schedule(); });
+  controls.addEventListener('mouseenter', function(){ hovered = true; schedule(); });
+  controls.addEventListener('mouseleave', function(){ hovered = false; schedule(); });
   gallery.addEventListener('focusin', function(){ paused = true; schedule(); });
   document.addEventListener('visibilitychange', schedule);
   preference.addEventListener('change', function(){ paused = true; schedule(); });

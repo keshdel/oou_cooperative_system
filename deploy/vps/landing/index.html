@@ -257,19 +257,43 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
   .fbrand span{ color:var(--accent-x); }
   .fbot{ border-top:1px solid rgba(255,255,255,.1); padding-top:22px; display:flex; justify-content:space-between; flex-wrap:wrap; gap:10px; font-size:13px; }
   /* Motion enhances the page without controlling content visibility. */
-  .executive-stories{ padding:40px 0; background:var(--mist); }
-  .executive-photos{ position:relative; aspect-ratio:3/2; overflow:hidden; background:var(--mist2); }
-  .executive-photos img{ position:absolute; inset:0; width:100%; height:100%; object-fit:contain; opacity:0; transition:opacity 1.1s ease-in-out; }
+  .hero{ background:#101c2b; }
+  .hero::before{ display:none; }
+  #executiveSlideshow{ position:relative; isolation:isolate; }
+  #executiveSlideshow::after{ content:""; position:absolute; inset:0; z-index:-1; background:linear-gradient(180deg,rgba(10,18,28,0) 15%,rgba(10,18,28,.22) 35%,rgba(10,18,28,.88) 70%,#101c2b 100%); pointer-events:none; }
+  .executive-photos{ position:absolute; inset:0; z-index:-2; overflow:hidden; }
+  .executive-photos img{ position:absolute; inset:0; width:100%; height:100%; object-fit:cover; object-position:center top; opacity:0; transition:opacity 1.4s ease-in-out; }
   .executive-photos img.is-current{ opacity:1; }
+  .hero .wrap{ display:flex; flex-direction:column; align-items:stretch; justify-content:flex-end; gap:20px; min-height:680px; padding:280px 24px 24px; }
+  .hero-content{ max-width:740px; }
+  .hero h1{ font-size:48px; color:white; letter-spacing:0; }
+  .hero .lead{ font-size:25px; color:white; margin:10px 0 12px; max-width:700px; line-height:1.3; }
+  .hero-summary{ font-size:17px; color:#edf1f5; max-width:640px; margin-bottom:22px; }
+  .hero .btn-text{ color:white; }
+  .hero .hero-note{ color:#edf1f5; margin-top:18px; }
+  .hero .hero-note .ic{ color:var(--accent); flex-shrink:0; }
   .photo-toolbar{ display:flex; align-items:center; justify-content:space-between; gap:16px; padding-top:14px; }
-  .photo-toolbar p{ color:var(--muted); font-size:12px; }
+  .photo-toolbar p{ color:#d5dce6; font-size:12px; }
   .photo-controls{ display:flex; align-items:center; gap:8px; flex-shrink:0; }
   .photo-controls[hidden]{ display:none; }
   .photo-controls button{ display:inline-flex; align-items:center; justify-content:center; width:44px; height:44px; border:1px solid var(--line2); border-radius:6px; background:white; color:var(--navy); font-size:18px; cursor:pointer; }
   .photo-controls button:hover{ background:var(--mist2); }
   .photo-controls .previous .ic{ transform:rotate(180deg); }
-  .photo-count{ min-width:38px; text-align:center; font-size:13px; color:var(--muted); font-variant-numeric:tabular-nums; }
-  @media(max-width:640px){ .executive-stories{ padding:24px 0; } .photo-toolbar{ flex-wrap:wrap; } }
+  .photo-count{ min-width:38px; text-align:center; font-size:13px; color:white; font-variant-numeric:tabular-nums; }
+  @media(min-width:1600px){ .hero .wrap{ padding-top:340px; } }
+  @media(max-width:640px){
+    .hero .wrap{ min-height:0; padding:230px 20px 20px; gap:14px; }
+    .executive-photos{ height:330px; }
+    .executive-photos img{ object-position:center top; }
+    #executiveSlideshow::after{ background:linear-gradient(180deg,transparent 110px,rgba(16,28,43,.25) 180px,#101c2b 325px); }
+    .hero h1{ font-size:34px; }
+    .hero .lead{ font-size:21px; }
+    .hero-summary{ font-size:15px; }
+    .hero .hero-note{ font-size:12px; }
+    .hero-cta{ gap:8px; }
+    .hero-cta .btn{ font-size:14px; padding:12px 14px; }
+    .photo-toolbar{ flex-wrap:wrap; padding-top:0; }
+  }
   :root{ --motion-ease:cubic-bezier(.22,1,.36,1); }
   section[id]{ scroll-margin-top:88px; }
   .btn{ transition:background-color .2s ease,box-shadow .2s ease,transform .2s var(--motion-ease); }
@@ -358,45 +382,21 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
 
 <!-- Hero -->
 <section class="hero" id="top" style="padding:0">
-  <div class="wrap">
-    <div>
-      <div class="kicker">Digital Cooperative Management Platform</div>
-      <h1 style="margin-top:18px">The financial backbone for <em>cooperative societies</em>.</h1>
-      <p class="lead">CoopMS unifies members, savings, share capital, loans and investments on a real double-entry ledger — so every naira is accounted for, your books are audit-ready, and every member can see exactly where they stand.</p>
+  <div id="executiveSlideshow" role="region" aria-roledescription="carousel" aria-label="CoopMS executive photo gallery">
+    <div class="executive-photos">
+      <img class="is-current" src="assets/photos/coopms-executives-boardroom-v2.png" width="1536" height="1024" fetchpriority="high" decoding="async" alt="Three relaxed executives looking at their phones at a meeting table." aria-hidden="false">
+      <img src="assets/photos/coopms-executives-lounge-v2.png" width="1536" height="1024" decoding="async" alt="Two smiling executives looking at a phone together in an office lounge." aria-hidden="true">
+    </div>
+    <div class="wrap">
+    <div class="hero-content">
+      <h1>COOPMS</h1>
+      <p class="lead">The financial backbone for cooperative societies.</p>
+      <p class="hero-summary">Members, savings, loans and accounting in one connected platform. Clear records for your officers. Confidence for every member.</p>
       <div class="hero-cta">
         <a class="btn btn-primary" href="#contact">Book a demo <svg class="ic"><use href="#i-arrow"/></svg></a>
         <a class="btn btn-text" href="#platform">Explore the platform <svg class="ic"><use href="#i-down"/></svg></a>
       </div>
       <div class="hero-note"><svg class="ic"><use href="#i-check-c"/></svg> Your data migrated and reconciled to your existing trial balance.</div>
-    </div>
-    <div class="hero-visual">
-      <div class="ui">
-        <div class="ui-bar"><span class="d" style="background:#e05b52"></span><span class="d" style="background:#e0a23a"></span><span class="d" style="background:#2fae5b"></span><span class="t num">yoursociety.cooperativems.com</span></div>
-        <div class="ui-hd"><h4>Trial Balance — 30 Jun 2026</h4><span class="chip chip-ok"><span class="dot"></span>Balanced</span></div>
-        <div class="ui-b">
-          <table class="ledger">
-            <thead><tr><th>Account</th><th>Debit</th><th>Credit</th></tr></thead>
-            <tbody>
-              <tr><td class="k">Cash &amp; Bank</td><td class="r num">28,516,065</td><td class="r num">—</td></tr>
-              <tr><td class="k">Loans Receivable</td><td class="r num">43,631,297</td><td class="r num">—</td></tr>
-              <tr><td class="k">Member Deposits</td><td class="r num">—</td><td class="r num">62,603,157</td></tr>
-              <tr><td class="k">Share Capital</td><td class="r num">—</td><td class="r num">3,294,903</td></tr>
-              <tr><td class="k">Accumulated Surplus</td><td class="r num">—</td><td class="r num">31,344,239</td></tr>
-            </tbody>
-            <tfoot><tr><td>Total</td><td class="r num">104,101,362</td><td class="r num">104,101,362</td></tr></tfoot>
-          </table>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- Proof strip -->
-<section class="executive-stories" aria-label="CoopMS on mobile">
-  <div class="wrap" id="executiveSlideshow" role="region" aria-roledescription="carousel" aria-label="CoopMS executive photo gallery">
-    <div class="executive-photos">
-      <img class="is-current" src="assets/photos/coopms-executives-boardroom-v2.png" width="1536" height="1024" loading="lazy" decoding="async" alt="Three relaxed executives looking at their phones at a meeting table." aria-hidden="false">
-      <img src="assets/photos/coopms-executives-lounge-v2.png" width="1536" height="1024" loading="lazy" decoding="async" alt="Two smiling executives looking at a phone together in an office lounge." aria-hidden="true">
     </div>
     <div class="photo-toolbar">
       <p>AI-generated imagery.</p>
@@ -406,6 +406,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
         <button type="button" class="photo-toggle" aria-label="Pause slideshow" title="Pause slideshow"><span aria-hidden="true">&#10074;&#10074;</span></button>
         <button type="button" class="next" aria-label="Next photo" title="Next photo"><svg class="ic" aria-hidden="true"><use href="#i-arrow"/></svg></button>
       </div>
+    </div>
     </div>
   </div>
 </section>
@@ -927,7 +928,7 @@ height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
     });
   })();
 </script>
-<script src="assets/executive-slideshow.js"></script>
+<script src="assets/executive-slideshow.js?v=hero-1"></script>
 <script>
   document.getElementById('yr').textContent = new Date().getFullYear();
   // Product tour tabs

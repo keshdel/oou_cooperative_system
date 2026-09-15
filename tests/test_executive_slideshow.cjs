@@ -3,6 +3,12 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const source = fs.readFileSync(path.join(__dirname, '../deploy/vps/landing/assets/executive-slideshow.js'), 'utf8');
+const html = fs.readFileSync(path.join(__dirname, '../deploy/vps/landing/index.html'), 'utf8');
+const hero = html.match(/<section class="hero"[\s\S]*?<\/section>/)[0];
+assert.ok(hero.includes('id="executiveSlideshow"'));
+assert.ok(hero.includes('fetchpriority="high"'));
+assert.equal((html.match(/id="executiveSlideshow"/g) || []).length, 1);
+assert.equal(html.includes('<section class="executive-stories"'), false);
 function setup(reduced = false){
   const timers = new Map();
   const events = {};
@@ -37,8 +43,8 @@ async function flush(){await new Promise(resolve=>setImmediate(resolve));}
   [...page.timers.values()][0](); await flush();
   assert.equal(page.photos[1].current,true);
   assert.equal(page.photos[0].attrs['aria-hidden'],'true');
-  page.gallery.mouseenter(); assert.equal(page.timers.size,0);
-  page.gallery.mouseleave(); assert.equal(page.timers.size,1);
+  page.nodes['.photo-controls'].mouseenter(); assert.equal(page.timers.size,0);
+  page.nodes['.photo-controls'].mouseleave(); assert.equal(page.timers.size,1);
   page.gallery.focusin(); assert.equal(page.timers.size,0);
   page.nodes['.previous'].click(); await flush();
   assert.equal(page.photos[0].current,true);
