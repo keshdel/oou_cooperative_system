@@ -26,6 +26,12 @@ class AffiliateTests(unittest.TestCase):
     def setUp(self):
         os.environ['MARKETING_HQ'] = '1'
         self.client = self.app.test_client()
+        # The public lead API allows 8 submissions per IP per 15 minutes. That is
+        # right in production and wrong for a test suite that files many
+        # enquiries from one address, so the window is cleared per test rather
+        # than the limit loosened.
+        import blueprints.marketing as mk
+        mk._RECENT_SUBMISSIONS.clear()
 
     def tearDown(self):
         os.environ.pop('MARKETING_HQ', None)
@@ -111,10 +117,13 @@ class AffiliateTests(unittest.TestCase):
                    'society_name': society, 'consent_accepted': '1'}
         if code is not None:
             payload['affiliate_code'] = code
-        self.client.post('/api/marketing/leads', json=payload)
+        r = self.client.post('/api/marketing/leads', json=payload)
+        self.assertEqual(r.status_code, 200, f'lead capture refused: {r.data[:200]}')
         with self.app.app_context():
-            return get_db().execute('SELECT * FROM marketing_leads WHERE society_name = ?',
+            lead = get_db().execute('SELECT * FROM marketing_leads WHERE society_name = ?',
                                     (society,)).fetchone()
+        self.assertIsNotNone(lead, f'no lead row created for {society}')
+        return lead
 
     def test_a_referral_code_on_an_enquiry_credits_the_affiliate(self):
         self.login_admin()
@@ -264,6 +273,216 @@ class AffiliateTests(unittest.TestCase):
         os.environ.pop('MARKETING_HQ', None)
         self.assertEqual(self.client.get('/hq/affiliates').status_code, 404)
         self.assertEqual(self.client.get('/affiliates/apply').status_code, 404)
+
+    # ── commission ───────────────────────────────────────────────────────────
+
+    def _client_with_setup(self, name, aff, setup=300000, users=200, pay=True):
+        """A cooperative introduced by `aff`, billed a setup fee, optionally paid."""
+        lead = self._capture_lead(name, aff['code'])
+        self.client.post('/hq/clients', data={
+            'name': name, 'code': name.lower().replace(' ', ''), 'billing_email': 'x@y.com',
+            'user_count': str(users), 'rate_per_user': '5000', 'billing_cycle': 'annual'},
+            follow_redirects=True)
+        with self.app.app_context():
+            cid = get_db().execute('SELECT id FROM hq_clients WHERE name = ?', (name,)).fetchone()['id']
+        self.client.post(f'/hq/affiliates/clients/{cid}/link',
+                         data={'lead_id': str(lead['id'])}, follow_redirects=True)
+        self.client.post('/hq/invoices/new', data={
+            'client_id': cid, 'sub_mode': 'none', 'setup_amount': str(setup)},
+            follow_redirects=True)
+        with self.app.app_context():
+            inv = get_db().execute('SELECT id FROM hq_invoices WHERE client_id = ? '
+                                   'ORDER BY id DESC', (cid,)).fetchone()['id']
+        if pay:
+            self.client.post(f'/hq/invoices/{inv}/mark-paid',
+                             data={'paid_method': 'transfer'}, follow_redirects=True)
+        return cid, inv
+
+    def _commissions(self, invoice_id):
+        with self.app.app_context():
+            return get_db().execute(
+                'SELECT c.*, a.full_name FROM affiliate_commissions c '
+                'JOIN affiliates a ON a.id = c.affiliate_id WHERE c.invoice_id = ? '
+                'ORDER BY c.role, c.id', (invoice_id,)).fetchall()
+
+    def test_member_and_lead_split_the_pool_out_of_one_setup_fee(self):
+        self.login_admin()
+        boss = self._onboard('Split Lead', 'splitlead@example.test', tier='lead')
+        member = self._onboard('Split Member', 'splitmember@example.test', parent_id=boss['id'])
+        _, inv = self._client_with_setup('Split Coop', member, setup=300000)
+
+        rows = self._commissions(inv)
+        self.assertEqual(len(rows), 2)
+        by_role = {r['role']: r for r in rows}
+        # 15% to the member who closed it, 5% to their lead, out of the same 20%.
+        self.assertAlmostEqual(float(by_role['direct']['amount']), 45000.0, places=2)
+        self.assertEqual(by_role['direct']['affiliate_id'], member['id'])
+        self.assertAlmostEqual(float(by_role['override']['amount']), 15000.0, places=2)
+        self.assertEqual(by_role['override']['affiliate_id'], boss['id'])
+        self.assertEqual(by_role['override']['source_affiliate_id'], member['id'])
+        # Total cost to the business is capped at the pool.
+        self.assertAlmostEqual(sum(float(r['amount']) for r in rows), 60000.0, places=2)
+
+    def test_a_lead_who_closes_it_himself_takes_the_whole_pool(self):
+        from blueprints.affiliates import affiliate_balance
+        self.login_admin()
+        boss = self._onboard('Solo Lead', 'sololead@example.test', tier='lead')
+        _, inv = self._client_with_setup('Solo Coop', boss, setup=300000)
+        rows = self._commissions(inv)
+        self.assertEqual(len(rows), 1, 'there is nobody above a lead to override')
+        self.assertEqual(rows[0]['role'], 'direct')
+        self.assertAlmostEqual(float(rows[0]['amount']), 60000.0, places=2)
+        with self.app.app_context():
+            self.assertAlmostEqual(affiliate_balance(get_db(), boss['id']), 60000.0, places=2)
+
+    def test_a_member_with_no_lead_earns_their_own_rate_and_the_rest_is_kept(self):
+        self.login_admin()
+        orphan = self._onboard('No Team', 'noteam@example.test')   # no parent
+        _, inv = self._client_with_setup('Orphan Coop', orphan, setup=300000)
+        rows = self._commissions(inv)
+        self.assertEqual(len(rows), 1)
+        self.assertAlmostEqual(float(rows[0]['amount']), 45000.0, places=2)
+        # The 5% override is simply not paid — it does not roll up to the member.
+        self.assertAlmostEqual(sum(float(r['amount']) for r in rows), 45000.0, places=2)
+
+    def test_nothing_is_earned_until_the_setup_fee_is_actually_paid(self):
+        self.login_admin()
+        aff = self._onboard('Patient Seller', 'patient@example.test')
+        cid, inv = self._client_with_setup('Unpaid Coop', aff, setup=300000, pay=False)
+        self.assertEqual(len(self._commissions(inv)), 0)
+        self.client.post(f'/hq/invoices/{inv}/mark-paid',
+                         data={'paid_method': 'transfer'}, follow_redirects=True)
+        self.assertEqual(len(self._commissions(inv)), 1)
+
+    def test_commission_follows_cash_so_a_deposit_earns_only_its_part(self):
+        from blueprints.affiliates import affiliate_balance
+        self.login_admin()
+        aff = self._onboard('Chaser', 'chaser@example.test')
+        # 100,000 deposit invoice paid; 200,000 balance invoice still outstanding.
+        cid, first = self._client_with_setup('Instalment Coop', aff, setup=100000)
+        self.client.post('/hq/invoices/new', data={
+            'client_id': cid, 'sub_mode': 'none', 'setup_amount': '200000',
+            'setup_again': '1'}, follow_redirects=True)
+        with self.app.app_context():
+            db = get_db()
+            self.assertAlmostEqual(affiliate_balance(db, aff['id']), 15000.0, places=2)
+            second = db.execute('SELECT id FROM hq_invoices WHERE client_id = ? ORDER BY id DESC',
+                                (cid,)).fetchone()['id']
+        # Chasing the balance earns the rest.
+        self.client.post(f'/hq/invoices/{second}/mark-paid',
+                         data={'paid_method': 'transfer'}, follow_redirects=True)
+        with self.app.app_context():
+            self.assertAlmostEqual(affiliate_balance(get_db(), aff['id']), 45000.0, places=2)
+
+    def test_accrual_is_idempotent_so_a_replayed_payment_cannot_pay_twice(self):
+        from blueprints.affiliates import accrue_for_invoice, affiliate_balance
+        self.login_admin()
+        aff = self._onboard('Once Paid', 'oncepaid@example.test')
+        _, inv = self._client_with_setup('Replay Coop', aff, setup=300000)
+        with self.app.app_context():
+            db = get_db()
+            before = affiliate_balance(db, aff['id'])
+            # Simulate the gateway replaying its callback.
+            accrue_for_invoice(db, inv)
+            accrue_for_invoice(db, inv)
+            db.commit()
+            self.assertAlmostEqual(affiliate_balance(db, aff['id']), before, places=2)
+        self.assertEqual(len(self._commissions(inv)), 1)
+
+    def test_only_the_setup_line_earns_commission(self):
+        from blueprints.affiliates import affiliate_balance
+        self.login_admin()
+        aff = self._onboard('Subs Only', 'subsonly@example.test')
+        lead = self._capture_lead('Subs Coop', aff['code'])
+        self.client.post('/hq/clients', data={
+            'name': 'Subs Coop', 'code': 'subscoop', 'billing_email': 'x@y.com',
+            'user_count': '100', 'rate_per_user': '5000', 'billing_cycle': 'annual'},
+            follow_redirects=True)
+        with self.app.app_context():
+            cid = get_db().execute("SELECT id FROM hq_clients WHERE name = 'Subs Coop'").fetchone()['id']
+        self.client.post(f'/hq/affiliates/clients/{cid}/link',
+                         data={'lead_id': str(lead['id'])}, follow_redirects=True)
+        # A subscription plus a service fee, and no setup line at all.
+        self.client.post('/hq/invoices/new', data={
+            'client_id': cid, 'sub_mode': 'full', 'sub_qty': '100', 'sub_unit': '5000',
+            'service_type': 'training', 'service_desc': 'onboarding day',
+            'service_amount': '50000'}, follow_redirects=True)
+        with self.app.app_context():
+            inv = get_db().execute('SELECT id FROM hq_invoices WHERE client_id = ?',
+                                   (cid,)).fetchone()['id']
+        self.client.post(f'/hq/invoices/{inv}/mark-paid',
+                         data={'paid_method': 'transfer'}, follow_redirects=True)
+        with self.app.app_context():
+            self.assertAlmostEqual(affiliate_balance(get_db(), aff['id']), 0.0, places=2)
+
+    def test_an_unattributed_cooperative_earns_nobody_anything(self):
+        self.login_admin()
+        self.client.post('/hq/clients', data={
+            'name': 'Walk In Coop', 'code': 'walkin', 'billing_email': 'x@y.com',
+            'user_count': '90', 'rate_per_user': '5000', 'billing_cycle': 'annual'},
+            follow_redirects=True)
+        with self.app.app_context():
+            cid = get_db().execute("SELECT id FROM hq_clients WHERE name = 'Walk In Coop'").fetchone()['id']
+        self.client.post('/hq/invoices/new', data={
+            'client_id': cid, 'sub_mode': 'none', 'setup_amount': '300000'},
+            follow_redirects=True)
+        with self.app.app_context():
+            inv = get_db().execute('SELECT id FROM hq_invoices WHERE client_id = ?',
+                                   (cid,)).fetchone()['id']
+        self.client.post(f'/hq/invoices/{inv}/mark-paid',
+                         data={'paid_method': 'transfer'}, follow_redirects=True)
+        self.assertEqual(len(self._commissions(inv)), 0)
+
+    def test_deleting_a_paid_invoice_claws_the_commission_back(self):
+        from blueprints.affiliates import affiliate_balance
+        self.login_admin()
+        boss = self._onboard('Clawback Lead', 'cblead@example.test', tier='lead')
+        member = self._onboard('Clawback Member', 'cbmember@example.test', parent_id=boss['id'])
+        _, inv = self._client_with_setup('Refund Coop', member, setup=300000)
+        with self.app.app_context():
+            db = get_db()
+            self.assertAlmostEqual(affiliate_balance(db, member['id']), 45000.0, places=2)
+            self.assertAlmostEqual(affiliate_balance(db, boss['id']), 15000.0, places=2)
+
+        self.client.post(f'/hq/invoices/{inv}/delete', follow_redirects=True)
+        with self.app.app_context():
+            db = get_db()
+            # Both the member and the override go back to zero...
+            self.assertAlmostEqual(affiliate_balance(db, member['id']), 0.0, places=2)
+            self.assertAlmostEqual(affiliate_balance(db, boss['id']), 0.0, places=2)
+            # ...but the history stays, as compensating rows, not deletions.
+            rows = db.execute('SELECT * FROM affiliate_commissions WHERE invoice_id = ? '
+                              'ORDER BY id', (inv,)).fetchall()
+            self.assertEqual(len(rows), 4, 'two earnings and two reversals')
+            # The originals are marked reversed and stamped...
+            originals = [r for r in rows if r['status'] == 'reversed']
+            self.assertEqual(len(originals), 2)
+            self.assertTrue(all(r['reversed_at'] for r in originals))
+            # ...and each is cancelled by its own compensating row.
+            clawbacks = [r for r in rows if r['status'] == 'clawback']
+            self.assertEqual(len(clawbacks), 2)
+            self.assertTrue(all(r['amount'] < 0 and r['reversal_of'] for r in clawbacks))
+            self.assertEqual({r['reversal_of'] for r in clawbacks},
+                             {r['id'] for r in originals})
+
+    def test_rates_are_configurable_and_only_affect_later_earnings(self):
+        from blueprints.affiliates import commission_rates
+        self.login_admin()
+        aff = self._onboard('Rate Change', 'ratechange@example.test')
+        _, first = self._client_with_setup('Old Rate Coop', aff, setup=300000)
+        self.assertAlmostEqual(float(self._commissions(first)[0]['amount']), 45000.0, places=2)
+
+        self.client.post('/hq/affiliates/rates', data={
+            'affiliate_member_rate': '10', 'affiliate_lead_rate': '5'}, follow_redirects=True)
+        with self.app.app_context():
+            r = commission_rates(get_db())
+            self.assertEqual(r['member'], 10.0)
+            self.assertEqual(r['pool'], 15.0, 'the pool is the sum of the two shares')
+
+        _, second = self._client_with_setup('New Rate Coop', aff, setup=300000)
+        self.assertAlmostEqual(float(self._commissions(second)[0]['amount']), 30000.0, places=2)
+        # The earlier earning is untouched.
+        self.assertAlmostEqual(float(self._commissions(first)[0]['amount']), 45000.0, places=2)
 
 
 if __name__ == '__main__':

@@ -109,6 +109,32 @@ def setup_paid(db, client_id):
     return _setup_total(db, client_id, ('paid',))
 
 
+def _accrue_affiliate_commission(db, invoice_id):
+    """Earn affiliate commission on a newly paid invoice. Late import because
+    the affiliates module imports this one. Never blocks the payment: a billing
+    record must not fail because the commission ledger did."""
+    try:
+        from blueprints.affiliates import accrue_for_invoice
+        rows = accrue_for_invoice(db, invoice_id,
+                                  created_by=getattr(current_user, 'id', None))
+        return round(sum(r['amount'] for r in rows), 2)
+    except Exception as exc:                      # pragma: no cover - defensive
+        current_app.logger.warning('Affiliate accrual failed for invoice %s: %s',
+                                   invoice_id, exc)
+        return 0.0
+
+
+def _reverse_affiliate_commission(db, invoice_id, reason):
+    try:
+        from blueprints.affiliates import reverse_for_invoice
+        return reverse_for_invoice(db, invoice_id, reason=reason,
+                                   created_by=getattr(current_user, 'id', None))
+    except Exception as exc:                      # pragma: no cover - defensive
+        current_app.logger.warning('Affiliate clawback failed for invoice %s: %s',
+                                   invoice_id, exc)
+        return []
+
+
 # ── Gate ────────────────────────────────────────────────────────────────────
 
 def _is_hq_admin() -> bool:
@@ -856,8 +882,12 @@ def mark_paid(invoice_id):
     audit(db, 'HQ_INVOICE_PAID_MANUAL', 'hq_billing',
           f"Invoice {inv['invoice_number']} marked paid (manual, ref {ref})")
     reactivated = _maybe_auto_reactivate(db, inv['client_id'])
+    earned = _accrue_affiliate_commission(db, invoice_id)
     db.commit()
-    flash('Invoice marked as paid.' + (' Client access has been reactivated.' if reactivated else ''), 'success')
+    flash('Invoice marked as paid.'
+          + (' Client access has been reactivated.' if reactivated else '')
+          + (f' Affiliate commission of NGN {_money(earned)} earned.' if earned else ''),
+          'success')
     return redirect(url_for('hq_billing.invoice_detail', invoice_id=invoice_id))
 
 
@@ -891,6 +921,11 @@ def delete_invoice(invoice_id):
         abort(404)
     if inv['status'] != 'void':
         _release_billed_users(db, inv)
+    # Deleting a paid invoice takes the money away, so any commission it earned
+    # is clawed back rather than left standing against a bill that no longer exists.
+    if inv['status'] == 'paid':
+        _reverse_affiliate_commission(db, invoice_id,
+                                      f"invoice {inv['invoice_number']} deleted")
     db.execute('DELETE FROM hq_invoice_items WHERE invoice_id = ?', (invoice_id,))
     db.execute('DELETE FROM hq_invoices WHERE id = ?', (invoice_id,))
     audit(db, 'HQ_INVOICE_DELETE', 'hq_billing',
@@ -1015,6 +1050,7 @@ def pay_callback():
         audit(db, 'HQ_INVOICE_PAID_ONLINE', 'hq_billing',
               f"Invoice {inv['invoice_number']} paid online (ref {reference})")
         _maybe_auto_reactivate(db, inv['client_id'])
+        _accrue_affiliate_commission(db, invoice_id=inv['id'])
         db.commit()
         return render_template('hq/pay-result.html', ok=True, already=False, inv=inv)
     return render_template('hq/pay-result.html', ok=False, already=False, inv=inv,

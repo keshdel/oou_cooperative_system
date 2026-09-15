@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Affiliate commission - {{ coop_name }}{% endblock %}
+{% block content %}
+<style>.perm-table thead th { background-color:#e9eef5; color:#1f2937; }</style>
+<div class="container-fluid">
+    <div class="row mb-3">
+        <div class="col-md-8">
+            <h2><i class="fas fa-hand-holding-usd"></i> Commission</h2>
+            <p class="text-muted mb-0">Earned on setup fees that cooperatives have actually paid.
+                Nothing here has been paid out — payout batches come later.</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <button class="btn btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#rateForm">
+                <i class="fas fa-percent"></i> Rates</button>
+            <a href="{{ url_for('affiliates.attribution') }}" class="btn btn-outline-secondary">
+                <i class="fas fa-chart-line"></i> Attribution</a>
+        </div>
+    </div>
+
+    <div class="collapse mb-3" id="rateForm"><div class="card"><div class="card-body">
+        <form method="post" action="{{ url_for('affiliates.save_rates') }}" class="row g-2 align-items-end">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="col-md-3"><label class="form-label small mb-1">Team member (% of setup fee)</label>
+                <input class="form-control form-control-sm" type="number" step="0.5" min="0" max="100"
+                       name="affiliate_member_rate" value="{{ rates.member }}"></div>
+            <div class="col-md-3"><label class="form-label small mb-1">Team lead override (%)</label>
+                <input class="form-control form-control-sm" type="number" step="0.5" min="0" max="100"
+                       name="affiliate_lead_rate" value="{{ rates.lead }}"></div>
+            <div class="col-md-3">
+                <div class="small text-muted">Total cost per introduction</div>
+                <div class="h5 mb-0">{{ "%g"|format(rates.pool) }}% of the setup fee</div></div>
+            <div class="col-md-3"><button class="btn btn-sm btn-primary w-100">Save rates</button></div>
+            <div class="col-12"><div class="form-text">
+                The lead's share comes out of the member's pool, not on top, so the total never
+                exceeds the figure above. A team lead who closes a deal himself earns the whole
+                {{ "%g"|format(rates.pool) }}%. A member with no team lead earns their
+                {{ "%g"|format(rates.member) }}% and the override is simply not paid.
+                Changing rates affects future earnings only.</div></div>
+        </form>
+    </div></div></div>
+
+    <div class="row g-3 mb-4">
+        <div class="col-md-4"><div class="card h-100"><div class="card-body">
+            <div class="small text-muted">Earned, net of reversals</div>
+            <div class="h4 mb-0 text-success">₦{{ "{:,.2f}".format(grand) }}</div></div></div></div>
+        <div class="col-md-8"><div class="card h-100"><div class="card-body">
+            <div class="small text-muted">Owed to</div>
+            <div class="h4 mb-0">{{ totals|length }} affiliate(s)</div></div></div></div>
+    </div>
+
+    <div class="card mb-4"><div class="table-responsive">
+        <table class="table perm-table align-middle mb-0">
+            <thead><tr><th>Affiliate</th><th>Code</th><th>Tier</th>
+                <th class="text-end">Own deals</th><th class="text-end">Team override</th>
+                <th class="text-end">Balance</th></tr></thead>
+            <tbody>
+            {% for t in totals %}
+            <tr>
+                <td><strong>{{ t.full_name }}</strong></td>
+                <td class="font-monospace">{{ t.code }}</td>
+                <td>{% if t.tier == 'lead' %}<span class="badge bg-dark">Team lead</span>
+                    {% else %}<span class="badge bg-light text-dark">Member</span>{% endif %}</td>
+                <td class="text-end">₦{{ "{:,.2f}".format(t.direct or 0) }}</td>
+                <td class="text-end">₦{{ "{:,.2f}".format(t.override_earned or 0) }}</td>
+                <td class="text-end fw-semibold">₦{{ "{:,.2f}".format(t.balance or 0) }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="6" class="text-center text-muted py-4">
+                No commission earned yet. It accrues when a cooperative pays a setup fee.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div></div>
+
+    <h5 class="mb-2">Every earning</h5>
+    <div class="card"><div class="table-responsive">
+        <table class="table perm-table align-middle mb-0">
+            <thead><tr><th>When</th><th>Affiliate</th><th>Cooperative</th><th>Invoice</th>
+                <th>Role</th><th class="text-end">Setup paid</th><th class="text-end">Rate</th>
+                <th class="text-end">Amount</th></tr></thead>
+            <tbody>
+            {% for r in rows %}
+            <tr class="{{ 'table-light text-muted' if r.status == 'reversed' or r.amount < 0 }}">
+                <td class="small">{{ r.created_at|fmtdt('%d/%m/%Y') }}</td>
+                <td>{{ r.full_name }} <span class="font-monospace small text-muted">{{ r.code }}</span></td>
+                <td>{{ r.client_name or '—' }}</td>
+                <td class="font-monospace small">{{ r.invoice_number or '—' }}</td>
+                <td>
+                    {% if r.role == 'override' %}
+                        <span class="badge bg-info text-dark">Override</span>
+                        {% if r.source_name %}<span class="small text-muted">on {{ r.source_name }}</span>{% endif %}
+                    {% else %}<span class="badge bg-light text-dark">Own deal</span>{% endif %}
+                    {% if r.status == 'reversed' %}<span class="badge bg-warning text-dark">Reversed</span>{% endif %}
+                    {% if r.reversal_of %}<span class="badge bg-secondary">Clawback</span>{% endif %}
+                </td>
+                <td class="text-end">₦{{ "{:,.2f}".format(r.basis_amount or 0) }}</td>
+                <td class="text-end">{{ "%g"|format(r.rate or 0) }}%</td>
+                <td class="text-end fw-semibold {{ 'text-danger' if (r.amount or 0) < 0 }}">
+                    ₦{{ "{:,.2f}".format(r.amount or 0) }}</td>
+            </tr>
+            {% if r.note %}
+            <tr class="small text-muted"><td></td><td colspan="7">{{ r.note }}</td></tr>
+            {% endif %}
+            {% else %}
+            <tr><td colspan="8" class="text-center text-muted py-4">Nothing yet.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div></div>
+</div>
+{% endblock %}

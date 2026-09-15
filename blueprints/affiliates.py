@@ -23,7 +23,8 @@ from database import get_db, last_insert_id
 from extensions import csrf
 from email_service import send_email
 from blueprints.marketing import marketing_hq_enabled
-from blueprints.hq_billing import hq_admin_required, setup_paid, setup_charged
+from blueprints.hq_billing import (hq_admin_required, setup_paid, setup_charged,
+                                   SETUP_ITEM_TYPE)
 from utils import audit
 
 affiliates_bp = Blueprint('affiliates', __name__)
@@ -596,3 +597,219 @@ def link_client(client_id):
           ' That enquiry has no affiliate code, so nothing is credited.'),
           'success' if aff_id else 'warning')
     return redirect(url_for('affiliates.attribution'))
+
+
+# ── Commission ───────────────────────────────────────────────────────────────
+# The pool is a fixed share of the setup fee and is split between at most two
+# people, so the cost of the channel is capped at the pool rate however the tree
+# is shaped. A member with no team lead still earns only their own rate — the
+# lead's share is simply not paid — because paying an unattached member the
+# whole pool would make leaving a team the profitable move.
+
+DEFAULT_POOL_RATE = 20.0
+DEFAULT_MEMBER_RATE = 15.0
+DEFAULT_LEAD_RATE = 5.0
+
+ROLE_DIRECT = 'direct'
+ROLE_OVERRIDE = 'override'
+STATUS_EARNED = 'earned'
+# The original earning, once cancelled.
+STATUS_REVERSED = 'reversed'
+# The compensating negative row that cancelled it. A distinct status because it
+# is not itself a reversed earning, and because the uniqueness guard on earned
+# rows must not see it.
+STATUS_CLAWBACK = 'clawback'
+
+
+def commission_rates(db):
+    """Configured rates as percentages of the setup fee.
+
+    member + lead should equal the pool; if a setting has been edited to break
+    that, the pool is treated as the sum so the split can never quietly cost
+    more than it claims to.
+    """
+    def _get(key, default):
+        row = db.execute('SELECT value FROM settings WHERE key = ?', (key,)).fetchone()
+        try:
+            return max(0.0, float(row['value'])) if row and row['value'] not in (None, '') else default
+        except (TypeError, ValueError):
+            return default
+
+    member = _get('affiliate_member_rate', DEFAULT_MEMBER_RATE)
+    lead = _get('affiliate_lead_rate', DEFAULT_LEAD_RATE)
+    pool = _get('affiliate_pool_rate', DEFAULT_POOL_RATE)
+    if round(member + lead, 6) != round(pool, 6):
+        pool = round(member + lead, 2)
+    return {'pool': pool, 'member': member, 'lead': lead}
+
+
+def _earner_split(db, affiliate):
+    """Who earns what on one introduction, as (affiliate_id, role, rate) rows.
+
+    A team lead who closed the deal himself takes the whole pool with no
+    override, since there is nobody above him to share with.
+    """
+    rates = commission_rates(db)
+    if affiliate['tier'] == TIER_LEAD:
+        return [(affiliate['id'], ROLE_DIRECT, rates['pool'], None)]
+
+    rows = [(affiliate['id'], ROLE_DIRECT, rates['member'], None)]
+    parent_id = affiliate['parent_id']
+    if parent_id:
+        parent = db.execute("SELECT * FROM affiliates WHERE id = ? AND status = 'active'",
+                            (parent_id,)).fetchone()
+        if parent:
+            rows.append((parent['id'], ROLE_OVERRIDE, rates['lead'], affiliate['id']))
+    # No lead, or a lead who is no longer active: their share is simply not paid.
+    return rows
+
+
+def setup_paid_on_invoice(db, invoice_id):
+    """Setup-fee money on one paid invoice. Commission follows cash, so this is
+    what an earning event is measured on."""
+    row = db.execute(
+        "SELECT COALESCE(SUM(it.amount), 0) FROM hq_invoice_items it "
+        "JOIN hq_invoices i ON i.id = it.invoice_id "
+        "WHERE it.invoice_id = ? AND it.item_type = ? AND i.status = 'paid'",
+        (invoice_id, SETUP_ITEM_TYPE)).fetchone()
+    return round(float(row[0] or 0), 2)
+
+
+def accrue_for_invoice(db, invoice_id, created_by=None):
+    """Earn commission on the setup-fee cash of a newly paid invoice.
+
+    Idempotent: a repeated mark-paid, or a gateway callback replayed by the
+    provider, must not pay twice. Returns the rows written.
+    """
+    basis = setup_paid_on_invoice(db, invoice_id)
+    if basis <= 0:
+        return []
+    inv = db.execute('SELECT * FROM hq_invoices WHERE id = ?', (invoice_id,)).fetchone()
+    if not inv:
+        return []
+    client = db.execute('SELECT * FROM hq_clients WHERE id = ?', (inv['client_id'],)).fetchone()
+    if not client or not client['affiliate_id']:
+        return []                      # nobody introduced this cooperative
+    affiliate = db.execute('SELECT * FROM affiliates WHERE id = ?',
+                           (client['affiliate_id'],)).fetchone()
+    if not affiliate or affiliate['status'] not in (STATUS_ACTIVE, STATUS_SUSPENDED):
+        return []
+
+    written = []
+    for aff_id, role, rate, source_id in _earner_split(db, affiliate):
+        existing = db.execute(
+            'SELECT 1 FROM affiliate_commissions WHERE invoice_id = ? AND affiliate_id = ? '
+            "AND role = ? AND status = 'earned'", (invoice_id, aff_id, role)).fetchone()
+        if existing:
+            continue
+        amount = round(basis * rate / 100.0, 2)
+        if amount <= 0:
+            continue
+        db.execute(
+            'INSERT INTO affiliate_commissions (affiliate_id, client_id, invoice_id, '
+            ' source_affiliate_id, role, basis_amount, rate, amount, status, note, created_by) '
+            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            (aff_id, client['id'], invoice_id, source_id, role, basis, rate, amount,
+             STATUS_EARNED,
+             f"{rate:g}% of setup fee collected on {inv['invoice_number']}", created_by))
+        written.append({'affiliate_id': aff_id, 'role': role, 'rate': rate, 'amount': amount})
+    return written
+
+
+def reverse_for_invoice(db, invoice_id, reason='', created_by=None):
+    """Claw back commission when the money behind it goes away.
+
+    Follows the ledger's reversal convention: a compensating negative row
+    pointing at the original, so an affiliate's statement shows what was earned,
+    what was taken back and why, instead of the earning silently vanishing.
+    """
+    rows = db.execute(
+        "SELECT * FROM affiliate_commissions WHERE invoice_id = ? AND status = 'earned'",
+        (invoice_id,)).fetchall()
+    reversed_rows = []
+    for r in rows:
+        db.execute(
+            'INSERT INTO affiliate_commissions (affiliate_id, client_id, invoice_id, '
+            ' source_affiliate_id, role, basis_amount, rate, amount, status, note, '
+            ' reversal_of, created_by) '
+            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            (r['affiliate_id'], r['client_id'], invoice_id, r['source_affiliate_id'],
+             r['role'], -float(r['basis_amount'] or 0), r['rate'], -float(r['amount'] or 0),
+             STATUS_CLAWBACK, f"Reversal: {reason}" if reason else 'Reversal', r['id'],
+             created_by))
+        db.execute("UPDATE affiliate_commissions SET status = 'reversed', reversed_at = ? "
+                   'WHERE id = ?', (datetime.now(), r['id']))
+        reversed_rows.append(r)
+    return reversed_rows
+
+
+def affiliate_balance(db, affiliate_id):
+    """What this affiliate has earned net of reversals. Nothing here is paid —
+    payout batches are a later slice."""
+    row = db.execute(
+        'SELECT COALESCE(SUM(amount), 0) FROM affiliate_commissions WHERE affiliate_id = ?',
+        (affiliate_id,)).fetchone()
+    return round(float(row[0] or 0), 2)
+
+
+# ── Statements ───────────────────────────────────────────────────────────────
+
+@affiliates_bp.route('/hq/affiliates/commissions')
+@hq_admin_required
+def commissions():
+    """What every affiliate has earned, and on what."""
+    db = get_db()
+    rates = commission_rates(db)
+    rows = db.execute('''
+        SELECT c.*, a.full_name, a.code, a.tier, cl.name AS client_name,
+               i.invoice_number, s.full_name AS source_name
+        FROM affiliate_commissions c
+        JOIN affiliates a ON a.id = c.affiliate_id
+        LEFT JOIN hq_clients cl ON cl.id = c.client_id
+        LEFT JOIN hq_invoices i ON i.id = c.invoice_id
+        LEFT JOIN affiliates s ON s.id = c.source_affiliate_id
+        ORDER BY c.created_at DESC, c.id DESC
+    ''').fetchall()
+    totals = db.execute('''
+        SELECT a.id, a.full_name, a.code, a.tier,
+               COALESCE(SUM(c.amount), 0) AS balance,
+               COALESCE(SUM(CASE WHEN c.role = 'direct' AND c.amount > 0 THEN c.amount END), 0) AS direct,
+               COALESCE(SUM(CASE WHEN c.role = 'override' AND c.amount > 0 THEN c.amount END), 0) AS override_earned
+        FROM affiliates a JOIN affiliate_commissions c ON c.affiliate_id = a.id
+        GROUP BY a.id, a.full_name, a.code, a.tier
+        HAVING COALESCE(SUM(c.amount), 0) <> 0 OR COUNT(c.id) > 0
+        ORDER BY balance DESC
+    ''').fetchall()
+    return render_template('affiliates/commissions.html', rows=rows, totals=totals,
+                           rates=rates,
+                           grand=round(sum(float(t['balance'] or 0) for t in totals), 2))
+
+
+@affiliates_bp.route('/hq/affiliates/rates', methods=['POST'])
+@hq_admin_required
+def save_rates():
+    """Back-office commission rates, as percentages of the setup fee."""
+    db = get_db()
+
+    def _num(key, default):
+        try:
+            return max(0.0, min(100.0, float(request.form.get(key) or default)))
+        except (TypeError, ValueError):
+            return default
+
+    member = _num('affiliate_member_rate', DEFAULT_MEMBER_RATE)
+    lead = _num('affiliate_lead_rate', DEFAULT_LEAD_RATE)
+    pool = round(member + lead, 2)
+    if pool > 100:
+        flash('The member and lead shares cannot exceed 100% of the setup fee.', 'danger')
+        return redirect(url_for('affiliates.commissions'))
+    for key, val in (('affiliate_member_rate', member), ('affiliate_lead_rate', lead),
+                     ('affiliate_pool_rate', pool)):
+        db.execute('DELETE FROM settings WHERE key = ?', (key,))
+        db.execute('INSERT INTO settings (key, value) VALUES (?, ?)', (key, str(val)))
+    audit(db, 'AFFILIATE_RATES', 'affiliates',
+          f'Member {member:g}%, lead {lead:g}%, pool {pool:g}% of setup fee')
+    db.commit()
+    flash(f'Rates saved — member {member:g}%, team lead {lead:g}%, '
+          f'{pool:g}% of each setup fee in total. Existing commission is unchanged.', 'success')
+    return redirect(url_for('affiliates.commissions'))

@@ -1060,6 +1060,39 @@ def init_db():
     _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_affiliates_parent ON affiliates(parent_id)')
     _exec_ignore(db, "CREATE UNIQUE INDEX IF NOT EXISTS uq_affiliates_email ON affiliates(email) WHERE email IS NOT NULL AND email != ''")
 
+    # One row per earning event, tied to the paid invoice that produced it.
+    # Commission is never recomputed from a running balance: an affiliate must
+    # be able to see which cooperative, which invoice and which rate produced
+    # every naira, because disputes over commission are inevitable. A reversal
+    # is a compensating negative row pointing at the original, never a delete.
+    db.execute(_adapt('''
+        CREATE TABLE IF NOT EXISTS affiliate_commissions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            affiliate_id INTEGER NOT NULL,
+            client_id INTEGER,
+            invoice_id INTEGER,
+            source_affiliate_id INTEGER,
+            role TEXT DEFAULT 'direct',
+            basis_amount REAL DEFAULT 0,
+            rate REAL DEFAULT 0,
+            amount REAL DEFAULT 0,
+            status TEXT DEFAULT 'earned',
+            note TEXT,
+            reversal_of INTEGER,
+            reversed_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            created_by INTEGER,
+            FOREIGN KEY (affiliate_id) REFERENCES affiliates (id)
+        )
+    '''))
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_aff_comm_affiliate ON affiliate_commissions(affiliate_id, status)')
+    _exec_ignore(db, 'CREATE INDEX IF NOT EXISTS idx_aff_comm_invoice ON affiliate_commissions(invoice_id)')
+    # Accrual runs once per invoice per earner; the guard makes a repeated
+    # mark-paid or a replayed gateway callback harmless.
+    _exec_ignore(db, 'CREATE UNIQUE INDEX IF NOT EXISTS uq_aff_comm_earned '
+                     'ON affiliate_commissions(invoice_id, affiliate_id, role) '
+                     "WHERE status = 'earned'")
+
     # Attribution is snapshotted on the client when it is linked, so later edits
     # to the lead cannot silently move a commission.
     _add_col(db, 'hq_clients', 'lead_id', 'INTEGER')
