@@ -23,6 +23,7 @@ export type MobileMember = {
   total_savings: number;
   share_capital: number;
   loan_eligibility_amount: number;
+  loan_type_limits?: Record<string, { max_amount: number; eligible_amount: number; max_tenure_months: number }>;
   profile_completion: ProfileCompletion;
 };
 

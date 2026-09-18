@@ -432,6 +432,16 @@ function HomeScreen({ data, reload, setActive }: { data: DashboardPayload; reloa
       </View>
 
       <View style={styles.card}>
+        <Text style={styles.cardTitle}>Loan Application Limits</Text>
+        {Object.entries(data.member.loan_type_limits || {}).map(([name, limit]) => (
+          <QuickAction key={name} icon="calculator" label={name}
+            helper={`Up to ${money(limit.eligible_amount)} · ${limit.max_tenure_months} months`}
+            onPress={() => setActive('loans')} />
+        ))}
+        <Text>Subject to eligibility checks and committee approval.</Text>
+      </View>
+
+      <View style={styles.card}>
         <Text style={styles.cardTitle}>Quick Actions</Text>
         <QuickAction icon="person-circle" label={completion.percent === 100 ? 'View Profile' : 'Complete Profile'} helper={completion.percent === 100 ? 'Review your member information' : 'Finish setup to become transaction-ready'} onPress={() => setActive('profile')} tone={completion.percent < 100 ? 'yellow' : undefined} />
         <QuickAction icon="document-text" label="Savings Statement" helper="See contributions from inception" onPress={() => setActive('savings')} />

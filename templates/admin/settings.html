@@ -444,11 +444,13 @@
                                 <div class="row g-2 mb-3">
                                     {% for label, suffix in [('Regular', 'regular'), ('Housing', 'housing'), ('Emergency', 'emergency'), ('Asset Purchase', 'asset'), ('School Fees', 'school_fees')] %}
                                     <div class="col-sm-6">
+                                        <label class="form-label" for="amount-{{ suffix }}">{{ label }} maximum amount</label>
+                                        <input id="amount-{{ suffix }}" type="number" class="form-control" name="max_loan_amount_{{ suffix }}" value="{{ settings.get('max_loan_amount_' ~ suffix, 0) }}" min="0" step="0.01">
                                         <label class="form-label" for="tenure-{{ suffix }}">{{ label }} maximum months</label>
                                         <input id="tenure-{{ suffix }}" type="number" class="form-control" name="max_tenure_{{ suffix }}" value="{{ settings.get('max_tenure_' ~ suffix, 0) }}" min="0" max="60" step="1">
                                     </div>
                                     {% endfor %}
-                                    <small class="text-muted">0 = general maximum. A type-specific limit cannot exceed the general ceiling.</small>
+                                    <small class="text-muted">0 inherits the general limit. The lower of general and type-specific limits applies. Savings eligibility may reduce the amount further.</small>
                                 </div>
                             </div>
                             

@@ -396,9 +396,14 @@ function quickViewMember(memberId) {
                                     <td>₦${data.total_savings?.toLocaleString() || '0'}</td>
                                 </tr>
                                 <tr>
-                                    <th>Max Loan:</th>
+                                    <th>Maximum across loan types:</th>
                                     <td>₦${data.max_loan?.toLocaleString() || '0'}</td>
                                 </tr>
+                                ${Object.entries(data.loan_type_limits || {}).map(([name, limit]) => `
+                                <tr>
+                                    <th>${name}:</th>
+                                    <td>₦${Number(limit.eligible_amount).toLocaleString()} / ${Number(limit.max_tenure_months)} months</td>
+                                </tr>`).join('')}
                             </table>
                         </div>
                     </div>

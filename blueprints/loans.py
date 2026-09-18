@@ -460,9 +460,10 @@ def apply_loan():
                 flash(f'Member has an unpaid {purpose} loan. Repay it fully before applying for another {purpose} loan. Other loan types can be submitted for approval.', 'danger')
                 return redirect(url_for('members.member_details', member_id=member_id))
 
-            max_loan = savings_balance * 2
+            max_loan = loan_limits.eligible_amount(db, savings_balance, purpose)
             if amount > max_loan:
-                flash(f'Maximum loan amount is ₦{max_loan:,.2f} (2x savings).', 'danger')
+                flash(f'Maximum loan amount is ₦{max_loan:,.2f} — '
+                      f'{loan_limits.eligibility_note(db, savings_balance)}', 'danger')
                 return redirect(url_for('members.member_details', member_id=member_id))
 
             # Look up rate and method for the chosen purpose

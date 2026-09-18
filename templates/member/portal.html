@@ -99,7 +99,7 @@
                     <div>
                         <div class="metric-label">Loan Eligibility</div>
                         <div class="metric-value">₦{{ "{:,.2f}".format(member.loan_eligibility_amount) }}</div>
-                        <small class="text-muted">Available credit</small>
+                        {% include 'includes/member_loan_limits.html' %}
                     </div>
                 </div>
             </div>

@@ -1,7 +1,7 @@
 import sqlite3
 import unittest
 
-from loan_limits import application_error, limits, validate_settings
+from loan_limits import application_error, limits, validate_settings, member_limits, eligible_amount
 
 
 class LoanLimitTests(unittest.TestCase):
@@ -33,6 +33,29 @@ class LoanLimitTests(unittest.TestCase):
         self.assertIn('6 months', application_error(self.db, 'School Fees', 100, 7))
         self.assertEqual(limits(self.db)['tenures']['Housing'], 18)
         self.assertEqual(limits(self.db)['tenures']['Regular'], 18)
+
+    def test_type_amounts_and_member_card_match_application(self):
+        self.put('max_loan_amount_regular', 500000)
+        self.put('max_loan_amount_school_fees', 150000)
+        self.put('max_tenure_school_fees', 6)
+        card = member_limits(self.db, 1000000)
+        self.assertEqual(card['Regular']['eligible_amount'], 500000)
+        self.assertEqual(card['School Fees']['eligible_amount'], 150000)
+        self.assertEqual(card['School Fees']['max_tenure_months'], 6)
+        self.assertEqual(card['Housing']['eligible_amount'], 2000000)
+        self.assertEqual(eligible_amount(self.db, 10000, 'Regular'), 20000)
+        for name, row in card.items():
+            self.assertIsNone(application_error(self.db, name, row['eligible_amount'], row['max_tenure_months']))
+            if row['max_amount']:
+                self.assertIsNotNone(application_error(self.db, name, row['max_amount'] + 1, 1))
+        self.put('max_loan_amount', 100000)
+        self.assertEqual(member_limits(self.db, 1000000)['Regular']['eligible_amount'], 100000)
+
+    def test_type_amount_setting_validation(self):
+        validate_settings({'max_loan_amount_regular': '250000.50'})
+        for value in ('nan', '-1', 'oops', '0.001'):
+            with self.assertRaises(ValueError):
+                validate_settings({'max_loan_amount_regular': value})
 
     def test_invalid_settings_and_nonfinite_applications(self):
         for value in ('nan', 'inf', '-1', 'abc', '0.001'):

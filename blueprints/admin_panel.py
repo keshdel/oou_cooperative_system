@@ -682,7 +682,9 @@ def get_member_api(member_id):
             'last_name': member['last_name'],
             'member_number': member['member_number'],
             'total_savings': savings_balance,
-            'max_loan': savings_balance * 2,
+            'max_loan': loan_limits.eligible_amount(db, savings_balance),
+            'loan_type_limits': loan_limits.member_limits(db, savings_balance),
+            'max_loan_note': loan_limits.eligibility_note(db, savings_balance),
         })
     return jsonify({'error': 'Member not found'}), 404
 

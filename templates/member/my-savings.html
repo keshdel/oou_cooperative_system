@@ -174,8 +174,8 @@
           <span class="metric-icon me-3" style="background:rgba(245,158,11,.14);color:#d97706;"><i class="fas fa-hand-holding-usd"></i></span>
           <div>
             <div class="metric-label">Loan Eligibility</div>
-            <div class="metric-value">₦{{ "{:,.0f}".format(total_savings * 2) }}</div>
-            <div class="text-muted small">Up to 2× your total savings</div>
+            <div class="metric-value">₦{{ "{:,.0f}".format(member.loan_eligibility_amount) }}</div>
+            {% include 'includes/member_loan_limits.html' %}
           </div>
         </div>
       </div>
@@ -448,7 +448,7 @@
           <div class="alert alert-info mb-2">
             <i class="fas fa-lightbulb me-1"></i>
             <strong>Loan eligibility:</strong> Borrow up to
-            <strong>₦{{ "{:,.0f}".format(total_savings * 2) }}</strong> (2× savings).
+            <strong>₦{{ "{:,.0f}".format(member.loan_eligibility_amount) }}</strong>, depending on loan type and approval.
           </div>
           <div class="alert alert-warning mb-0">
             <i class="fas fa-clock me-1"></i>

@@ -1,0 +1,9 @@
+<dl class="small mb-0 mt-2">
+    {% for name, limit in member.loan_type_limits.items() %}
+    <div class="border-top py-2">
+        <dt>{{ name }}</dt>
+        <dd class="mb-0">Up to {{ '{:,.2f}'.format(limit.eligible_amount) }} &middot; {{ limit.max_tenure_months }} months</dd>
+    </div>
+    {% endfor %}
+</dl>
+<small class="text-muted">Subject to eligibility checks and committee approval.</small>

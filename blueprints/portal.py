@@ -38,6 +38,7 @@ def _member_extras(member, db):
     ledger_balance     = member_savings_balance(db, member['id'])
     d['total_savings'] = ledger_balance
     d['loan_eligibility_amount'] = loan_limits.eligible_amount(db, ledger_balance)
+    d['loan_type_limits'] = loan_limits.member_limits(db, ledger_balance)
     # Share capital carved from contributions (see share_capital_split); shown
     # separately so members see the 5% wasn't lost, just reclassified to equity.
     d['share_capital'] = member_share_capital(db, member['id'])
@@ -554,7 +555,10 @@ def my_loans():
     total_loans_taken   = sum(l.amount for l in booked_loans)
     outstanding_balance = sum(l.account_balance for l in active_loans)
     total_repaid        = total_loans_taken - outstanding_balance
-    available_credit    = max(0, (member['total_savings'] or 0) * 2 - outstanding_balance)
+    # Headroom left after what they already owe, against the same ceiling the
+    # application will apply — never a figure the form would then reject.
+    available_credit    = max(0, loan_limits.eligible_amount(db, member_savings_balance(db, member['id']))
+                                 - outstanding_balance)
     repayment_pct       = round((total_repaid / total_loans_taken * 100) if total_loans_taken > 0 else 0, 1)
 
     return render_template('member/my-loans.html',
@@ -902,9 +906,10 @@ def apply_loan_member():
                 flash(f'You have an unpaid {purpose} loan. Repay it fully before applying for another {purpose} loan. Other loan types can be submitted for approval.', 'danger')
                 return redirect(url_for('portal.my_loans'))
 
-            max_loan = savings_balance * 2
+            max_loan = loan_limits.eligible_amount(db, savings_balance, purpose)
             if amount > max_loan:
-                flash(f'Maximum loan amount is ₦{max_loan:,.2f} (2× your savings).', 'danger')
+                flash(f'Maximum loan amount is ₦{max_loan:,.2f} — '
+                      f'{loan_limits.eligibility_note(db, savings_balance)}', 'danger')
                 return redirect(url_for('portal.apply_loan_member'))
 
             rate   = rates.get(purpose, rates['Regular'])

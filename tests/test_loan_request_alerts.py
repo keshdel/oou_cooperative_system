@@ -446,7 +446,7 @@ class LoanRequestAlertTests(unittest.TestCase):
         import loan_limits
         member_id = self._member('0098', email='limits@coop.test')
         username, password = self._member_user('limits@coop.test', 'limitsmember')
-        policy = {'max_amount': 100000, 'tenures': {'Regular': 6}}
+        policy = {'max_amount': 0, 'amounts': {'Regular': 100000}, 'multiplier': 2, 'tenures': {'Regular': 6}}
         payloads = [({'amount': 100001, 'tenure': 6, 'purpose': 'Regular'}, b'Maximum loan amount'),
                     ({'amount': 100000, 'tenure': 7, 'purpose': 'Regular'}, b'Maximum tenure')]
         with patch.object(loan_limits, 'limits', return_value=policy):

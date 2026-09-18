@@ -331,6 +331,7 @@ def _member_summary(member, db):
         'total_savings': float(savings_balance or 0),
         'share_capital': float(share_capital or 0),
         'loan_eligibility_amount': loan_limits.eligible_amount(db, savings_balance),
+        'loan_type_limits': loan_limits.member_limits(db, savings_balance),
         'profile_completion': _profile_completion(member),
         'bank_name_masked': data.get('bank_name_masked', ''),
         'account_name_masked': data.get('account_name_masked', ''),
@@ -979,9 +980,10 @@ def mobile_apply_loan():
             return jsonify({'success': False, 'error': 'Minimum savings of NGN 50,000 required.'}), 400
         if has_unpaid_loan_of_type(db, member['id'], purpose):
             return jsonify({'success': False, 'error': f'You have an unpaid {purpose} loan. Repay it fully before applying for another {purpose} loan. Other loan types can be submitted for approval.'}), 409
-        max_loan = savings_balance * 2
+        max_loan = loan_limits.eligible_amount(db, savings_balance, purpose)
         if amount > max_loan:
-            return jsonify({'success': False, 'error': f'Maximum loan amount is NGN {max_loan:,.2f}.'}), 400
+            return jsonify({'success': False,
+                            'error': f'Maximum loan amount is NGN {max_loan:,.2f}.'}), 400
 
         required_g = lw.guarantors_required(db)
         if len(guarantor_ids) < required_g:
