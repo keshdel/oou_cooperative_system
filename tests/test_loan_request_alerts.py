@@ -442,6 +442,34 @@ class LoanRequestAlertTests(unittest.TestCase):
                 db.commit()
         return username, password
 
+    def test_application_limits_block_all_submission_channels(self):
+        import loan_limits
+        member_id = self._member('0098', email='limits@coop.test')
+        username, password = self._member_user('limits@coop.test', 'limitsmember')
+        policy = {'max_amount': 100000, 'tenures': {'Regular': 6}}
+        payloads = [({'amount': 100001, 'tenure': 6, 'purpose': 'Regular'}, b'Maximum loan amount'),
+                    ({'amount': 100000, 'tenure': 7, 'purpose': 'Regular'}, b'Maximum tenure')]
+        with patch.object(loan_limits, 'limits', return_value=policy):
+            self.login()
+            for payload, message in payloads:
+                response = self.client.post('/loans/apply', data=dict(payload, member_id=member_id), follow_redirects=True)
+                self.assertIn(message, response.data)
+            self.client.get('/logout')
+            self.login(username, password)
+            for payload, message in payloads:
+                response = self.client.post('/apply-loan-member', data=payload, follow_redirects=True)
+                self.assertIn(message, response.data)
+            login = self.client.post('/api/mobile/login', json={'username': 'limits@coop.test', 'password': password})
+            self.assertEqual(login.status_code, 200)
+            headers = {'Authorization': f"Bearer {login.get_json()['token']}"}
+            for payload, message in payloads:
+                for route in ('apply', 'schedule-preview'):
+                    response = self.client.post('/api/mobile/v1/loans/' + route, headers=headers, json=payload)
+                    self.assertEqual(response.status_code, 400)
+                    self.assertIn(message.decode(), response.get_json()['error'])
+        with self.app.app_context():
+            self.assertEqual(get_db().execute('SELECT COUNT(*) FROM loans WHERE member_id = ?', (member_id,)).fetchone()[0], 0)
+
     def test_member_portal_application_alerts_the_committee_end_to_end(self):
         member_id = self._member('0018', email='portal.applicant@coop.test')
         guarantors = [self._member('0019'), self._member('0020')]

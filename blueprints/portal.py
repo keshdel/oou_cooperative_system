@@ -1,6 +1,7 @@
 import json
 import os
 import random
+import loan_limits
 import secrets
 from datetime import datetime, timedelta
 from io import BytesIO
@@ -36,7 +37,7 @@ def _member_extras(member, db):
     # member always sees a correct figure even if the cache has drifted.
     ledger_balance     = member_savings_balance(db, member['id'])
     d['total_savings'] = ledger_balance
-    d['loan_eligibility_amount'] = round(ledger_balance * 2, 2)
+    d['loan_eligibility_amount'] = loan_limits.eligible_amount(db, ledger_balance)
     # Share capital carved from contributions (see share_capital_split); shown
     # separately so members see the 5% wasn't lost, just reclassified to equity.
     d['share_capital'] = member_share_capital(db, member['id'])
@@ -806,6 +807,9 @@ def loan_schedule_preview():
         return jsonify({'ok': False, 'error': 'Invalid input'})
     if amount <= 0 or tenure <= 0:
         return jsonify({'ok': False, 'error': 'Enter an amount and tenure.'})
+    limit_error = loan_limits.application_error(db, purpose, amount, tenure)
+    if limit_error:
+        return jsonify({'ok': False, 'error': limit_error})
     rates   = _interest_rates(db)
     methods = _interest_methods(db)
     rate    = rates.get(purpose, rates['Regular'])
@@ -840,6 +844,11 @@ def apply_loan_member():
 
         if amount <= 0 or not purpose or tenure <= 0:
             flash('All fields are required and must be valid.', 'danger')
+            return redirect(url_for('portal.apply_loan_member'))
+
+        limit_error = loan_limits.application_error(db, purpose, amount, tenure)
+        if limit_error:
+            flash(limit_error, 'danger')
             return redirect(url_for('portal.apply_loan_member'))
 
         if purpose not in rates:
@@ -983,6 +992,7 @@ def apply_loan_member():
     return render_template('member/apply_loan.html',
                            member=_member_extras(member, db),
                            max_tenure=max_tenure,
+                           loan_limits=loan_limits.limits(db),
                            interest_rates=rates,
                            interest_methods=methods,
                            method_labels=METHOD_LABELS,

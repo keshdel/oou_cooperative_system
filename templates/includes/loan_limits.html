@@ -1,0 +1,10 @@
+<div class="border-bottom pb-3 mb-3">
+    {% if loan_limits.max_amount %}
+    <p class="mb-2"><strong>Maximum per application:</strong> {{ '{:,.2f}'.format(loan_limits.max_amount) }}. Savings eligibility may reduce this amount.</p>
+    {% endif %}
+    <div class="d-flex flex-wrap gap-3 small">
+        {% for name, months in loan_limits.tenures.items() %}
+        <span><strong>{{ name }}:</strong> up to {{ months }} months</span>
+        {% endfor %}
+    </div>
+</div>

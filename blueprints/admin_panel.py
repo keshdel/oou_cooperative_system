@@ -18,6 +18,7 @@ from utils import (role_required, audit, validate_image, logo_data_uri,
 from ledger import (post_journal_safe, get_default_cash_account, OPERATING_EXPENSES, FEE_INCOME,
                     HONORARIUM)
 import permissions as perms
+import loan_limits
 
 admin_panel = Blueprint('admin_panel', __name__)
 
@@ -75,6 +76,8 @@ _DEFAULT_SETTINGS = {
     'loan_alert_escalate_hours': '48',
     'app_base_url': '',
 }
+
+_DEFAULT_SETTINGS.update(loan_limits.DEFAULTS)
 
 _EDITABLE_SETTING_KEYS = set(_DEFAULT_SETTINGS) | {
     'coop_short_name',
@@ -424,6 +427,7 @@ def update_settings():
                     flash(f'Logo not saved: could not process image ({exc}).', 'warning')
 
     try:
+        loan_limits.validate_settings(request.form)
         updated = 0
         ignored = []
         settings_group = request.form.get('_settings_group', '')

@@ -8,6 +8,7 @@ New member-facing app routes use /api/mobile/v1.
 import hmac
 import json
 import os
+import loan_limits
 import random
 import re
 from datetime import datetime, timedelta, UTC
@@ -329,7 +330,7 @@ def _member_summary(member, db):
         'date_joined': _to_json_value(member['date_joined']),
         'total_savings': float(savings_balance or 0),
         'share_capital': float(share_capital or 0),
-        'loan_eligibility_amount': float(round((savings_balance or 0) * 2, 2)),
+        'loan_eligibility_amount': loan_limits.eligible_amount(db, savings_balance),
         'profile_completion': _profile_completion(member),
         'bank_name_masked': data.get('bank_name_masked', ''),
         'account_name_masked': data.get('account_name_masked', ''),
@@ -869,7 +870,8 @@ def mobile_loan_options():
         'guarantors_required': lw.guarantors_required(db),
         'eligible_guarantors': _eligible_guarantors(db, member['id']),
         'max_tenure_months': _max_tenure(db),
-        'loan_eligibility_amount': float(round((member_savings_balance(db, member['id']) or 0) * 2, 2)),
+        'loan_limits': loan_limits.limits(db),
+        'loan_eligibility_amount': loan_limits.eligible_amount(db, member_savings_balance(db, member['id'])),
         'staff_member': bool(is_staff_member),
     })
 
@@ -886,8 +888,9 @@ def mobile_loan_schedule_preview():
     purpose = (data.get('purpose') or 'Regular').strip()
     if amount <= 0 or tenure <= 0:
         return jsonify({'success': False, 'error': 'Enter an amount and tenure.'}), 400
-    if tenure > _max_tenure(g.db):
-        return jsonify({'success': False, 'error': f'Maximum tenure is {_max_tenure(g.db)} months.'}), 400
+    limit_error = loan_limits.application_error(g.db, purpose, amount, tenure)
+    if limit_error:
+        return jsonify({'success': False, 'error': limit_error}), 400
 
     rates = _interest_rates(g.db)
     if purpose not in rates:
@@ -930,8 +933,9 @@ def mobile_apply_loan():
 
     if amount <= 0 or tenure <= 0 or not purpose:
         return jsonify({'success': False, 'error': 'amount, tenure and purpose are required'}), 400
-    if tenure > _max_tenure(db):
-        return jsonify({'success': False, 'error': f'Maximum tenure is {_max_tenure(db)} months.'}), 400
+    limit_error = loan_limits.application_error(db, purpose, amount, tenure)
+    if limit_error:
+        return jsonify({'success': False, 'error': limit_error}), 400
     rates = _interest_rates(db)
     if purpose not in rates:
         return jsonify({'success': False, 'error': 'Select a valid loan purpose.'}), 400

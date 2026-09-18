@@ -2,6 +2,7 @@ import csv
 import hmac
 import os
 import random
+import loan_limits
 from datetime import datetime, timedelta
 from io import StringIO, TextIOWrapper
 
@@ -425,6 +426,11 @@ def apply_loan():
             flash('All fields are required and must be valid.', 'danger')
             return redirect(url_for('loans.apply_loan'))
 
+        limit_error = loan_limits.application_error(db, purpose, amount, tenure)
+        if limit_error:
+            flash(limit_error, 'danger')
+            return redirect(url_for('loans.apply_loan'))
+
         if purpose not in interest_rates:
             flash('Select a valid loan type.', 'danger')
             return redirect(url_for('loans.apply_loan'))
@@ -519,6 +525,7 @@ def apply_loan():
     return render_template('admin/apply-loan.html',
                            members=all_members,
                            max_tenure=max_tenure,
+                           loan_limits=loan_limits.limits(db),
                            interest_rates=interest_rates,
                            interest_methods=interest_methods,
                            method_labels=METHOD_LABELS)
